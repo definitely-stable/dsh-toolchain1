@@ -163,7 +163,7 @@ async function smokeTrain(version) {
     )
     const dshPackageRoot = resolve(runner, 'node_modules', '@deepseek-ai', 'dsh')
 
-    async function resolveReadOnlyTarget({ version: targetVersion, home, dshPackageRoot: explicitRoot }) {
+    async function resolveReadOnlyTarget({ version: targetVersion, home, dshPackageRoot: explicitRoot = undefined }) {
       const profileRoot = join(home, 'profiles', TARGET_SMOKE_PROFILE)
       const before = await snapshotTree(profileRoot)
       const args = [
