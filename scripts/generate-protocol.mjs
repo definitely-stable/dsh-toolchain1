@@ -1,5 +1,4 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { compile } from 'json-schema-to-typescript'
 
 const root = new URL('../', import.meta.url)
 const schemaUrl = new URL('spec/schemas/v1/toolchain-protocol.schema.json', root)
@@ -13,75 +12,125 @@ if (typeof protocolVersion !== 'string' || protocolVersion.length === 0) {
   throw new Error('Protocol schema must define responseEnvelope.properties.protocolVersion.const')
 }
 
-const unsupportedCodegenKeywords = new Set([
-  '$dynamicRef',
-  '$dynamicAnchor',
-  'prefixItems',
-  'unevaluatedItems',
-  'unevaluatedProperties',
-  'dependentSchemas',
-  'dependentRequired',
+const supportedKeywords = new Set([
+  '$schema',
+  '$id',
+  '$ref',
+  '$defs',
+  'title',
+  'type',
+  'const',
+  'enum',
+  'properties',
+  'required',
+  'additionalProperties',
+  'items',
+  'minLength',
+  'minimum',
+  'maximum',
+  'pattern',
+  'format',
+  'uniqueItems',
 ])
 
-function lowerForTypeCodegen(value, path = '#') {
+function assertSupportedVocabulary(value, path = '#') {
   if (Array.isArray(value)) {
-    return value.map((item, index) => lowerForTypeCodegen(item, `${path}/${index}`))
+    value.forEach((item, index) => assertSupportedVocabulary(item, `${path}/${index}`))
+    return
   }
 
-  if (value === null || typeof value !== 'object') {
-    return value
-  }
-
-  const result = {}
+  if (value === null || typeof value !== 'object') return
 
   for (const [key, nested] of Object.entries(value)) {
-    if (unsupportedCodegenKeywords.has(key)) {
+    if (!supportedKeywords.has(key)) {
       throw new Error(
-        `Protocol type codegen cannot safely lower JSON Schema 2020-12 keyword ${key} at ${path}. ` +
-          'Use a 2020-12-native generator before introducing this keyword.',
+        `Protocol type generator does not support JSON Schema keyword ${key} at ${path}. ` +
+          'Extend the generator with tests before using this keyword.',
       )
     }
-
-    if (key === '$schema') {
-      result.$schema = 'http://json-schema.org/draft-07/schema#'
-      continue
-    }
-
-    if (key === '$defs') {
-      result.definitions = lowerForTypeCodegen(nested, `${path}/$defs`)
-      continue
-    }
-
-    if (key === '$ref' && typeof nested === 'string') {
-      result.$ref = nested.replace(/^#\/\$defs\//, '#/definitions/')
-      continue
-    }
-
-    result[key] = lowerForTypeCodegen(nested, `${path}/${key}`)
+    assertSupportedVocabulary(nested, `${path}/${key}`)
   }
-
-  return result
 }
 
-// Runtime validation remains Draft 2020-12. This lowering exists only because
-// json-schema-to-typescript 15 does not resolve local $defs refs reliably.
-// Reject 2020-12-only applicator keywords above rather than silently changing semantics.
-const codegenSchema = lowerForTypeCodegen(schema)
+function pascalCase(value) {
+  return value
+    .replace(/(^|[-_\s]+)([a-zA-Z0-9])/g, (_match, _prefix, char) => char.toUpperCase())
+    .replace(/[^a-zA-Z0-9_$]/g, '')
+}
 
-const generatedTypes = await compile(codegenSchema, 'ToolchainProtocolResponse', {
-  bannerComment: '',
-  unreachableDefinitions: true,
-  unknownAny: true,
-  style: {
-    singleQuote: true,
-    semi: false,
-    trailingComma: 'all',
-    tabWidth: 2,
-    useTabs: false,
-    printWidth: 100,
-    bracketSpacing: true,
-  },
-})
+function literal(value) {
+  return JSON.stringify(value)
+}
+
+function refType(ref) {
+  const prefix = '#/$defs/'
+  if (!ref.startsWith(prefix)) {
+    throw new Error(`Protocol type generator only supports local $defs refs, received: ${ref}`)
+  }
+  return pascalCase(ref.slice(prefix.length))
+}
+
+function typeExpression(node, path) {
+  if (node === true || (node && typeof node === 'object' && Object.keys(node).length === 0)) {
+    return 'unknown'
+  }
+  if (node === false) return 'never'
+  if (node === null || typeof node !== 'object' || Array.isArray(node)) {
+    throw new Error(`Expected schema object at ${path}`)
+  }
+
+  if ('$ref' in node) return refType(node.$ref)
+  if ('const' in node) return literal(node.const)
+  if (Array.isArray(node.enum)) return node.enum.map(literal).join(' | ') || 'never'
+
+  if (Array.isArray(node.type)) {
+    return node.type
+      .map((type) => typeExpression({ ...node, type }, `${path}/type`))
+      .join(' | ')
+  }
+
+  switch (node.type) {
+    case 'string':
+      return 'string'
+    case 'number':
+    case 'integer':
+      return 'number'
+    case 'boolean':
+      return 'boolean'
+    case 'null':
+      return 'null'
+    case 'array':
+      return `Array<${typeExpression(node.items ?? {}, `${path}/items`)}>`
+    case 'object': {
+      const properties = node.properties ?? {}
+      const required = new Set(node.required ?? [])
+      const members = Object.entries(properties).map(([name, child]) => {
+        const optional = required.has(name) ? '' : '?'
+        return `  readonly ${JSON.stringify(name)}${optional}: ${typeExpression(child, `${path}/properties/${name}`)}`
+      })
+
+      if (node.additionalProperties !== false) {
+        members.push('  readonly [key: string]: unknown')
+      }
+
+      return members.length === 0 ? 'Record<string, unknown>' : `{\n${members.join('\n')}\n}`
+    }
+    case undefined:
+      return 'unknown'
+    default:
+      throw new Error(`Unsupported schema type ${JSON.stringify(node.type)} at ${path}`)
+  }
+}
+
+function emitDefinition(name, node) {
+  const typeName = pascalCase(name)
+  return `export type ${typeName} = ${typeExpression(node, `#/$defs/${name}`)}`
+}
+
+assertSupportedVocabulary(schema)
+
+const definitions = Object.entries(schema.$defs ?? {}).map(([name, node]) => emitDefinition(name, node))
+const rootType = typeExpression(schema, '#')
 
 const expected = [
   '// This file is generated from spec/schemas/v1/toolchain-protocol.schema.json.',
@@ -89,7 +138,8 @@ const expected = [
   '',
   `export const TOOLCHAIN_PROTOCOL_VERSION = ${JSON.stringify(protocolVersion)} as const`,
   '',
-  generatedTypes.trimEnd(),
+  ...definitions.flatMap((definition) => [definition, '']),
+  `export type ToolchainProtocolResponse = ${rootType}`,
   '',
 ].join('\n')
 
