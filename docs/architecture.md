@@ -50,6 +50,8 @@ DSH Host / DSH Client / MCP / CLI
 
 The kernel never imports DSH runtime APIs. The semantic core (`product`, `kernel`, `model`, and `protocol`) is runtime-neutral and MUST NOT depend on Node built-in modules. Node/DSH/process/filesystem concerns belong at acquisition, verification, integration, and frontend boundaries.
 
+The source tree uses a closed-world layer model: every production file under `src/` MUST belong to a declared architecture layer. Creating an unclassified `src/shared`, `src/util`, or similar escape hatch is an architecture violation until its intended role and dependency edges are explicitly added. Production JavaScript source under `src/` is forbidden in the current TypeScript codebase; repository-only `.mjs` policy/build scripts live outside that product boundary.
+
 This is an application of the same capability boundary DSH uses for Cordis Services: consumers depend on a capability, not a concrete provider.
 
 ### Acquire, normalize, analyze
@@ -115,6 +117,8 @@ Owns transport-neutral use cases:
 
 The kernel defines no MCP, CLI, Typert, HTTP, Cordis, React, Node-runtime, or filesystem/process concepts.
 
+The kernel is an internal package boundary in M0. Its factory is deliberately **not** part of the npm root contract while it only exposes a descriptor and before M1 defines the real acquisition/operation ports required by useful application calls. DSH, CLI, and MCP are build faces inside the same package and may depend directly on the internal kernel. A public programmatic kernel API is introduced only once its dependency shape is supported as an external contract.
+
 ### Semantic model and analysis
 
 Owns `TargetSnapshot`, contract entities, plugin model, diagnostics, evidence references, compatibility facts, and deterministic analysis passes.
@@ -135,7 +139,7 @@ Candidate-plugin execution occurs out of the user's active DSH process and uses 
 
 ### DSH Host
 
-Provides a Cordis `toolchain` capability (`ctx.toolchain`) backed by the same application kernel. It also projects a deliberately small set of model-facing native DSH tools.
+Provides a Cordis `toolchain` capability (`ctx.toolchain`) backed by the same application kernel. Its Loader composition row is namespaced as `dsh-toolchain`; Loader identity and Cordis capability identity are intentionally separate namespaces. It also projects a deliberately small set of model-facing native DSH tools.
 
 Other DSH plugins may eventually consume stable Toolchain service methods and extension seams. Extension points are introduced only when a concrete second implementation requires them.
 
@@ -189,7 +193,20 @@ They remain internal until there is a concrete external consumer and compatibili
 
 ## Architecture fitness
 
-The repository turns the dependency rules in `AGENTS.md` into executable CI checks. Architecture is considered incomplete if it exists only as prose and can be violated by an ordinary import. The gate recognizes both `node:*` and bare Node built-in specifiers, protects `src/model/**`, scans TypeScript/TSX module source forms, and rejects package self-references that would bypass inward dependency direction.
+Architecture policy is executable and closed-world rather than a blacklist of a few dangerous imports.
+
+Every production module under `src/` is classified into one of the declared layers: public facade, product/protocol/model/kernel semantic core, acquisition, verification, DSH integration, CLI, MCP, or Web/client. An unknown production path fails CI. Relative imports are resolved to actual source targets and checked against an explicit source-layer → target-layer matrix. Because semantic layers have no permitted edge to runtime-capable layers, an indirect path such as `kernel -> shared -> node:fs` cannot become valid merely by adding an intermediate folder.
+
+The gate additionally:
+
+- rejects all JavaScript-family production source (`.js`, `.jsx`, `.mjs`, `.cjs`) under `src/` while the product source policy is TypeScript-only;
+- recognizes both `node:*` and bare Node built-in module specifiers;
+- rejects DSH runtime packages and package self-references from semantic layers;
+- rejects direct `process` use, `require()` and non-literal dynamic `import()` from semantic layers;
+- rejects Node built-ins and concrete DSH Host dependencies from browser/client code;
+- scans TS, TSX, MTS and CTS product forms and fails loud for unclassified additions.
+
+Repository policy scripts are separately linted and statically checked with JavaScript `checkJs`; they are not treated as production semantic code.
 
 ## References that informed the baseline
 
