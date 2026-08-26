@@ -29,11 +29,13 @@ Read in this order:
 5. [`docs/roadmap.md`](docs/roadmap.md)
 6. relevant ADRs under [`docs/decisions/`](docs/decisions/)
 
-For coding agents, [`AGENTS.md`](AGENTS.md) defines repository working rules.
+Development policy lives in [`docs/development.md`](docs/development.md). All contributors—human or automated—follow [`CONTRIBUTING.md`](CONTRIBUTING.md); coding agents also follow [`AGENTS.md`](AGENTS.md).
 
-## Status
+## Repository status
 
-Architecture baseline. No production implementation is committed yet.
+This private repository is the development incubator. The future public project is a new clean `definitely-stable/dsh-toolchain` repository created from a curated source tree; the incubator history is not intended to become public history.
+
+No production implementation is committed yet.
 
 ## License
 
