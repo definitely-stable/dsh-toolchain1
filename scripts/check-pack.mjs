@@ -219,7 +219,8 @@ async function main() {
   const { files, issues } = await checkPackedTarball(tarballPath)
   if (issues.length > 0) {
     for (const issue of issues) {
-      const source = issue.source ? ` (${issue.source})` : ''
+      const sourceValue = Reflect.get(issue, 'source')
+      const source = typeof sourceValue === 'string' ? ` (${sourceValue})` : ''
       process.stderr.write(`[${issue.rule}] ${issue.path}${source}: ${issue.message}\n`)
     }
     process.exitCode = 1
