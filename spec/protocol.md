@@ -10,7 +10,7 @@ This specification defines Toolchain's transport-neutral semantic contract. MCP,
 
 `protocolVersion` identifies the complete compatible Protocol schema bundle. Protocol v1 currently uses the string `"1"`.
 
-Within a protocol version, implementations MAY add optional fields and new diagnostic codes. Consumers MUST ignore unknown optional fields unless the relevant schema explicitly closes the object. Removing required fields, changing existing field meaning/type, or reusing a diagnostic code for different semantics requires a new protocol version.
+Within a protocol version, implementations MAY introduce new diagnostic codes, diagnostic domains, and other values only where the machine schema intentionally leaves that vocabulary open. Implementations MUST NOT emit undeclared properties into schema objects that declare `additionalProperties: false`. Adding/removing fields in a closed object, changing an existing field's meaning/type, or reusing a diagnostic code for different semantics requires a new protocol version unless the schema explicitly defines a compatible extension point.
 
 Software package versions and DSH target versions are independent from the Toolchain Protocol version.
 
@@ -85,7 +85,7 @@ Inspection returns the normalized definition plus evidence/provenance for one se
 The baseline contract kinds are:
 `service`, `method`, `event`, `tool`, `client-slot`, `config`, `package`.
 
-Kinds MAY be extended compatibly within Protocol v1.
+Kinds MAY be extended compatibly within Protocol v1 only through a schema-defined open vocabulary or extension point; otherwise a new protocol version is required.
 
 ## Plugin analysis and validation
 
