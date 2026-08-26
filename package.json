@@ -49,11 +49,12 @@
     "check:protocol": "node scripts/check-protocol.mjs",
     "check:architecture": "node scripts/check-architecture.mjs",
     "check:package": "node scripts/check-package-policy.mjs",
-    "lint": "oxlint src tests",
+    "check:scripts": "tsc -p tsconfig.scripts.json --noEmit",
+    "lint": "oxlint src tests scripts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "build": "pnpm run clean && tsc -p tsconfig.build.json",
-    "check": "pnpm run check:generated && pnpm run check:protocol && pnpm run check:architecture && pnpm run check:package && pnpm run lint && pnpm run typecheck && pnpm run test",
+    "check": "pnpm run check:generated && pnpm run check:protocol && pnpm run check:architecture && pnpm run check:package && pnpm run lint && pnpm run typecheck && pnpm run check:scripts && pnpm run test",
     "prepack": "pnpm run build"
   },
   "dependencies": {
