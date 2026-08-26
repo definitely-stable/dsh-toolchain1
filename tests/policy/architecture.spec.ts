@@ -6,7 +6,7 @@ import {
 } from '../../scripts/check-architecture.mjs'
 
 describe('architecture import policy', () => {
-  it('rejects Node builtins and DSH runtime dependencies from pure layers', () => {
+  it('rejects Node builtins and DSH runtime dependencies from semantic layers', () => {
     expect(checkSourceImportPolicy([
       { path: 'src/kernel/bad.ts', source: "import { readFile } from 'fs/promises'\n" },
       { path: 'src/model/bad.mts', source: "import path from 'node:path'\n" },
@@ -15,37 +15,66 @@ describe('architecture import policy', () => {
       {
         file: 'src/kernel/bad.ts',
         specifier: 'fs/promises',
-        rule: 'pure-layer-runtime-boundary',
+        rule: 'semantic-runtime-boundary',
       },
       {
         file: 'src/model/bad.mts',
         specifier: 'node:path',
-        rule: 'pure-layer-runtime-boundary',
+        rule: 'semantic-runtime-boundary',
       },
       {
         file: 'src/protocol/bad.ts',
         specifier: '@deepseek-ai/cordis',
-        rule: 'pure-layer-runtime-boundary',
+        rule: 'semantic-runtime-boundary',
       },
     ])
   })
 
-  it('rejects inward layers importing frontend/integration implementations by relative or package self-reference', () => {
-    expect(checkSourceImportPolicy([
-      { path: 'src/kernel/bad.ts', source: "import '../../src/frontends/cli/index.js'\n" },
-      { path: 'src/model/bad.ts', source: "import 'dsh-toolchain/dsh'\n" },
-    ])).toEqual([
-      {
-        file: 'src/kernel/bad.ts',
-        specifier: '../../src/frontends/cli/index.js',
-        rule: 'dependency-direction',
-      },
-      {
-        file: 'src/model/bad.ts',
-        specifier: 'dsh-toolchain/dsh',
-        rule: 'dependency-direction',
-      },
+  it('rejects unclassified production layers and therefore closes transitive runtime bridges', () => {
+    const violations = checkSourceImportPolicy([
+      { path: 'src/kernel/target.ts', source: "import { load } from '../shared/environment.js'\nexport { load }\n" },
+      { path: 'src/shared/environment.ts', source: "import { readFile } from 'node:fs/promises'\nexport const load = readFile\n" },
     ])
+
+    expect(violations).toContainEqual({
+      file: 'src/shared/environment.ts',
+      rule: 'unclassified-source-layer',
+    })
+    expect(violations).toContainEqual({
+      file: 'src/kernel/target.ts',
+      specifier: '../shared/environment.js',
+      target: 'src/shared/environment.ts',
+      rule: 'dependency-layer',
+    })
+  })
+
+  it('rejects JavaScript production source even when it is imported through a .js specifier', () => {
+    expect(isArchitectureSourceFile('file.js')).toBe(true)
+    expect(checkSourceImportPolicy([
+      { path: 'src/kernel/index.ts', source: "import './node-runtime.js'\n" },
+      { path: 'src/kernel/node-runtime.js', source: "import { readFile } from 'node:fs/promises'\nvoid readFile\n" },
+    ])).toContainEqual({
+      file: 'src/kernel/node-runtime.js',
+      rule: 'unsupported-production-source',
+    })
+  })
+
+  it('rejects Node process access and non-literal loaders from semantic code', () => {
+    const violations = checkSourceImportPolicy([
+      { path: 'src/kernel/process.ts', source: "export const cwd = process.cwd()\n" },
+      { path: 'src/model/loader.ts', source: "export const load = (name: string) => import(name)\n" },
+    ])
+
+    expect(violations).toContainEqual({
+      file: 'src/kernel/process.ts',
+      symbol: 'process',
+      rule: 'semantic-node-global',
+    })
+    expect(violations).toContainEqual({
+      file: 'src/model/loader.ts',
+      symbol: 'import()',
+      rule: 'semantic-dynamic-loader',
+    })
   })
 
   it('reserves browser/client code against every Node builtin and Host implementation', () => {
@@ -68,7 +97,8 @@ describe('architecture import policy', () => {
       {
         file: 'src/client/bad-host.ts',
         specifier: '../integrations/dsh/index.js',
-        rule: 'client-host-boundary',
+        target: 'src/integrations/dsh/index.ts',
+        rule: 'dependency-layer',
       },
       {
         file: 'src/frontends/web/bad-self.ts',
@@ -78,21 +108,26 @@ describe('architecture import policy', () => {
     ])
   })
 
-  it('scans TypeScript source extensions used by Node and DSH Web', () => {
-    expect(['file.ts', 'file.tsx', 'file.mts', 'file.cts'].map(isArchitectureSourceFile)).toEqual([
-      true,
-      true,
-      true,
-      true,
+  it('scans TypeScript and JavaScript module source extensions but rejects repository prose', () => {
+    expect([
+      'file.ts', 'file.tsx', 'file.mts', 'file.cts',
+      'file.js', 'file.jsx', 'file.mjs', 'file.cjs',
+    ].map(isArchitectureSourceFile)).toEqual([
+      true, true, true, true,
+      true, true, true, true,
     ])
-    expect(isArchitectureSourceFile('file.js')).toBe(false)
     expect(isArchitectureSourceFile('README.md')).toBe(false)
   })
 
-  it('accepts the intended inward dependency direction', () => {
+  it('accepts the current closed-world dependency direction', () => {
     expect(checkSourceImportPolicy([
-      { path: 'src/frontends/cli/index.ts', source: "import { createApplicationKernel } from '../../kernel/index.js'\n" },
-      { path: 'src/integrations/dsh/index.ts', source: "import { Service } from '@deepseek-ai/cordis'\nimport { createApplicationKernel } from '../../kernel/index.js'\n" },
+      { path: 'src/product.ts', source: "export const name = 'dsh-toolchain'\n" },
+      { path: 'src/protocol/index.ts', source: "export const version = '1'\n" },
+      { path: 'src/kernel/index.ts', source: "import { version } from '../protocol/index.js'\nexport { version }\n" },
+      { path: 'src/frontends/mcp/index.ts', source: "import { version } from '../../kernel/index.js'\nexport { version }\n" },
+      { path: 'src/frontends/cli/index.ts', source: "import { version } from '../../kernel/index.js'\nimport '../../frontends/mcp/index.js'\nexport { version }\n" },
+      { path: 'src/integrations/dsh/index.ts', source: "import { Service } from '@deepseek-ai/cordis'\nimport { version } from '../../kernel/index.js'\nexport { Service, version }\n" },
+      { path: 'src/index.ts', source: "export { name } from './product.js'\nexport { version } from './protocol/index.js'\n" },
     ])).toEqual([])
   })
 })
