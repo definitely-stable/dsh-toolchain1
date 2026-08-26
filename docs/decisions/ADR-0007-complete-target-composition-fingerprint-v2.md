@@ -1,4 +1,4 @@
-# ADR-0007: Complete target composition fingerprint v2
+# ADR-0007: Declared target composition fingerprint v2
 
 - Status: Accepted
 - Date: 2026-08-27
@@ -6,7 +6,7 @@
 
 ## Context
 
-ADR-0006 introduced `dsh-target-v1` before M1 had been reviewed against the complete current DSH composition contract. Current DeepSeek Harness composes a profile over an empty root in this order:
+ADR-0006 introduced `dsh-target-v1` before M1 had been reviewed against the complete current DSH profile-input contract. Current DeepSeek Harness composes the package/user-declared profile inputs over an empty root in this order:
 
 1. each bundle patch in `dsh.profile.bundles` order;
 2. the profile's `cordis.patch.yml`;
@@ -14,6 +14,8 @@ ADR-0006 introduced `dsh-target-v1` before M1 had been reviewed against the comp
 4. each invocation `--patch` overlay in argv order.
 
 The v1 projection captured bundle package names/versions and only the profile patch hash. That permits false sameness when a bundle patch changes without a version bump, when the home patch differs, or when invocation overlays differ.
+
+Current DSH boot may then add launcher-synthesized/live overlays that are not package/user-declared target inputs. Examples in the current CLI include the telemetry switch derived from launch environment and an app-owned agent-preset root adjustment. Those facts belong to observed runtime availability/execution evidence, not to a static filesystem target snapshot. `TargetSnapshot` therefore MUST NOT be described as a receipt of every mutation performed by a live DSH launcher.
 
 The project is still a private unpublished incubator and Protocol v1 is explicitly pre-public, so the identity namespace should be corrected before public compatibility claims depend on it.
 
@@ -53,19 +55,23 @@ dsh-target-v2:<lowercase sha256 hex(canonicalProjectionJson)>
 
 `dshHome`, `dshPackageRoot`, overlay filenames, absolute package locations, evidence locations, timestamps, usernames and the Toolchain observer's own package version/content do not enter the semantic projection.
 
-`TargetResolveRequest.patches` is an ordered list of acquisition paths analogous to DSH `--patch` arguments. Their ordered content hashes, not paths, enter v2 identity.
+`TargetResolveRequest.patches` is an ordered list of acquisition paths analogous to DSH `--patch` arguments. Current upstream DSH resolves relative overlay paths from the launcher process working directory; the Node acquisition adapter uses the same `path.resolve(...)` basis. Their ordered content hashes, not paths, enter v2 identity.
 
-## Runtime meaning
+## Runtime meaning and launcher-synthesized state
 
-The `runtime` field binds the snapshot to the Node/platform/architecture under which Toolchain resolves compatibility for the target. It is not evidence that an unrelated separately launched DSH process used the same runtime. A later live observation or verification receipt must record its executed runtime and must not claim equivalence when runtime-sensitive target semantics differ.
+The `runtime` field binds the snapshot to the Node/platform/architecture under which Toolchain resolves compatibility for the target. It is not evidence that an unrelated separately launched DSH process used the same runtime.
+
+Launcher-synthesized overlays, environment-driven enable/disable decisions, mounted-service state, and other live availability facts are intentionally outside `dsh-target-v2`. M2 live inspection MUST distinguish declared capability from observed runtime availability and bind observations to their evidence. M4 verification receipts MUST record the executed runtime/environment facts needed by the checks they claim and MUST NOT treat a static TargetSnapshot as proof that the live launcher applied no additional state.
+
+This boundary avoids the opposite error to v1: adding one currently known launcher flag to a supposedly "complete" static fingerprint while silently missing the next synthesized runtime overlay.
 
 ## Same-version package edits outside composition
 
-V2 deliberately does not hash entire package/source trees. Bundle patch bytes are included because they are direct inputs to DSH composition. M2 Contract Intelligence must bind its cache/index identity to the actual catalog/type/source/runtime evidence it consumes so a same-version local contract edit cannot be hidden by package-version equality.
+V2 deliberately does not hash entire package/source trees. Bundle patch bytes are included because they are direct package-declared inputs to DSH composition. M2 Contract Intelligence must bind its cache/index identity to the actual catalog/type/source/runtime evidence it consumes so a same-version local contract edit cannot be hidden by package-version equality.
 
 ## Consequences
 
 - Existing private v1 fingerprints are invalidated; there is no public compatibility promise to preserve.
-- M1 target identity now follows the complete patch composition boundary used by current DSH boot.
+- M1 target identity now covers the complete package/user-declared patch-input boundary relevant to static target resolution, without pretending to be a live runtime receipt.
 - Target resolution remains read-only and inexpensive relative to full package-tree hashing.
-- M2 can build contract-specific evidence identity without bloating the foundational TargetSnapshot.
+- M2 can build contract-specific evidence identity and live-availability observations without bloating or misrepresenting the foundational TargetSnapshot.
