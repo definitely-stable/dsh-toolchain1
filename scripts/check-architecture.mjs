@@ -27,9 +27,9 @@ const allowedInternalDependencies = new Map([
   ['kernel', new Set(['kernel', 'model', 'product', 'protocol'])],
   ['acquisition', new Set(['acquisition', 'model', 'product', 'protocol'])],
   ['verification', new Set(['verification', 'model', 'product', 'protocol'])],
-  ['dsh', new Set(['dsh', 'kernel', 'model', 'product', 'protocol'])],
-  ['cli', new Set(['cli', 'mcp', 'kernel', 'model', 'product', 'protocol'])],
-  ['mcp', new Set(['mcp', 'kernel', 'model', 'product', 'protocol'])],
+  ['dsh', new Set(['dsh', 'acquisition', 'kernel', 'model', 'product', 'protocol'])],
+  ['cli', new Set(['cli', 'mcp', 'acquisition', 'kernel', 'model', 'product', 'protocol'])],
+  ['mcp', new Set(['mcp', 'acquisition', 'kernel', 'model', 'product', 'protocol'])],
   ['web', new Set(['web', 'model', 'product', 'protocol'])],
 ])
 
