@@ -17,7 +17,7 @@ async function writeJson(location: string, value: unknown): Promise<void> {
 }
 
 describe('pnpm-linked DSH installation acquisition', () => {
-  it('resolves installation bundles from the real package anchor without a healed home fallback', async () => {
+  it('resolves installation bundles and their patches from the real package anchor without a healed home fallback', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'dsh-toolchain-pnpm-layout-'))
     temporaryRoots.push(root)
 
@@ -33,11 +33,13 @@ describe('pnpm-linked DSH installation acquisition', () => {
       version,
     })
     for (const name of ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless']) {
-      await writeJson(path.join(modules, name, 'package.json'), {
+      const bundleRoot = path.join(modules, name)
+      await writeJson(path.join(bundleRoot, 'package.json'), {
         name,
         version,
         dsh: { bundle: { patch: './cordis.patch.yml' } },
       })
+      await writeFile(path.join(bundleRoot, 'cordis.patch.yml'), `# ${name}\n[]\n`, 'utf8')
     }
     await writeJson(path.join(profile, 'package.json'), {
       name: 'dsh-profile-headless',
@@ -61,8 +63,16 @@ describe('pnpm-linked DSH installation acquisition', () => {
 
     expect(facts.dsh.version).toBe(version)
     expect(facts.profile.bundles).toEqual([
-      { name: '@deepseek-ai/dsh-base', version },
-      { name: '@deepseek-ai/dsh-headless', version },
+      expect.objectContaining({
+        name: '@deepseek-ai/dsh-base',
+        version,
+        patchHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+      expect.objectContaining({
+        name: '@deepseek-ai/dsh-headless',
+        version,
+        patchHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
     ])
   })
 })
