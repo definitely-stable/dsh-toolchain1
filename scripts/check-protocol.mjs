@@ -1,6 +1,9 @@
+import { createRequire } from 'node:module'
 import { readFile } from 'node:fs/promises'
-import Ajv2020 from 'ajv/dist/2020.js'
-import addFormats from 'ajv-formats'
+
+const require = createRequire(import.meta.url)
+const Ajv2020 = require('ajv/dist/2020.js').default
+const addFormats = require('ajv-formats').default
 
 const root = new URL('../', import.meta.url)
 const schemaUrl = new URL('spec/schemas/v1/toolchain-protocol.schema.json', root)
