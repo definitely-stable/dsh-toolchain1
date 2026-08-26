@@ -54,39 +54,80 @@ async function fingerprint(facts: AcquiredTargetFacts): Promise<string> {
 describe('TargetSemanticProjectionV1', () => {
   it('is stable across paths, evidence locations and Toolchain observer version', async () => {
     const left = baseFacts()
-    const right = baseFacts()
-    right.evidence[0] = { ...right.evidence[0], location: 'C:\\Users\\test\\.dsh\\profiles\\web\\package.json' }
-    right.profile.dependencies[1] = { name: 'dsh-toolchain', version: '9.9.9' }
+    const rightBase = baseFacts()
+    const right: AcquiredTargetFacts = {
+      ...rightBase,
+      profile: {
+        ...rightBase.profile,
+        dependencies: rightBase.profile.dependencies.map(dependency =>
+          dependency.name === 'dsh-toolchain'
+            ? { ...dependency, version: '9.9.9' }
+            : dependency,
+        ),
+      },
+      evidence: rightBase.evidence.map(evidence => ({
+        ...evidence,
+        location: 'C:\\Users\\test\\.dsh\\profiles\\web\\package.json',
+      })),
+    }
 
     expect(createTargetSemanticProjectionV1(left)).toEqual(createTargetSemanticProjectionV1(right))
     expect(await fingerprint(left)).toBe(await fingerprint(right))
   })
 
   it('normalizes dependency declaration order but preserves bundle order', async () => {
-    const reorderedDependencies = baseFacts()
-    reorderedDependencies.profile.dependencies = [...reorderedDependencies.profile.dependencies].reverse()
+    const dependenciesBase = baseFacts()
+    const reorderedDependencies: AcquiredTargetFacts = {
+      ...dependenciesBase,
+      profile: {
+        ...dependenciesBase.profile,
+        dependencies: [...dependenciesBase.profile.dependencies].reverse(),
+      },
+    }
 
     expect(await fingerprint(baseFacts())).toBe(await fingerprint(reorderedDependencies))
 
-    const reorderedBundles = baseFacts()
-    reorderedBundles.profile.bundles = [...reorderedBundles.profile.bundles].reverse()
+    const bundlesBase = baseFacts()
+    const reorderedBundles: AcquiredTargetFacts = {
+      ...bundlesBase,
+      profile: {
+        ...bundlesBase.profile,
+        bundles: [...bundlesBase.profile.bundles].reverse(),
+      },
+    }
     expect(await fingerprint(baseFacts())).not.toBe(await fingerprint(reorderedBundles))
   })
 
   it('changes when compatibility-relevant target facts change', async () => {
     const baseline = await fingerprint(baseFacts())
+    const source = baseFacts()
 
-    const patchChanged = baseFacts()
-    patchChanged.profile.patchHash = 'c'.repeat(64)
-
-    const bundleChanged = baseFacts()
-    bundleChanged.profile.bundles[0] = { ...bundleChanged.profile.bundles[0], version: '0.1.1-rc.3' }
-
-    const dependencyChanged = baseFacts()
-    dependencyChanged.profile.dependencies[0] = { ...dependencyChanged.profile.dependencies[0], version: '2.1.0' }
-
-    const runtimeChanged = baseFacts()
-    runtimeChanged.runtime = { ...runtimeChanged.runtime, arch: 'arm64' }
+    const patchChanged: AcquiredTargetFacts = {
+      ...source,
+      profile: { ...source.profile, patchHash: 'c'.repeat(64) },
+    }
+    const bundleChanged: AcquiredTargetFacts = {
+      ...source,
+      profile: {
+        ...source.profile,
+        bundles: source.profile.bundles.map((bundle, index) =>
+          index === 0 ? { ...bundle, version: '0.1.1-rc.3' } : bundle,
+        ),
+      },
+    }
+    const dependencyChanged: AcquiredTargetFacts = {
+      ...source,
+      profile: {
+        ...source.profile,
+        dependencies: source.profile.dependencies.map((dependency, index) =>
+          index === 0 ? { ...dependency, version: '2.1.0' } : dependency,
+        ),
+      },
+    }
+    const runtimeChanged: AcquiredTargetFacts = {
+      ...source,
+      runtime: { ...source.runtime, arch: 'arm64' },
+    }
 
     for (const changed of [patchChanged, bundleChanged, dependencyChanged, runtimeChanged]) {
       expect(await fingerprint(changed)).not.toBe(baseline)
