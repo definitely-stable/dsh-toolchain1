@@ -35,10 +35,17 @@ export type ResolvedPackageIdentity = {
   readonly "version": string
 }
 
+export type ResolvedBundleIdentity = {
+  readonly "name": string
+  readonly "version": string
+  readonly "patchHash": string
+}
+
 export type TargetResolveRequest = {
   readonly "profile": string
   readonly "dshHome"?: string
   readonly "dshPackageRoot"?: string
+  readonly "patches"?: Array<string>
 }
 
 export type TargetSnapshot = {
@@ -55,9 +62,11 @@ export type TargetSnapshot = {
 }
   readonly "profile": {
   readonly "name": string
-  readonly "bundles": Array<ResolvedPackageIdentity>
+  readonly "bundles": Array<ResolvedBundleIdentity>
   readonly "dependencies": Array<ResolvedPackageIdentity>
-  readonly "patchHash": string
+  readonly "profilePatchHash": string
+  readonly "homePatchHash": string
+  readonly "overlayPatchHashes": Array<string>
 }
   readonly "supportStatus"?: "tested" | "supported" | "experimental" | "unsupported"
   readonly "evidence": Array<Evidence>
