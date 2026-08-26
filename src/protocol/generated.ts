@@ -30,22 +30,41 @@ export type Diagnostic = {
 } | null
 }
 
+export type ResolvedPackageIdentity = {
+  readonly "name": string
+  readonly "version": string
+}
+
+export type TargetResolveRequest = {
+  readonly "profile": string
+  readonly "dshHome"?: string
+  readonly "dshPackageRoot"?: string
+}
+
 export type TargetSnapshot = {
   readonly "fingerprint": string
   readonly "createdAt": string
   readonly "dsh": {
+  readonly "name": "@deepseek-ai/dsh"
   readonly "version": string
-  readonly "installKind"?: string
-  readonly "nodeVersion"?: string
-  readonly "platform"?: string
-  readonly "arch"?: string
+}
+  readonly "runtime": {
+  readonly "nodeVersion": string
+  readonly "platform": string
+  readonly "arch": string
 }
   readonly "profile": {
   readonly "name": string
-  readonly "bundles"?: Array<string>
+  readonly "bundles": Array<ResolvedPackageIdentity>
+  readonly "dependencies": Array<ResolvedPackageIdentity>
+  readonly "patchHash": string
 }
   readonly "supportStatus"?: "tested" | "supported" | "experimental" | "unsupported"
   readonly "evidence": Array<Evidence>
+}
+
+export type TargetResolveResult = {
+  readonly "snapshot": TargetSnapshot
 }
 
 export type Operation = {
@@ -81,6 +100,15 @@ export type ResponseEnvelope = {
   readonly "snapshotFingerprint"?: string
   readonly "status": "ok" | "failed" | "partial" | "stale" | "cancelled"
   readonly "data"?: unknown
+  readonly "diagnostics": Array<Diagnostic>
+}
+
+export type TargetResolveResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "snapshotFingerprint"?: string
+  readonly "status": "ok" | "failed" | "partial" | "stale" | "cancelled"
+  readonly "data"?: TargetResolveResult
   readonly "diagnostics": Array<Diagnostic>
 }
 
