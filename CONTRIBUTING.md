@@ -108,7 +108,7 @@ Match evidence to the changed boundary:
 
 Every production source file under `src/` must belong to a declared architecture layer. Do not introduce an implicit `shared`, `util`, JavaScript shim, path alias, or package self-reference to route around dependency rules. Adding a layer or allowed inter-layer edge is an architecture-policy change and requires explicit negative tests.
 
-Semantic-core third-party dependencies are deny-by-default. A new bare external import from `product`, `protocol`, `model`, or `kernel` is permitted only after an explicit architecture-policy allowlist change proves the dependency is runtime-neutral and adds negative coverage that prevents runtime/transport coupling.
+Semantic-core third-party dependencies are deny-by-default. A new bare external import from `product`, `protocol`, `model`, or `kernel` is permitted only after an explicit architecture-policy allowlist change proves the dependency is runtime-neutral and adds negative coverage that prevents runtime/transport coupling. Semantic code also does not directly use the high-signal runtime globals `process`, `Buffer`, or `fetch`; filesystem/network/runtime access belongs behind declared boundary ports. This fitness gate targets ordinary architecture regressions, not adversarial code or an exhaustive security proof.
 
 Repository policy scripts are part of the merge safety boundary. They are linted and statically checked separately from production TypeScript; do not weaken or exclude a policy script merely to make CI green.
 
