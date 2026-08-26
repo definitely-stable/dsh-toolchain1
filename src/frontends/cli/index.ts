@@ -3,14 +3,12 @@ import { parseArgs } from 'node:util'
 
 import { createDshFilesystemTargetAcquisition } from '../../acquisition/dsh-filesystem.js'
 import { createNodeSha256Port } from '../../acquisition/node-sha256.js'
-import { createApplicationKernel, type ApplicationKernel } from '../../kernel/index.js'
-import { TargetAcquisitionError } from '../../model/target.js'
 import {
-  TOOLCHAIN_PROTOCOL_VERSION,
-  type TargetResolveFailureResponse,
-  type TargetResolveRequest,
-  type TargetResolveSuccessResponse,
-} from '../../protocol/index.js'
+  createApplicationKernel,
+  resolveTargetResponse,
+  type ApplicationKernel,
+} from '../../kernel/index.js'
+import type { TargetResolveRequest } from '../../protocol/index.js'
 
 export interface CliWriter {
   write(value: string): unknown
@@ -159,36 +157,9 @@ export async function runCli(
 
     const requestId = (dependencies.requestId ?? randomUUID)()
     const kernel = dependencies.kernel ?? createNodeKernel()
-    try {
-      const data = await kernel.resolveTarget(request)
-      const response: TargetResolveSuccessResponse = {
-        protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
-        requestId,
-        snapshotFingerprint: data.snapshot.fingerprint,
-        status: 'ok',
-        data,
-        diagnostics: [],
-      }
-      writeJson(io, response)
-      return 0
-    } catch (error) {
-      if (!(error instanceof TargetAcquisitionError)) throw error
-
-      const response: TargetResolveFailureResponse = {
-        protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
-        requestId,
-        status: 'failed',
-        diagnostics: [{
-          code: error.code,
-          severity: 'error',
-          domain: 'target',
-          summary: error.message,
-          ...(error.locations.length === 0 ? {} : { locations: [...error.locations] }),
-        }],
-      }
-      writeJson(io, response)
-      return 1
-    }
+    const response = await resolveTargetResponse(kernel, request, requestId)
+    writeJson(io, response)
+    return response.status === 'ok' ? 0 : 1
   }
 
   const command = parsed.positionals.join(' ') || ''
