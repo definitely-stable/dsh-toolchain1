@@ -32,12 +32,10 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-interface ContextWithTools extends Context {
-  readonly tools: DshToolRegistryPort
-}
-
-function hasTools(ctx: Context): ctx is ContextWithTools {
-  return ctx.get('tools') !== undefined
+function toolsFromContext(ctx: Context): DshToolRegistryPort {
+  const tools = (ctx as unknown as { readonly tools?: DshToolRegistryPort }).tools
+  if (tools === undefined) throw new Error('Cordis injected tools capability is unavailable')
+  return tools
 }
 
 export class ToolchainService extends Service {
@@ -47,8 +45,7 @@ export class ToolchainService extends Service {
     super(ctx, 'toolchain')
 
     ctx.inject(['tools'], (toolCtx) => {
-      if (!hasTools(toolCtx)) throw new Error('Cordis injected tools capability is unavailable')
-      return toolCtx.tools.register(createTargetResolveToolDefinition(
+      return toolsFromContext(toolCtx).register(createTargetResolveToolDefinition(
         request => toolCtx.toolchain.resolveTarget(request),
       ))
     })
