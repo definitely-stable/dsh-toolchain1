@@ -6,7 +6,7 @@ The private `definitely-stable/dsh-toolchain1` repository is an engineering incu
 
 ## Why a new repository
 
-The public project should begin with the reviewed product tree rather than exposing incubator-only plans, discarded experiments, temporary branches, review scaffolding, or private operational history. We do not rewrite the incubator history and pretend it was public development; we create a new repository from the approved source state.
+The public project should begin with the reviewed product tree rather than exposing incubator-only plans, discarded experiments, temporary branches, review scaffolding, or private operational history. We do not rewrite the incubator history and pretend it was public development; we create a new repository from approved source states.
 
 ## GitHub name
 
@@ -28,7 +28,7 @@ npm unscoped names are globally unique. A search result or absent npm package pa
 
 ## Public tree inclusion policy
 
-The initial public snapshot SHOULD include everything required to understand, build, test, verify, and contribute to the released project:
+The public history SHOULD introduce everything required to understand, build, test, verify, and contribute to the released project:
 
 - source code and package manifests;
 - normative `spec/` documents, schemas, examples, and generators;
@@ -41,7 +41,7 @@ The initial public snapshot SHOULD include everything required to understand, bu
 
 ## Incubator-only material
 
-The first public snapshot SHOULD exclude material that is useful only for private incubation or that exposes no current product contract:
+The public history SHOULD exclude material that is useful only for private incubation or that exposes no current product contract:
 
 - `docs/plans/` implementation scratch/plans once their work is complete;
 - `docs/internal/` operational notes unless a document has continuing public value;
@@ -69,19 +69,31 @@ Before creating the public repository:
 - the package can be built and verified from the exact public tree without private dependencies;
 - the initial public version/release channel is decided.
 
-## Initial history
+## Curated initial history
 
-Create the public repository with a single curated baseline commit representing the reviewed public source state, for example:
+The public repository starts with a **small, intentional sequence of meaningful commits**, not the incubator commit graph and not one giant synthetic snapshot. Each commit should represent a coherent layer that can be understood, reviewed, reverted, and bisected on its own.
+
+The exact split follows the final approved tree, but the intended shape is approximately:
 
 ```text
-chore: establish DSH Toolchain public baseline
+docs(architecture): establish DSH Toolchain architecture and protocol
+chore(governance): establish contribution and security policy
+build(foundation): establish reproducible package and CI foundation
+feat(core): add shared Toolchain application kernel
+feat(dsh): add installable DSH bundle and ToolchainService
+feat(cli): add Toolchain CLI surface
+feat(mcp): add Toolchain MCP surface
 ```
 
-Subsequent public development follows normal PR + squash history. Do not transplant the private branch/commit graph merely for artificial continuity.
+Tests, schemas, generated outputs, and documentation that make one logical change complete travel with that same commit; they are not split into ceremonial “tests later” or “docs later” commits.
+
+The curated history MUST be reconstructed from approved source states rather than cherry-picking the private branch graph wholesale. Incubator-only intermediate fixes, abandoned approaches, temporary workflow bootstrap commits, review scaffolding, and private plans do not cross the boundary.
+
+After the curated initial history is built, ordinary public development follows PR + squash policy from `CONTRIBUTING.md`.
 
 ## Post-creation setup
 
-After the first public baseline CI succeeds:
+After the curated public history CI succeeds:
 
 1. enable branch ruleset/required checks;
 2. enable Dependabot alerts/security updates and scheduled version updates;
