@@ -1,0 +1,22 @@
+{
+  "protocolVersion": "1",
+  "requestId": "req-example-verify",
+  "snapshotFingerprint": "sha256:0123456789abcdef",
+  "status": "ok",
+  "data": {
+    "status": "verified",
+    "artifactFingerprint": "sha256:fedcba9876543210",
+    "targetFingerprint": "sha256:0123456789abcdef",
+    "executionPolicy": "safe",
+    "checks": [
+      {"id": "package", "status": "passed"},
+      {"id": "install", "status": "passed"},
+      {"id": "compose", "status": "passed"},
+      {"id": "boot", "status": "passed"},
+      {"id": "visibility", "status": "passed"}
+    ],
+    "diagnostics": [],
+    "cleanup": "succeeded"
+  },
+  "diagnostics": []
+}
