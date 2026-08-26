@@ -1,6 +1,12 @@
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const smokeModule = await import('../../scripts/smoke-dsh-package.mjs') as Record<string, unknown>
+const smokeSource = await readFile(
+  fileURLToPath(new URL('../../scripts/smoke-dsh-package.mjs', import.meta.url)),
+  'utf8',
+)
 
 describe('DSH package smoke policy', () => {
   it('covers both minimal and canonical web profiles', () => {
@@ -40,5 +46,15 @@ describe('DSH package smoke policy', () => {
 - id: toolchain
   name: dsh-toolchain/dsh
 `)).toThrow(/dsh-toolchain row/)
+  })
+
+  it('requires an actual DSH boot probe that observes the packaged toolchain service and exits through the launcher', () => {
+    expect(smokeModule.DSH_BOOT_PROBE_PROFILE).toBe('toolchain-smoke')
+    expect(typeof smokeModule.createBootProbePackage).toBe('function')
+    expect(typeof smokeModule.assertBootProbeOutput).toBe('function')
+
+    expect(smokeSource).toContain('ctx.toolchain.describe()')
+    expect(smokeSource).toContain("ctx.get('appExit')")
+    expect(smokeSource).toContain("'exec', 'dsh', '--profile', DSH_BOOT_PROBE_PROFILE")
   })
 })
