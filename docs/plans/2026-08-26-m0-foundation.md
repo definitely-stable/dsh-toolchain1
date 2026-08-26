@@ -4,7 +4,7 @@
 
 **Goal:** Build the smallest installable DSH Toolchain bundle that proves the architecture baseline is executable: one DSH-independent kernel, one protocol source, native DSH service, CLI/MCP faces, package artifact smoke, and CI-enforced dependency/contracts policy.
 
-**Architecture:** The root npm package is the future `dsh-toolchain` distribution. `src/kernel` and `src/protocol` are DSH-independent; adapters under `src/integrations` and `src/frontends` depend inward. The DSH bundle contributes one Host plugin through `cordis.patch.yml`. M0 exposes no fake target/contract/verification capability: those arrive in M1+. M0 deliberately uses plain TypeScript/NodeNext emission rather than a bundler: this preserves host peer identity, keeps package entry points transparent, and avoids build complexity that has no current requirement.
+**Architecture:** The root npm package is the future `dsh-toolchain` distribution. `src/product`, `src/kernel`, future `src/model`, and `src/protocol` form a runtime-neutral semantic core; adapters under `src/integrations` and `src/frontends` depend inward. The DSH bundle contributes one Host plugin through `cordis.patch.yml`. M0 exposes no fake target/contract/verification capability: those arrive in M1+. M0 deliberately uses plain TypeScript/NodeNext emission rather than a bundler: this preserves host peer identity, keeps package entry points transparent, and avoids build complexity that has no current requirement.
 
 **Tech Stack:** Node `^22.19.0 || >=24`, pnpm `11.7.0`, TypeScript `6.0.3`, Vitest `4.1.8`, oxlint `1.76.0`, AJV 2020-12, `@deepseek-ai/cordis` `^4.0.1`, MCP TypeScript SDK v2 (`@modelcontextprotocol/server` `^2.0.0`).
 
@@ -15,12 +15,15 @@
 - Current private package version is `0.0.0`; package is `private: true` so the incubator cannot publish accidentally.
 - Package identity is already `dsh-toolchain`; the public repository later removes only incubator-specific publication guards, not product naming.
 - DSH/Cordis host runtime APIs are peer + dev dependencies, never nested runtime copies.
-- `src/kernel/**`, `src/model/**` and `src/protocol/**` may not import `@deepseek-ai/*`, Node filesystem/process/network modules, CLI/MCP/Web adapters, or verification execution code.
+- `src/product.ts`, `src/kernel/**`, `src/model/**`, and `src/protocol/**` may not import Node built-ins, `@deepseek-ai/*`, CLI/MCP/Web adapters, DSH integrations, or verification execution code.
+- Browser/client source may not import Node built-ins or concrete Host implementations.
+- Architecture checks cover `.ts`, `.tsx`, `.mts`, and `.cts` source and must reject package self-references that bypass dependency direction.
 - CLI, MCP and DSH Host construct/use the same application kernel.
 - M0 does not implement `target.resolve`, `contract.search`, `plugin.validate`, or `plugin.verify`; no placeholder operation may pretend otherwise.
 - MCP uses v2 and `serveStdio`, which negotiates the 2026-07-28 protocol revision rather than the legacy direct `StdioServerTransport` bootstrap.
 - Bundle shape follows current DSH: `package.json#dsh.bundle.patch` -> `cordis.patch.yml` -> package export `dsh-toolchain/dsh`.
-- CI release/package smoke inspects the exact `pnpm pack` tarball before installing it into a clean temporary DSH profile.
+- DSH installation is profile-scoped: `dsh plugin --profile <profile> add <package>`.
+- CI inspects the exact `pnpm pack` tarball, validates entrypoints from the packed manifest, installs that tarball in a throwaway Node consumer, then installs the same tarball into a clean temporary DSH profile.
 - Add a bundler later only if a measured/publication requirement cannot be satisfied by transparent NodeNext ESM output.
 
 ---
@@ -70,7 +73,7 @@ TDD sequence:
 1. RED: descriptor test imports missing kernel.
 2. GREEN: minimal immutable descriptor (`product`, `version`, `protocolVersion`).
 3. RED: mutation/fresh-instance tests prove descriptor cannot be mutated/shared accidentally.
-4. GREEN/refactor: freeze descriptor and keep all IO outside kernel.
+4. GREEN/refactor: freeze descriptor and keep all runtime/IO dependencies outside the semantic core.
 
 Acceptance:
 - kernel has no Node/DSH/MCP imports;
@@ -114,7 +117,7 @@ Acceptance:
 
 ## Task 6 — MCP v2 stdio face
 
-**Files:** create `src/frontends/mcp/server.ts`, `src/frontends/mcp/bin.ts`, `tests/mcp/server.spec.ts`.
+**Files:** create `src/frontends/mcp/index.ts`, `src/frontends/mcp/bin.ts`, `tests/mcp/server.spec.ts`.
 
 **Produces:** MCP v2 server factory and stdio launcher with no fake Toolchain tools yet.
 
@@ -137,31 +140,36 @@ Acceptance:
 **Produces:** CI-failing architecture fitness gates.
 
 TDD sequence:
-1. RED with fixture containing forbidden import.
-2. GREEN scanner reports exact file/import/rule.
+1. RED with fixtures covering `node:` and bare builtins, `src/model`, TSX source, Host imports, and package self-reference bypasses.
+2. GREEN scanner reports exact file/import/rule and uses Node's builtin classification rather than a hand-maintained incomplete list.
 3. RED with package fixture nesting `@deepseek-ai/cordis` in dependencies.
 4. GREEN package policy rejects identity-sensitive host packages outside peer+dev.
 
 Acceptance:
-- pure kernel/protocol cannot import Node IO/process/network or `@deepseek-ai/*`;
-- browser/client face cannot import Node-only modules or Host implementation (rule reserved even before Web exists);
+- semantic core cannot import any Node builtin or `@deepseek-ai/*` runtime package;
+- pure layers cannot import outward adapters by relative path or `dsh-toolchain/*` self-reference;
+- browser/client code cannot import Node builtins or concrete Host implementation;
+- scanner covers `.ts`, `.tsx`, `.mts`, and `.cts` source;
 - DSH/MCP/CLI may import kernel; reverse direction fails;
 - framework dependency rule fails loud with actionable diagnostics.
 
 ## Task 8 — CI, dependency automation, and exact-artifact smoke
 
-**Files:** create `.github/workflows/ci.yml`, `.github/dependabot.yml`, `scripts/check-pack.mjs`, tests for pack-file policy.
+**Files:** create `.github/workflows/ci.yml`, `.github/dependabot.yml`, `scripts/check-pack.mjs`, `scripts/smoke-installed-package.mjs`, tests for pack-file/manifest policy.
 
-**Produces:** least-privilege CI and future dependency automation attached to real manifests/workflows.
+**Produces:** least-privilege CI and dependency automation attached to real manifests/workflows.
 
 Acceptance:
 - workflow permissions default to `contents: read`;
 - third-party actions are pinned to reviewed full SHAs;
-- primary lane: Ubuntu + Node 24;
-- Node compatibility lane: 22.19 + 24;
+- workflow runs for pull requests, pushes to `main`, and manual dispatch; durable config contains no feature-branch trigger;
+- primary lane: Ubuntu + Node 24.19;
+- Node compatibility lanes: 22.19, 24.19, and current Node 26 major;
 - Windows/macOS run only boundary-sensitive smoke, not duplicate all pure tests;
 - `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm build`, `pnpm pack` run before composition smoke;
-- pack checker proves required exports/bin/patch/lib files are inside tarball and source/private plans are not accidentally shipped;
+- structural pack policy rejects source/private residue;
+- checker reads `package/package.json` from the `.tgz` and verifies concrete `main`, `types`, `exports`, `bin`, and `dsh.bundle.patch` targets actually exist and cannot escape the package;
+- throwaway consumer installs the exact `.tgz`, resolves `dsh-toolchain`, `dsh-toolchain/protocol`, `dsh-toolchain/dsh`, and executes the installed CLI;
 - Dependabot groups npm and Actions updates weekly with conservative PR limits.
 
 ## Task 9 — Real DSH composition smoke
@@ -171,7 +179,7 @@ Acceptance:
 **Produces:** proof that the packed artifact is recognized as a current DSH bundle and can compose in a clean profile.
 
 Acceptance:
-- CI uses current pinned/tested `@deepseek-ai/dsh` train (`0.1.1-rc.2` at plan creation) rather than an unbounded `latest` during a run;
+- CI uses current pinned/tested `@deepseek-ai/dsh` train (`0.1.1-rc.2` at plan creation) rather than an unbounded `latest` during a blocking run;
 - create temporary `DSH_HOME`;
 - install exact generated tarball via `dsh plugin --profile toolchain-smoke add <tarball>`;
 - assert profile manifest lists `dsh-toolchain` as a bundle;
@@ -182,8 +190,8 @@ Acceptance:
 ## M0 completion review
 
 Before claiming M0 complete:
-- run `pnpm check`, build, pack, and package inspection on supported local/CI Node;
-- require GitHub CI green on the PR head;
+- run `pnpm check`, build, pack, packed-manifest inspection, installed-consumer smoke, and DSH composition smoke in CI;
+- require GitHub CI green on the PR head across Node 22.19/24.19/26 and platform boundary lanes;
 - inspect the PR diff for architecture direction, generated ownership, package contents and accidental scope creep;
 - confirm no M1+ capability is advertised without implementation;
 - record current upstream DSH/MCP versions used by the smoke in the PR evidence.
