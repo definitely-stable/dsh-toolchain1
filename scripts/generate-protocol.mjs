@@ -33,22 +33,35 @@ const supportedKeywords = new Set([
   'uniqueItems',
 ])
 
-function assertSupportedVocabulary(value, path = '#') {
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => assertSupportedVocabulary(item, `${path}/${index}`))
-    return
+function assertSchemaNode(node, path = '#') {
+  if (typeof node === 'boolean') return
+  if (node === null || typeof node !== 'object' || Array.isArray(node)) {
+    throw new Error(`Expected JSON Schema object/boolean at ${path}`)
   }
 
-  if (value === null || typeof value !== 'object') return
-
-  for (const [key, nested] of Object.entries(value)) {
+  for (const key of Object.keys(node)) {
     if (!supportedKeywords.has(key)) {
       throw new Error(
         `Protocol type generator does not support JSON Schema keyword ${key} at ${path}. ` +
           'Extend the generator with tests before using this keyword.',
       )
     }
-    assertSupportedVocabulary(nested, `${path}/${key}`)
+  }
+
+  for (const [name, child] of Object.entries(node.$defs ?? {})) {
+    assertSchemaNode(child, `${path}/$defs/${name}`)
+  }
+
+  for (const [name, child] of Object.entries(node.properties ?? {})) {
+    assertSchemaNode(child, `${path}/properties/${name}`)
+  }
+
+  if (node.items !== undefined) {
+    assertSchemaNode(node.items, `${path}/items`)
+  }
+
+  if (node.additionalProperties && typeof node.additionalProperties === 'object') {
+    assertSchemaNode(node.additionalProperties, `${path}/additionalProperties`)
   }
 }
 
@@ -127,7 +140,7 @@ function emitDefinition(name, node) {
   return `export type ${typeName} = ${typeExpression(node, `#/$defs/${name}`)}`
 }
 
-assertSupportedVocabulary(schema)
+assertSchemaNode(schema)
 
 const definitions = Object.entries(schema.$defs ?? {}).map(([name, node]) => emitDefinition(name, node))
 const rootType = typeExpression(schema, '#')
