@@ -70,7 +70,7 @@ Defaults at the Node acquisition boundary:
 - `dshHome`: current DSH home resolution (`DSH_HOME` when set, otherwise the platform default used by DSH);
 - `dshPackageRoot`: resolve the installed `@deepseek-ai/dsh` package from the execution environment, or require an explicit override when it cannot be resolved safely.
 
-The kernel receives the request plus an acquisition port. It does not read environment variables, paths, package files, or `process` directly.
+The kernel receives the request plus acquisition/digest ports. It does not read environment variables, paths, package files, `process`, or Node crypto directly.
 
 ## DSH acquisition model
 
@@ -123,10 +123,12 @@ Rules:
 
 - bundle order is preserved because DSH applies bundle patches in order;
 - profile dependencies are sorted by package name because object declaration order is not semantic;
-- `patchHash` is SHA-256 of the exact profile patch bytes, normalized only for text decoding; the path is excluded;
+- `dsh-toolchain` itself is excluded from semantic profile dependencies so changing the observer version does not rename the target; it remains captured as evidence;
+- `patchHash` is SHA-256 of the exact profile patch bytes; the path is excluded;
+- exact patch bytes are deliberately conservative in v1: comment/format-only edits may change the fingerprint rather than risk false semantic sameness from an incomplete YAML/`!!js` normalizer;
 - DSH/package versions are exact resolved versions, not declared ranges;
 - Node version, platform, and architecture are included because native/runtime behavior can differ across them;
-- timestamps, usernames, absolute paths, `DSH_HOME`, temporary paths, evidence locations, and secrets are excluded.
+- timestamps, usernames, absolute paths, `DSH_HOME`, temporary paths, evidence locations, Toolchain's own package version/path, and secrets are excluded.
 
 Canonical serialization is deterministic JSON with recursively sorted object keys. Arrays retain their defined semantic order. The fingerprint is:
 
@@ -148,7 +150,7 @@ Evidence for the first provider includes at minimum:
 - profile manifest;
 - profile patch;
 - each resolved bundle manifest;
-- resolved top-level profile dependency manifests.
+- resolved top-level profile dependency manifests, including Toolchain itself when installed.
 
 Evidence records use content hashes so later freshness checks can reacquire the same inputs without relying on timestamps.
 
@@ -176,6 +178,10 @@ interface TargetAcquisitionPort {
   acquire(request: TargetResolveRequest): Promise<AcquiredTarget>
 }
 
+interface Sha256Port {
+  sha256Utf8(value: string): Promise<string>
+}
+
 interface ApplicationKernel {
   describe(): KernelDescriptor
   resolveTarget(request: TargetResolveRequest): Promise<TargetResolveResult>
@@ -183,10 +189,12 @@ interface ApplicationKernel {
 
 function createApplicationKernel(options: {
   targetAcquisition: TargetAcquisitionPort
+  digest: Sha256Port
+  now?: () => string
 }): ApplicationKernel
 ```
 
-The acquisition port returns normalized acquisition facts plus evidence inputs; the kernel performs semantic normalization/fingerprinting without Node/DSH IO.
+The acquisition port returns normalized acquisition facts plus evidence inputs; the kernel/model performs semantic normalization/fingerprinting without Node/DSH IO. Node implementations of SHA-256 live in the acquisition/runtime boundary; a future browser projection can provide WebCrypto without changing target semantics.
 
 The factory remains internal package API during M1. Frontends inside the same package compose the correct provider.
 
@@ -205,6 +213,7 @@ Machine output is versioned JSON. Human rendering may follow after the machine c
 Fixtures cover at least:
 
 - identical semantic target under two different absolute homes → same fingerprint;
+- Toolchain observer version/path change only → same fingerprint;
 - bundle-order change → different fingerprint;
 - profile patch change → different fingerprint;
 - resolved bundle version change → different fingerprint;
@@ -225,7 +234,7 @@ A non-blocking `latest` DSH canary and a real MCP child-process negotiation test
 M1's first slice is successful when a coding agent or CI can ask Toolchain for a target and receive a reproducible identity that:
 
 - changes for compatibility-relevant fixture changes;
-- stays stable across irrelevant machine/path changes;
+- stays stable across irrelevant machine/path/observer changes;
 - is backed by explicit evidence;
 - is produced without mutating the DSH profile;
 - is independent of CLI/MCP/DSH transport semantics.
