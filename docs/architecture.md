@@ -48,7 +48,7 @@ DSH Host / DSH Client / MCP / CLI
        semantic Toolchain model
 ```
 
-The kernel never imports DSH runtime APIs. The semantic core (`product`, `kernel`, `model`, and `protocol`) is runtime-neutral and MUST NOT depend on Node built-in modules or transport/runtime packages. Bare third-party imports from semantic layers are deny-by-default; a future pure dependency is an explicit architecture-policy decision with an allowlist entry and negative tests. Node/DSH/process/filesystem concerns belong at acquisition, verification, integration, and frontend boundaries.
+The kernel never imports DSH runtime APIs. The semantic core (`product`, `kernel`, `model`, and `protocol`) is runtime-neutral and MUST NOT depend on Node built-in modules or transport/runtime packages. Bare third-party imports from semantic layers are deny-by-default; a future pure dependency is an explicit architecture-policy decision with an allowlist entry and negative tests. Direct high-signal runtime globals such as `process`, `Buffer`, and `fetch` are also excluded from semantic code so environment, binary/runtime, and network access enter through declared boundaries. Node/DSH/process/filesystem/network concerns belong at acquisition, verification, integration, and frontend boundaries.
 
 The source tree uses a closed-world layer model: every production file under `src/` MUST belong to a declared architecture layer. Creating an unclassified `src/shared`, `src/util`, or similar escape hatch is an architecture violation until its intended role and dependency edges are explicitly added. Production JavaScript source under `src/` is forbidden in the current TypeScript codebase; repository-only `.mjs` policy/build scripts live outside that product boundary.
 
@@ -203,11 +203,11 @@ The gate additionally:
 - recognizes both `node:*` and bare Node built-in module specifiers;
 - rejects DSH runtime packages and package self-references from semantic layers;
 - rejects arbitrary bare third-party imports from semantic layers unless the architecture policy explicitly allowlists a proven runtime-neutral dependency;
-- rejects direct `process` use, `require()` and non-literal dynamic `import()` from semantic layers;
+- rejects direct semantic use of `process`, `Buffer`, and `fetch`, plus `require()` and non-literal dynamic `import()`;
 - rejects Node built-ins and concrete DSH Host dependencies from browser/client code;
 - scans TS, TSX, MTS and CTS product forms and fails loud for unclassified additions.
 
-Repository policy scripts are separately linted and statically checked with JavaScript `checkJs`; they are not treated as production semantic code.
+The fitness checker protects ordinary architecture direction; it is not a malicious-code sandbox or an exhaustive proof against deliberately obfuscated runtime access. Repository policy scripts are separately linted and statically checked with JavaScript `checkJs`; they are not treated as production semantic code.
 
 ## References that informed the baseline
 
