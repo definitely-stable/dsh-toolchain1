@@ -19,14 +19,9 @@ const allowedInternalDependencies = new Map([
   ['protocol', new Set(['protocol'])],
   ['model', new Set(['model', 'product', 'protocol'])],
   ['kernel', new Set(['kernel', 'model', 'product', 'protocol'])],
-  // Acquisition and verification are reserved runtime boundaries. Their
-  // concrete dependency shape stays deliberately narrow until M1/M4 ports are
-  // designed; adding a new edge requires an explicit policy change.
   ['acquisition', new Set(['acquisition', 'model', 'product', 'protocol'])],
   ['verification', new Set(['verification', 'model', 'product', 'protocol'])],
   ['dsh', new Set(['dsh', 'kernel', 'model', 'product', 'protocol'])],
-  // `dsh-toolchain mcp` is a CLI handoff to the MCP adapter, not duplicated
-  // business logic, so this one adapter-to-adapter edge is intentional.
   ['cli', new Set(['cli', 'mcp', 'kernel', 'model', 'product', 'protocol'])],
   ['mcp', new Set(['mcp', 'kernel', 'model', 'product', 'protocol'])],
   ['web', new Set(['web', 'model', 'product', 'protocol'])],
@@ -98,13 +93,17 @@ function isIdentifierReference(node) {
   return true
 }
 
+function scriptKindForFile(file) {
+  return file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+}
+
 function collectSourceFacts(source, file) {
   const sourceFile = ts.createSourceFile(
     file,
     source,
     ts.ScriptTarget.Latest,
     true,
-    ts.getScriptKindFromFileName(file),
+    scriptKindForFile(file),
   )
   const moduleSpecifiers = []
   const nodeGlobals = new Set()
@@ -175,12 +174,8 @@ export function checkSourceImportPolicy(files) {
     const facts = collectSourceFacts(entry.source, file)
 
     if (semanticLayers.has(layer)) {
-      for (const symbol of facts.nodeGlobals) {
-        violations.push({ file, symbol, rule: 'semantic-node-global' })
-      }
-      for (const symbol of facts.dynamicLoaders) {
-        violations.push({ file, symbol, rule: 'semantic-dynamic-loader' })
-      }
+      for (const symbol of facts.nodeGlobals) violations.push({ file, symbol, rule: 'semantic-node-global' })
+      for (const symbol of facts.dynamicLoaders) violations.push({ file, symbol, rule: 'semantic-dynamic-loader' })
     }
 
     for (const specifier of facts.moduleSpecifiers) {
@@ -221,7 +216,7 @@ async function collectArchitectureFiles(directory, prefix = '') {
   const entries = await readdir(directory, { withFileTypes: true })
   const files = []
 
-  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name))) {
     const absolute = path.join(directory, entry.name)
     const relative = normalizePath(path.posix.join(prefix, entry.name))
     if (entry.isDirectory()) {
