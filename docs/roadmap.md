@@ -4,22 +4,27 @@ The roadmap is capability-gated, not date-gated. GitHub Issues track implementat
 
 ## M0 — Architecture and Contract Foundation
 
-**Goal:** make the design executable enough that implementation cannot silently redefine the product.
+**Goal:** make the design executable enough that implementation cannot silently redefine the product, while proving the canonical distribution really is a DSH bundle.
 
 Capabilities:
 - Toolchain Protocol v1 baseline, schemas, and examples;
 - architecture/security/verification specifications and ADRs;
-- TypeScript workspace and schema/type generation;
+- one-package TypeScript workspace with explicit kernel/DSH Host/CLI/MCP build faces;
+- installable DSH bundle skeleton and `ToolchainService` capability boundary;
+- CLI/MCP entrypoint skeletons that route through the same application layer;
+- schema/type generation;
 - architecture dependency fitness checks;
 - contract/schema conformance CI.
 
 Exit criteria:
 - no unresolved normative placeholders;
 - every example validates against Protocol v1 schemas;
+- the package can be installed by DSH as the canonical product shell without requiring a daemon;
+- DSH Host, CLI, and MCP build faces depend on the kernel and not vice versa;
 - schema/generated-type freshness is CI-enforced;
 - prohibited dependency directions fail CI.
 
-Non-goals: DSH contract search, runtime verification, GUI.
+Non-goals: DSH contract search, candidate runtime verification, DSH Web UI.
 
 ## M1 — Target Intelligence
 
