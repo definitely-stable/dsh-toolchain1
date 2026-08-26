@@ -2,8 +2,11 @@ import type {
   Evidence,
   ResolvedBundleIdentity,
   ResolvedPackageIdentity,
+  TargetResolveFailureResponse,
   TargetResolveRequest,
+  TargetResolveResponse,
   TargetResolveResult,
+  TargetResolveSuccessResponse,
   TargetSnapshot,
 } from '../protocol/index.js'
 import { TOOLCHAIN_PROTOCOL_VERSION } from '../protocol/index.js'
@@ -12,6 +15,7 @@ import type { Sha256Port } from '../model/digest.js'
 import {
   createTargetSemanticProjectionV2,
   fingerprintTarget,
+  TargetAcquisitionError,
   type AcquiredTargetFacts,
   type TargetAcquisitionPort,
   type TargetSemanticProjectionV2,
@@ -87,6 +91,46 @@ function createSnapshot(
     ...(facts.supportStatus === undefined ? {} : { supportStatus: facts.supportStatus }),
     evidence,
   })
+}
+
+/**
+ * Execute `target.resolve` and project expected acquisition failures into the
+ * shared Protocol response. Frontends own correlation ids and transport
+ * rendering only; unexpected infrastructure failures remain exceptions.
+ */
+export async function resolveTargetResponse(
+  kernel: ApplicationKernel,
+  request: TargetResolveRequest,
+  requestId: string,
+): Promise<TargetResolveResponse> {
+  try {
+    const data = await kernel.resolveTarget(request)
+    const response: TargetResolveSuccessResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      snapshotFingerprint: data.snapshot.fingerprint,
+      status: 'ok',
+      data,
+      diagnostics: [],
+    }
+    return response
+  } catch (error) {
+    if (!(error instanceof TargetAcquisitionError)) throw error
+
+    const response: TargetResolveFailureResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'failed',
+      diagnostics: [{
+        code: error.code,
+        severity: 'error',
+        domain: 'target',
+        summary: error.message,
+        ...(error.locations.length === 0 ? {} : { locations: [...error.locations] }),
+      }],
+    }
+    return response
+  }
 }
 
 export function createApplicationKernel(options: ApplicationKernelOptions): ApplicationKernel {
