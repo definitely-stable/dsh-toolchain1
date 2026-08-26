@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, realpath } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -135,9 +135,28 @@ function bundleIdentity(manifest: ManifestRecord, expectedName: string): Resolve
   return identity
 }
 
-function packageManifestCandidates(packageName: string, anchor: string): string[] {
-  const lookupPaths = createRequire(anchor).resolve.paths(packageName) ?? []
-  return lookupPaths.map(directory => path.join(directory, packageName, 'package.json'))
+async function packageManifestCandidates(packageName: string, anchor: string): Promise<string[]> {
+  let canonicalAnchor: string
+  try {
+    canonicalAnchor = await realpath(anchor)
+  } catch (cause) {
+    throw acquisitionError(
+      'TARGET_EVIDENCE_READ_FAILED',
+      `Could not resolve target evidence path: ${anchor}`,
+      [anchor],
+      cause,
+    )
+  }
+
+  // pnpm exposes packages through symlinks. Node follows the real package path
+  // before resolving that package's own dependency graph, so inspection must
+  // consider both the observed anchor and its canonical target. Evidence keeps
+  // the observed path; canonicalization affects resolution only.
+  const resolutionAnchors = canonicalAnchor === anchor ? [anchor] : [anchor, canonicalAnchor]
+  return resolutionAnchors.flatMap(candidateAnchor => {
+    const lookupPaths = createRequire(candidateAnchor).resolve.paths(packageName) ?? []
+    return lookupPaths.map(directory => path.join(directory, packageName, 'package.json'))
+  })
 }
 
 async function findPackageManifest(
@@ -145,7 +164,10 @@ async function findPackageManifest(
   anchors: readonly string[],
   missingCode: 'TARGET_BUNDLE_NOT_FOUND' | 'TARGET_DEPENDENCY_NOT_FOUND' | 'TARGET_DSH_NOT_FOUND',
 ): Promise<ManifestRecord> {
-  const locations = [...new Set(anchors.flatMap(anchor => packageManifestCandidates(packageName, anchor)))]
+  const candidateGroups = await Promise.all(
+    anchors.map(anchor => packageManifestCandidates(packageName, anchor)),
+  )
+  const locations = [...new Set(candidateGroups.flat())]
   for (const location of locations) {
     try {
       return await readManifest(location)
