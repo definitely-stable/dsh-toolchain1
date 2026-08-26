@@ -30,9 +30,7 @@ Issues and plans MUST NOT silently redefine a normative contract.
 ## Architectural invariants
 
 - The canonical product distribution is one installable DSH Toolchain bundle.
-- DSH installation is profile-scoped; do not invent a pseudo-global Harness installation path.
 - The application/analysis kernel MUST NOT depend on DSH runtime APIs.
-- The semantic core (`product`, `kernel`, `model`, `protocol`) MUST NOT import Node built-in modules; runtime-specific concerns belong at explicit boundaries.
 - DSH integration depends on the kernel; the kernel never depends on DSH integration.
 - Analysis MUST operate on explicit immutable inputs and MUST NOT perform filesystem, network, package-manager, or subprocess IO.
 - DSH-specific acquisition is isolated behind evidence providers and normalizers.
@@ -44,17 +42,24 @@ Issues and plans MUST NOT silently redefine a normative contract.
 - Machine-readable diagnostic codes are compatibility contracts; human wording is not.
 - Progressive discovery is preferred to advertising the complete DSH contract catalog to a model.
 - Transport-specific names and DTOs MUST NOT become domain concepts.
+- The M0 package root exposes stable product/protocol identities only; the application-kernel factory remains internal until a real public programmatic contract is designed with M1 ports.
 
 ## Dependency fitness rules
 
-These rules are executable CI gates:
+These rules are executable CI gates, not advisory prose:
 
-- `product`, `kernel`, `model`, and `protocol` source may not import Node built-ins or `@deepseek-ai/*` runtime packages.
-- pure layers may not reach outward adapters through relative imports or package self-references.
-- browser/client source may not import Node built-ins or concrete Host implementations.
-- DSH Host/Client adapters may depend on public kernel/protocol contracts, never the reverse.
-- CLI, MCP, DSH tools, and Web handlers call application use cases.
-- verification code is the only normal path allowed to spawn untrusted candidate-plugin execution.
+- every production source file under `src/` MUST belong to a declared architecture layer; an unclassified directory is a failure, not an implicit shared zone;
+- production source under `src/` is TypeScript-family only; `.js`, `.jsx`, `.mjs`, and `.cjs` there are rejected;
+- `product`, `protocol`, `model`, and `kernel` may depend only through the declared runtime-neutral layer matrix and may not import Node built-ins or `@deepseek-ai/*` runtime packages;
+- semantic-core code may not directly use `process`, `require()`, or a non-literal dynamic `import()`;
+- browser/client code may not import Node built-ins or concrete DSH Host implementations;
+- DSH Host/Client adapters may depend on public kernel/protocol contracts, never the reverse;
+- CLI, MCP, DSH tools, and Web handlers call application use cases;
+- verification code is the only normal path allowed to spawn untrusted candidate-plugin execution;
+- identity-sensitive host packages are an explicit registry; they must be peer + dev dependencies, never nested runtime copies, and the tested dev version must satisfy the advertised peer range;
+- repository policy scripts are linted and statically checked separately from production source.
+
+Adding a new `src/` layer, a new allowed inter-layer edge, or a new host-identity package is an explicit architecture-policy change with negative tests. Do not bypass the policy with a generic `shared`, package self-reference, JavaScript shim, or path alias.
 
 ## Agent-specific prohibitions
 
