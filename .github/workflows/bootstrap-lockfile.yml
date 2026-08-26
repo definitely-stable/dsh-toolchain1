@@ -1,0 +1,39 @@
+name: Bootstrap lockfile
+
+on:
+  push:
+    branches:
+      - m0/foundation
+
+permissions:
+  contents: read
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+
+      - name: Activate pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.7.0 --activate
+          pnpm --version
+
+      - name: Generate lockfile without lifecycle scripts
+        run: pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
+
+      - name: Emit lockfile for incubator bootstrap
+        shell: bash
+        run: |
+          echo '===LOCKFILE_BEGIN==='
+          base64 -w 0 pnpm-lock.yaml
+          echo
+          echo '===LOCKFILE_END==='
