@@ -188,8 +188,8 @@ export function checkSourceImportPolicy(files) {
     const facts = collectSourceFacts(entry.source, file)
 
     if (semanticLayers.has(layer)) {
-      for (const symbol of facts.runtimeGlobals) violations.push({ file, symbol, rule: 'semantic-runtime-global')
-      for (const symbol of facts.dynamicLoaders) violations.push({ file, symbol, rule: 'semantic-dynamic-loader')
+      for (const symbol of facts.runtimeGlobals) violations.push({ file, symbol, rule: 'semantic-runtime-global' })
+      for (const symbol of facts.dynamicLoaders) violations.push({ file, symbol, rule: 'semantic-dynamic-loader' })
     }
 
     for (const specifier of facts.moduleSpecifiers) {
