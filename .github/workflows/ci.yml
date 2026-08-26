@@ -54,16 +54,16 @@ jobs:
       - name: Inspect packed tarball against its manifest
         run: node scripts/check-pack.mjs .artifacts/dsh-toolchain.tgz
 
-      - name: Smoke built public API and CLI
+      - name: Smoke built stable public API and CLI
         run: |
           node lib/frontends/cli/bin.js --version
           node lib/frontends/cli/bin.js --help > /dev/null
-          node --input-type=module -e "import('./lib/index.js').then(m => { const d = m.createApplicationKernel().describe(); if (d.product !== 'dsh-toolchain' || d.version !== '0.0.0') process.exit(1) })"
+          node --input-type=module -e "import('./lib/index.js').then(m => { if (m.TOOLCHAIN_PRODUCT !== 'dsh-toolchain' || m.TOOLCHAIN_VERSION !== '0.0.0' || m.TOOLCHAIN_PROTOCOL_VERSION !== '1' || 'createApplicationKernel' in m) process.exit(1) })"
 
       - name: Smoke installed package resolution
         run: node scripts/smoke-installed-package.mjs .artifacts/dsh-toolchain.tgz
 
-      - name: Compose exact tarball in clean DSH profile
+      - name: Compose exact tarball in minimal and Web DSH profiles
         env:
           NODE_OPTIONS: --max-old-space-size=4096
         run: node scripts/smoke-dsh-package.mjs .artifacts/dsh-toolchain.tgz
@@ -135,8 +135,8 @@ jobs:
       - name: Build platform boundary
         run: pnpm build
 
-      - name: Smoke built CLI and public API
+      - name: Smoke built CLI and stable public API
         shell: bash
         run: |
           node lib/frontends/cli/bin.js --version
-          node --input-type=module -e "import('./lib/index.js').then(m => { const d = m.createApplicationKernel().describe(); if (d.product !== 'dsh-toolchain') process.exit(1) })"
+          node --input-type=module -e "import('./lib/index.js').then(m => { if (m.TOOLCHAIN_PRODUCT !== 'dsh-toolchain' || 'createApplicationKernel' in m) process.exit(1) })"
