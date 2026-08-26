@@ -11,9 +11,9 @@ This split preserves native DSH adoption while making the same toolchain useful 
 ### Canonical user topology
 
 ```text
-dsh plugin add dsh-toolchain
-          |
-          v
+dsh plugin --profile <profile> add dsh-toolchain
+                    |
+                    v
 +--------------------- DSH Toolchain bundle ----------------------+
 |                                                                  |
 | DSH Host + native tools     DSH Web client     CLI      MCP      |
@@ -25,6 +25,8 @@ dsh plugin add dsh-toolchain
 |                 Evidence acquisition      Verifier worker        |
 +------------------------------------------------------------------+
 ```
+
+DSH plugin management is profile-scoped. A normal Web installation therefore uses `dsh plugin --profile web add dsh-toolchain`; other profiles use the same package through their own profile name. Toolchain does not invent a pseudo-global installation layer over Harness.
 
 The package ships one release train. Separate frontends are implementation faces of the same product, not independently versioned products.
 
@@ -46,7 +48,11 @@ DSH Host / DSH Client / MCP / CLI
        semantic Toolchain model
 ```
 
-The kernel never imports DSH runtime APIs. This is an application of the same capability boundary DSH uses for Cordis Services: consumers depend on a capability, not a concrete provider.
+The kernel never imports DSH runtime APIs. The semantic core (`product`, `kernel`, `model`, and `protocol`) is runtime-neutral and MUST NOT depend on Node built-in modules or transport/runtime packages. Bare third-party imports from semantic layers are deny-by-default; a future pure dependency is an explicit architecture-policy decision with an allowlist entry and negative tests. Direct high-signal runtime globals such as `process`, `Buffer`, and `fetch` are also excluded from semantic code so environment, binary/runtime, and network access enter through declared boundaries. Node/DSH/process/filesystem/network concerns belong at acquisition, verification, integration, and frontend boundaries.
+
+The source tree uses a closed-world layer model: every production file under `src/` MUST belong to a declared architecture layer. Creating an unclassified `src/shared`, `src/util`, or similar escape hatch is an architecture violation until its intended role and dependency edges are explicitly added. Production JavaScript source under `src/` is forbidden in the current TypeScript codebase; repository-only `.mjs` policy/build scripts live outside that product boundary.
+
+This is an application of the same capability boundary DSH uses for Cordis Services: consumers depend on a capability, not a concrete provider.
 
 ### Acquire, normalize, analyze
 
@@ -109,7 +115,9 @@ Owns transport-neutral use cases:
 - `operation.get`
 - `operation.cancel`
 
-The kernel defines no MCP, CLI, Typert, HTTP, Cordis, or React concepts.
+The kernel defines no MCP, CLI, Typert, HTTP, Cordis, React, Node-runtime, or filesystem/process concepts.
+
+The kernel is an internal package boundary in M0. Its factory is deliberately **not** part of the npm root contract while it only exposes a descriptor and before M1 defines the real acquisition/operation ports required by useful application calls. DSH, CLI, and MCP are build faces inside the same package and may depend directly on the internal kernel. A public programmatic kernel API is introduced only once its dependency shape is supported as an external contract.
 
 ### Semantic model and analysis
 
@@ -131,13 +139,13 @@ Candidate-plugin execution occurs out of the user's active DSH process and uses 
 
 ### DSH Host
 
-Provides a Cordis `toolchain` capability (`ctx.toolchain`) backed by the same application kernel. It also projects a deliberately small set of model-facing native DSH tools.
+Provides a Cordis `toolchain` capability (`ctx.toolchain`) backed by the same application kernel. Its Loader composition row is namespaced as `dsh-toolchain`; Loader identity and Cordis capability identity are intentionally separate namespaces. It also projects a deliberately small set of model-facing native DSH tools.
 
 Other DSH plugins may eventually consume stable Toolchain service methods and extension seams. Extension points are introduced only when a concrete second implementation requires them.
 
 ### DSH Web
 
-The browser face is a native DSH client plugin. Business behavior remains on the Host/kernel. Unary browser calls use the DSH business-service/Typert Remote model where appropriate; UI contribution uses DSH Slots. Host and Client code are separate build faces and MUST NOT import each other's concrete implementations.
+The browser face is a native DSH client plugin. Business behavior remains on the Host/kernel. Unary browser calls use the DSH business-service/Typert Remote model where appropriate; UI contribution uses DSH Slots. Host and Client code are separate build faces and MUST NOT import each other's concrete implementations. Browser/client source MUST NOT depend on Node built-in modules.
 
 Long-running verification is represented by the transport-neutral `Operation` model. DSH Web can begin with `start -> status/cancel` rather than forcing a streaming protocol into unary Typert methods.
 
@@ -185,7 +193,21 @@ They remain internal until there is a concrete external consumer and compatibili
 
 ## Architecture fitness
 
-The repository will turn the dependency rules in `AGENTS.md` into executable CI checks in M0. Architecture is considered incomplete if it exists only as prose and can be violated by an ordinary import.
+Architecture policy is executable and closed-world rather than a blacklist of a few dangerous imports.
+
+Every production module under `src/` is classified into one of the declared layers: public facade, product/protocol/model/kernel semantic core, acquisition, verification, DSH integration, CLI, MCP, or Web/client. An unknown production path fails CI. Relative imports are resolved to actual source targets and checked against an explicit source-layer → target-layer matrix. Because semantic layers have no permitted edge to runtime-capable layers, an indirect path such as `kernel -> shared -> node:fs` cannot become valid merely by adding an intermediate folder.
+
+The gate additionally:
+
+- rejects all JavaScript-family production source (`.js`, `.jsx`, `.mjs`, `.cjs`) under `src/` while the product source policy is TypeScript-only;
+- recognizes both `node:*` and bare Node built-in module specifiers;
+- rejects DSH runtime packages and package self-references from semantic layers;
+- rejects arbitrary bare third-party imports from semantic layers unless the architecture policy explicitly allowlists a proven runtime-neutral dependency;
+- rejects direct semantic use of `process`, `Buffer`, and `fetch`, plus `require()` and non-literal dynamic `import()`;
+- rejects Node built-ins and concrete DSH Host dependencies from browser/client code;
+- scans TS, TSX, MTS and CTS product forms and fails loud for unclassified additions.
+
+The fitness checker protects ordinary architecture direction; it is not a malicious-code sandbox or an exhaustive proof against deliberately obfuscated runtime access. Repository policy scripts are separately linted and statically checked with JavaScript `checkJs`; they are not treated as production semantic code.
 
 ## References that informed the baseline
 

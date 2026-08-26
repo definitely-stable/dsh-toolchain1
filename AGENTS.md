@@ -42,17 +42,26 @@ Issues and plans MUST NOT silently redefine a normative contract.
 - Machine-readable diagnostic codes are compatibility contracts; human wording is not.
 - Progressive discovery is preferred to advertising the complete DSH contract catalog to a model.
 - Transport-specific names and DTOs MUST NOT become domain concepts.
+- The M0 package root exposes stable product/protocol identities only; the application-kernel factory remains internal until a real public programmatic contract is designed with M1 ports.
 
 ## Dependency fitness rules
 
-These rules are intended to become executable CI gates in M0:
+These rules are executable CI gates, not advisory prose:
 
-- `analysis` and `model` code may not import Node IO/process modules.
-- protocol/schema code may not import `@deepseek-ai/*`.
-- browser/client code may not import Node-only modules or Host implementations.
-- DSH Host/Client adapters may depend on public kernel/protocol contracts, never the reverse.
-- CLI, MCP, DSH tools, and Web handlers call application use cases.
-- verification code is the only normal path allowed to spawn untrusted candidate-plugin execution.
+- every production source file under `src/` MUST belong to a declared architecture layer; an unclassified directory is a failure, not an implicit shared zone;
+- production source under `src/` is TypeScript-family only; `.js`, `.jsx`, `.mjs`, and `.cjs` there are rejected;
+- `product`, `protocol`, `model`, and `kernel` may depend only through the declared runtime-neutral layer matrix and may not import Node built-ins, `@deepseek-ai/*` runtime packages, or arbitrary bare external packages;
+- semantic-core external dependencies are deny-by-default; adding a genuinely runtime-neutral third-party package requires an explicit architecture-policy allowlist change with negative tests;
+- semantic-core code may not directly use runtime globals `process`, `Buffer`, or `fetch`, call `require()`, or use a non-literal dynamic `import()`;
+- this guard prevents ordinary architecture regressions; it is not a malicious-code sandbox or an exhaustive static side-effect proof;
+- browser/client code may not import Node built-ins or concrete DSH Host implementations;
+- DSH Host/Client adapters may depend on public kernel/protocol contracts, never the reverse;
+- CLI, MCP, DSH tools, and Web handlers call application use cases;
+- verification code is the only normal path allowed to spawn untrusted candidate-plugin execution;
+- identity-sensitive host packages are an explicit registry; they must be peer + dev dependencies, never nested runtime copies, and the tested dev version must satisfy the advertised peer range;
+- repository policy scripts are linted and statically checked separately from production source.
+
+Adding a new `src/` layer, a new allowed inter-layer edge, a semantic-core external dependency, or a new host-identity package is an explicit architecture-policy change with negative tests. Do not bypass the policy with a generic `shared`, package self-reference, JavaScript shim, or path alias.
 
 ## Agent-specific prohibitions
 

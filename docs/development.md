@@ -9,10 +9,13 @@ DSH Toolchain tracks the current upstream DSH development baseline unless an exp
 - Node.js: `^22.19.0 || >=24.0.0`;
 - package manager: pnpm `11.7.0` initially, matching the current upstream DSH repository;
 - module system: ESM;
-- lockfile: one committed `pnpm-lock.yaml` once M0 introduces `package.json`;
+- product source: TypeScript-family only under `src/`;
+- lockfile: one committed `pnpm-lock.yaml`;
 - installation in CI: `pnpm install --frozen-lockfile`.
 
-M0 MUST pin the exact package-manager version in `package.json#packageManager`. Toolchain upgrades are ordinary reviewed changes; do not let local Corepack state silently select a different pnpm major/minor.
+The exact package-manager version is pinned in `package.json#packageManager`. Toolchain upgrades are ordinary reviewed changes; do not let local Corepack state silently select a different pnpm major/minor.
+
+Production source, tests, and repository policy scripts use separate TypeScript programs. Production keeps `allowJs: false`; tests may import repository `.mjs` helpers without making them product source; policy scripts are independently checked with `checkJs`.
 
 ## Dependency ownership
 
@@ -24,7 +27,9 @@ A package whose runtime/module identity must match the DSH host belongs in both 
 
 This rule exists because a second copy of an identity-sensitive DSH/Cordis framework package can split registries/services/types from the host instance even when package versions appear compatible.
 
-M0 MUST add an executable dependency-policy gate once the first manifest exists.
+Host-identity packages are maintained as an explicit executable registry rather than treating every `@deepseek-ai/*` package as host-owned. Adding a package to that registry is a deliberate architecture decision. The package-policy gate enforces peer + dev placement and requires the exact dev version used by Toolchain tests to satisfy the advertised peer range. Unsupported peer-range forms fail closed until the policy is deliberately extended.
+
+The package policy also rejects install-time lifecycle scripts from the distributable package.
 
 ### Toolchain-owned runtime dependencies
 
@@ -40,11 +45,11 @@ A new dependency should remove more project-owned code, risk, or maintenance tha
 
 Generated code/data has one owning source. Generated output MUST NOT become an independent source of truth and MUST NOT be hand-edited.
 
-When generators exist, each generated family MUST have:
+Each generated family MUST have:
 
 1. a documented owning source;
 2. one deterministic generation command;
-3. a CI freshness check that regenerates and requires a clean diff;
+3. a CI freshness check that compares expected output without silently mutating tracked files;
 4. tests/fixtures proving the generated output is consumable.
 
 For Protocol v1, normative prose defines behavior and JSON Schema defines machine structure. Generated TypeScript/MCP projections derive from those sources.
@@ -60,11 +65,15 @@ The single release artifact contains explicit internal build faces rather than s
 - verification worker;
 - shared application/analysis kernel.
 
-Build configuration MUST preserve architecture direction: frontend/DSH faces depend on the kernel; the kernel does not import them.
+Build configuration MUST preserve architecture direction: frontend/DSH faces depend on the kernel; the kernel does not import them. The semantic core (`product`, `kernel`, `model`, `protocol`) is runtime-neutral and does not import Node built-in modules or use Node process/dynamic-loader escape hatches.
+
+The `src/` architecture is closed-world. Every production module belongs to an explicit layer and every relative source edge is validated against the architecture matrix. A new generic source directory is not implicitly trusted. JavaScript-family files under `src/` are rejected; repository `.mjs` scripts live outside this product boundary and have their own lint/static-check gate.
+
+The M0 npm root intentionally exposes only stable product/protocol identities. `createApplicationKernel()` remains internal until M1 defines real acquisition/operation ports and a useful external programmatic contract.
 
 ## CI security policy
 
-Every GitHub Actions workflow MUST declare explicit least-privilege `permissions`. The default for ordinary validation jobs is conceptually:
+Every GitHub Actions workflow MUST declare explicit least-privilege `permissions`. The default for ordinary validation jobs is:
 
 ```yaml
 permissions:
@@ -77,24 +86,28 @@ Third-party Actions and reusable workflows SHOULD be pinned to full commit SHAs.
 
 Workflows MUST NOT expose repository write permissions, OIDC identity tokens, or publishing credentials to jobs that build/test untrusted pull-request code unless that capability is strictly required and the trust model explicitly permits it.
 
-M0 should keep PR CI simple and fast: one primary Linux/Node 24 lane owns most static/unit checks; broader platform lanes run only for surfaces whose behavior is platform-sensitive or as a dedicated matrix job.
+The main CI workflow runs for pull requests, pushes to `main`, and manual `workflow_dispatch`. Feature-branch names MUST NOT be baked into the durable workflow trigger.
 
 ## Platform matrix
 
 Baseline support targets DSH-supported Node versions on Linux, Windows, and macOS.
 
-Recommended CI shape after M0:
+Current CI shape:
 
-- primary PR lane: Ubuntu + Node 24;
-- Node compatibility lane: Ubuntu + Node 22.19 and Node 24;
-- platform integration lane: Linux, Windows, macOS on Node 24 for filesystem/process/package/profile behavior;
-- DSH real-composition/verification lanes: only where the changed capability crosses those boundaries.
+- primary artifact-truth lane: Ubuntu + Node 24.19;
+- Node compatibility lanes: Ubuntu + Node 22.19, 24.19, and current Node 26 major;
+- platform boundary lanes: Windows and macOS on Node 24.19 for build/CLI/public-import behavior;
+- DSH composition: primary lane only, using the exact packed tarball against both a minimal base profile and the shipped `web` profile.
+
+The minimal profile proves base compatibility. The `web` profile is separately required because current upstream DSH composes it from `@deepseek-ai/dsh-base` plus `@deepseek-ai/dsh-web-app`, while an unknown custom profile receives the base bundle only. The canonical README installation path is therefore tested directly rather than inferred from the minimal profile.
+
+Node 26 follows the current upstream DSH compatibility pattern as a moving major-line check; the pinned 22.19 and 24.19 lanes retain exact lower/current baselines.
 
 Do not multiply every unit/static check across every OS/Node combination. The matrix exists to find boundary differences, not to repeat identical pure tests.
 
 ## Dependency automation
 
-Dependabot is enabled only after the relevant manifests/workflows exist. M0 MUST add `.github/dependabot.yml` together with `package.json`/Actions so automation starts against real surfaces rather than producing configuration noise.
+Dependabot is enabled only after the relevant manifests/workflows exist. M0 introduces `.github/dependabot.yml` together with the real package/Actions surfaces.
 
 Target policy:
 
@@ -132,17 +145,33 @@ The release pipeline target is:
 ```text
 clean checkout
   -> frozen dependency install
-  -> static/type/test/schema/architecture gates
+  -> generated/protocol/closed-world architecture/package gates
+  -> lint product + tests + repository policy scripts
+  -> source/test/script static checks
   -> build
   -> npm pack
-  -> inspect exact tarball contents
-  -> install that tarball into a clean temporary DSH profile
-  -> compose/dump-config
+  -> inspect exact tarball policy
+  -> read package.json from that tarball and validate main/types/exports/bin/dsh.bundle.patch targets
+  -> install that tarball into a throwaway Node consumer and resolve public package exports/bins
+  -> install the same tarball into isolated minimal and shipped Web DSH profiles
+  -> compose/dump-config each profile
   -> boot/runtime capability checks appropriate to the release stage
   -> publish from the verified artifact lineage
 ```
 
-Source-tree success is not a substitute for package-artifact verification.
+The packed manifest is the source of truth for package entrypoints. A separate hardcoded list of runtime entrypoints MUST NOT substitute for Node/npm package resolution. Source-tree success is not a substitute for package-artifact verification.
+
+The internal TAR reader in `scripts/check-pack.mjs` is scoped to deterministic npm/pnpm-produced package tarballs created by this pipeline; it is not a general TAR parser or malicious-archive security boundary.
+
+## DSH installation contract
+
+DSH plugin management is profile-scoped. The public package installation shape is:
+
+```bash
+dsh plugin --profile <profile> add dsh-toolchain
+```
+
+Toolchain MUST NOT document a pseudo-global `dsh plugin add ...` path while Harness requires profile selection. The DSH Loader row is namespaced `dsh-toolchain`; the semantic Cordis capability remains `ctx.toolchain`.
 
 ## npm publishing security
 
@@ -175,4 +204,4 @@ Repository-wide definitions live in `CONTRIBUTING.md`. Implementation plans and 
 
 ## Public repository publication
 
-The private `dsh-toolchain1` repository is an incubator, not a public history candidate. The public repository is created from a curated tree according to `docs/internal/publication.md`.
+The private `dsh-toolchain1` repository is an incubator, not a public history candidate. The public repository is created from curated approved source states according to `docs/internal/publication.md`.
