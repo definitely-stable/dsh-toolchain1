@@ -7,7 +7,7 @@ const root = new URL('../../', import.meta.url)
 
 describe('public package API', () => {
   it('exports only stable M0 product and protocol identities', () => {
-    expect(Object.keys(rootApi).sort()).toEqual([
+    expect(Object.keys(rootApi).toSorted()).toEqual([
       'TOOLCHAIN_PRODUCT',
       'TOOLCHAIN_PROTOCOL_VERSION',
       'TOOLCHAIN_VERSION',
