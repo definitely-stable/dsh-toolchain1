@@ -6,11 +6,12 @@ import {
 } from '../../scripts/check-architecture.mjs'
 
 describe('architecture import policy', () => {
-  it('rejects runtime packages and package self-reference from semantic layers', () => {
+  it('rejects runtime packages, arbitrary externals, and package self-reference from semantic layers', () => {
     expect(checkSourceImportPolicy([
       { path: 'src/kernel/bad.ts', source: "import { readFile } from 'fs/promises'\n" },
       { path: 'src/model/bad.mts', source: "import path from 'node:path'\n" },
       { path: 'src/protocol/bad.ts', source: "export * from '@deepseek-ai/cordis'\n" },
+      { path: 'src/kernel/mcp.ts', source: "import '@modelcontextprotocol/server'\n" },
       { path: 'src/kernel/self.ts', source: "import 'dsh-toolchain/dsh'\n" },
     ])).toEqual([
       {
@@ -27,6 +28,11 @@ describe('architecture import policy', () => {
         file: 'src/protocol/bad.ts',
         specifier: '@deepseek-ai/cordis',
         rule: 'semantic-runtime-boundary',
+      },
+      {
+        file: 'src/kernel/mcp.ts',
+        specifier: '@modelcontextprotocol/server',
+        rule: 'semantic-external-dependency',
       },
       {
         file: 'src/kernel/self.ts',
