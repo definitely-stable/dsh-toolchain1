@@ -64,7 +64,9 @@ function writeJson(io: CliIo, value: unknown): void {
   io.stdout.write(`${JSON.stringify(value)}\n`)
 }
 
-function targetRequest(values: Record<string, string | boolean | undefined>): TargetResolveRequest | undefined {
+type CliOptionValues = ReturnType<typeof parseArgs>['values']
+
+function targetRequest(values: CliOptionValues): TargetResolveRequest | undefined {
   const profile = values.profile
   if (typeof profile !== 'string' || profile.length === 0) return undefined
 
@@ -77,7 +79,7 @@ function targetRequest(values: Record<string, string | boolean | undefined>): Ta
   }
 }
 
-function hasTargetOnlyOption(values: Record<string, string | boolean | undefined>): boolean {
+function hasTargetOnlyOption(values: CliOptionValues): boolean {
   return values.profile !== undefined
     || values['dsh-home'] !== undefined
     || values['dsh-package-root'] !== undefined
