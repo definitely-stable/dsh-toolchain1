@@ -18,15 +18,21 @@ function io() {
 function result(): TargetResolveResult {
   return {
     snapshot: {
-      fingerprint: `dsh-target-v1:${'a'.repeat(64)}`,
+      fingerprint: `dsh-target-v2:${'a'.repeat(64)}`,
       createdAt: '2026-08-26T17:00:00.000Z',
       dsh: { name: '@deepseek-ai/dsh', version: '0.1.1-rc.2' },
       runtime: { nodeVersion: '24.19.0', platform: 'linux', arch: 'x64' },
       profile: {
         name: 'web',
-        bundles: [{ name: '@deepseek-ai/dsh-base', version: '0.1.1-rc.2' }],
+        bundles: [{
+          name: '@deepseek-ai/dsh-base',
+          version: '0.1.1-rc.2',
+          patchHash: '1'.repeat(64),
+        }],
         dependencies: [],
-        patchHash: 'b'.repeat(64),
+        profilePatchHash: 'b'.repeat(64),
+        homePatchHash: 'c'.repeat(64),
+        overlayPatchHashes: ['d'.repeat(64), 'e'.repeat(64)],
       },
       evidence: [],
     },
@@ -47,7 +53,7 @@ function dependencies(resolveTarget: ApplicationKernel['resolveTarget']): CliDep
 }
 
 describe('target resolve CLI projection', () => {
-  it('forwards only the canonical request and emits a versioned success response', async () => {
+  it('forwards only the canonical request including ordered repeatable patch hints', async () => {
     const streams = io()
     const resolveTarget = vi.fn(async () => result())
 
@@ -56,6 +62,8 @@ describe('target resolve CLI projection', () => {
       '--profile', 'web',
       '--dsh-home', '/tmp/dsh-home',
       '--dsh-package-root', '/tmp/dsh-package',
+      '--patch', '/tmp/a.yml',
+      '--patch', '/tmp/b.yml',
     ], streams.value, dependencies(resolveTarget))
 
     expect(code).toBe(0)
@@ -65,13 +73,14 @@ describe('target resolve CLI projection', () => {
       profile: 'web',
       dshHome: '/tmp/dsh-home',
       dshPackageRoot: '/tmp/dsh-package',
+      patches: ['/tmp/a.yml', '/tmp/b.yml'],
     })
 
     const response = JSON.parse(streams.stdout()) as TargetResolveResponse
     expect(response).toEqual({
       protocolVersion: '1',
       requestId: 'request-test-1',
-      snapshotFingerprint: `dsh-target-v1:${'a'.repeat(64)}`,
+      snapshotFingerprint: `dsh-target-v2:${'a'.repeat(64)}`,
       status: 'ok',
       data: result(),
       diagnostics: [],
@@ -92,6 +101,18 @@ describe('target resolve CLI projection', () => {
     expect(streams.stdout()).toBe('')
     expect(streams.stderr()).toContain('--profile is required')
     expect(resolveTarget).not.toHaveBeenCalled()
+  })
+
+  it('rejects target-only patch hints outside target resolve', async () => {
+    const streams = io()
+    const code = await runCli(
+      ['--version', '--patch', '/tmp/a.yml'],
+      streams.value,
+      dependencies(async () => result()),
+    )
+
+    expect(code).toBe(2)
+    expect(streams.stderr()).toContain('target options require the target resolve command')
   })
 
   it('maps expected acquisition failures to TargetResolveFailureResponse and exit code 1', async () => {
@@ -130,6 +151,7 @@ describe('target resolve CLI projection', () => {
 
     expect(code).toBe(0)
     expect(streams.stdout()).toContain('target resolve')
+    expect(streams.stdout()).toContain('--patch <path>')
     expect(streams.stdout()).not.toContain('contract search')
     expect(streams.stdout()).not.toContain('plugin verify')
   })
