@@ -54,7 +54,7 @@ Each generated family MUST have:
 
 For Protocol v1, normative prose defines behavior and JSON Schema defines machine structure. Generated TypeScript/MCP projections derive from those sources.
 
-## Build faces
+## Build faces and runtime boundaries
 
 The single release artifact contains explicit internal build faces rather than separate product packages:
 
@@ -65,11 +65,25 @@ The single release artifact contains explicit internal build faces rather than s
 - verification worker;
 - shared application/analysis kernel.
 
-Build configuration MUST preserve architecture direction: frontend/DSH faces depend on the kernel; the kernel does not import them. The semantic core (`product`, `kernel`, `model`, `protocol`) is runtime-neutral and does not import Node built-in modules or use Node process/dynamic-loader escape hatches.
+Build configuration MUST preserve architecture direction: frontend/DSH faces depend on the kernel; the kernel does not import them. The semantic core (`product`, `kernel`, `model`, `protocol`) is runtime-neutral and does not import Node built-in modules or DSH runtime packages and does not use Node process/dynamic-loader escape hatches.
 
 The `src/` architecture is closed-world. Every production module belongs to an explicit layer and every relative source edge is validated against the architecture matrix. A new generic source directory is not implicitly trusted. JavaScript-family files under `src/` are rejected; repository `.mjs` scripts live outside this product boundary and have their own lint/static-check gate.
 
-The M0 npm root intentionally exposes only stable product/protocol identities. `createApplicationKernel()` remains internal until M1 defines real acquisition/operation ports and a useful external programmatic contract.
+M1 gives the internal application kernel real acquisition/digest ports and `resolveTarget()`, but the npm root still does not expose the kernel factory as a stable external API. DSH Host, CLI, and MCP compose Node acquisition/digest adapters internally. Promote the factory only when an independent external consumer lifecycle justifies that compatibility promise.
+
+## Target acquisition and pnpm layout policy
+
+Target acquisition is observation, not profile management. It MUST NOT initialize a profile, install dependencies, rewrite manifests, create profile/home patches, or heal package fallbacks merely to make `target.resolve` succeed.
+
+Package identity is based on exact installed manifests, not declared semver ranges. Bundle lookup follows DSH's installation-first/profile-second semantics.
+
+`dsh-target-v2` represents the current DSH composition inputs that can change the effective Cordis tree: ordered bundle identities with exact bundle patch hashes, profile patch, home-level patch, and ordered caller-declared invocation overlays. Absolute acquisition paths, patch filenames, evidence locations and timestamps MUST NOT enter that semantic projection. `dsh-toolchain` remains evidence but is excluded as the observer from semantic bundle/dependency identity.
+
+pnpm package links require special care: the observed `node_modules/@deepseek-ai/dsh` path may be a symlink while DSH-owned bundle dependencies physically live beside its canonical package target under the pnpm virtual store. Acquisition therefore considers both the observed package anchor and its `realpath()` for package resolution, while retaining the observed evidence location. A regression fixture MUST prove that bundle resolution succeeds without relying on DSH's healed `$DSH_HOME/profiles/node_modules` fallback.
+
+When a detached caller omits `dshPackageRoot`, acquisition may use deterministic Node package-resolution anchors from the installed Toolchain/profile graph. It MUST NOT manufacture fallback links, search PATH, or spawn another DSH merely to guess an installation. The authoritative no-hint CI path co-installs the exact Toolchain tarball and tested DSH train in one disposable package graph; a second explicit-root resolution of an equivalent copied profile must produce the same target fingerprint.
+
+The `runtime` coordinates in a TargetSnapshot describe the runtime under which Toolchain resolves compatibility for that snapshot. Later live/verification evidence records the actually executed runtime and must not silently reuse a runtime-sensitive claim when those semantics differ.
 
 ## CI security policy
 
@@ -88,22 +102,26 @@ Workflows MUST NOT expose repository write permissions, OIDC identity tokens, or
 
 The main CI workflow runs for pull requests, pushes to `main`, and manual `workflow_dispatch`. Feature-branch names MUST NOT be baked into the durable workflow trigger.
 
-## Platform matrix
+## Platform and DSH evidence matrix
 
-Baseline support targets DSH-supported Node versions on Linux, Windows, and macOS.
+Baseline support targets DSH-supported Node versions on Linux, Windows, and macOS without multiplying every expensive runtime check across the full Cartesian product.
 
 Current CI shape:
 
 - primary artifact-truth lane: Ubuntu + Node 24.19;
 - Node compatibility lanes: Ubuntu + Node 22.19, 24.19, and current Node 26 major;
 - platform boundary lanes: Windows and macOS on Node 24.19 for build/CLI/public-import behavior;
-- DSH composition: primary lane only, using the exact packed tarball against both a minimal base profile and the shipped `web` profile.
+- exact-package composition: primary lane only, using the packed Toolchain tarball against both a minimal `toolchain-smoke` profile and the shipped `web` profile;
+- exact-package live service boot: primary lane only, using an external disposable DSH probe bundle in `toolchain-smoke` to observe `ctx.toolchain`, call `ctx.toolchain.describe()`, and request clean shutdown through launcher-owned `ctx.appExit`;
+- target-resolution compatibility: primary lane only, co-installing the exact Toolchain tarball with DSH `0.1.1-rc.2` and `0.1.0-rc.8`, resolving shipped `headless` profiles through both no-hint and explicit-root discovery.
 
-The minimal profile proves base compatibility. The `web` profile is separately required because current upstream DSH composes it from `@deepseek-ai/dsh-base` plus `@deepseek-ai/dsh-web-app`, while an unknown custom profile receives the base bundle only. The canonical README installation path is therefore tested directly rather than inferred from the minimal profile.
+The minimal package profile proves base composition and live service visibility. The `web` profile is separately required because current upstream DSH composes it from `@deepseek-ai/dsh-base` plus `@deepseek-ai/dsh-web-app`; the canonical README installation path is therefore tested directly rather than inferred from the minimal profile.
 
-Node 26 follows the current upstream DSH compatibility pattern as a moving major-line check; the pinned 22.19 and 24.19 lanes retain exact lower/current baselines.
+The multi-train target smoke is deliberately separate from the exact-tarball boot smoke. DSH itself first initializes the disposable shipped profile. Toolchain then snapshots the profile tree, performs `target resolve`, snapshots again, and requires byte-identical state. The semantic profile is copied to another absolute `DSH_HOME`; no-hint and explicit-root acquisition paths MUST retain the same v2 fingerprint. This proves read-only/path/discovery stability without pretending that DSH's own profile initialization is read-only.
 
-Do not multiply every unit/static check across every OS/Node combination. The matrix exists to find boundary differences, not to repeat identical pure tests.
+Node 26 follows the current upstream DSH compatibility pattern as a moving major-line check; pinned 22.19 and 24.19 lanes retain exact lower/current baselines.
+
+Do not multiply registry-backed DSH installation across every OS/Node lane unless a boundary-specific failure class justifies the cost. The matrix exists to find distinct classes of defects, not to repeat identical pure tests.
 
 ## Dependency automation
 
@@ -118,7 +136,7 @@ Target policy:
 
 ## Versioning and release channels
 
-Toolchain software versions use SemVer. Toolchain Protocol versions and DSH target versions are separate compatibility dimensions.
+Toolchain software versions use SemVer. Toolchain Protocol versions, target-fingerprint namespaces, and DSH target versions are separate compatibility dimensions.
 
 Before a useful public vertical slice, private-incubator versions may remain `0.0.x` and need not be published to npm.
 
@@ -131,7 +149,7 @@ Recommended public progression:
 
 npm dist-tags:
 
-- `next` — all prereleases/RCs intended for testers and upcoming DSH trains;
+- `next` — prereleases/RCs intended for testers and upcoming DSH trains;
 - `latest` — only the release recommended to ordinary users.
 
 A prerelease MUST NOT accidentally become `latest`.
@@ -155,13 +173,16 @@ clean checkout
   -> install that tarball into a throwaway Node consumer and resolve public package exports/bins
   -> install the same tarball into isolated minimal and shipped Web DSH profiles
   -> compose/dump-config each profile
-  -> boot/runtime capability checks appropriate to the release stage
+  -> boot the exact tarball through real DSH and prove ctx.toolchain.describe() through an external probe
+  -> separately co-install the exact tarball with pinned current + older DSH trains and resolve read-only target snapshots
   -> publish from the verified artifact lineage
 ```
 
 The packed manifest is the source of truth for package entrypoints. A separate hardcoded list of runtime entrypoints MUST NOT substitute for Node/npm package resolution. Source-tree success is not a substitute for package-artifact verification.
 
 The internal TAR reader in `scripts/check-pack.mjs` is scoped to deterministic npm/pnpm-produced package tarballs created by this pipeline; it is not a general TAR parser or malicious-archive security boundary.
+
+The live boot probe is test infrastructure, not a production Toolchain capability. It MUST remain outside the distributable package and MUST NOT add test-only endpoints, process exits, or smoke modes to production code.
 
 ## DSH installation contract
 
@@ -201,6 +222,8 @@ Required human approvals and CODEOWNERS become useful when there is more than on
 ## Definition of ready / done
 
 Repository-wide definitions live in `CONTRIBUTING.md`. Implementation plans and Issues may add stricter acceptance evidence for a specific milestone but MUST NOT weaken them.
+
+A green unit suite is not sufficient evidence for an exact-target or packaged-runtime claim. Such claims require their dedicated real DSH smoke on the same branch head. PR descriptions MUST report only commands/checks that actually ran.
 
 ## Public repository publication
 

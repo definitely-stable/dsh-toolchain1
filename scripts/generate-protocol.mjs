@@ -31,6 +31,8 @@ const supportedKeywords = new Set([
   'pattern',
   'format',
   'uniqueItems',
+  'minItems',
+  'oneOf',
 ])
 
 function assertSchemaNode(node, path = '#') {
@@ -62,6 +64,10 @@ function assertSchemaNode(node, path = '#') {
 
   if (node.additionalProperties && typeof node.additionalProperties === 'object') {
     assertSchemaNode(node.additionalProperties, `${path}/additionalProperties`)
+  }
+
+  for (const [index, child] of (node.oneOf ?? []).entries()) {
+    assertSchemaNode(child, `${path}/oneOf/${index}`)
   }
 }
 
@@ -95,6 +101,9 @@ function typeExpression(node, path) {
   if ('$ref' in node) return refType(node.$ref)
   if ('const' in node) return literal(node.const)
   if (Array.isArray(node.enum)) return node.enum.map(literal).join(' | ') || 'never'
+  if (Array.isArray(node.oneOf)) {
+    return node.oneOf.map((child, index) => typeExpression(child, `${path}/oneOf/${index}`)).join(' | ')
+  }
 
   if (Array.isArray(node.type)) {
     return node.type
@@ -113,7 +122,14 @@ function typeExpression(node, path) {
     case 'null':
       return 'null'
     case 'array':
-      return `Array<${typeExpression(node.items ?? {}, `${path}/items`)}>`
+      {
+        const item = typeExpression(node.items ?? {}, `${path}/items`)
+        if (node.minItems === 1) return `[${item}, ...Array<${item}>]`
+        if (node.minItems !== undefined && node.minItems !== 0) {
+          throw new Error(`Protocol type generator only supports minItems 0 or 1 at ${path}`)
+        }
+        return `Array<${item}>`
+      }
     case 'object': {
       const properties = node.properties ?? {}
       const required = new Set(node.required ?? [])

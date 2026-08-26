@@ -68,6 +68,9 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
         run: node scripts/smoke-dsh-package.mjs .artifacts/dsh-toolchain.tgz
 
+      - name: Resolve read-only targets across DSH trains
+        run: node scripts/smoke-target-resolve.mjs
+
   node-compat:
     name: node compatibility / ${{ matrix.node }}
     runs-on: ubuntu-24.04

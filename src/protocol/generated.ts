@@ -30,22 +30,50 @@ export type Diagnostic = {
 } | null
 }
 
+export type ResolvedPackageIdentity = {
+  readonly "name": string
+  readonly "version": string
+}
+
+export type ResolvedBundleIdentity = {
+  readonly "name": string
+  readonly "version": string
+  readonly "patchHash": string
+}
+
+export type TargetResolveRequest = {
+  readonly "profile": string
+  readonly "dshHome"?: string
+  readonly "dshPackageRoot"?: string
+  readonly "patches"?: Array<string>
+}
+
 export type TargetSnapshot = {
   readonly "fingerprint": string
   readonly "createdAt": string
   readonly "dsh": {
+  readonly "name": "@deepseek-ai/dsh"
   readonly "version": string
-  readonly "installKind"?: string
-  readonly "nodeVersion"?: string
-  readonly "platform"?: string
-  readonly "arch"?: string
+}
+  readonly "runtime": {
+  readonly "nodeVersion": string
+  readonly "platform": string
+  readonly "arch": string
 }
   readonly "profile": {
   readonly "name": string
-  readonly "bundles"?: Array<string>
+  readonly "bundles": Array<ResolvedBundleIdentity>
+  readonly "dependencies": Array<ResolvedPackageIdentity>
+  readonly "profilePatchHash": string
+  readonly "homePatchHash": string
+  readonly "overlayPatchHashes": Array<string>
 }
   readonly "supportStatus"?: "tested" | "supported" | "experimental" | "unsupported"
   readonly "evidence": Array<Evidence>
+}
+
+export type TargetResolveResult = {
+  readonly "snapshot": TargetSnapshot
 }
 
 export type Operation = {
@@ -83,5 +111,23 @@ export type ResponseEnvelope = {
   readonly "data"?: unknown
   readonly "diagnostics": Array<Diagnostic>
 }
+
+export type TargetResolveSuccessResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "snapshotFingerprint": string
+  readonly "status": "ok"
+  readonly "data": TargetResolveResult
+  readonly "diagnostics": Array<Diagnostic>
+}
+
+export type TargetResolveFailureResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "failed"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type TargetResolveResponse = TargetResolveSuccessResponse | TargetResolveFailureResponse
 
 export type ToolchainProtocolResponse = ResponseEnvelope
