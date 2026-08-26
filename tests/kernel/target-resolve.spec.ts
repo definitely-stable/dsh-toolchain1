@@ -33,21 +33,23 @@ function acquiredFacts(): AcquiredTargetFacts {
     profile: {
       name: 'web',
       bundles: [
-        { name: '@deepseek-ai/dsh-base', version: '0.1.1-rc.2' },
-        { name: '@deepseek-ai/dsh-web-app', version: '0.1.1-rc.2' },
+        { name: '@deepseek-ai/dsh-base', version: '0.1.1-rc.2', patchHash: '1'.repeat(64) },
+        { name: '@deepseek-ai/dsh-web-app', version: '0.1.1-rc.2', patchHash: '2'.repeat(64) },
       ],
       dependencies: [
         { name: 'dsh-toolchain', version: '0.0.0' },
         { name: 'user-plugin', version: '1.2.3' },
       ],
-      patchHash: 'b'.repeat(64),
+      profilePatchHash: 'b'.repeat(64),
+      homePatchHash: 'c'.repeat(64),
+      overlayPatchHashes: ['d'.repeat(64)],
     },
     evidence: [
       {
         id: 'manifest:profile',
         kind: 'manifest',
         strength: 'authoritative',
-        contentHash: 'c'.repeat(64),
+        contentHash: 'e'.repeat(64),
         location: '/evidence/profile/package.json',
       },
     ],
@@ -61,6 +63,7 @@ describe('application kernel target resolution', () => {
       profile: 'web',
       dshHome: '/private/acquisition/home',
       dshPackageRoot: '/private/acquisition/dsh',
+      patches: ['/private/acquisition/overlay.yml'],
     }
     const targetAcquisition: TargetAcquisitionPort = {
       acquire: vi.fn(async () => acquiredFacts()),
@@ -82,14 +85,16 @@ describe('application kernel target resolution', () => {
 
     expect(targetAcquisition.acquire).toHaveBeenCalledOnce()
     expect(targetAcquisition.acquire).toHaveBeenCalledWith(request)
-    expect(result.snapshot.fingerprint).toBe(`dsh-target-v1:${'a'.repeat(64)}`)
+    expect(result.snapshot.fingerprint).toBe(`dsh-target-v2:${'a'.repeat(64)}`)
     expect(result.snapshot.createdAt).toBe('2026-08-26T17:00:00.000Z')
     expect(result.snapshot.profile.dependencies).toEqual([
       { name: 'user-plugin', version: '1.2.3' },
     ])
+    expect(result.snapshot.profile.overlayPatchHashes).toEqual(['d'.repeat(64)])
     expect(result.snapshot.supportStatus).toBe('tested')
     expect(digestInput).not.toContain('/private/acquisition/home')
     expect(digestInput).not.toContain('/private/acquisition/dsh')
+    expect(digestInput).not.toContain('/private/acquisition/overlay.yml')
     expect(digestInput).not.toContain('dsh-toolchain')
 
     expect(Object.isFrozen(result)).toBe(true)
@@ -99,6 +104,7 @@ describe('application kernel target resolution', () => {
     expect(Object.isFrozen(result.snapshot.profile)).toBe(true)
     expect(Object.isFrozen(result.snapshot.profile.bundles)).toBe(true)
     expect(Object.isFrozen(result.snapshot.profile.dependencies)).toBe(true)
+    expect(Object.isFrozen(result.snapshot.profile.overlayPatchHashes)).toBe(true)
     expect(Object.isFrozen(result.snapshot.evidence)).toBe(true)
     expect(Object.isFrozen(result.snapshot.evidence[0])).toBe(true)
   })
