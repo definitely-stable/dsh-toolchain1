@@ -70,7 +70,9 @@ type CliOptionValues = ReturnType<typeof parseArgs>['values']
 function targetRequest(values: CliOptionValues): TargetResolveRequest | undefined {
   const profile = values.profile
   if (typeof profile !== 'string' || profile.length === 0) return undefined
-  const patches = Array.isArray(values.patch) ? values.patch : []
+  const patches = Array.isArray(values.patch)
+    ? values.patch.filter((value): value is string => typeof value === 'string')
+    : []
 
   return {
     profile,
