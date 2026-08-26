@@ -13,9 +13,16 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "allowJs": true,
+    "allowJs": false,
     "skipLibCheck": false,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.mts",
+    "src/**/*.cts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ]
 }
