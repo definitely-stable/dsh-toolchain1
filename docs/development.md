@@ -73,13 +73,17 @@ M1 gives the internal application kernel real acquisition/digest ports and `reso
 
 ## Target acquisition and pnpm layout policy
 
-Target acquisition is observation, not profile management. It MUST NOT initialize a profile, install dependencies, rewrite manifests, or create the profile patch merely to make `target.resolve` succeed.
+Target acquisition is observation, not profile management. It MUST NOT initialize a profile, install dependencies, rewrite manifests, create profile/home patches, or heal package fallbacks merely to make `target.resolve` succeed.
 
 Package identity is based on exact installed manifests, not declared semver ranges. Bundle lookup follows DSH's installation-first/profile-second semantics.
 
-pnpm package links require special care: the observed `node_modules/@deepseek-ai/dsh` path may be a symlink while DSH-owned bundle dependencies physically live beside its canonical package target under the pnpm virtual store. Acquisition therefore considers both the observed package anchor and its `realpath()` for package resolution, while retaining the observed evidence location. A regression fixture MUST prove that resolution succeeds without relying on DSH's healed `$DSH_HOME/profiles/node_modules` fallback.
+`dsh-target-v2` represents the current DSH composition inputs that can change the effective Cordis tree: ordered bundle identities with exact bundle patch hashes, profile patch, home-level patch, and ordered caller-declared invocation overlays. Absolute acquisition paths, patch filenames, evidence locations and timestamps MUST NOT enter that semantic projection. `dsh-toolchain` remains evidence but is excluded as the observer from semantic bundle/dependency identity.
 
-Absolute acquisition paths, evidence locations and timestamps MUST NOT enter the `dsh-target-v1` semantic projection.
+pnpm package links require special care: the observed `node_modules/@deepseek-ai/dsh` path may be a symlink while DSH-owned bundle dependencies physically live beside its canonical package target under the pnpm virtual store. Acquisition therefore considers both the observed package anchor and its `realpath()` for package resolution, while retaining the observed evidence location. A regression fixture MUST prove that bundle resolution succeeds without relying on DSH's healed `$DSH_HOME/profiles/node_modules` fallback.
+
+When a detached caller omits `dshPackageRoot`, acquisition may use deterministic Node package-resolution anchors from the installed Toolchain/profile graph. It MUST NOT manufacture fallback links, search PATH, or spawn another DSH merely to guess an installation. The authoritative no-hint CI path co-installs the exact Toolchain tarball and tested DSH train in one disposable package graph; a second explicit-root resolution of an equivalent copied profile must produce the same target fingerprint.
+
+The `runtime` coordinates in a TargetSnapshot describe the runtime under which Toolchain resolves compatibility for that snapshot. Later live/verification evidence records the actually executed runtime and must not silently reuse a runtime-sensitive claim when those semantics differ.
 
 ## CI security policy
 
@@ -109,11 +113,11 @@ Current CI shape:
 - platform boundary lanes: Windows and macOS on Node 24.19 for build/CLI/public-import behavior;
 - exact-package composition: primary lane only, using the packed Toolchain tarball against both a minimal `toolchain-smoke` profile and the shipped `web` profile;
 - exact-package live service boot: primary lane only, using an external disposable DSH probe bundle in `toolchain-smoke` to observe `ctx.toolchain`, call `ctx.toolchain.describe()`, and request clean shutdown through launcher-owned `ctx.appExit`;
-- target-resolution compatibility: primary lane only, resolving shipped `headless` profiles against DSH `0.1.1-rc.2` and `0.1.0-rc.8`.
+- target-resolution compatibility: primary lane only, co-installing the exact Toolchain tarball with DSH `0.1.1-rc.2` and `0.1.0-rc.8`, resolving shipped `headless` profiles through both no-hint and explicit-root discovery.
 
 The minimal package profile proves base composition and live service visibility. The `web` profile is separately required because current upstream DSH composes it from `@deepseek-ai/dsh-base` plus `@deepseek-ai/dsh-web-app`; the canonical README installation path is therefore tested directly rather than inferred from the minimal profile.
 
-The multi-train target smoke is deliberately separate from the exact-tarball boot smoke. DSH itself first initializes the disposable shipped profile. Toolchain then snapshots the profile tree, performs `target resolve`, snapshots again, and requires byte-identical state. The same semantic profile is copied to another absolute `DSH_HOME` and MUST retain the same fingerprint. This proves read-only/path-stable target semantics without pretending that DSH's own profile initialization is read-only.
+The multi-train target smoke is deliberately separate from the exact-tarball boot smoke. DSH itself first initializes the disposable shipped profile. Toolchain then snapshots the profile tree, performs `target resolve`, snapshots again, and requires byte-identical state. The semantic profile is copied to another absolute `DSH_HOME`; no-hint and explicit-root acquisition paths MUST retain the same v2 fingerprint. This proves read-only/path/discovery stability without pretending that DSH's own profile initialization is read-only.
 
 Node 26 follows the current upstream DSH compatibility pattern as a moving major-line check; pinned 22.19 and 24.19 lanes retain exact lower/current baselines.
 
@@ -132,7 +136,7 @@ Target policy:
 
 ## Versioning and release channels
 
-Toolchain software versions use SemVer. Toolchain Protocol versions and DSH target versions are separate compatibility dimensions.
+Toolchain software versions use SemVer. Toolchain Protocol versions, target-fingerprint namespaces, and DSH target versions are separate compatibility dimensions.
 
 Before a useful public vertical slice, private-incubator versions may remain `0.0.x` and need not be published to npm.
 
@@ -170,7 +174,7 @@ clean checkout
   -> install the same tarball into isolated minimal and shipped Web DSH profiles
   -> compose/dump-config each profile
   -> boot the exact tarball through real DSH and prove ctx.toolchain.describe() through an external probe
-  -> separately resolve read-only target snapshots against pinned current + older DSH trains
+  -> separately co-install the exact tarball with pinned current + older DSH trains and resolve read-only target snapshots
   -> publish from the verified artifact lineage
 ```
 
