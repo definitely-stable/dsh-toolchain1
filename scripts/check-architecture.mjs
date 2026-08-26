@@ -26,6 +26,10 @@ function isPureLayer(file) {
   return file === 'src/product.ts' || file.startsWith('src/kernel/') || file.startsWith('src/protocol/')
 }
 
+function isClientLayer(file) {
+  return file.startsWith('src/client/') || file.startsWith('src/frontends/web/')
+}
+
 function isForbiddenPureRuntime(specifier) {
   return specifier.startsWith('@deepseek-ai/') || pureRuntimeModules.some((module) => specifier === module || specifier.startsWith(`${module}/`))
 }
@@ -40,6 +44,12 @@ function isOutwardTarget(file, specifier) {
   const target = resolveRelativeImport(file, specifier)
   if (!target) return false
   return target.startsWith('src/frontends/') || target.startsWith('src/integrations/')
+}
+
+function isClientHostTarget(file, specifier) {
+  if (!isClientLayer(file)) return false
+  const target = resolveRelativeImport(file, specifier)
+  return target?.startsWith('src/integrations/dsh/') ?? false
 }
 
 function collectModuleSpecifiers(source, file) {
@@ -86,6 +96,10 @@ export function checkSourceImportPolicy(files) {
         violations.push({ file, specifier, rule: 'pure-layer-runtime-boundary' })
       } else if (isOutwardTarget(file, specifier)) {
         violations.push({ file, specifier, rule: 'dependency-direction' })
+      } else if (isClientLayer(file) && specifier.startsWith('node:')) {
+        violations.push({ file, specifier, rule: 'client-runtime-boundary' })
+      } else if (isClientHostTarget(file, specifier)) {
+        violations.push({ file, specifier, rule: 'client-host-boundary' })
       }
     }
   }
