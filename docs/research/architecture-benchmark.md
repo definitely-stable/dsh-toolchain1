@@ -2,7 +2,7 @@
 
 Status: **Non-normative research note**
 
-This note records the external designs that informed the baseline. Normative requirements live in `spec/`; accepted decisions live in ADRs. The purpose of this file is to preserve comparative reasoning so future maintainers do not reintroduce already-rejected approaches without new evidence.
+This note records the external designs that informed the baseline and the M1 product correction. Normative requirements live in `spec/`; accepted decisions live in ADRs. The purpose of this file is to preserve comparative reasoning so future maintainers do not reintroduce already-rejected approaches without new evidence.
 
 ## DeepSeek Harness official architecture
 
@@ -11,6 +11,7 @@ Sources:
 - https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/framework/service.md
 - https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/api-gateway.md
 - https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/typert.md
+- https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/tool-catalog.md
 - https://github.com/deepseek-ai/deepseek-harness/blob/master/AGENTS.md
 
 Observed strengths:
@@ -18,18 +19,25 @@ Observed strengths:
 - profile composition is explicit and `--dump-config` follows the real composition path;
 - Host and Browser are separate plugin/build planes;
 - Typert Remote projects selected business-service unary methods instead of centralizing business contracts in an API package;
-- DSH is still a developer preview, so exact installed-target knowledge matters more than static assumptions.
+- DSH is still a developer preview, so exact installed-target knowledge matters more than static assumptions;
+- generated Tool Catalog generation boots real tool plugins and reads `ctx.tools.schemas()` because some schemas are runtime-derived rather than statically knowable;
+- the optional dynamic Cordis toolset exposes `cordis_inspect_list/query/self` plus define/run/stop/undefine, proving that upstream already prefers inspect-before-guess for live contracts.
 
 Adopted:
 - DSH Toolchain is distributed as a native bundle and exposes a `toolchain` capability;
 - Host/Client build faces remain separate;
 - Web uses business Service -> Typert Remote -> Slots rather than browser-local logic;
-- acquisition prefers current generated/runtime DSH evidence over hand-maintained API docs.
+- acquisition prefers current generated/runtime DSH evidence over hand-maintained API docs;
+- M2 should consume official Cordis Inspect/generated catalogs as evidence providers rather than reimplement DSH reflection.
+
+Important limitation:
+- `cordis_inspect_*` is opt-in in current DSH compositions and therefore cannot be Toolchain's only acquisition path; generated catalogs, package/config metadata, declarations, and source-backed evidence remain necessary fallbacks.
 
 Not adopted:
-- putting Toolchain's semantic kernel inside Cordis/DSH, because external agents and isolated verification require the same semantics outside the active runtime.
+- putting Toolchain's semantic kernel inside Cordis/DSH, because external agents and isolated verification require the same semantics outside the active runtime;
+- a second competing DSH reflection/documentation engine.
 
-## DSH community plugins
+## DSH community plugins and tooling
 
 ### dsh-mcp-lens
 
@@ -72,6 +80,81 @@ Strengths: AI-oriented authoring workflow, scaffolding, isolated profile checks,
 Adopted: verification of the distributable artifact and agent-oriented development ergonomics.
 
 Not adopted: another prompt/workflow-centric plugin generator. Toolchain first supplies exact target knowledge and verification; deterministic generation is downstream in PluginSpec Compiler.
+
+### dsh-plugin-doctor
+
+Source: https://github.com/zoahdev/dsh-plugin-doctor
+
+Observed strengths:
+- fast author-side manifest/patch/build/pack/full-profile checks;
+- fresh `DSH_HOME`, plugin installation and `--dump-config` verification;
+- stable machine-readable checks, environment/profile diagnostics and an agent-callable `plugin_check` tool;
+- evidence-oriented audit mode for package/dependency/runtime-capability risks.
+
+Strategic implication:
+- generic pre-publish “doctor” behavior is not a sufficient unique product position for Toolchain;
+- known Doctor failure classes are valuable validation fixtures/evidence for future Toolchain diagnostics.
+
+Not adopted:
+- treating Doctor as Toolchain's semantic core or duplicating every preflight rule merely for feature parity.
+
+### DSH Testkit
+
+Source: https://github.com/iiwish/dsh-testkit
+
+Observed strengths:
+- exact DSH versions and packed plugin artifacts;
+- real host boot/registration, deterministic exercise, uninstall/reboot/residue checks;
+- disposable Docker execution, structured reports and explicit observer limitations;
+- clear separation between compatibility/lifecycle evidence and security certification.
+
+Strategic implication:
+- M4 must deliver evidence semantics that are at least deeper than composition-only checks;
+- Testkit is a reference implementation and possible future verifier backend/integration, but Toolchain must not make its core semantics depend on one young community runner.
+
+### Upstream Radar
+
+Source: https://github.com/MicroMilo/upstream-radar
+
+Observed strengths:
+- binds exact plugin bytes to exact DSH/runtime/profile cells;
+- disposable headless/Web/TUI checks and an evidence ledger;
+- re-runs when ecosystem state or evidence validity changes;
+- useful compatibility feed and maintainer-facing reports.
+
+Important classification:
+- despite its name, Upstream Radar is an independent community project, not an official `deepseek-ai/deepseek-harness` subsystem.
+
+Strategic implication:
+- Toolchain should produce reusable target identities, diagnostics and verification receipts that Radar/CI/marketplaces can consume;
+- Toolchain should not become a hosted compatibility-monitoring service as a core responsibility.
+
+## Product boundary after the 2026-08-26 ecosystem review
+
+The strongest differentiated product axis is:
+
+```text
+exact DSH target
+      +
+source-backed contract evidence
+      +
+exact plugin source/artifact
+      ↓
+normalized intelligence
+      ↓
+explainable diagnostics / verification receipts / compatibility diff
+```
+
+The first user-facing product target is **Exact Target Plugin Check**, not a generic Doctor, generator, marketplace, or hosted Radar.
+
+Future milestone work MUST ask:
+
+1. what already exists upstream/community;
+2. what Toolchain can consume as evidence/backend;
+3. what normalization/identity/diagnostic semantics Toolchain uniquely owns;
+4. what must be measurably better before duplicating an existing specialized feature.
+
+This does not make community projects authoritative dependencies. Their existence validates failure classes and provides implementation evidence; adoption/maturity must be evaluated separately.
 
 ## rust-analyzer
 
@@ -172,4 +255,6 @@ MCP progressive/structured external interface
 Agent Plugins-style normative/version/failure discipline
 ```
 
-The project deliberately avoids duplicating solved ecosystem layers: generic plugin bridges, marketplaces, MCP routers, AI workflow generators, and autonomous authoring orchestration are not foundation responsibilities.
+The 2026-08-26 ecosystem review narrows the product center further: Toolchain should own exact-target identity, evidence normalization, contract/plugin intelligence and reusable verification semantics. Specialized Doctor/Testkit/Radar/Forge/manager/bridge functionality is consumed, integrated, or outperformed only where doing so advances that center.
+
+The project deliberately avoids duplicating generic plugin bridges, marketplaces, MCP routers, hosted monitoring, prompt-centric generators, and autonomous authoring orchestration as foundation responsibilities.
