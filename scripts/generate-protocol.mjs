@@ -13,7 +13,62 @@ if (typeof protocolVersion !== 'string' || protocolVersion.length === 0) {
   throw new Error('Protocol schema must define responseEnvelope.properties.protocolVersion.const')
 }
 
-const generatedTypes = await compile(schema, 'ToolchainProtocolResponse', {
+const unsupportedCodegenKeywords = new Set([
+  '$dynamicRef',
+  '$dynamicAnchor',
+  'prefixItems',
+  'unevaluatedItems',
+  'unevaluatedProperties',
+  'dependentSchemas',
+  'dependentRequired',
+])
+
+function lowerForTypeCodegen(value, path = '#') {
+  if (Array.isArray(value)) {
+    return value.map((item, index) => lowerForTypeCodegen(item, `${path}/${index}`))
+  }
+
+  if (value === null || typeof value !== 'object') {
+    return value
+  }
+
+  const result = {}
+
+  for (const [key, nested] of Object.entries(value)) {
+    if (unsupportedCodegenKeywords.has(key)) {
+      throw new Error(
+        `Protocol type codegen cannot safely lower JSON Schema 2020-12 keyword ${key} at ${path}. ` +
+          'Use a 2020-12-native generator before introducing this keyword.',
+      )
+    }
+
+    if (key === '$schema') {
+      result.$schema = 'http://json-schema.org/draft-07/schema#'
+      continue
+    }
+
+    if (key === '$defs') {
+      result.definitions = lowerForTypeCodegen(nested, `${path}/$defs`)
+      continue
+    }
+
+    if (key === '$ref' && typeof nested === 'string') {
+      result.$ref = nested.replace(/^#\/\$defs\//, '#/definitions/')
+      continue
+    }
+
+    result[key] = lowerForTypeCodegen(nested, `${path}/${key}`)
+  }
+
+  return result
+}
+
+// Runtime validation remains Draft 2020-12. This lowering exists only because
+// json-schema-to-typescript 15 does not resolve local $defs refs reliably.
+// Reject 2020-12-only applicator keywords above rather than silently changing semantics.
+const codegenSchema = lowerForTypeCodegen(schema)
+
+const generatedTypes = await compile(codegenSchema, 'ToolchainProtocolResponse', {
   bannerComment: '',
   unreachableDefinitions: true,
   unknownAny: true,
