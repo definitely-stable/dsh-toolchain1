@@ -4,9 +4,9 @@
 
 **Goal:** Establish contribution, security, repository hygiene, dependency, CI, release, and clean-publication rules before M0 production code starts.
 
-**Architecture:** Keep policy human-readable in `CONTRIBUTING.md`, `SECURITY.md`, and `docs/development.md`, with `AGENTS.md` as an AI-only overlay. Add only low-risk repository configuration that is useful in the private incubator and can be copied unchanged into the future public `definitely-stable/dsh-toolchain`; defer branch rulesets, CODEOWNERS, and publish credentials until the public repository exists.
+**Architecture:** Keep policy human-readable in `CONTRIBUTING.md`, `SECURITY.md`, and `docs/development.md`, with `AGENTS.md` as an AI-only overlay. Add only low-risk repository configuration that is useful in the private incubator and can be copied unchanged into the future public `definitely-stable/dsh-toolchain`; defer branch rulesets, CODEOWNERS, publish credentials, and dependency automation until the corresponding public/M0 surfaces exist.
 
-**Tech Stack:** GitHub, Markdown, YAML, EditorConfig, Git attributes, Dependabot.
+**Tech Stack:** GitHub, Markdown, YAML, EditorConfig, Git attributes.
 
 **Spec:** `docs/architecture.md`, `spec/protocol.md`, accepted ADRs, and the approved contribution/release policy from the architecture review.
 
@@ -17,9 +17,9 @@
 - The public repository is created from a curated source tree, not by exposing or rewriting incubator history.
 - The canonical product distribution remains one installable DSH Toolchain bundle.
 - Node support follows upstream DSH: `^22.19.0 || >=24.0.0`.
-- pnpm 11 is the development package manager; exact package-manager version is pinned when `package.json` is introduced in M0.
+- pnpm `11.7.0` is the initial development package manager, matching current upstream DSH; `package.json` pins it in M0.
 - DSH/Cordis host framework packages with identity-sensitive runtime APIs are peer + dev dependencies, not bundled runtime copies.
-- GitHub Actions workflows use least-privilege `permissions`; third-party actions are pinned to full commit SHAs when workflows are introduced.
+- GitHub Actions workflows use least-privilege `permissions`; release/third-party actions are pinned to full commit SHAs as defined in `docs/development.md`.
 - Public npm publishing uses Trusted Publishing/OIDC when the public repository and package exist; no long-lived publish token is part of the target design.
 - Generated files are never hand-edited and must be freshness-gated in CI once generators exist.
 
@@ -36,10 +36,10 @@
 - Consumes: architecture/spec/ADR source-of-truth hierarchy.
 - Produces: one contribution policy shared by humans and AI; AI-specific overlay in `AGENTS.md`.
 
-- [ ] Define Conventional Commit/PR-title grammar, stable scopes, focused-PR rule, squash-main policy, verification evidence, review-comment prefixes, and comment/JSDoc/TODO rules.
-- [ ] Add a compact PR template centered on Why/What/contract impact/verification/risks.
-- [ ] Make `AGENTS.md` require `CONTRIBUTING.md` and forbid duplicate policy definitions.
-- [ ] Self-review for duplicated or contradictory rules.
+- [x] Define Conventional Commit/PR-title grammar, stable scopes, focused-PR rule, squash-main policy, verification evidence, review-comment prefixes, and comment/JSDoc/TODO rules.
+- [x] Add a compact PR template centered on Why/What/contract impact/verification/risks.
+- [x] Make `AGENTS.md` require `CONTRIBUTING.md` and forbid duplicate policy definitions.
+- [x] Self-review for duplicated or contradictory rules.
 
 ### Task 2: Security and issue intake
 
@@ -53,25 +53,24 @@
 - Consumes: `docs/security.md`, Protocol diagnostics/evidence vocabulary.
 - Produces: private vulnerability-reporting rules and structured issue intake, especially compatibility evidence.
 
-- [ ] Define supported-version disclosure policy without inventing a private reporting address not yet configured.
-- [ ] Make security-sensitive reports use GitHub private vulnerability reporting once enabled in the future public repo; explicitly prohibit secrets in public issues.
-- [ ] Collect DSH version/profile/platform/Toolchain version/diagnostic codes/target fingerprint/receipt where applicable for compatibility reports.
-- [ ] Avoid requiring secrets, session content, or full user environment dumps.
+- [x] Define supported-version disclosure policy without inventing a private reporting address not yet configured.
+- [x] Make security-sensitive reports use GitHub private vulnerability reporting once enabled in the future public repo; explicitly prohibit secrets in public issues.
+- [x] Collect DSH version/profile/platform/Toolchain version/diagnostic codes/target fingerprint/receipt where applicable for compatibility reports.
+- [x] Avoid requiring secrets, session content, or full user environment dumps.
 
-### Task 3: Repository hygiene and dependency automation
+### Task 3: Repository hygiene
 
 **Files:**
 - Create: `.editorconfig`
 - Create: `.gitattributes`
 - Create: `.gitignore`
-- Create: `.github/dependabot.yml`
 
 **Interfaces:**
-- Produces: cross-platform text normalization and low-noise dependency update policy.
+- Produces: cross-platform text normalization and safe local-artifact exclusions.
 
-- [ ] Standardize UTF-8, LF in repository text, final newline, and indentation defaults without forcing generated/binary files through text normalization.
-- [ ] Ignore Node/pnpm/build/test/editor/OS/temp DSH artifacts without ignoring source fixtures.
-- [ ] Configure weekly grouped npm and GitHub Actions Dependabot updates with conservative open-PR limits.
+- [x] Standardize UTF-8, LF in repository text, final newline, and indentation defaults without forcing binary files through text normalization.
+- [x] Ignore Node/pnpm/build/test/editor/OS/temp DSH artifacts without ignoring source fixtures.
+- [x] Record dependency-automation policy in `docs/development.md` and defer `.github/dependabot.yml` until M0 introduces real package/workflow manifests.
 
 ### Task 4: Development, release, and clean-publication policy
 
@@ -83,11 +82,11 @@
 **Interfaces:**
 - Produces: M0 toolchain baseline, dependency policy, generated-file ownership, CI security rules, release channel/version policy, platform matrix, Definition of Ready/Done, and incubator-to-public export contract.
 
-- [ ] Document Node/pnpm baseline and framework peer-dependency rule.
-- [ ] Document least-privilege Actions and full-SHA pinning policy.
-- [ ] Document `latest`/`next`, prerelease SemVer, CI-built `npm pack` artifact verification, and OIDC trusted publishing as the public release target.
-- [ ] Define curated public export: exclude internal plans, private operational notes, experimental residue, credentials, caches, and incubator-only metadata; preserve normative specs, ADRs, contribution/security docs, fixtures/tests needed to verify claims, and source.
-- [ ] Add M0 exit criteria for contribution/security/dependency/CI gates.
+- [x] Document Node/pnpm baseline and framework peer-dependency rule.
+- [x] Document least-privilege Actions and full-SHA pinning policy.
+- [x] Document `latest`/`next`, prerelease SemVer, CI-built `npm pack` artifact verification, and OIDC trusted publishing as the public release target.
+- [x] Define curated public export: exclude internal plans, private operational notes, experimental residue, credentials, caches, and incubator-only metadata; preserve normative specs, ADRs, contribution/security docs, fixtures/tests needed to verify claims, and source.
+- [x] Add M0 exit criteria for contribution/security/dependency/CI gates.
 
 ### Task 5: Baseline review and PR update
 
@@ -98,8 +97,8 @@
 **Interfaces:**
 - Produces: a reviewable Architecture + Governance Baseline before implementation planning.
 
-- [ ] Compare `main...docs/architecture-baseline` and check source-of-truth links.
-- [ ] Scan normative/public docs for `TBD`, `TODO`, conflicting package/repo identities, and claims that temporary DSH home is a security sandbox.
-- [ ] Validate YAML syntax for issue forms and Dependabot configuration structurally where possible.
-- [ ] Confirm the public-name policy distinguishes GitHub repository identity from globally unique npm package identity.
-- [ ] Update Draft PR #1 summary and review order.
+- [x] Compare `main...docs/architecture-baseline` and check source-of-truth links.
+- [x] Scan normative/public docs for unresolved placeholders, conflicting package/repo identities, and false sandbox claims; intentional TODO syntax examples are documentation, not unresolved work.
+- [x] Inspect GitHub Issue Form YAML structure for required `name`/`description`/`body`, unique IDs, and valid field nesting.
+- [x] Confirm the public-name policy distinguishes GitHub repository identity from globally unique npm package identity.
+- [ ] Update Draft PR #1 summary/title and confirm final merge state.
