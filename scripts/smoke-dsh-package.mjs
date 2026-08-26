@@ -7,7 +7,16 @@ import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
 export const DSH_SMOKE_VERSION = '0.1.1-rc.2'
-export const DSH_SMOKE_PROFILE = 'toolchain-smoke'
+export const DSH_SMOKE_PROFILES = Object.freeze([
+  Object.freeze({
+    name: 'toolchain-smoke',
+    requiredBundles: Object.freeze(['@deepseek-ai/dsh-base']),
+  }),
+  Object.freeze({
+    name: 'web',
+    requiredBundles: Object.freeze(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']),
+  }),
+])
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -28,10 +37,15 @@ function run(command, args, options = {}) {
   return typeof result.stdout === 'string' ? result.stdout : ''
 }
 
-export function assertProfileManifest(manifest) {
+export function assertProfileManifest(manifest, requiredBundles = []) {
   const bundles = manifest?.dsh?.profile?.bundles
   if (!Array.isArray(bundles) || !bundles.includes('dsh-toolchain')) {
     throw new Error('DSH smoke: profile manifest did not register dsh-toolchain as a bundle')
+  }
+  for (const requiredBundle of requiredBundles) {
+    if (!bundles.includes(requiredBundle)) {
+      throw new Error(`DSH smoke: profile manifest is missing required bundle ${requiredBundle}`)
+    }
   }
   if (manifest?.dependencies?.['dsh-toolchain'] === undefined) {
     throw new Error('DSH smoke: profile manifest did not record dsh-toolchain as a dependency')
@@ -42,8 +56,8 @@ export function assertDumpConfig(dump) {
   if (!dump.includes('dsh-toolchain')) {
     throw new Error('DSH smoke: composed config does not name the dsh-toolchain bundle layer')
   }
-  if (!/\n\s*- id: toolchain\n/.test(dump)) {
-    throw new Error('DSH smoke: composed config does not contain the toolchain row')
+  if (!/\n\s*- id: dsh-toolchain\n/.test(dump)) {
+    throw new Error('DSH smoke: composed config does not contain the dsh-toolchain row')
   }
   if (!dump.includes("name: 'dsh-toolchain/dsh'") && !dump.includes('name: dsh-toolchain/dsh')) {
     throw new Error('DSH smoke: composed config does not mount dsh-toolchain/dsh')
@@ -53,6 +67,7 @@ export function assertDumpConfig(dump) {
 export async function smokeDshPackage(tarballPath, options = {}) {
   const tarball = resolve(tarballPath)
   const version = options.dshVersion ?? DSH_SMOKE_VERSION
+  const profiles = options.profiles ?? DSH_SMOKE_PROFILES
   const root = await mkdtemp(join(tmpdir(), 'dsh-toolchain-smoke-'))
   const runner = join(root, 'runner')
   const home = join(root, 'dsh-home')
@@ -73,30 +88,34 @@ export async function smokeDshPackage(tarballPath, options = {}) {
       timeout: 480_000,
     })
 
-    run('pnpm', [
-      'exec', 'dsh', 'plugin', '--profile', DSH_SMOKE_PROFILE,
-      'add', '--ignore-scripts', tarball,
-    ], {
-      cwd: runner,
-      env,
-      timeout: 300_000,
-    })
+    for (const profile of profiles) {
+      run('pnpm', [
+        'exec', 'dsh', 'plugin', '--profile', profile.name,
+        'add', '--ignore-scripts', tarball,
+      ], {
+        cwd: runner,
+        env,
+        timeout: 300_000,
+      })
 
-    const profileDir = join(home, 'profiles', DSH_SMOKE_PROFILE)
-    const manifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
-    assertProfileManifest(manifest)
+      const profileDir = join(home, 'profiles', profile.name)
+      const manifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
+      assertProfileManifest(manifest, profile.requiredBundles)
 
-    const dump = run('pnpm', [
-      'exec', 'dsh', '--profile', DSH_SMOKE_PROFILE, '--dump-config',
-    ], {
-      cwd: runner,
-      env,
-      capture: true,
-      timeout: 120_000,
-    })
-    assertDumpConfig(dump)
+      const dump = run('pnpm', [
+        'exec', 'dsh', '--profile', profile.name, '--dump-config',
+      ], {
+        cwd: runner,
+        env,
+        capture: true,
+        timeout: 120_000,
+      })
+      assertDumpConfig(dump)
+    }
 
-    process.stdout.write(`DSH package smoke: ${version} profile composition verified\n`)
+    process.stdout.write(
+      `DSH package smoke: ${version} profiles ${profiles.map(profile => profile.name).join(', ')} composition verified\n`,
+    )
   } finally {
     await rm(root, { recursive: true, force: true })
   }
