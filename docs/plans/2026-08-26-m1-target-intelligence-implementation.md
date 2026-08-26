@@ -1,6 +1,6 @@
 # M1 Target Intelligence Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use `superpowers:test-driven-development` and execute the checked plan state below task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Resolve one installed DSH profile into an immutable, evidence-backed `TargetSnapshot` with a deterministic `dsh-target-v1` fingerprint and expose the first useful `target resolve` CLI path.
 
@@ -9,6 +9,12 @@
 **Tech Stack:** TypeScript 6 / NodeNext ESM, Node 22.19+/24/26, pnpm 11.7, Vitest 4, JSON Schema Draft 2020-12, AJV 8, Node `crypto`/`fs`/`module` only in acquisition/frontend boundaries.
 
 **Spec:** `docs/plans/2026-08-26-m1-target-intelligence-design.md`, `docs/decisions/ADR-0006-target-semantic-fingerprint-v1.md`
+
+## Current bounded execution
+
+- Branch `m1/target-intelligence` is verified at `ff2cfd710b06cc574bd36f1137947f522911275f`.
+- Tasks 1 and 2 are implemented at that head. Task 2A records the required review corrections before acquisition.
+- This execution unit ends after Task 3 / Issue #19. Tasks 4-8 remain future work; the PR stays Draft and final PR evidence is not updated here.
 
 ## Global Constraints
 
@@ -38,17 +44,17 @@
 - `TargetResolveRequest`: `{ profile: string; dshHome?: string; dshPackageRoot?: string }`.
 - `TargetResolveResponse.data` MUST be `TargetResolveResult`, not `unknown`.
 
-- [ ] **Step 1: Write failing protocol tests**
+- [x] **Step 1: Write failing protocol tests**
 
 Add assertions that generated exports include `TargetResolveRequest`/`TargetResolveResult`, that `target-resolved.json` validates, and that replacing its `data` with `{ "banana": 123 }` fails the operation-specific schema.
 
-- [ ] **Step 2: Run focused protocol tests and observe RED**
+- [x] **Step 2: Run focused protocol tests and observe RED**
 
 Run: `pnpm vitest run tests/protocol/protocol.spec.ts`
 
 Expected: FAIL because target request/result definitions and example do not exist.
 
-- [ ] **Step 3: Extend only target-related schema definitions**
+- [x] **Step 3: Extend only target-related schema definitions**
 
 Add definitions for:
 
@@ -62,11 +68,11 @@ TargetResolveResponse
 
 M1 snapshot shape must expose exact DSH/runtime/profile package identities required by ADR-0006 while retaining `evidence` and `createdAt`.
 
-- [ ] **Step 4: Update normative `target.resolve` text**
+- [x] **Step 4: Update normative `target.resolve` text**
 
 Specify that acquisition hints may contain absolute paths but those values are not semantic target identity; missing targets return diagnostics without profile initialization.
 
-- [ ] **Step 5: Regenerate and validate**
+- [x] **Step 5: Regenerate and validate**
 
 Run:
 
@@ -79,7 +85,7 @@ pnpm vitest run tests/protocol/protocol.spec.ts
 
 Expected: all PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add spec src/protocol tests/protocol scripts/check-protocol.mjs
@@ -120,7 +126,7 @@ export function canonicalizeTargetProjection(projection: TargetSemanticProjectio
 export async function fingerprintTarget(projection: TargetSemanticProjectionV1, digest: Sha256Port): Promise<string>
 ```
 
-- [ ] **Step 1: Write RED fingerprint fixtures**
+- [x] **Step 1: Write RED fingerprint fixtures**
 
 Tests must prove:
 
@@ -135,13 +141,13 @@ Node/platform/arch change -> different
 
 Use an injected deterministic test digest or a test-only pure fake that records canonical input; do not import Node crypto from `src/model`.
 
-- [ ] **Step 2: Run model tests and observe RED**
+- [x] **Step 2: Run model tests and observe RED**
 
 Run: `pnpm vitest run tests/model/target.spec.ts`
 
 Expected: FAIL because model implementation is absent.
 
-- [ ] **Step 3: Implement projection/canonicalization**
+- [x] **Step 3: Implement projection/canonicalization**
 
 Canonical JSON rules:
 
@@ -150,7 +156,7 @@ Canonical JSON rules:
 - sort dependency identities by `name`, then `version`;
 - do not include evidence/paths/timestamps in projection.
 
-- [ ] **Step 4: Implement namespaced fingerprint**
+- [x] **Step 4: Implement namespaced fingerprint**
 
 `fingerprintTarget()` returns exactly:
 
@@ -160,7 +166,7 @@ dsh-target-v1:<64 lowercase hex chars>
 
 Reject a digest result that is not 64 lowercase hex characters so a broken adapter cannot create ambiguous identities.
 
-- [ ] **Step 5: Run focused + architecture tests**
+- [x] **Step 5: Run focused + architecture tests**
 
 Run:
 
@@ -171,12 +177,41 @@ pnpm check:architecture
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/model tests/model
 git commit -m "feat(core): add target semantic fingerprint"
 ```
+
+---
+
+### Task 2A: Close review drift before acquisition
+
+**Files:**
+- Modify: `spec/schemas/v1/toolchain-protocol.schema.json`
+- Modify: `spec/protocol.md`
+- Modify: `spec/examples/v1/target-resolved.json`
+- Create: `spec/examples/v1/target-failed.json`
+- Modify: `scripts/generate-protocol.mjs`
+- Regenerate: `src/protocol/generated.ts`
+- Modify: `src/model/target.ts`
+- Modify: `tests/protocol/protocol.spec.ts`
+- Modify: `tests/model/target.spec.ts`
+- Modify: `docs/decisions/ADR-0006-target-semantic-fingerprint-v1.md`
+- Modify: `docs/plans/2026-08-26-m1-target-intelligence-design.md`
+
+**Contract corrections:**
+
+- `TargetResolveResponse` is a closed `oneOf` success/failure union. Success requires `data`, `snapshotFingerprint`, and diagnostics; failure requires a non-empty diagnostic result and cannot carry a successful snapshot.
+- Profile names reject `.`, `..`, `node_modules`, `/`, and `\\` before any filesystem traversal.
+- Canonical ordering uses a locale-independent code-point comparator and is tested as exact JSON text.
+- `dsh-toolchain` is excluded from both ordered bundles and dependencies while remaining evidence.
+- A missing `cordis.patch.yml` has the exact sentinel input `dsh-target-v1:profile-patch:absent`; a present file is hashed from its exact UTF-8 contents.
+
+- [x] **Step 1: Write and observe RED protocol/model correction tests**
+- [x] **Step 2: Implement the minimal schema generator, protocol, model, ADR, and design corrections**
+- [x] **Step 3: Regenerate and run focused protocol/model plus generated/protocol gates**
 
 ---
 
@@ -195,6 +230,20 @@ export interface TargetAcquisitionPort {
   acquire(request: TargetResolveRequest): Promise<AcquiredTargetFacts>
 }
 
+export type TargetAcquisitionErrorCode =
+  | 'TARGET_PROFILE_INVALID'
+  | 'TARGET_PROFILE_NOT_FOUND'
+  | 'TARGET_DSH_NOT_FOUND'
+  | 'TARGET_MANIFEST_INVALID'
+  | 'TARGET_BUNDLE_NOT_FOUND'
+  | 'TARGET_DEPENDENCY_NOT_FOUND'
+  | 'TARGET_EVIDENCE_READ_FAILED'
+
+export class TargetAcquisitionError extends Error {
+  readonly code: TargetAcquisitionErrorCode
+  readonly locations: readonly string[]
+}
+
 export function createNodeSha256Port(): Sha256Port
 
 export function createDshFilesystemTargetAcquisition(options?: {
@@ -204,14 +253,15 @@ export function createDshFilesystemTargetAcquisition(options?: {
     readonly platform: string
     readonly arch: string
   }
+  readonly digest?: Sha256Port
 }): TargetAcquisitionPort
 ```
 
-- [ ] **Step 1: Build minimal fixture profile trees**
+- [x] **Step 1: Build minimal fixture profile trees**
 
-Fixtures must contain explicit `dsh-package/package.json`, `$DSH_HOME/profiles/<name>/package.json`, `cordis.patch.yml`, installation bundle package manifests, and profile-local package manifests. Include two absolute-root variants with identical semantic contents.
+Fixtures must contain explicit `dsh-package/package.json`, `$DSH_HOME/profiles/<name>/package.json`, optional `cordis.patch.yml`, installation bundle package manifests, and profile-local package manifests. Exercise two absolute roots with identical semantic contents and different observer evidence, installation/profile bundle collision, missing patch/profile/package, and malformed manifest cases.
 
-- [ ] **Step 2: Write RED acquisition tests**
+- [x] **Step 2: Write RED acquisition tests**
 
 Tests cover:
 
@@ -219,32 +269,41 @@ Tests cover:
 - resolves bundle packages installation-first then profile-local;
 - resolves exact package versions rather than dependency ranges;
 - records profile patch/evidence hashes;
+- treats an absent patch as `sha256("dsh-target-v1:profile-patch:absent")` without creating it;
 - sorts top-level dependency identities only at semantic normalization, not by mutating source manifest;
 - missing profile returns a structured acquisition error and does not create directories/files;
-- invalid bundle target reports which bundle could not resolve.
+- validates profile names before traversal;
+- invalid profile, bundle, dependency, DSH, or manifest evidence reports a stable acquisition code and location;
+- every success and expected failure leaves the complete fixture tree byte-for-byte unchanged.
 
-- [ ] **Step 3: Run acquisition tests and observe RED**
+- [x] **Step 3: Run acquisition tests and observe RED**
 
 Run: `pnpm vitest run tests/acquisition/dsh-filesystem.spec.ts`
 
 Expected: FAIL because provider is absent.
 
-- [ ] **Step 4: Implement Node digest adapter**
+- [x] **Step 4: Implement Node digest adapter**
 
 Use `node:crypto#createHash('sha256')` only in `src/acquisition/node-sha256.ts`.
 
-- [ ] **Step 5: Implement read-only DSH profile acquisition**
+- [x] **Step 5: Implement read-only DSH profile acquisition**
 
 Match current upstream semantics:
 
 - profile dir = `<dshHome>/profiles/<profile>`;
-- read `package.json` + `cordis.patch.yml` only;
-- bundle names come from `dsh.profile.bundles` in declared order;
+- home precedence is request `dshHome`, non-empty `DSH_HOME`, then `~/.dsh`, with upstream-compatible tilde expansion;
+- validate profile name before any `path.join`;
+- resolve an explicit `dshPackageRoot`, otherwise discover `@deepseek-ai/dsh` through `createRequire(anchor).resolve.paths()` and direct manifest probing;
+- read `package.json` + optional `cordis.patch.yml` only;
+- an upstream-compatible profile manifest may omit `version`, `dsh`, or `dsh.profile.bundles`; an omitted bundle list is empty;
+- bundle names come from `dsh.profile.bundles` in declared order and each resolved bundle manifest declares a non-empty `dsh.bundle.patch` path;
 - bundle resolution checks DSH installation `node_modules`/package resolution before profile-local resolution;
-- profile dependency identities resolve from the profile root;
+- profile dependency identities resolve exact installed versions from the profile root, not declared ranges;
+- all manifests and present patch contents use the injected Node SHA-256 adapter for deterministic evidence IDs/hashes;
+- expected defects become `TargetAcquisitionError`; unexpected IO failures retain their `cause`;
 - no call to DSH profile initialization helpers and no write API.
 
-- [ ] **Step 6: Run focused tests + architecture policy**
+- [x] **Step 6: Run focused tests + architecture policy**
 
 Run:
 
@@ -256,7 +315,7 @@ pnpm check:scripts
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/acquisition tests/acquisition tests/fixtures/targets

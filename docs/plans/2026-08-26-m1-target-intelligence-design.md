@@ -84,7 +84,7 @@ It follows current upstream DSH profile semantics:
 - shipped `headless` is `@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-headless`;
 - unknown profiles default to `@deepseek-ai/dsh-base` when DSH initializes them;
 - bundle resolution is installation-first, then profile-local, matching upstream loader behavior;
-- profile `cordis.patch.yml` is an ordered semantic layer and its content affects target identity.
+- profile `cordis.patch.yml`, when present, is an ordered semantic layer and its exact UTF-8 content affects target identity; absence is valid and uses the namespaced sentinel `dsh-target-v1:profile-patch:absent`.
 
 Acquisition is read-only. Missing/uninitialized targets produce diagnostics instead of mutating or initializing the profile.
 
@@ -121,10 +121,10 @@ interface TargetSemanticProjectionV1 {
 
 Rules:
 
-- bundle order is preserved because DSH applies bundle patches in order;
+- bundle order is preserved because DSH applies bundle patches in order, except `dsh-toolchain` itself is removed while preserving every other bundle's relative order;
 - profile dependencies are sorted by package name because object declaration order is not semantic;
-- `dsh-toolchain` itself is excluded from semantic profile dependencies so changing the observer version does not rename the target; it remains captured as evidence;
-- `patchHash` is SHA-256 of the exact profile patch bytes; the path is excluded;
+- `dsh-toolchain` itself is excluded from semantic profile bundles and dependencies so changing the observer version does not rename the target; it remains captured as evidence;
+- `patchHash` is SHA-256 of the exact profile patch UTF-8 contents, or of `dsh-target-v1:profile-patch:absent` when the file is absent; the path is excluded;
 - exact patch bytes are deliberately conservative in v1: comment/format-only edits may change the fingerprint rather than risk false semantic sameness from an incomplete YAML/`!!js` normalizer;
 - DSH/package versions are exact resolved versions, not declared ranges;
 - Node version, platform, and architecture are included because native/runtime behavior can differ across them;
@@ -175,7 +175,7 @@ M0 intentionally kept `createApplicationKernel()` internal. M1 gives it its firs
 
 ```ts
 interface TargetAcquisitionPort {
-  acquire(request: TargetResolveRequest): Promise<AcquiredTarget>
+  acquire(request: TargetResolveRequest): Promise<AcquiredTargetFacts>
 }
 
 interface Sha256Port {

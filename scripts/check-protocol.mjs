@@ -23,6 +23,10 @@ const examples = [
     envelopeRef: '#/$defs/targetResolveResponse',
     dataRef: '#/$defs/targetResolveResult',
   },
+  {
+    url: new URL('spec/examples/v1/target-failed.json', root),
+    envelopeRef: '#/$defs/targetResolveResponse',
+  },
 ]
 
 const schema = JSON.parse(await readFile(schemaUrl, 'utf8'))
@@ -54,9 +58,11 @@ for (const example of examples) {
   const label = example.url.pathname.split('/').at(-1) ?? example.url.pathname
 
   assertValid(requireValidator(example.envelopeRef), value, `${label} envelope`)
-  assertValid(requireValidator(example.dataRef), value.data, `${label} data`)
+  if (example.dataRef) {
+    assertValid(requireValidator(example.dataRef), value.data, `${label} data`)
+  }
 
-  if (example.envelopeRef === '#/$defs/targetResolveResponse') {
+  if (example.dataRef === '#/$defs/targetResolveResult') {
     assertInvalid(
       requireValidator(example.envelopeRef),
       { ...value, data: { banana: 123 } },

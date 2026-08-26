@@ -1,4 +1,4 @@
-import type { Evidence, ResolvedPackageIdentity } from '../protocol/index.js'
+import type { Evidence, ResolvedPackageIdentity, TargetResolveRequest } from '../protocol/index.js'
 import type { Sha256Port } from './digest.js'
 
 export type { Sha256Port } from './digest.js'
@@ -21,6 +21,36 @@ export interface AcquiredTargetFacts {
   }
   readonly evidence: readonly Evidence[]
   readonly supportStatus?: 'tested' | 'supported' | 'experimental' | 'unsupported'
+}
+
+export interface TargetAcquisitionPort {
+  acquire(request: TargetResolveRequest): Promise<AcquiredTargetFacts>
+}
+
+export type TargetAcquisitionErrorCode =
+  | 'TARGET_PROFILE_INVALID'
+  | 'TARGET_PROFILE_NOT_FOUND'
+  | 'TARGET_DSH_NOT_FOUND'
+  | 'TARGET_MANIFEST_INVALID'
+  | 'TARGET_BUNDLE_NOT_FOUND'
+  | 'TARGET_DEPENDENCY_NOT_FOUND'
+  | 'TARGET_EVIDENCE_READ_FAILED'
+
+export class TargetAcquisitionError extends Error {
+  readonly code: TargetAcquisitionErrorCode
+  readonly locations: readonly string[]
+
+  constructor(
+    code: TargetAcquisitionErrorCode,
+    message: string,
+    locations: readonly string[],
+    options?: ErrorOptions,
+  ) {
+    super(message, options)
+    this.name = 'TargetAcquisitionError'
+    this.code = code
+    this.locations = Object.freeze([...locations])
+  }
 }
 
 export interface TargetSemanticProjectionV1 {
@@ -46,16 +76,25 @@ function freezeIdentity(identity: ResolvedPackageIdentity): ResolvedPackageIdent
   return Object.freeze({ name: identity.name, version: identity.version })
 }
 
+function compareCodePoints(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 export function createTargetSemanticProjectionV1(
   facts: AcquiredTargetFacts,
 ): TargetSemanticProjectionV1 {
-  const bundles = Object.freeze(facts.profile.bundles.map(freezeIdentity))
+  const bundles = Object.freeze(
+    facts.profile.bundles
+      .filter(identity => identity.name !== 'dsh-toolchain')
+      .map(freezeIdentity),
+  )
   const dependencies = Object.freeze(
     facts.profile.dependencies
       .filter(identity => identity.name !== 'dsh-toolchain')
       .map(freezeIdentity)
-      .toSorted((left, right) =>
-        left.name.localeCompare(right.name) || left.version.localeCompare(right.version),
+      .toSorted(
+        (left, right) =>
+          compareCodePoints(left.name, right.name) || compareCodePoints(left.version, right.version),
       ),
   )
 
@@ -87,7 +126,7 @@ function canonicalizeValue(value: JsonValue): JsonValue {
 
   return Object.fromEntries(
     Object.entries(value)
-      .toSorted(([left], [right]) => left.localeCompare(right))
+      .toSorted(([left], [right]) => compareCodePoints(left, right))
       .map(([key, child]) => [key, canonicalizeValue(child)]),
   ) as { readonly [key: string]: JsonValue }
 }

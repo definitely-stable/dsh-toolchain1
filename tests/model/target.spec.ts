@@ -26,12 +26,13 @@ function baseFacts(): AcquiredTargetFacts {
       name: 'web',
       bundles: [
         { name: '@deepseek-ai/dsh-base', version: '0.1.1-rc.2' },
+        { name: 'dsh-toolchain', version: '0.0.0' },
         { name: '@deepseek-ai/dsh-web-app', version: '0.1.1-rc.2' },
       ],
       dependencies: [
-        { name: 'z-user-plugin', version: '2.0.0' },
-        { name: 'dsh-toolchain', version: '0.0.0' },
         { name: 'a-user-plugin', version: '1.0.0' },
+        { name: 'dsh-toolchain', version: '0.0.0' },
+        { name: 'Z-user-plugin', version: '2.0.0' },
       ],
       patchHash: 'a'.repeat(64),
     },
@@ -59,6 +60,9 @@ describe('TargetSemanticProjectionV1', () => {
       ...rightBase,
       profile: {
         ...rightBase.profile,
+        bundles: rightBase.profile.bundles.map(bundle =>
+          bundle.name === 'dsh-toolchain' ? { ...bundle, version: '9.9.9' } : bundle,
+        ),
         dependencies: rightBase.profile.dependencies.map(dependency =>
           dependency.name === 'dsh-toolchain'
             ? { ...dependency, version: '9.9.9' }
@@ -72,6 +76,10 @@ describe('TargetSemanticProjectionV1', () => {
     }
 
     expect(createTargetSemanticProjectionV1(left)).toEqual(createTargetSemanticProjectionV1(right))
+    expect(createTargetSemanticProjectionV1(left).profile.bundles).toEqual([
+      { name: '@deepseek-ai/dsh-base', version: '0.1.1-rc.2' },
+      { name: '@deepseek-ai/dsh-web-app', version: '0.1.1-rc.2' },
+    ])
     expect(await fingerprint(left)).toBe(await fingerprint(right))
   })
 
@@ -81,7 +89,7 @@ describe('TargetSemanticProjectionV1', () => {
       ...dependenciesBase,
       profile: {
         ...dependenciesBase.profile,
-        dependencies: [...dependenciesBase.profile.dependencies].reverse(),
+        dependencies: dependenciesBase.profile.dependencies.toReversed(),
       },
     }
 
@@ -92,13 +100,13 @@ describe('TargetSemanticProjectionV1', () => {
       ...bundlesBase,
       profile: {
         ...bundlesBase.profile,
-        bundles: [...bundlesBase.profile.bundles].reverse(),
+        bundles: bundlesBase.profile.bundles.toReversed(),
       },
     }
     expect(await fingerprint(baseFacts())).not.toBe(await fingerprint(reorderedBundles))
   })
 
-  it('changes when compatibility-relevant target facts change', async () => {
+  it('changes when profile package facts change', async () => {
     const baseline = await fingerprint(baseFacts())
     const source = baseFacts()
 
@@ -124,14 +132,18 @@ describe('TargetSemanticProjectionV1', () => {
         ),
       },
     }
-    const runtimeChanged: AcquiredTargetFacts = {
-      ...source,
-      runtime: { ...source.runtime, arch: 'arm64' },
-    }
-
-    for (const changed of [patchChanged, bundleChanged, dependencyChanged, runtimeChanged]) {
+    for (const changed of [patchChanged, bundleChanged, dependencyChanged]) {
       expect(await fingerprint(changed)).not.toBe(baseline)
     }
+  })
+
+  it.each([
+    ['DSH version', (facts: AcquiredTargetFacts) => ({ ...facts, dsh: { ...facts.dsh, version: '0.1.1-rc.3' } })],
+    ['Node version', (facts: AcquiredTargetFacts) => ({ ...facts, runtime: { ...facts.runtime, nodeVersion: '26.0.0' } })],
+    ['platform', (facts: AcquiredTargetFacts) => ({ ...facts, runtime: { ...facts.runtime, platform: 'win32' } })],
+    ['architecture', (facts: AcquiredTargetFacts) => ({ ...facts, runtime: { ...facts.runtime, arch: 'arm64' } })],
+  ] as const)('changes when %s changes', async (_label, change) => {
+    expect(await fingerprint(change(baseFacts()))).not.toBe(await fingerprint(baseFacts()))
   })
 
   it('uses deterministic canonical JSON and a versioned fingerprint namespace', async () => {
@@ -139,11 +151,13 @@ describe('TargetSemanticProjectionV1', () => {
     const canonical = canonicalizeTargetProjection(projection)
     const result = await fingerprintTarget(projection, digest)
 
-    expect(JSON.parse(canonical)).toEqual(projection)
+    expect(canonical).toBe(
+      '{"dsh":{"name":"@deepseek-ai/dsh","version":"0.1.1-rc.2"},"profile":{"bundles":[{"name":"@deepseek-ai/dsh-base","version":"0.1.1-rc.2"},{"name":"@deepseek-ai/dsh-web-app","version":"0.1.1-rc.2"}],"dependencies":[{"name":"Z-user-plugin","version":"2.0.0"},{"name":"a-user-plugin","version":"1.0.0"}],"name":"web","patchHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"runtime":{"arch":"x64","nodeVersion":"24.19.0","platform":"linux"},"schema":"dsh-target-v1"}',
+    )
     expect(result).toMatch(/^dsh-target-v1:[0-9a-f]{64}$/)
     expect(projection.profile.dependencies.map(dependency => dependency.name)).toEqual([
+      'Z-user-plugin',
       'a-user-plugin',
-      'z-user-plugin',
     ])
   })
 

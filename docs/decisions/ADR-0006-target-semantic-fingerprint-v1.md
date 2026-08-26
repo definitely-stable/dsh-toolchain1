@@ -18,11 +18,11 @@ The semantic projection contains only:
 - exact `@deepseek-ai/dsh` package version;
 - exact Node version, platform, and architecture;
 - profile name;
-- ordered resolved bundle package names and exact versions;
+- ordered resolved bundle package names and exact versions, **excluding `dsh-toolchain` itself** while preserving the relative order of all remaining bundles;
 - resolved top-level profile dependency package names and exact versions, sorted by name, **excluding `dsh-toolchain` itself**;
 - SHA-256 of the profile patch contents.
 
-`dsh-toolchain` remains ordinary acquisition evidence and may appear in the captured package graph, but it is excluded from semantic projection so upgrading the observer does not rename an otherwise identical DSH target.
+`dsh-toolchain` remains ordinary acquisition evidence and may appear in acquired bundles or dependencies, but it is excluded from both semantic lists so upgrading the observer does not rename an otherwise identical DSH target.
 
 The projection does not contain:
 
@@ -45,7 +45,9 @@ Changing the meaning or fields of the semantic projection requires a new namespa
 
 ## Conservative patch identity
 
-M1 hashes the exact profile patch bytes rather than attempting to parse and semantically normalize arbitrary YAML/`!!js` expressions. This intentionally prefers a false difference over false sameness: comment/format-only patch edits may change a v1 fingerprint, but a semantic patch change cannot be hidden by an incomplete normalizer.
+M1 hashes the exact UTF-8 profile patch contents rather than attempting to parse and semantically normalize arbitrary YAML/`!!js` expressions. This intentionally prefers a false difference over false sameness: comment/format-only patch edits may change a v1 fingerprint, but a semantic patch change cannot be hidden by an incomplete normalizer.
+
+An absent `cordis.patch.yml` is a valid upstream state. Its `patchHash` is SHA-256 of the exact namespaced sentinel `dsh-target-v1:profile-patch:absent`. A present empty file is hashed from its exact empty UTF-8 contents, so absent and present-empty states remain distinct.
 
 If field evidence later justifies a safe canonical patch representation, that change belongs to a new fingerprint namespace rather than silently reinterpreting `dsh-target-v1`.
 

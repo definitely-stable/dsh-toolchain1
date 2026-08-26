@@ -103,13 +103,22 @@ export type ResponseEnvelope = {
   readonly "diagnostics": Array<Diagnostic>
 }
 
-export type TargetResolveResponse = {
+export type TargetResolveSuccessResponse = {
   readonly "protocolVersion": "1"
   readonly "requestId": string
-  readonly "snapshotFingerprint"?: string
-  readonly "status": "ok" | "failed" | "partial" | "stale" | "cancelled"
-  readonly "data"?: TargetResolveResult
+  readonly "snapshotFingerprint": string
+  readonly "status": "ok"
+  readonly "data": TargetResolveResult
   readonly "diagnostics": Array<Diagnostic>
 }
+
+export type TargetResolveFailureResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "failed"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type TargetResolveResponse = TargetResolveSuccessResponse | TargetResolveFailureResponse
 
 export type ToolchainProtocolResponse = ResponseEnvelope

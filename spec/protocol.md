@@ -39,7 +39,7 @@ The generic baseline response envelope remains available for operation families 
 
 The request requires:
 
-- `profile` — the DSH profile name whose effective target is being inspected.
+- `profile` — the DSH profile name whose effective target is being inspected. It follows upstream naming rules and MUST NOT be `.`, `..`, `node_modules`, or contain `/` or `\\`.
 
 The request MAY also contain acquisition hints:
 
@@ -50,7 +50,9 @@ Acquisition hints MAY be absolute machine paths. They MUST NOT contribute direct
 
 Target resolution is read-only. Toolchain MUST NOT initialize a missing profile, install packages, rewrite profile manifests, or mutate the active profile merely to make `target.resolve` succeed. A missing/unreadable/unresolvable target is represented by diagnostics or infrastructure failure according to whether a semantic response can still be produced.
 
-A successful `TargetResolveResult` contains one immutable `TargetSnapshot`. The snapshot records exact resolved package/runtime/profile identities and evidence used by the acquisition provider; it MUST use resolved package versions rather than dependency ranges for compatibility identity.
+A successful `TargetResolveResponse` has `status: "ok"` and MUST contain `data`, `snapshotFingerprint`, and `diagnostics`. Its `TargetResolveResult` contains one immutable `TargetSnapshot`. The snapshot records exact resolved package/runtime/profile identities and evidence used by the acquisition provider; it MUST use resolved package versions rather than dependency ranges for compatibility identity.
+
+A failed `TargetResolveResponse` has `status: "failed"`, MUST contain at least one structured diagnostic, and MUST NOT contain successful `data` or `snapshotFingerprint` fields.
 
 M1 fingerprints use the `dsh-target-v1:<sha256>` namespace defined by ADR-0006. Toolchain's own package/version is observer metadata/evidence and MUST NOT by itself change the target semantic fingerprint.
 
@@ -70,7 +72,7 @@ A snapshot MUST:
 
 A semantic fingerprint MUST change when compatibility-relevant target state changes and SHOULD remain stable across machines when the effective target semantics represented by that fingerprint namespace are identical.
 
-For `dsh-target-v1`, profile patch bytes are conservatively content-hashed rather than semantically normalized. Formatting/comment-only patch changes may therefore produce a different v1 fingerprint; this avoids false sameness until a safe canonical patch representation is proven.
+For `dsh-target-v1`, present profile patch UTF-8 contents are conservatively content-hashed rather than semantically normalized. Formatting/comment-only patch changes may therefore produce a different v1 fingerprint; this avoids false sameness until a safe canonical patch representation is proven. An absent `cordis.patch.yml` is valid and uses SHA-256 of the exact sentinel `dsh-target-v1:profile-patch:absent`, which is distinct from a present empty file.
 
 Search, inspection, validation, and verification results that make target-specific claims MUST identify the snapshot fingerprint.
 
