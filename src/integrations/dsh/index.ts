@@ -46,7 +46,7 @@ export class ToolchainService extends Service {
    */
   resolveTarget(
     request: TargetResolveRequest,
-    requestId = randomUUID(),
+    requestId: string = randomUUID(),
   ): Promise<TargetResolveResponse> {
     return resolveTargetResponse(this.kernel, request, requestId)
   }
