@@ -2,29 +2,39 @@
 
 The roadmap is capability-gated, not date-gated. GitHub Issues track implementation units; this document tracks product capabilities and exit criteria.
 
-## M0 — Architecture and Contract Foundation
+## M0 — Architecture, Governance and Contract Foundation
 
-**Goal:** make the design executable enough that implementation cannot silently redefine the product, while proving the canonical distribution really is a DSH bundle.
+**Goal:** make the design executable enough that implementation cannot silently redefine the product, while proving the canonical distribution really is a DSH bundle and repository/release policy is ready for real code.
 
 Capabilities:
 - Toolchain Protocol v1 baseline, schemas, and examples;
 - architecture/security/verification specifications and ADRs;
+- contribution policy shared by humans and AI plus PR/Issue templates;
+- technical development/release/publication policy;
 - one-package TypeScript workspace with explicit kernel/DSH Host/CLI/MCP build faces;
 - installable DSH bundle skeleton and `ToolchainService` capability boundary;
 - CLI/MCP entrypoint skeletons that route through the same application layer;
-- schema/type generation;
+- exact Node/pnpm baseline and dependency-ownership policy;
+- schema/type generation and generated-file freshness checks;
 - architecture dependency fitness checks;
-- contract/schema conformance CI.
+- contract/schema conformance CI;
+- least-privilege GitHub Actions policy with reviewed SHA-pinned third-party actions where required;
+- Dependabot configuration introduced together with real manifests/workflows, not before them.
 
 Exit criteria:
 - no unresolved normative placeholders;
 - every example validates against Protocol v1 schemas;
+- contribution/security/development policies do not contradict architecture/spec/ADR sources;
 - the package can be installed by DSH as the canonical product shell without requiring a daemon;
 - DSH Host, CLI, and MCP build faces depend on the kernel and not vice versa;
+- DSH/Cordis identity-sensitive host packages are enforced as peer + dev dependencies rather than nested runtime copies;
 - schema/generated-type freshness is CI-enforced;
-- prohibited dependency directions fail CI.
+- prohibited dependency directions fail CI;
+- CI workflows declare explicit least-privilege permissions;
+- PR title/contribution gates are machine-enforced where practical;
+- the exact packed artifact can be inspected and installed in a clean DSH profile before any public publish path is considered.
 
-Non-goals: DSH contract search, candidate runtime verification, DSH Web UI.
+Non-goals: DSH contract search, candidate runtime verification, DSH Web UI, npm publication from the private incubator, public branch rulesets before their required checks exist.
 
 ## M1 — Target Intelligence
 
