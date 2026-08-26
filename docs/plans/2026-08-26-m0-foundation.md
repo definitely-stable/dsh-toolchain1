@@ -4,9 +4,9 @@
 
 **Goal:** Build the smallest installable DSH Toolchain bundle that proves the architecture baseline is executable: one DSH-independent kernel, one protocol source, native DSH service, CLI/MCP faces, package artifact smoke, and CI-enforced dependency/contracts policy.
 
-**Architecture:** The root npm package is the future `dsh-toolchain` distribution. `src/kernel` and `src/protocol` are DSH-independent; adapters under `src/integrations` and `src/frontends` depend inward. The DSH bundle contributes one Host plugin through `cordis.patch.yml`. M0 exposes no fake target/contract/verification capability: those arrive in M1+.
+**Architecture:** The root npm package is the future `dsh-toolchain` distribution. `src/kernel` and `src/protocol` are DSH-independent; adapters under `src/integrations` and `src/frontends` depend inward. The DSH bundle contributes one Host plugin through `cordis.patch.yml`. M0 exposes no fake target/contract/verification capability: those arrive in M1+. M0 deliberately uses plain TypeScript/NodeNext emission rather than a bundler: this preserves host peer identity, keeps package entry points transparent, and avoids build complexity that has no current requirement.
 
-**Tech Stack:** Node `^22.19.0 || >=24`, pnpm `11.7.0`, TypeScript `6.0.3`, tsdown `0.22.2`, Vitest `4.1.8`, oxlint `1.76.0`, AJV 2020-12, `@deepseek-ai/cordis` `^4.0.1`, MCP TypeScript SDK v2 (`@modelcontextprotocol/server` `^2.0.0`).
+**Tech Stack:** Node `^22.19.0 || >=24`, pnpm `11.7.0`, TypeScript `6.0.3`, Vitest `4.1.8`, oxlint `1.76.0`, AJV 2020-12, `@deepseek-ai/cordis` `^4.0.1`, MCP TypeScript SDK v2 (`@modelcontextprotocol/server` `^2.0.0`).
 
 **Specs:** `docs/architecture.md`, `spec/protocol.md`, `spec/verification.md`, `docs/development.md`, ADR-0001..0005.
 
@@ -21,12 +21,13 @@
 - MCP uses v2 and `serveStdio`, which negotiates the 2026-07-28 protocol revision rather than the legacy direct `StdioServerTransport` bootstrap.
 - Bundle shape follows current DSH: `package.json#dsh.bundle.patch` -> `cordis.patch.yml` -> package export `dsh-toolchain/dsh`.
 - CI release/package smoke inspects the exact `pnpm pack` tarball before installing it into a clean temporary DSH profile.
+- Add a bundler later only if a measured/publication requirement cannot be satisfied by transparent NodeNext ESM output.
 
 ---
 
 ## Task 1 — Root package and compiler/test faces
 
-**Files:** create `package.json`, `tsconfig.json`, `tsconfig.build.json`, `tsdown.config.ts`, `vitest.config.ts`, `.oxlintrc.json`.
+**Files:** create `package.json`, `tsconfig.json`, `tsconfig.build.json`, `vitest.config.ts`, `.oxlintrc.json`.
 
 **Produces:** reproducible package metadata, strict TypeScript build, one-package release surface, initial scripts.
 
@@ -38,6 +39,7 @@ Acceptance:
 - `dsh.bundle.patch` points to `./cordis.patch.yml`;
 - DSH/Cordis is peer + dev;
 - MCP server is a Toolchain-owned runtime dependency;
+- TypeScript build emits NodeNext ESM + declarations without bundling host/runtime dependencies;
 - `pnpm check` is the single local/CI aggregate gate.
 
 ## Task 2 — Protocol code generation and conformance
@@ -53,7 +55,7 @@ TDD sequence:
 
 Acceptance:
 - `pnpm generate` is deterministic;
-- `pnpm check:generated` regenerates in a temp location or compares exact expected content without mutating tracked files;
+- `pnpm check:generated` compares expected generated output without silently mutating tracked files;
 - both canonical examples validate against the response schema;
 - operation-specific `data` examples additionally validate against their referenced report definitions;
 - Protocol version constant is derived from schema, not copied independently.
