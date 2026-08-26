@@ -19,14 +19,15 @@ describe('Target Intelligence smoke policy', () => {
     expect(smoke.TARGET_SMOKE_PROFILE).toBe('headless')
   })
 
-  it('requires path-stability, fingerprint format, and read-only profile evidence', async () => {
+  it('requires path-stability, v2 fingerprinting, read-only evidence, and one no-hint DSH resolution', async () => {
     const source = await readRepo('scripts/smoke-target-resolve.mjs')
 
     expect(source).toContain("'target', 'resolve'")
     expect(source).toContain("'--profile'")
     expect(source).toContain("'--dsh-home'")
     expect(source).toContain("'--dsh-package-root'")
-    expect(source).toMatch(/dsh-target-v1:\[0-9a-f\]\{64\}/)
+    expect(source).toMatch(/dsh-target-v2:\[0-9a-f\]\{64\}/)
+    expect(source).toContain('resolveReadOnlyTarget({ version, home: firstHome })')
     expect(source).toContain('snapshotTree')
     expect(source).toContain('assertTreeUnchanged')
     expect(source).toContain('copyFile')
