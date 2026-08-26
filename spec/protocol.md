@@ -57,7 +57,7 @@ A successful `TargetResolveResponse` has `status: "ok"` and MUST contain `data`,
 
 A failed `TargetResolveResponse` has `status: "failed"`, MUST contain at least one structured diagnostic, and MUST NOT contain successful `data` or `snapshotFingerprint` fields.
 
-New M1 snapshots use the `dsh-target-v2:<sha256>` namespace defined by ADR-0007. ADR-0007 supersedes the private pre-public `dsh-target-v1` projection from ADR-0006 because v1 did not cover every current DSH composition patch layer. Toolchain's own package/version/content is observer metadata/evidence and MUST NOT by itself change the target semantic fingerprint.
+New M1 snapshots use the `dsh-target-v2:<sha256>` namespace defined by ADR-0007. ADR-0007 supersedes the private pre-public `dsh-target-v1` projection from ADR-0006 because v1 did not cover every package/user-declared DSH composition patch input. Toolchain's own package/version/content is observer metadata/evidence and MUST NOT by itself change the target semantic fingerprint.
 
 ## Target snapshot
 
@@ -75,16 +75,18 @@ A snapshot MUST:
 
 A semantic fingerprint MUST change when compatibility-relevant target state represented by its namespace changes and SHOULD remain stable across machines when those effective target semantics are identical.
 
-### `dsh-target-v2` composition identity
+### `dsh-target-v2` declared composition identity
 
-Current DSH boot composes the selected profile in this semantic order:
+The package/user-declared patch inputs consumed by current DSH boot are applied in this semantic order:
 
 1. each declared bundle patch in `dsh.profile.bundles` order;
 2. the profile `cordis.patch.yml`;
 3. `$DSH_HOME/cordis.patch.yml`;
 4. ordered invocation `--patch` overlays.
 
-`dsh-target-v2` therefore includes:
+Current DSH launchers may synthesize additional live overlays after those inputs, for example environment-driven enable/disable state or app-owned runtime adjustments. Such launcher-synthesized/live state is not represented by `dsh-target-v2`; it belongs to observed runtime availability and execution evidence. A static `TargetSnapshot` MUST NOT be treated as proof that a live DSH launcher applied no additional state.
+
+`dsh-target-v2` includes:
 
 - exact `@deepseek-ai/dsh` version;
 - the resolution/compatibility runtime's Node version, platform, and architecture;
@@ -101,7 +103,7 @@ Patch hashes use exact UTF-8 contents rather than a speculative YAML/`!!js` sema
 
 An absent profile patch is valid and hashes the exact sentinel `dsh-target-v2:profile-patch:absent`. An absent home patch is valid and hashes `dsh-target-v2:home-patch:absent`. These are distinct from each other and from present empty files. A declared bundle patch or caller-supplied overlay that cannot be read cannot produce the requested exact target snapshot.
 
-The `runtime` field is the Node/platform/architecture under which Toolchain resolves compatibility for this snapshot. It is not proof that an unrelated separately launched DSH process used the same runtime. Later live observations and verification receipts MUST bind their actually executed runtime and MUST NOT silently claim equivalence when runtime-sensitive target semantics differ.
+The `runtime` field is the Node/platform/architecture under which Toolchain resolves compatibility for this snapshot. It is not proof that an unrelated separately launched DSH process used the same runtime. Later live observations and verification receipts MUST bind their actually executed runtime and the runtime/environment facts relevant to their claims, and MUST NOT silently claim equivalence when runtime-sensitive target semantics or launcher-synthesized availability differ.
 
 Search, inspection, validation, and verification results that make target-specific claims MUST identify the snapshot fingerprint.
 
