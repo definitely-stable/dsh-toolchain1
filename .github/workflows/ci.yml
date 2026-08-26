@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches:
-      - m0/foundation
+      - main
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -50,7 +51,7 @@ jobs:
           mkdir -p .artifacts
           pnpm pack --out .artifacts/dsh-toolchain.tgz
 
-      - name: Inspect packed tarball surface
+      - name: Inspect packed tarball against its manifest
         run: node scripts/check-pack.mjs .artifacts/dsh-toolchain.tgz
 
       - name: Smoke built public API and CLI
@@ -58,6 +59,9 @@ jobs:
           node lib/frontends/cli/bin.js --version
           node lib/frontends/cli/bin.js --help > /dev/null
           node --input-type=module -e "import('./lib/index.js').then(m => { const d = m.createApplicationKernel().describe(); if (d.product !== 'dsh-toolchain' || d.version !== '0.0.0') process.exit(1) })"
+
+      - name: Smoke installed package resolution
+        run: node scripts/smoke-installed-package.mjs .artifacts/dsh-toolchain.tgz
 
       - name: Compose exact tarball in clean DSH profile
         env:
@@ -74,6 +78,7 @@ jobs:
         node:
           - '22.19.0'
           - '24.19.0'
+          - '26'
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
