@@ -12,6 +12,7 @@ const architectureSourceExtensions = [
 ]
 const productionTypeScriptExtensions = new Set(['.ts', '.tsx', '.mts', '.cts'])
 const semanticLayers = new Set(['product', 'protocol', 'model', 'kernel'])
+const forbiddenSemanticRuntimeGlobals = new Set(['process', 'Buffer', 'fetch'])
 
 // Semantic code is dependency-closed by default. A future third-party package
 // belongs here only after we prove it is runtime-neutral and add policy tests;
@@ -115,7 +116,7 @@ function collectSourceFacts(source, file) {
     scriptKindForFile(file),
   )
   const moduleSpecifiers = []
-  const nodeGlobals = new Set()
+  const runtimeGlobals = new Set()
   const dynamicLoaders = new Set()
 
   function addSpecifier(node) {
@@ -142,15 +143,19 @@ function collectSourceFacts(source, file) {
       if (node.arguments.length === 1) addSpecifier(node.arguments[0])
     }
 
-    if (ts.isIdentifier(node) && node.text === 'process' && isIdentifierReference(node)) {
-      nodeGlobals.add('process')
+    if (
+      ts.isIdentifier(node) &&
+      forbiddenSemanticRuntimeGlobals.has(node.text) &&
+      isIdentifierReference(node)
+    ) {
+      runtimeGlobals.add(node.text)
     }
 
     ts.forEachChild(node, visit)
   }
 
   visit(sourceFile)
-  return { moduleSpecifiers, nodeGlobals, dynamicLoaders }
+  return { moduleSpecifiers, runtimeGlobals, dynamicLoaders }
 }
 
 export function isArchitectureSourceFile(file) {
@@ -183,7 +188,7 @@ export function checkSourceImportPolicy(files) {
     const facts = collectSourceFacts(entry.source, file)
 
     if (semanticLayers.has(layer)) {
-      for (const symbol of facts.nodeGlobals) violations.push({ file, symbol, rule: 'semantic-node-global' })
+      for (const symbol of facts.runtimeGlobals) violations.push({ file, symbol, rule: 'semantic-runtime-global' })
       for (const symbol of facts.dynamicLoaders) violations.push({ file, symbol, rule: 'semantic-dynamic-loader' })
     }
 
