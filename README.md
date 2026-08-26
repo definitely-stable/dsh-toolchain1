@@ -18,6 +18,22 @@ The first releases focus on:
 
 Plugin generation, migration, compatibility CI, and integration compilation are deliberately downstream of reliable inspection and verification.
 
+## Installation model
+
+DSH plugin management is profile-scoped. Once the public package is released, the canonical installation shape is:
+
+```bash
+dsh plugin --profile <profile> add dsh-toolchain
+```
+
+For a Web profile, for example:
+
+```bash
+dsh plugin --profile web add dsh-toolchain
+```
+
+The private incubator package is not published to npm. CI verifies the same installation path today by installing the exact packed `.tgz` into an isolated temporary DSH profile.
+
 ## Architecture baseline
 
 Read in this order:
@@ -33,9 +49,11 @@ Development policy lives in [`docs/development.md`](docs/development.md). All co
 
 ## Repository status
 
-This private repository is the development incubator. The future public project is a new clean `definitely-stable/dsh-toolchain` repository created from a curated source tree; the incubator history is not intended to become public history.
+This private repository is the development incubator. The future public project is a new clean `definitely-stable/dsh-toolchain` repository created from curated approved source states; the incubator history is not intended to become public history.
 
-No production implementation is committed yet.
+M0 Foundation is implemented: reproducible package/build faces, Protocol v1 generation and conformance, the shared application-kernel descriptor, native `ToolchainService`, CLI/MCP shells, architecture/package fitness gates, and exact-artifact DSH composition smoke.
+
+Target intelligence, contract intelligence, plugin analysis, validation, verification operations, and DSH Web UI are later milestones. They are not currently exposed as Toolchain capabilities.
 
 ## License
 
