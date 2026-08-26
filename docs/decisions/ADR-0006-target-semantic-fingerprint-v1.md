@@ -1,70 +1,54 @@
 # ADR-0006: Target semantic fingerprint v1
 
-- Status: Accepted
+- Status: Superseded by ADR-0007
 - Date: 2026-08-26
+- Superseded: 2026-08-27
 
 ## Context
 
-ADR-0002 requires target-specific claims to bind to an immutable `TargetSnapshot` and semantic fingerprint, but it intentionally did not define the canonical algorithm. M1 needs one exact algorithm before `target.resolve` can become a working contract.
+ADR-0002 requires target-specific claims to bind to an immutable `TargetSnapshot` and semantic fingerprint, but it intentionally did not define the canonical algorithm. M1 needed one exact algorithm before `target.resolve` could become a working contract.
 
-DSH profile semantics are order-sensitive: bundle patches are applied in `dsh.profile.bundles` order and the profile's own `cordis.patch.yml` is applied after bundle layers. Compatibility also depends on the exact DSH/runtime and resolved package identities, while absolute machine paths, timestamps, and Toolchain's own observer version must not make the same target look different.
+The initial M1 review modeled bundle order and the profile's own `cordis.patch.yml`, but a later corrective review against the complete current DSH boot contract found that v1 did not include bundle patch bytes, `$DSH_HOME/cordis.patch.yml`, or ordered invocation `--patch` overlays. Those omissions permit different effective Cordis compositions to share one v1 fingerprint.
 
-## Decision
+Because the project remains a private unpublished incubator, v1 is superseded before any public compatibility promise depends on it. ADR-0007 defines the corrected `dsh-target-v2` namespace.
 
-The first namespace is `dsh-target-v1`.
+## Historical decision
 
-The semantic projection contains only:
+The first namespace was `dsh-target-v1`.
+
+The semantic projection contained:
 
 - exact `@deepseek-ai/dsh` package version;
 - exact Node version, platform, and architecture;
 - profile name;
-- ordered resolved bundle package names and exact versions, **excluding `dsh-toolchain` itself** while preserving the relative order of all remaining bundles;
-- resolved top-level profile dependency package names and exact versions, sorted by name, **excluding `dsh-toolchain` itself**;
+- ordered resolved bundle package names and exact versions, excluding `dsh-toolchain` itself;
+- resolved top-level profile dependency package names and exact versions, sorted by name, excluding `dsh-toolchain` itself;
 - SHA-256 of the profile patch contents.
 
-`dsh-toolchain` remains ordinary acquisition evidence and may appear in acquired bundles or dependencies, but it is excluded from both semantic lists so upgrading the observer does not rename an otherwise identical DSH target.
+The projection excluded absolute paths, timestamps, evidence locations, machine identifiers, secrets, and Toolchain observer version/path. Objects used recursively sorted keys; bundle order stayed semantic; dependency identities were sorted.
 
-The projection does not contain:
-
-- absolute paths or `DSH_HOME`;
-- usernames or machine identifiers;
-- timestamps;
-- evidence locations;
-- Toolchain's own package version/path;
-- secrets/session contents.
-
-Objects are serialized as deterministic JSON with recursively sorted keys. Arrays preserve the order defined by their semantics: bundle order is preserved; dependency identities are sorted before serialization.
-
-The fingerprint is:
+The historical fingerprint was:
 
 ```text
 dsh-target-v1:<lowercase sha256 hex(canonicalProjectionJson)>
 ```
 
-Changing the meaning or fields of the semantic projection requires a new namespace such as `dsh-target-v2`.
+The ADR explicitly required a new namespace if the projection meaning changed. ADR-0007 follows that rule rather than silently redefining v1.
 
-## Conservative patch identity
+## Historical conservative patch identity
 
-M1 hashes the exact UTF-8 profile patch contents rather than attempting to parse and semantically normalize arbitrary YAML/`!!js` expressions. This intentionally prefers a false difference over false sameness: comment/format-only patch edits may change a v1 fingerprint, but a semantic patch change cannot be hidden by an incomplete normalizer.
+V1 hashed exact profile-patch UTF-8 contents. An absent profile patch used SHA-256 of `dsh-target-v1:profile-patch:absent`, distinct from a present empty file.
 
-An absent `cordis.patch.yml` is a valid upstream state. Its `patchHash` is SHA-256 of the exact namespaced sentinel `dsh-target-v1:profile-patch:absent`. A present empty file is hashed from its exact empty UTF-8 contents, so absent and present-empty states remain distinct.
+That conservative byte-level policy remains valid in principle; the defect was incomplete coverage of the effective composition stack, not the choice to avoid speculative YAML/`!!js` semantic normalization.
 
-If field evidence later justifies a safe canonical patch representation, that change belongs to a new fingerprint namespace rather than silently reinterpreting `dsh-target-v1`.
+## Why it was superseded
 
-## Consequences
+V1 can produce false sameness when:
 
-The same effective target copied to another absolute home can keep the same semantic fingerprint. Toolchain upgrades alone do not change target identity. Bundle order, profile patch bytes, runtime coordinates, or exact resolved target dependency versions do change the fingerprint.
+- a declared bundle's patch bytes change without a package-version bump;
+- two otherwise identical homes have different `$DSH_HOME/cordis.patch.yml` contents;
+- the same profile is launched with different ordered `--patch` overlays.
 
-M1 does not claim that package version alone detects every locally modified development install. Evidence retains content hashes and source locations so stronger development-install identity can be added from real evidence without silently redefining `dsh-target-v1`.
+Those states can produce different runtime composition while retaining a v1 fingerprint, contradicting Toolchain's exact-target product boundary.
 
-## Verification
-
-Fixtures MUST prove:
-
-- path/timestamp changes do not alter the fingerprint;
-- Toolchain's own package version/path does not alter it;
-- bundle order does alter it;
-- profile patch content does alter it;
-- resolved bundle/target-dependency version changes alter it;
-- dependency declaration order alone does not alter it;
-- runtime Node/platform/arch changes alter it.
+See ADR-0007 for the replacement identity and current verification requirements.
