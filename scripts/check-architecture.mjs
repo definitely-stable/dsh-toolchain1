@@ -13,6 +13,11 @@ const architectureSourceExtensions = [
 const productionTypeScriptExtensions = new Set(['.ts', '.tsx', '.mts', '.cts'])
 const semanticLayers = new Set(['product', 'protocol', 'model', 'kernel'])
 
+// Semantic code is dependency-closed by default. A future third-party package
+// belongs here only after we prove it is runtime-neutral and add policy tests;
+// otherwise a seemingly harmless import can reintroduce MCP/Node/host coupling.
+const allowedSemanticExternalDependencies = new Set()
+
 const allowedInternalDependencies = new Map([
   ['public', new Set(['public', 'product', 'protocol'])],
   ['product', new Set(['product'])],
@@ -52,6 +57,10 @@ function classifySourceLayer(file) {
 
 function isPackageSelfReference(specifier) {
   return specifier === packageName || specifier.startsWith(`${packageName}/`)
+}
+
+function isBareExternalSpecifier(specifier) {
+  return !specifier.startsWith('.') && !isBuiltin(specifier) && !isPackageSelfReference(specifier)
 }
 
 function resolveRelativeCandidate(file, specifier) {
@@ -186,6 +195,15 @@ export function checkSourceImportPolicy(files) {
 
       if (semanticLayers.has(layer) && isPackageSelfReference(specifier)) {
         violations.push({ file, specifier, rule: 'dependency-layer' })
+        continue
+      }
+
+      if (
+        semanticLayers.has(layer) &&
+        isBareExternalSpecifier(specifier) &&
+        !allowedSemanticExternalDependencies.has(specifier)
+      ) {
+        violations.push({ file, specifier, rule: 'semantic-external-dependency' })
         continue
       }
 
