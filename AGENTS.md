@@ -30,7 +30,9 @@ Issues and plans MUST NOT silently redefine a normative contract.
 ## Architectural invariants
 
 - The canonical product distribution is one installable DSH Toolchain bundle.
+- DSH installation is profile-scoped; do not invent a pseudo-global Harness installation path.
 - The application/analysis kernel MUST NOT depend on DSH runtime APIs.
+- The semantic core (`product`, `kernel`, `model`, `protocol`) MUST NOT import Node built-in modules; runtime-specific concerns belong at explicit boundaries.
 - DSH integration depends on the kernel; the kernel never depends on DSH integration.
 - Analysis MUST operate on explicit immutable inputs and MUST NOT perform filesystem, network, package-manager, or subprocess IO.
 - DSH-specific acquisition is isolated behind evidence providers and normalizers.
@@ -45,11 +47,11 @@ Issues and plans MUST NOT silently redefine a normative contract.
 
 ## Dependency fitness rules
 
-These rules are intended to become executable CI gates in M0:
+These rules are executable CI gates:
 
-- `analysis` and `model` code may not import Node IO/process modules.
-- protocol/schema code may not import `@deepseek-ai/*`.
-- browser/client code may not import Node-only modules or Host implementations.
+- `product`, `kernel`, `model`, and `protocol` source may not import Node built-ins or `@deepseek-ai/*` runtime packages.
+- pure layers may not reach outward adapters through relative imports or package self-references.
+- browser/client source may not import Node built-ins or concrete Host implementations.
 - DSH Host/Client adapters may depend on public kernel/protocol contracts, never the reverse.
 - CLI, MCP, DSH tools, and Web handlers call application use cases.
 - verification code is the only normal path allowed to spawn untrusted candidate-plugin execution.
