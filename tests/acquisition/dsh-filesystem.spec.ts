@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, readdir, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,8 +42,10 @@ async function snapshotTree(root: string): Promise<Record<string, string>> {
     const entries = await readdir(directory, { withFileTypes: true })
     for (const entry of entries.toSorted((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
       const absolute = path.join(directory, entry.name)
+      const key = path.relative(root, absolute).replaceAll('\\', '/')
       if (entry.isDirectory()) await visit(absolute)
-      else result[path.relative(root, absolute).replaceAll('\\', '/')] = (await readFile(absolute)).toString('base64')
+      else if (entry.isSymbolicLink()) result[key] = `symlink:${await readlink(absolute)}`
+      else result[key] = (await readFile(absolute)).toString('base64')
     }
   }
 
