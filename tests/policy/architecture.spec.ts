@@ -71,16 +71,28 @@ describe('architecture import policy', () => {
     })
   })
 
-  it('rejects Node process access and non-literal loaders from semantic code', () => {
+  it('rejects direct runtime globals and non-literal loaders from semantic code', () => {
     const violations = checkSourceImportPolicy([
       { path: 'src/kernel/process.ts', source: "export const cwd = process.cwd()\n" },
+      { path: 'src/kernel/buffer.ts', source: "export const bytes = Buffer.from('x')\n" },
+      { path: 'src/kernel/network.ts', source: "export const load = () => fetch('https://example.invalid')\n" },
       { path: 'src/model/loader.ts', source: "export const load = (name: string) => import(name)\n" },
     ])
 
     expect(violations).toContainEqual({
       file: 'src/kernel/process.ts',
       symbol: 'process',
-      rule: 'semantic-node-global',
+      rule: 'semantic-runtime-global',
+    })
+    expect(violations).toContainEqual({
+      file: 'src/kernel/buffer.ts',
+      symbol: 'Buffer',
+      rule: 'semantic-runtime-global',
+    })
+    expect(violations).toContainEqual({
+      file: 'src/kernel/network.ts',
+      symbol: 'fetch',
+      rule: 'semantic-runtime-global',
     })
     expect(violations).toContainEqual({
       file: 'src/model/loader.ts',
