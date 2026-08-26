@@ -22,6 +22,9 @@ interface ProtocolSchema {
     targetResolveResponse?: {
       oneOf?: Array<{ $ref?: string }>
     }
+    targetSnapshot?: unknown
+    resolvedBundleIdentity?: unknown
+    [key: string]: unknown
   }
   $id: string
 }
@@ -74,6 +77,29 @@ describe('Protocol v1 generated contract', () => {
     ])
   })
 
+  it('models ordered patch overlays and v2 bundle composition identity in the schema', async () => {
+    const schema = await readProtocolSchema()
+    const request = schema.$defs.targetResolveRequest as {
+      properties?: Record<string, unknown>
+    }
+    const snapshot = schema.$defs.targetSnapshot as {
+      properties?: Record<string, unknown>
+    }
+    const bundle = schema.$defs.resolvedBundleIdentity as {
+      required?: string[]
+    }
+
+    expect(request.properties?.patches).toEqual({
+      type: 'array',
+      items: { type: 'string', minLength: 1 },
+    })
+    expect(bundle.required).toEqual(['name', 'version', 'patchHash'])
+    expect(snapshot.properties?.fingerprint).toEqual({
+      type: 'string',
+      pattern: '^dsh-target-v2:[0-9a-f]{64}$',
+    })
+  })
+
   it('requires a complete success or a diagnostic failure, never a partial success shape', async () => {
     const { ajv, response } = await validators()
     const success = (await readExample('target-resolved.json')) as Record<string, unknown>
@@ -95,15 +121,20 @@ describe('Protocol v1 generated contract', () => {
     },
   )
 
-  it('accepts an ordinary profile name', async () => {
+  it('accepts an ordinary profile with ordered patch acquisition hints', async () => {
     const { ajv, request } = await validators()
-    expect(request({ profile: 'web-dev_2' }), ajv.errorsText(request.errors)).toBe(true)
+    expect(request({
+      profile: 'web-dev_2',
+      patches: ['/tmp/a.yml', '/tmp/b.yml'],
+    }), ajv.errorsText(request.errors)).toBe(true)
   })
 
   it('generates target.resolve TypeScript types from the schema', async () => {
     const generated = await readGeneratedProtocol()
 
     expect(generated).toContain('export type TargetResolveRequest =')
+    expect(generated).toContain('export type ResolvedBundleIdentity =')
+    expect(generated).toContain('readonly "patches"?: Array<string>')
     expect(generated).toContain('export type TargetResolveResult =')
     expect(generated).toContain('export type TargetResolveSuccessResponse =')
     expect(generated).toContain('export type TargetResolveFailureResponse =')
