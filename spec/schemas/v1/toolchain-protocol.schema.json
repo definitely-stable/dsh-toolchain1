@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://definitely-stable.github.io/dsh-toolchain/schemas/v1/toolchain-protocol.schema.json",
+  "title": "DSH Toolchain Protocol v1",
+  "$defs": {
+    "severity": {
+      "enum": ["info", "warning", "error", "fatal"]
+    },
+    "evidenceStrength": {
+      "enum": ["authoritative", "observed", "derived", "heuristic"]
+    },
+    "evidenceKind": {
+      "enum": ["runtime", "generated-catalog", "composed-config", "package", "manifest", "type-declaration", "source", "heuristic"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "strength"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "kind": {"$ref": "#/$defs/evidenceKind"},
+        "strength": {"$ref": "#/$defs/evidenceStrength"},
+        "source": {"type": "string"},
+        "contentHash": {"type": "string"},
+        "location": {"type": "string"}
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "domain", "summary"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+        "severity": {"$ref": "#/$defs/severity"},
+        "domain": {"type": "string", "minLength": 1},
+        "summary": {"type": "string", "minLength": 1},
+        "evidenceIds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "locations": {"type": "array", "items": {"type": "string"}},
+        "repair": {"type": ["object", "null"], "additionalProperties": true}
+      }
+    },
+    "targetSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fingerprint", "createdAt", "dsh", "profile", "evidence"],
+      "properties": {
+        "fingerprint": {"type": "string", "minLength": 16},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "dsh": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version"],
+          "properties": {
+            "version": {"type": "string", "minLength": 1},
+            "installKind": {"type": "string"},
+            "nodeVersion": {"type": "string"},
+            "platform": {"type": "string"},
+            "arch": {"type": "string"}
+          }
+        },
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "bundles": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "supportStatus": {"enum": ["tested", "supported", "experimental", "unsupported"]},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "state": {"enum": ["queued", "running", "input-required", "succeeded", "failed", "cancelled"]},
+        "progress": {"type": "number", "minimum": 0, "maximum": 1},
+        "message": {"type": "string"}
+      }
+    },
+    "validationReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "diagnostics"],
+      "properties": {
+        "status": {"enum": ["passed", "failed", "partial"]},
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
+        "checks": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "verificationReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "artifactFingerprint", "targetFingerprint", "executionPolicy", "checks", "diagnostics", "cleanup"],
+      "properties": {
+        "status": {"enum": ["verified", "failed", "partial", "stale", "cancelled"]},
+        "artifactFingerprint": {"type": "string", "minLength": 16},
+        "targetFingerprint": {"type": "string", "minLength": 16},
+        "executionPolicy": {"enum": ["safe", "trusted"]},
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "status"],
+            "properties": {
+              "id": {"enum": ["structure", "manifest", "dependency", "contract", "build", "package", "install", "compose", "boot", "visibility", "behavior"]},
+              "status": {"enum": ["passed", "failed", "skipped"]},
+              "reason": {"type": "string"}
+            }
+          }
+        },
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
+        "cleanup": {"enum": ["succeeded", "failed", "not-required"]}
+      }
+    },
+    "responseEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "snapshotFingerprint": {"type": "string", "minLength": 16},
+        "status": {"enum": ["ok", "failed", "partial", "stale", "cancelled"]},
+        "data": {},
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    }
+  },
+  "$ref": "#/$defs/responseEnvelope"
+}

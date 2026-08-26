@@ -1,0 +1,95 @@
+name: DSH compatibility report
+description: Report a Toolchain result that differs across DSH versions/profiles or breaks after a DSH change.
+title: "compat: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Compatibility evidence is most useful when it is reproducible and sanitized. Do not include credentials, session content, private source, or full environment dumps.
+
+  - type: textarea
+    id: change
+    attributes:
+      label: Compatibility symptom
+      description: What worked before, what changed, and what now fails or differs?
+      placeholder: Works on DSH ... but on DSH ... Toolchain reports ...
+    validations:
+      required: true
+
+  - type: input
+    id: toolchain-version
+    attributes:
+      label: Toolchain version / commit
+      placeholder: 0.x.y or commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: dsh-version
+    attributes:
+      label: Affected DSH version / commit
+      placeholder: 0.x.y, prerelease, or commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: comparison-dsh-version
+    attributes:
+      label: Comparison DSH version / commit
+      description: Optional known-good or known-different target.
+      placeholder: 0.x.y or commit SHA
+
+  - type: input
+    id: profile
+    attributes:
+      label: DSH profile
+      description: Profile kind/name without secrets or private paths.
+      placeholder: web / tui / headless / custom
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux
+        - Windows
+        - macOS
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: operation
+    attributes:
+      label: Toolchain operation and minimal reproduction
+      description: Include the operation (`target.resolve`, `contract.search`, `plugin.validate`, `plugin.verify`, etc.) and the smallest steps that reproduce the difference.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Include diagnostic codes, support status, semantic target fingerprint, candidate fingerprint, verification receipt ID, or relevant sanitized output when available.
+      render: text
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected compatibility behavior
+      description: What should Toolchain report or do instead?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Checks
+      options:
+        - label: I removed credentials, session content, private source, and sensitive local paths.
+          required: true
+        - label: I am reporting observed evidence rather than assuming a DSH version change is itself a breaking contract change.
+          required: true

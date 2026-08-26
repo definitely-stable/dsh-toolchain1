@@ -1,0 +1,21 @@
+{
+  "protocolVersion": "1",
+  "requestId": "req-example-validation",
+  "snapshotFingerprint": "sha256:0123456789abcdef",
+  "status": "failed",
+  "data": {
+    "status": "failed",
+    "diagnostics": [
+      {
+        "code": "DSH_PACKAGE_CORE_SHADOW",
+        "severity": "error",
+        "domain": "dependency",
+        "summary": "Plugin installs a second identity-sensitive DSH core package.",
+        "evidenceIds": ["manifest:package-json"],
+        "locations": ["package.json"]
+      }
+    ],
+    "checks": ["structure", "manifest", "dependency"]
+  },
+  "diagnostics": []
+}

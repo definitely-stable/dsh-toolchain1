@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build/test output
+dist/
+lib/
+coverage/
+.tmp/
+tmp/
+.cache/
+*.log
+*.tgz
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+
+# Toolchain/DSH local state
+.dsh/
+.dsh-toolchain/
+.dsh-toolchain-cache/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# TypeScript
+*.tsbuildinfo

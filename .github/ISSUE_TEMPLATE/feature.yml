@@ -1,0 +1,53 @@
+name: Feature / proposal
+description: Propose a capability, protocol extension, integration, or developer-experience improvement.
+title: "proposal: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Proposals should start from a user/developer problem. A new abstraction is not a goal by itself.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete developer, agent, DSH, or DSH-Web problem exists today?
+      placeholder: Today a plugin author / coding agent has to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the observable capability or workflow that should become possible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Existing solutions / evidence
+      description: Link current DSH behavior, official docs, plugins, repositories, issues, or comparable tools that show the problem or useful precedent.
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architecture / contract impact
+      description: If known, note which Toolchain surfaces or contracts are affected. It is acceptable to write "unknown".
+
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals
+      description: What should this proposal explicitly not attempt to solve?
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Checks
+      options:
+        - label: I described the problem independently of a preferred implementation.
+          required: true
+        - label: I checked the current architecture/roadmap for an existing equivalent capability.
+          required: true

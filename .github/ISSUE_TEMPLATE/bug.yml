@@ -1,0 +1,83 @@
+name: Bug report
+description: Report incorrect Toolchain behavior with minimal reproducible evidence.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, API keys, private source, session content, or exploit details. Security-sensitive reports follow `SECURITY.md`.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and why it is incorrect.
+      placeholder: Toolchain reported ... but ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Give the smallest sequence of commands/actions needed to reproduce the issue.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: State the expected result or contract.
+    validations:
+      required: true
+
+  - type: input
+    id: toolchain-version
+    attributes:
+      label: Toolchain version / commit
+      description: Version, tag, or commit SHA used.
+      placeholder: 0.x.y or abc1234
+    validations:
+      required: true
+
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH version
+      placeholder: 0.x.y or commit SHA
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux
+        - Windows
+        - macOS
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics and evidence
+      description: Include relevant Toolchain diagnostic codes, snapshot fingerprint, receipt ID, or sanitized logs. Redact local paths if they are sensitive.
+      render: text
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Checks
+      options:
+        - label: I removed credentials, secrets, private source, and session content from this report.
+          required: true
+        - label: This is not a security vulnerability requiring private disclosure under SECURITY.md.
+          required: true
