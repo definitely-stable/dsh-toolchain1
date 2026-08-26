@@ -6,11 +6,12 @@ import {
 } from '../../scripts/check-architecture.mjs'
 
 describe('architecture import policy', () => {
-  it('rejects Node builtins and DSH runtime dependencies from semantic layers', () => {
+  it('rejects runtime packages and package self-reference from semantic layers', () => {
     expect(checkSourceImportPolicy([
       { path: 'src/kernel/bad.ts', source: "import { readFile } from 'fs/promises'\n" },
       { path: 'src/model/bad.mts', source: "import path from 'node:path'\n" },
       { path: 'src/protocol/bad.ts', source: "export * from '@deepseek-ai/cordis'\n" },
+      { path: 'src/kernel/self.ts', source: "import 'dsh-toolchain/dsh'\n" },
     ])).toEqual([
       {
         file: 'src/kernel/bad.ts',
@@ -26,6 +27,11 @@ describe('architecture import policy', () => {
         file: 'src/protocol/bad.ts',
         specifier: '@deepseek-ai/cordis',
         rule: 'semantic-runtime-boundary',
+      },
+      {
+        file: 'src/kernel/self.ts',
+        specifier: 'dsh-toolchain/dsh',
+        rule: 'dependency-layer',
       },
     ])
   })
@@ -83,6 +89,7 @@ describe('architecture import policy', () => {
       { path: 'src/frontends/web/bad-node.ts', source: "import 'node:fs'\n" },
       { path: 'src/client/bad-host.ts', source: "import '../integrations/dsh/index.js'\n" },
       { path: 'src/frontends/web/bad-self.ts', source: "import 'dsh-toolchain/dsh'\n" },
+      { path: 'src/integrations/dsh/index.ts', source: '' },
     ])).toEqual([
       {
         file: 'src/client/bad-node.tsx',
