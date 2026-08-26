@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   createApplicationKernel,
+  resolveTargetResponse,
   type ApplicationKernel,
 } from '../../src/kernel/index.js'
 import type { Sha256Port } from '../../src/model/digest.js'
-import type {
-  AcquiredTargetFacts,
-  TargetAcquisitionPort,
+import {
+  TargetAcquisitionError,
+  type AcquiredTargetFacts,
+  type TargetAcquisitionPort,
 } from '../../src/model/target.js'
 import type {
   TargetResolveRequest,
@@ -132,5 +134,72 @@ describe('application kernel target resolution', () => {
 
     expect(left.snapshot.createdAt).not.toBe(right.snapshot.createdAt)
     expect(left.snapshot.fingerprint).toBe(right.snapshot.fingerprint)
+  })
+
+  it('wraps a successful target result in the shared Protocol response envelope', async () => {
+    const kernel = createM1Kernel({
+      targetAcquisition: { acquire: async () => acquiredFacts() },
+      digest: { sha256Utf8: async () => 'a'.repeat(64) },
+      now: () => '2026-08-27T00:00:00.000Z',
+    })
+
+    const response = await resolveTargetResponse(kernel, { profile: 'web' }, 'request-success')
+
+    expect(response).toEqual({
+      protocolVersion: '1',
+      requestId: 'request-success',
+      snapshotFingerprint: `dsh-target-v2:${'a'.repeat(64)}`,
+      status: 'ok',
+      data: expect.objectContaining({
+        snapshot: expect.objectContaining({
+          fingerprint: `dsh-target-v2:${'a'.repeat(64)}`,
+        }),
+      }),
+      diagnostics: [],
+    })
+  })
+
+  it('maps expected target acquisition failures to one shared Protocol diagnostic', async () => {
+    const kernel = createM1Kernel({
+      targetAcquisition: {
+        acquire: async () => {
+          throw new TargetAcquisitionError(
+            'TARGET_PROFILE_NOT_FOUND',
+            'DSH profile was not found',
+            ['/tmp/dsh/profiles/missing/package.json'],
+          )
+        },
+      },
+      digest: { sha256Utf8: async () => 'a'.repeat(64) },
+    })
+
+    const response = await resolveTargetResponse(kernel, { profile: 'missing' }, 'request-failure')
+
+    expect(response).toEqual({
+      protocolVersion: '1',
+      requestId: 'request-failure',
+      status: 'failed',
+      diagnostics: [{
+        code: 'TARGET_PROFILE_NOT_FOUND',
+        severity: 'error',
+        domain: 'target',
+        summary: 'DSH profile was not found',
+        locations: ['/tmp/dsh/profiles/missing/package.json'],
+      }],
+    })
+  })
+
+  it('does not convert unexpected infrastructure failures into semantic diagnostics', async () => {
+    const kernel = createM1Kernel({
+      targetAcquisition: {
+        acquire: async () => {
+          throw new Error('unexpected filesystem bug')
+        },
+      },
+      digest: { sha256Utf8: async () => 'a'.repeat(64) },
+    })
+
+    await expect(resolveTargetResponse(kernel, { profile: 'web' }, 'request-error'))
+      .rejects.toThrow('unexpected filesystem bug')
   })
 })
