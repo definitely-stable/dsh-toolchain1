@@ -133,6 +133,38 @@ describe('architecture import policy', () => {
     ])
   })
 
+  it('allows Node-facing adapters to compose acquisition while semantic kernel cannot depend on it', () => {
+    const acquisition = { path: 'src/acquisition/dsh-filesystem.ts', source: 'export const acquire = 1\n' }
+    const adapterFiles = [
+      {
+        path: 'src/integrations/dsh/index.ts',
+        source: "import { acquire } from '../../acquisition/dsh-filesystem.js'\nexport { acquire }\n",
+      },
+      {
+        path: 'src/frontends/mcp/index.ts',
+        source: "import { acquire } from '../../acquisition/dsh-filesystem.js'\nexport { acquire }\n",
+      },
+      {
+        path: 'src/frontends/cli/index.ts',
+        source: "import { acquire } from '../../acquisition/dsh-filesystem.js'\nexport { acquire }\n",
+      },
+    ]
+
+    expect(checkSourceImportPolicy([acquisition, ...adapterFiles])).toEqual([])
+    expect(checkSourceImportPolicy([
+      acquisition,
+      {
+        path: 'src/kernel/index.ts',
+        source: "import { acquire } from '../acquisition/dsh-filesystem.js'\nexport { acquire }\n",
+      },
+    ])).toContainEqual({
+      file: 'src/kernel/index.ts',
+      specifier: '../acquisition/dsh-filesystem.js',
+      target: 'src/acquisition/dsh-filesystem.ts',
+      rule: 'dependency-layer',
+    })
+  })
+
   it('scans TypeScript and JavaScript module source extensions but rejects repository prose', () => {
     expect([
       'file.ts', 'file.tsx', 'file.mts', 'file.cts',
