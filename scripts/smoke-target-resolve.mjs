@@ -23,8 +23,8 @@ export const TARGET_SMOKE_DSH_VERSIONS = Object.freeze([
 ])
 export const TARGET_SMOKE_PROFILE = 'headless'
 
-const TOOLCHAIN_CLI = fileURLToPath(new URL('../lib/frontends/cli/bin.js', import.meta.url))
-const TARGET_FINGERPRINT = /^dsh-target-v1:[0-9a-f]{64}$/
+const TOOLCHAIN_TARBALL = fileURLToPath(new URL('../.artifacts/dsh-toolchain.tgz', import.meta.url))
+const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -117,21 +117,6 @@ function parseTargetResponse(stdout, version) {
   return response
 }
 
-async function resolveReadOnlyTarget({ version, home, dshPackageRoot }) {
-  const profileRoot = join(home, 'profiles', TARGET_SMOKE_PROFILE)
-  const before = await snapshotTree(profileRoot)
-  const stdout = run(process.execPath, [
-    TOOLCHAIN_CLI,
-    'target', 'resolve',
-    '--profile', TARGET_SMOKE_PROFILE,
-    '--dsh-home', home,
-    '--dsh-package-root', dshPackageRoot,
-  ], { capture: true, timeout: 120_000 })
-  const after = await snapshotTree(profileRoot)
-  assertTreeUnchanged(before, after, `DSH ${version} profile ${TARGET_SMOKE_PROFILE}`)
-  return parseTargetResponse(stdout, version)
-}
-
 async function smokeTrain(version) {
   const root = await mkdtemp(join(tmpdir(), `dsh-toolchain-target-${version}-`))
   const runner = join(root, 'runner')
@@ -147,7 +132,13 @@ async function smokeTrain(version) {
   try {
     await mkdir(runner, { recursive: true })
     await writeFile(join(runner, 'package.json'), '{"private":true}\n')
-    run('pnpm', ['add', '--save-exact', '--ignore-scripts', `@deepseek-ai/dsh@${version}`], {
+    run('pnpm', [
+      'add',
+      '--save-exact',
+      '--ignore-scripts',
+      `@deepseek-ai/dsh@${version}`,
+      TOOLCHAIN_TARBALL,
+    ], {
       cwd: runner,
       env,
       timeout: 480_000,
@@ -161,8 +152,37 @@ async function smokeTrain(version) {
       timeout: 180_000,
     })
 
+    const installedToolchainCli = resolve(
+      runner,
+      'node_modules',
+      'dsh-toolchain',
+      'lib',
+      'frontends',
+      'cli',
+      'bin.js',
+    )
     const dshPackageRoot = resolve(runner, 'node_modules', '@deepseek-ai', 'dsh')
-    const first = await resolveReadOnlyTarget({ version, home: firstHome, dshPackageRoot })
+
+    async function resolveReadOnlyTarget({ version: targetVersion, home, dshPackageRoot: explicitRoot }) {
+      const profileRoot = join(home, 'profiles', TARGET_SMOKE_PROFILE)
+      const before = await snapshotTree(profileRoot)
+      const args = [
+        installedToolchainCli,
+        'target', 'resolve',
+        '--profile', TARGET_SMOKE_PROFILE,
+        '--dsh-home', home,
+      ]
+      if (explicitRoot !== undefined) args.push('--dsh-package-root', explicitRoot)
+      const stdout = run(process.execPath, args, { capture: true, timeout: 120_000 })
+      const after = await snapshotTree(profileRoot)
+      assertTreeUnchanged(before, after, `DSH ${targetVersion} profile ${TARGET_SMOKE_PROFILE}`)
+      return parseTargetResponse(stdout, targetVersion)
+    }
+
+    // This is the promised no-hint CLI path: the exact packed Toolchain and DSH
+    // are co-installed in one package graph, so Node package resolution must
+    // discover DSH without an explicit package-root escape hatch.
+    const first = await resolveReadOnlyTarget({ version, home: firstHome })
 
     const sourceProfile = join(firstHome, 'profiles', TARGET_SMOKE_PROFILE)
     const copiedProfile = join(secondHome, 'profiles', TARGET_SMOKE_PROFILE)
@@ -172,11 +192,11 @@ async function smokeTrain(version) {
     assert.equal(
       second.snapshotFingerprint,
       first.snapshotFingerprint,
-      `DSH ${version}: equivalent targets in different homes produced different fingerprints`,
+      `DSH ${version}: equivalent targets in different homes/discovery paths produced different fingerprints`,
     )
 
     process.stdout.write(
-      `Target smoke: DSH ${version} ${TARGET_SMOKE_PROFILE} ${first.snapshotFingerprint} read-only/path-stable\n`,
+      `Target smoke: DSH ${version} ${TARGET_SMOKE_PROFILE} ${first.snapshotFingerprint} read-only/path-stable/no-hint\n`,
     )
     return first.snapshotFingerprint
   } finally {
