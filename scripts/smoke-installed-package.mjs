@@ -63,10 +63,11 @@ export async function smokeInstalledPackage(tarballPath) {
         "const root = await import('dsh-toolchain')",
         "const protocol = await import('dsh-toolchain/protocol')",
         "const dsh = await import('dsh-toolchain/dsh')",
-        "const descriptor = root.createApplicationKernel().describe()",
-        "if (descriptor.product !== 'dsh-toolchain' || descriptor.version !== '0.0.0') process.exit(1)",
+        "if (root.TOOLCHAIN_PRODUCT !== 'dsh-toolchain' || root.TOOLCHAIN_VERSION !== '0.0.0') process.exit(1)",
+        "if (root.TOOLCHAIN_PROTOCOL_VERSION !== '1') process.exit(1)",
         "if (protocol.TOOLCHAIN_PROTOCOL_VERSION !== '1') process.exit(1)",
         "if (typeof dsh.default !== 'function') process.exit(1)",
+        "if ('createApplicationKernel' in root) process.exit(1)",
       ].join(';'),
     ], { cwd: project, env })
 
