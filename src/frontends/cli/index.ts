@@ -1,5 +1,7 @@
 import { parseArgs } from 'node:util'
 
+import { createDshFilesystemTargetAcquisition } from '../../acquisition/dsh-filesystem.js'
+import { createNodeSha256Port } from '../../acquisition/node-sha256.js'
 import { createApplicationKernel } from '../../kernel/index.js'
 
 export interface CliWriter {
@@ -28,6 +30,14 @@ Options:
   -h, --help       Show help
   -v, --version    Show version
 `
+
+function createNodeKernel() {
+  const digest = createNodeSha256Port()
+  return createApplicationKernel({
+    targetAcquisition: createDshFilesystemTargetAcquisition({ digest }),
+    digest,
+  })
+}
 
 async function launchMcp(): Promise<void> {
   const { launchMcpStdio } = await import('../mcp/index.js')
@@ -63,7 +73,7 @@ export async function runCli(
   }
 
   if (parsed.values.version && parsed.positionals.length === 0) {
-    io.stdout.write(`${createApplicationKernel().describe().version}\n`)
+    io.stdout.write(`${createNodeKernel().describe().version}\n`)
     return 0
   }
 
