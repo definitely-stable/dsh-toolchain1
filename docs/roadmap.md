@@ -59,21 +59,44 @@ Capabilities:
 - canonical `TargetResolveRequest` / `TargetResolveResult` rather than speculative future request models;
 - installed DSH/profile/package discovery with no active-profile mutation;
 - normalized `TargetSnapshot` and explicit evidence;
-- `TargetSemanticProjectionV1` + `dsh-target-v1:<sha256>` fingerprint from ADR-0006;
+- complete current DSH composition identity through `TargetSemanticProjectionV2` + `dsh-target-v2:<sha256>` from ADR-0007;
+- ordered bundle patch hashes, profile patch hash, home patch hash and ordered invocation-overlay hashes without putting machine paths into semantic identity;
 - first real acquisition port in the internal application kernel;
-- initial CLI `target resolve` projection, followed by DSH/MCP parity once the vertical slice is proven;
-- fixture coverage across path-independent copies, bundle/profile changes, runtime changes, and more than one DSH layout/train;
-- early packaged DSH real-boot/`ctx.toolchain` visibility smoke as a runtime integration hardening gate.
+- initial CLI `target resolve` projection;
+- deterministic no-hint DSH discovery when Toolchain and DSH share a real Node package graph, while preserving explicit `dshPackageRoot` as the escape hatch for detached inspection;
+- fixture coverage across path-independent copies, bundle/profile/home/overlay changes, runtime changes, and more than one DSH layout/train;
+- packaged DSH real-boot/`ctx.toolchain` visibility smoke as a runtime integration hardening gate.
 
 Exit criteria:
 - compatibility-relevant fixture changes alter the fingerprint;
 - irrelevant absolute paths/timestamps do not;
-- bundle order and profile patch changes are fingerprint-sensitive;
+- bundle order and bundle-patch bytes are fingerprint-sensitive;
+- profile patch, home patch and ordered invocation overlays are fingerprint-sensitive;
 - discovery resolves exact package versions rather than declared ranges;
-- read-only discovery performs no active-profile mutation;
-- one real current DSH target and one older supported fixture/layout resolve through the same normalized model;
+- read-only discovery performs no active-profile mutation or discovery-time healing;
+- one real current DSH target and one older supported target resolve through the same normalized model;
 - the first target-resolution contract is closed/typed without pre-designing M2–M4 payloads;
+- the exact packed CLI proves `dshPackageRoot` is truly optional in a supported co-install package graph;
 - real packaged Toolchain boot proves the service is visible through a live DSH seam.
+
+### M1.1 — Target frontend parity
+
+**Goal:** make the installed DSH Plugin and generic agent integration useful immediately after the CLI vertical slice without creating another target implementation.
+
+Capabilities:
+- `ctx.toolchain.resolveTarget()` backed by the existing application-kernel use case;
+- one deliberately small native DSH model-facing `target.resolve` tool;
+- MCP `target.resolve` with Protocol v1 structured results;
+- Host-provided installation context where native DSH can provide stronger target acquisition hints than a detached CLI;
+- parity tests proving CLI/DSH/MCP project the same request/result semantics and diagnostic identities.
+
+Exit criteria:
+- no frontend reimplements target acquisition, normalization or fingerprinting;
+- DSH Plugin users can ask an agent to resolve the current target through the installed plugin rather than shelling out to a separate implementation;
+- MCP clients can obtain the same snapshot without a transport-owned DTO;
+- adding the projections does not broaden M2 contract vocabulary prematurely.
+
+M1.1 is the immediate post-M1 implementation slice and precedes broad M2 work.
 
 ## M2 — Contract Intelligence
 
@@ -84,6 +107,7 @@ Capabilities:
 - generated Tool/Cordis catalog, types/config/package/source providers as fallback/companion evidence;
 - normalized contract model that separates declared capability from live availability;
 - deterministic contract index;
+- **target-bound contract evidence/index identity** over the concrete catalog/type/source/runtime evidence actually consumed, so same-version local content changes cannot reuse a stale contract cache merely because package versions match;
 - `contract.search` and `contract.inspect`;
 - provenance for every returned contract fact;
 - AI evaluation against frozen real DSH development tasks.
@@ -92,7 +116,8 @@ Exit criteria:
 - Toolchain does not reimplement DSH reflection when official inspect evidence is available;
 - retrieved contracts are source/evidence backed;
 - opt-in/live Inspect absence does not make offline target intelligence unusable;
-- stale target handling is correct;
+- contract-index cache validity depends on the evidence identity, not package version alone;
+- stale target/evidence handling is correct;
 - evaluation shows materially fewer invalid API guesses than static-doc/model-memory baseline.
 
 ### First usable alpha gate — Exact Target Plugin Check
@@ -100,12 +125,12 @@ Exit criteria:
 After M2, ship the smallest source/artifact check path that proves the product loop before expanding architecture further:
 
 ```text
-plugin subject + exact TargetSnapshot
+plugin subject + exact TargetSnapshot + contract evidence/index
         ↓
 used contracts / availability / evidence-backed incompatibilities
 ```
 
-This gate may expose a narrow `check` surface before the full M3 rule catalog is complete. It MUST reuse M1/M2 semantics rather than introducing a parallel Doctor-style implementation.
+This gate may expose a narrow `check` surface before the full M3 rule catalog is complete. It MUST reuse M1/M1.1/M2 semantics rather than introducing a parallel Doctor-style implementation.
 
 ## M3 — Plugin Analysis and Validation
 
@@ -137,13 +162,14 @@ Capabilities:
 - explicitly declared deterministic behavior checks;
 - transport-neutral `Operation` evolved from real worker needs;
 - `VerificationReport` / receipt bound to artifact + TargetSnapshot;
+- explicit executed-runtime evidence checked against runtime-sensitive target semantics;
 - allowlisted environment, timeouts, process-tree cleanup and bounded output;
 - cleanup/crash/cancel handling.
 
 Exit criteria:
 - active profile is untouched under the default isolation policy;
 - source-valid/package-broken and boot/visibility-broken fixtures are detected;
-- stale target cannot yield `verified`;
+- stale target or incompatible runtime cannot yield `verified`;
 - worker crash leaves active DSH healthy and yields diagnostics;
 - an unexecuted stage is never reported as passed;
 - community lifecycle runners may be integrated as verifier backends only behind Toolchain-owned evidence semantics.
