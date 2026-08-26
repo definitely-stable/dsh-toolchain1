@@ -50,7 +50,8 @@ These rules are executable CI gates, not advisory prose:
 
 - every production source file under `src/` MUST belong to a declared architecture layer; an unclassified directory is a failure, not an implicit shared zone;
 - production source under `src/` is TypeScript-family only; `.js`, `.jsx`, `.mjs`, and `.cjs` there are rejected;
-- `product`, `protocol`, `model`, and `kernel` may depend only through the declared runtime-neutral layer matrix and may not import Node built-ins or `@deepseek-ai/*` runtime packages;
+- `product`, `protocol`, `model`, and `kernel` may depend only through the declared runtime-neutral layer matrix and may not import Node built-ins, `@deepseek-ai/*` runtime packages, or arbitrary bare external packages;
+- semantic-core external dependencies are deny-by-default; adding a genuinely runtime-neutral third-party package requires an explicit architecture-policy allowlist change with negative tests;
 - semantic-core code may not directly use `process`, `require()`, or a non-literal dynamic `import()`;
 - browser/client code may not import Node built-ins or concrete DSH Host implementations;
 - DSH Host/Client adapters may depend on public kernel/protocol contracts, never the reverse;
@@ -59,7 +60,7 @@ These rules are executable CI gates, not advisory prose:
 - identity-sensitive host packages are an explicit registry; they must be peer + dev dependencies, never nested runtime copies, and the tested dev version must satisfy the advertised peer range;
 - repository policy scripts are linted and statically checked separately from production source.
 
-Adding a new `src/` layer, a new allowed inter-layer edge, or a new host-identity package is an explicit architecture-policy change with negative tests. Do not bypass the policy with a generic `shared`, package self-reference, JavaScript shim, or path alias.
+Adding a new `src/` layer, a new allowed inter-layer edge, a semantic-core external dependency, or a new host-identity package is an explicit architecture-policy change with negative tests. Do not bypass the policy with a generic `shared`, package self-reference, JavaScript shim, or path alias.
 
 ## Agent-specific prohibitions
 
