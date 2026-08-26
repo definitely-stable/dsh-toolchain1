@@ -9,14 +9,14 @@ declare module '@deepseek-ai/cordis' {
 }
 
 export class ToolchainService extends Service {
-  readonly #kernel = createApplicationKernel()
+  private readonly kernel = createApplicationKernel()
 
   constructor(ctx: Context) {
     super(ctx, 'toolchain')
   }
 
   describe(): KernelDescriptor {
-    return this.#kernel.describe()
+    return this.kernel.describe()
   }
 }
 
