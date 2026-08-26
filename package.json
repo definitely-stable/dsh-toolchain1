@@ -54,8 +54,7 @@
     "test": "vitest run",
     "build": "pnpm run clean && tsc -p tsconfig.build.json",
     "check": "pnpm run check:generated && pnpm run check:protocol && pnpm run check:architecture && pnpm run check:package && pnpm run lint && pnpm run typecheck && pnpm run test",
-    "prepack": "pnpm run build",
-    "prepare": "pnpm run build"
+    "prepack": "pnpm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0"
