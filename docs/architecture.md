@@ -11,9 +11,9 @@ This split preserves native DSH adoption while making the same toolchain useful 
 ### Canonical user topology
 
 ```text
-dsh plugin add dsh-toolchain
-          |
-          v
+dsh plugin --profile <profile> add dsh-toolchain
+                    |
+                    v
 +--------------------- DSH Toolchain bundle ----------------------+
 |                                                                  |
 | DSH Host + native tools     DSH Web client     CLI      MCP      |
@@ -25,6 +25,8 @@ dsh plugin add dsh-toolchain
 |                 Evidence acquisition      Verifier worker        |
 +------------------------------------------------------------------+
 ```
+
+DSH plugin management is profile-scoped. A normal Web installation therefore uses `dsh plugin --profile web add dsh-toolchain`; other profiles use the same package through their own profile name. Toolchain does not invent a pseudo-global installation layer over Harness.
 
 The package ships one release train. Separate frontends are implementation faces of the same product, not independently versioned products.
 
@@ -46,7 +48,9 @@ DSH Host / DSH Client / MCP / CLI
        semantic Toolchain model
 ```
 
-The kernel never imports DSH runtime APIs. This is an application of the same capability boundary DSH uses for Cordis Services: consumers depend on a capability, not a concrete provider.
+The kernel never imports DSH runtime APIs. The semantic core (`product`, `kernel`, `model`, and `protocol`) is runtime-neutral and MUST NOT depend on Node built-in modules. Node/DSH/process/filesystem concerns belong at acquisition, verification, integration, and frontend boundaries.
+
+This is an application of the same capability boundary DSH uses for Cordis Services: consumers depend on a capability, not a concrete provider.
 
 ### Acquire, normalize, analyze
 
@@ -109,7 +113,7 @@ Owns transport-neutral use cases:
 - `operation.get`
 - `operation.cancel`
 
-The kernel defines no MCP, CLI, Typert, HTTP, Cordis, or React concepts.
+The kernel defines no MCP, CLI, Typert, HTTP, Cordis, React, Node-runtime, or filesystem/process concepts.
 
 ### Semantic model and analysis
 
@@ -137,7 +141,7 @@ Other DSH plugins may eventually consume stable Toolchain service methods and ex
 
 ### DSH Web
 
-The browser face is a native DSH client plugin. Business behavior remains on the Host/kernel. Unary browser calls use the DSH business-service/Typert Remote model where appropriate; UI contribution uses DSH Slots. Host and Client code are separate build faces and MUST NOT import each other's concrete implementations.
+The browser face is a native DSH client plugin. Business behavior remains on the Host/kernel. Unary browser calls use the DSH business-service/Typert Remote model where appropriate; UI contribution uses DSH Slots. Host and Client code are separate build faces and MUST NOT import each other's concrete implementations. Browser/client source MUST NOT depend on Node built-in modules.
 
 Long-running verification is represented by the transport-neutral `Operation` model. DSH Web can begin with `start -> status/cancel` rather than forcing a streaming protocol into unary Typert methods.
 
@@ -185,7 +189,7 @@ They remain internal until there is a concrete external consumer and compatibili
 
 ## Architecture fitness
 
-The repository will turn the dependency rules in `AGENTS.md` into executable CI checks in M0. Architecture is considered incomplete if it exists only as prose and can be violated by an ordinary import.
+The repository turns the dependency rules in `AGENTS.md` into executable CI checks. Architecture is considered incomplete if it exists only as prose and can be violated by an ordinary import. The gate recognizes both `node:*` and bare Node built-in specifiers, protects `src/model/**`, scans TypeScript/TSX module source forms, and rejects package self-references that would bypass inward dependency direction.
 
 ## References that informed the baseline
 
