@@ -52,7 +52,8 @@ These rules are executable CI gates, not advisory prose:
 - production source under `src/` is TypeScript-family only; `.js`, `.jsx`, `.mjs`, and `.cjs` there are rejected;
 - `product`, `protocol`, `model`, and `kernel` may depend only through the declared runtime-neutral layer matrix and may not import Node built-ins, `@deepseek-ai/*` runtime packages, or arbitrary bare external packages;
 - semantic-core external dependencies are deny-by-default; adding a genuinely runtime-neutral third-party package requires an explicit architecture-policy allowlist change with negative tests;
-- semantic-core code may not directly use `process`, `require()`, or a non-literal dynamic `import()`;
+- semantic-core code may not directly use runtime globals `process`, `Buffer`, or `fetch`, call `require()`, or use a non-literal dynamic `import()`;
+- this guard prevents ordinary architecture regressions; it is not a malicious-code sandbox or an exhaustive static side-effect proof;
 - browser/client code may not import Node built-ins or concrete DSH Host implementations;
 - DSH Host/Client adapters may depend on public kernel/protocol contracts, never the reverse;
 - CLI, MCP, DSH tools, and Web handlers call application use cases;
