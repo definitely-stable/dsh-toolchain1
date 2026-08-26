@@ -13,6 +13,10 @@ import type {
   TargetResolveRequest,
   TargetResolveResponse,
 } from '../../protocol/index.js'
+import {
+  createTargetResolveToolDefinition,
+  type DshToolRegistryPort,
+} from './target-tool.js'
 
 function createNodeKernel() {
   const digest = createNodeSha256Port()
@@ -28,11 +32,26 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+interface ContextWithTools extends Context {
+  readonly tools: DshToolRegistryPort
+}
+
+function hasTools(ctx: Context): ctx is ContextWithTools {
+  return ctx.get('tools') !== undefined
+}
+
 export class ToolchainService extends Service {
   private readonly kernel = createNodeKernel()
 
   constructor(ctx: Context) {
     super(ctx, 'toolchain')
+
+    ctx.inject(['tools'], (toolCtx) => {
+      if (!hasTools(toolCtx)) throw new Error('Cordis injected tools capability is unavailable')
+      return toolCtx.tools.register(createTargetResolveToolDefinition(
+        request => toolCtx.toolchain.resolveTarget(request),
+      ))
+    })
   }
 
   describe(): KernelDescriptor {
