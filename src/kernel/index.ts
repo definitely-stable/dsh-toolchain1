@@ -1,5 +1,6 @@
 import type {
   Evidence,
+  ResolvedBundleIdentity,
   ResolvedPackageIdentity,
   TargetResolveRequest,
   TargetResolveResult,
@@ -9,11 +10,11 @@ import { TOOLCHAIN_PROTOCOL_VERSION } from '../protocol/index.js'
 import { TOOLCHAIN_PRODUCT, TOOLCHAIN_VERSION } from '../product.js'
 import type { Sha256Port } from '../model/digest.js'
 import {
-  createTargetSemanticProjectionV1,
+  createTargetSemanticProjectionV2,
   fingerprintTarget,
   type AcquiredTargetFacts,
   type TargetAcquisitionPort,
-  type TargetSemanticProjectionV1,
+  type TargetSemanticProjectionV2,
 } from '../model/target.js'
 
 export interface KernelDescriptor {
@@ -39,7 +40,15 @@ const descriptor: KernelDescriptor = Object.freeze({
   protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
 })
 
-function freezeIdentity(identity: ResolvedPackageIdentity): ResolvedPackageIdentity {
+function freezeBundleIdentity(identity: ResolvedBundleIdentity): ResolvedBundleIdentity {
+  return Object.freeze({
+    name: identity.name,
+    version: identity.version,
+    patchHash: identity.patchHash,
+  })
+}
+
+function freezePackageIdentity(identity: ResolvedPackageIdentity): ResolvedPackageIdentity {
   return Object.freeze({ name: identity.name, version: identity.version })
 }
 
@@ -49,15 +58,17 @@ function freezeEvidence(item: Evidence): Evidence {
 
 function createSnapshot(
   facts: AcquiredTargetFacts,
-  projection: TargetSemanticProjectionV1,
+  projection: TargetSemanticProjectionV2,
   fingerprint: string,
   createdAt: string,
 ): TargetSnapshot {
-  const bundles = projection.profile.bundles.map(freezeIdentity)
-  const dependencies = projection.profile.dependencies.map(freezeIdentity)
+  const bundles = projection.profile.bundles.map(freezeBundleIdentity)
+  const dependencies = projection.profile.dependencies.map(freezePackageIdentity)
+  const overlayPatchHashes = [...projection.profile.overlayPatchHashes]
   const evidence = facts.evidence.map(freezeEvidence)
   Object.freeze(bundles)
   Object.freeze(dependencies)
+  Object.freeze(overlayPatchHashes)
   Object.freeze(evidence)
 
   return Object.freeze({
@@ -69,7 +80,9 @@ function createSnapshot(
       name: projection.profile.name,
       bundles,
       dependencies,
-      patchHash: projection.profile.patchHash,
+      profilePatchHash: projection.profile.profilePatchHash,
+      homePatchHash: projection.profile.homePatchHash,
+      overlayPatchHashes,
     }),
     ...(facts.supportStatus === undefined ? {} : { supportStatus: facts.supportStatus }),
     evidence,
@@ -83,7 +96,7 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
     describe: () => descriptor,
     async resolveTarget(request: TargetResolveRequest): Promise<TargetResolveResult> {
       const facts = await options.targetAcquisition.acquire(request)
-      const projection = createTargetSemanticProjectionV1(facts)
+      const projection = createTargetSemanticProjectionV2(facts)
       const fingerprint = await fingerprintTarget(projection, options.digest)
       const snapshot = createSnapshot(facts, projection, fingerprint, now())
       return Object.freeze({ snapshot })
