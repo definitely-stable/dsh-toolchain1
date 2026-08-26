@@ -91,7 +91,7 @@ A PR that changes a public Toolchain contract MUST update all affected sources i
 
 Machine diagnostic codes are compatibility identifiers. Do not reuse an existing code for new semantics.
 
-Generated files MUST NOT be edited manually. Change their owning source and regenerate them. CI will eventually enforce generator freshness with a clean-tree check.
+Generated files MUST NOT be edited manually. Change their owning source and regenerate them. CI enforces generator freshness against the canonical source.
 
 ## Tests and verification
 
@@ -99,7 +99,8 @@ Match evidence to the changed boundary:
 
 - pure analysis/model behavior → focused unit/property tests;
 - protocol/schema behavior → schema + canonical example + conformance tests;
-- DSH composition/package behavior → built/package artifact and real composition smoke;
+- package behavior → inspect the exact `.tgz` against its packed manifest and exercise it from a throwaway installed consumer;
+- DSH composition behavior → install the exact packed artifact through profile-scoped DSH plugin management and run real composition smoke;
 - candidate runtime behavior → isolated verification worker/runtime checks;
 - browser projection → Host/Client parity and browser-facing checks;
 - platform-specific behavior → the relevant OS integration path.
@@ -169,7 +170,7 @@ Review comments should explain the technical reason for a requested change. If d
 
 ## Dependencies
 
-Use pnpm for development. The supported Node range follows upstream DSH: `^22.19.0 || >=24.0.0`; CI targets current supported Node 22 and Node 24 lanes as defined in `docs/development.md`.
+Use pnpm for development. The supported Node range follows upstream DSH: `^22.19.0 || >=24.0.0`; CI exercises Node 22.19, Node 24.19, and the current Node 26 major as defined in `docs/development.md`.
 
 Framework packages whose runtime/module identity must match the DSH host are host-provided. They belong in `peerDependencies` plus `devDependencies`, not as nested runtime copies. Ordinary Toolchain-owned runtime libraries belong in `dependencies`; build/test-only tools belong in `devDependencies`.
 
@@ -206,4 +207,4 @@ A change is done only when:
 
 ## Public repository model
 
-This repository is the private development incubator. The future public project is `definitely-stable/dsh-toolchain` with desired npm identity `dsh-toolchain`. Public launch uses a curated source-tree export rather than exposing or rewriting incubator history; see `docs/internal/publication.md`.
+This repository is the private development incubator. The future public project is `definitely-stable/dsh-toolchain` with desired npm identity `dsh-toolchain`. Public launch uses curated approved source states rather than exposing or rewriting incubator history; see `docs/internal/publication.md`.
