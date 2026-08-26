@@ -32,7 +32,7 @@ const HELP = `DSH Toolchain
 Usage:
   dsh-toolchain [--help] [--version]
   dsh-toolchain mcp
-  dsh-toolchain target resolve --profile <name> [--dsh-home <path>] [--dsh-package-root <path>]
+  dsh-toolchain target resolve --profile <name> [--dsh-home <path>] [--dsh-package-root <path>] [--patch <path> ...]
 
 Commands:
   mcp              Serve DSH Toolchain over MCP stdio
@@ -45,6 +45,7 @@ Options:
       --dsh-home <path>      Override DSH_HOME for this read-only resolution
       --dsh-package-root <path>
                              Override the @deepseek-ai/dsh package root
+      --patch <path>         Include an ordered DSH --patch overlay; repeatable
 `
 
 function createNodeKernel(): ApplicationKernel {
@@ -69,6 +70,7 @@ type CliOptionValues = ReturnType<typeof parseArgs>['values']
 function targetRequest(values: CliOptionValues): TargetResolveRequest | undefined {
   const profile = values.profile
   if (typeof profile !== 'string' || profile.length === 0) return undefined
+  const patches = Array.isArray(values.patch) ? values.patch : []
 
   return {
     profile,
@@ -76,6 +78,7 @@ function targetRequest(values: CliOptionValues): TargetResolveRequest | undefine
     ...(typeof values['dsh-package-root'] === 'string'
       ? { dshPackageRoot: values['dsh-package-root'] }
       : {}),
+    ...(patches.length === 0 ? {} : { patches: [...patches] }),
   }
 }
 
@@ -83,6 +86,7 @@ function hasTargetOnlyOption(values: CliOptionValues): boolean {
   return values.profile !== undefined
     || values['dsh-home'] !== undefined
     || values['dsh-package-root'] !== undefined
+    || values.patch !== undefined
 }
 
 export async function runCli(
@@ -103,6 +107,7 @@ export async function runCli(
         profile: { type: 'string' },
         'dsh-home': { type: 'string' },
         'dsh-package-root': { type: 'string' },
+        patch: { type: 'string', multiple: true },
       },
     })
   } catch (error) {
