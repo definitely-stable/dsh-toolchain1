@@ -1,4 +1,9 @@
-import type { Evidence, ResolvedPackageIdentity, TargetResolveRequest } from '../protocol/index.js'
+import type {
+  Evidence,
+  ResolvedBundleIdentity,
+  ResolvedPackageIdentity,
+  TargetResolveRequest,
+} from '../protocol/index.js'
 import type { Sha256Port } from './digest.js'
 
 export type { Sha256Port } from './digest.js'
@@ -15,9 +20,11 @@ export interface AcquiredTargetFacts {
   }
   readonly profile: {
     readonly name: string
-    readonly bundles: readonly ResolvedPackageIdentity[]
+    readonly bundles: readonly ResolvedBundleIdentity[]
     readonly dependencies: readonly ResolvedPackageIdentity[]
-    readonly patchHash: string
+    readonly profilePatchHash: string
+    readonly homePatchHash: string
+    readonly overlayPatchHashes: readonly string[]
   }
   readonly evidence: readonly Evidence[]
   readonly supportStatus?: 'tested' | 'supported' | 'experimental' | 'unsupported'
@@ -33,7 +40,9 @@ export type TargetAcquisitionErrorCode =
   | 'TARGET_DSH_NOT_FOUND'
   | 'TARGET_MANIFEST_INVALID'
   | 'TARGET_BUNDLE_NOT_FOUND'
+  | 'TARGET_BUNDLE_PATCH_NOT_FOUND'
   | 'TARGET_DEPENDENCY_NOT_FOUND'
+  | 'TARGET_OVERLAY_NOT_FOUND'
   | 'TARGET_EVIDENCE_READ_FAILED'
 
 export class TargetAcquisitionError extends Error {
@@ -53,8 +62,8 @@ export class TargetAcquisitionError extends Error {
   }
 }
 
-export interface TargetSemanticProjectionV1 {
-  readonly schema: 'dsh-target-v1'
+export interface TargetSemanticProjectionV2 {
+  readonly schema: 'dsh-target-v2'
   readonly dsh: {
     readonly name: '@deepseek-ai/dsh'
     readonly version: string
@@ -66,13 +75,23 @@ export interface TargetSemanticProjectionV1 {
   }
   readonly profile: {
     readonly name: string
-    readonly bundles: readonly ResolvedPackageIdentity[]
+    readonly bundles: readonly ResolvedBundleIdentity[]
     readonly dependencies: readonly ResolvedPackageIdentity[]
-    readonly patchHash: string
+    readonly profilePatchHash: string
+    readonly homePatchHash: string
+    readonly overlayPatchHashes: readonly string[]
   }
 }
 
-function freezeIdentity(identity: ResolvedPackageIdentity): ResolvedPackageIdentity {
+function freezeBundleIdentity(identity: ResolvedBundleIdentity): ResolvedBundleIdentity {
+  return Object.freeze({
+    name: identity.name,
+    version: identity.version,
+    patchHash: identity.patchHash,
+  })
+}
+
+function freezePackageIdentity(identity: ResolvedPackageIdentity): ResolvedPackageIdentity {
   return Object.freeze({ name: identity.name, version: identity.version })
 }
 
@@ -80,26 +99,27 @@ function compareCodePoints(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-export function createTargetSemanticProjectionV1(
+export function createTargetSemanticProjectionV2(
   facts: AcquiredTargetFacts,
-): TargetSemanticProjectionV1 {
+): TargetSemanticProjectionV2 {
   const bundles = Object.freeze(
     facts.profile.bundles
       .filter(identity => identity.name !== 'dsh-toolchain')
-      .map(freezeIdentity),
+      .map(freezeBundleIdentity),
   )
   const dependencies = Object.freeze(
     facts.profile.dependencies
       .filter(identity => identity.name !== 'dsh-toolchain')
-      .map(freezeIdentity)
+      .map(freezePackageIdentity)
       .toSorted(
         (left, right) =>
           compareCodePoints(left.name, right.name) || compareCodePoints(left.version, right.version),
       ),
   )
+  const overlayPatchHashes = Object.freeze([...facts.profile.overlayPatchHashes])
 
   return Object.freeze({
-    schema: 'dsh-target-v1',
+    schema: 'dsh-target-v2',
     dsh: Object.freeze({
       name: '@deepseek-ai/dsh' as const,
       version: facts.dsh.version,
@@ -113,7 +133,9 @@ export function createTargetSemanticProjectionV1(
       name: facts.profile.name,
       bundles,
       dependencies,
-      patchHash: facts.profile.patchHash,
+      profilePatchHash: facts.profile.profilePatchHash,
+      homePatchHash: facts.profile.homePatchHash,
+      overlayPatchHashes,
     }),
   })
 }
@@ -131,17 +153,17 @@ function canonicalizeValue(value: JsonValue): JsonValue {
   ) as { readonly [key: string]: JsonValue }
 }
 
-export function canonicalizeTargetProjection(projection: TargetSemanticProjectionV1): string {
+export function canonicalizeTargetProjection(projection: TargetSemanticProjectionV2): string {
   return JSON.stringify(canonicalizeValue(projection as unknown as JsonValue))
 }
 
 export async function fingerprintTarget(
-  projection: TargetSemanticProjectionV1,
+  projection: TargetSemanticProjectionV2,
   digest: Sha256Port,
 ): Promise<string> {
   const value = await digest.sha256Utf8(canonicalizeTargetProjection(projection))
   if (!/^[0-9a-f]{64}$/.test(value)) {
     throw new Error('SHA-256 digest port must return exactly 64 lowercase hexadecimal characters')
   }
-  return `dsh-target-v1:${value}`
+  return `dsh-target-v2:${value}`
 }
