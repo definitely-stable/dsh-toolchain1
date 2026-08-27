@@ -1,4 +1,17 @@
 import type {
+  ContractInspectFailureResponse,
+  ContractInspectRequest,
+  ContractInspectResponse,
+  ContractInspectResult,
+  ContractInspectStaleResponse,
+  ContractInspectSuccessResponse,
+  ContractSearchFailureResponse,
+  ContractSearchRequest,
+  ContractSearchResponse,
+  ContractSearchResult,
+  ContractSearchStaleResponse,
+  ContractSearchSuccessResponse,
+  Diagnostic,
   Evidence,
   ResolvedBundleIdentity,
   ResolvedPackageIdentity,
@@ -12,6 +25,15 @@ import type {
 import { TOOLCHAIN_PROTOCOL_VERSION } from '../protocol/index.js'
 import { TOOLCHAIN_PRODUCT, TOOLCHAIN_VERSION } from '../product.js'
 import type { Sha256Port } from '../model/digest.js'
+import {
+  ContractAcquisitionError,
+  createContractIndex,
+  inspectContractIndex,
+  searchContractIndex,
+  type ContractAcquisitionErrorCode,
+  type ContractAcquisitionPort,
+  type ContractIndex,
+} from '../model/contract.js'
 import {
   createTargetSemanticProjectionV2,
   fingerprintTarget,
@@ -27,15 +49,53 @@ export interface KernelDescriptor {
   readonly protocolVersion: typeof TOOLCHAIN_PROTOCOL_VERSION
 }
 
+export interface ContractSearchOutcome {
+  readonly snapshotFingerprint: string
+  readonly data: ContractSearchResult
+}
+
+export interface ContractInspectOutcome {
+  readonly snapshotFingerprint: string
+  readonly data: ContractInspectResult
+}
+
 export interface ApplicationKernel {
   describe(): KernelDescriptor
   resolveTarget(request: TargetResolveRequest): Promise<TargetResolveResult>
+  searchContracts(request: ContractSearchRequest): Promise<ContractSearchOutcome>
+  inspectContract(request: ContractInspectRequest): Promise<ContractInspectOutcome>
 }
 
 export interface ApplicationKernelOptions {
   readonly targetAcquisition: TargetAcquisitionPort
+  readonly contractAcquisition?: ContractAcquisitionPort
   readonly digest: Sha256Port
   readonly now?: () => string
+}
+
+type ContractOperationErrorCode =
+  | ContractAcquisitionErrorCode
+  | 'CONTRACT_INDEX_STALE'
+  | 'CONTRACT_NOT_FOUND'
+
+class ContractOperationError extends Error {
+  readonly code: ContractOperationErrorCode
+  readonly snapshotFingerprint: string
+  readonly locations: readonly string[]
+
+  constructor(
+    code: ContractOperationErrorCode,
+    message: string,
+    snapshotFingerprint: string,
+    locations: readonly string[] = [],
+    options?: ErrorOptions,
+  ) {
+    super(message, options)
+    this.name = 'ContractOperationError'
+    this.code = code
+    this.snapshotFingerprint = snapshotFingerprint
+    this.locations = Object.freeze([...locations])
+  }
 }
 
 const descriptor: KernelDescriptor = Object.freeze({
@@ -93,6 +153,43 @@ function createSnapshot(
   })
 }
 
+function targetDiagnostic(error: TargetAcquisitionError): Diagnostic {
+  return {
+    code: error.code,
+    severity: 'error',
+    domain: 'target',
+    summary: error.message,
+    ...(error.locations.length === 0 ? {} : { locations: [...error.locations] }),
+  }
+}
+
+function contractDiagnostic(error: ContractOperationError): Diagnostic {
+  return {
+    code: error.code,
+    severity: 'error',
+    domain: 'contract',
+    summary: error.message,
+    ...(error.locations.length === 0 ? {} : { locations: [...error.locations] }),
+  }
+}
+
+function wrapContractAcquisition(
+  error: ContractAcquisitionError,
+  snapshotFingerprint: string,
+): ContractOperationError {
+  return new ContractOperationError(
+    error.code,
+    error.message,
+    snapshotFingerprint,
+    error.locations,
+    { cause: error },
+  )
+}
+
+function isStaleContractError(error: ContractOperationError): boolean {
+  return error.code === 'CONTRACT_EVIDENCE_STALE' || error.code === 'CONTRACT_INDEX_STALE'
+}
+
 /**
  * Execute `target.resolve` and project expected acquisition failures into the
  * shared Protocol response. Frontends own correlation ids and transport
@@ -121,13 +218,105 @@ export async function resolveTargetResponse(
       protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
       requestId,
       status: 'failed',
-      diagnostics: [{
-        code: error.code,
-        severity: 'error',
-        domain: 'target',
-        summary: error.message,
-        ...(error.locations.length === 0 ? {} : { locations: [...error.locations] }),
-      }],
+      diagnostics: [targetDiagnostic(error)],
+    }
+    return response
+  }
+}
+
+export async function searchContractsResponse(
+  kernel: ApplicationKernel,
+  request: ContractSearchRequest,
+  requestId: string,
+): Promise<ContractSearchResponse> {
+  try {
+    const outcome = await kernel.searchContracts(request)
+    const response: ContractSearchSuccessResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      snapshotFingerprint: outcome.snapshotFingerprint,
+      status: 'ok',
+      data: outcome.data,
+      diagnostics: [],
+    }
+    return response
+  } catch (error) {
+    if (error instanceof TargetAcquisitionError) {
+      const response: ContractSearchFailureResponse = {
+        protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+        requestId,
+        status: 'failed',
+        diagnostics: [targetDiagnostic(error)],
+      }
+      return response
+    }
+    if (!(error instanceof ContractOperationError)) throw error
+
+    if (isStaleContractError(error)) {
+      const response: ContractSearchStaleResponse = {
+        protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+        requestId,
+        snapshotFingerprint: error.snapshotFingerprint,
+        status: 'stale',
+        diagnostics: [contractDiagnostic(error)],
+      }
+      return response
+    }
+
+    const response: ContractSearchFailureResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'failed',
+      diagnostics: [contractDiagnostic(error)],
+    }
+    return response
+  }
+}
+
+export async function inspectContractResponse(
+  kernel: ApplicationKernel,
+  request: ContractInspectRequest,
+  requestId: string,
+): Promise<ContractInspectResponse> {
+  try {
+    const outcome = await kernel.inspectContract(request)
+    const response: ContractInspectSuccessResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      snapshotFingerprint: outcome.snapshotFingerprint,
+      status: 'ok',
+      data: outcome.data,
+      diagnostics: [],
+    }
+    return response
+  } catch (error) {
+    if (error instanceof TargetAcquisitionError) {
+      const response: ContractInspectFailureResponse = {
+        protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+        requestId,
+        status: 'failed',
+        diagnostics: [targetDiagnostic(error)],
+      }
+      return response
+    }
+    if (!(error instanceof ContractOperationError)) throw error
+
+    if (isStaleContractError(error)) {
+      const response: ContractInspectStaleResponse = {
+        protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+        requestId,
+        snapshotFingerprint: error.snapshotFingerprint,
+        status: 'stale',
+        diagnostics: [contractDiagnostic(error)],
+      }
+      return response
+    }
+
+    const response: ContractInspectFailureResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'failed',
+      diagnostics: [contractDiagnostic(error)],
     }
     return response
   }
@@ -136,14 +325,82 @@ export async function resolveTargetResponse(
 export function createApplicationKernel(options: ApplicationKernelOptions): ApplicationKernel {
   const now = options.now ?? (() => new Date().toISOString())
 
+  async function resolveTarget(request: TargetResolveRequest): Promise<TargetResolveResult> {
+    const facts = await options.targetAcquisition.acquire(request)
+    const projection = createTargetSemanticProjectionV2(facts)
+    const fingerprint = await fingerprintTarget(projection, options.digest)
+    const snapshot = createSnapshot(facts, projection, fingerprint, now())
+    return Object.freeze({ snapshot })
+  }
+
+  async function buildContractIndex(request: TargetResolveRequest): Promise<{
+    readonly snapshot: TargetSnapshot
+    readonly index: ContractIndex
+  }> {
+    if (options.contractAcquisition === undefined) {
+      throw new Error('Contract acquisition is not configured for this application kernel')
+    }
+    const { snapshot } = await resolveTarget(request)
+    let acquired
+    try {
+      acquired = await options.contractAcquisition.acquire(snapshot)
+    } catch (error) {
+      if (error instanceof ContractAcquisitionError) {
+        throw wrapContractAcquisition(error, snapshot.fingerprint)
+      }
+      throw error
+    }
+    const index = await createContractIndex(
+      snapshot.fingerprint,
+      acquired.evidence,
+      acquired.contracts,
+      options.digest,
+    )
+    return Object.freeze({ snapshot, index })
+  }
+
   return Object.freeze({
     describe: () => descriptor,
-    async resolveTarget(request: TargetResolveRequest): Promise<TargetResolveResult> {
-      const facts = await options.targetAcquisition.acquire(request)
-      const projection = createTargetSemanticProjectionV2(facts)
-      const fingerprint = await fingerprintTarget(projection, options.digest)
-      const snapshot = createSnapshot(facts, projection, fingerprint, now())
-      return Object.freeze({ snapshot })
+    resolveTarget,
+    async searchContracts(request: ContractSearchRequest): Promise<ContractSearchOutcome> {
+      const { snapshot, index } = await buildContractIndex(request.target)
+      const selection = searchContractIndex(index, request.query, request.kinds, request.limit ?? 10)
+      return Object.freeze({
+        snapshotFingerprint: snapshot.fingerprint,
+        data: Object.freeze({
+          contractIndexFingerprint: index.fingerprint,
+          matches: [...selection.matches],
+          evidence: [...selection.evidence],
+        }),
+      })
+    },
+    async inspectContract(request: ContractInspectRequest): Promise<ContractInspectOutcome> {
+      const { snapshot, index } = await buildContractIndex(request.target)
+      if (index.fingerprint !== request.contractIndexFingerprint) {
+        throw new ContractOperationError(
+          'CONTRACT_INDEX_STALE',
+          'Requested contract index is stale for the current target evidence.',
+          snapshot.fingerprint,
+        )
+      }
+
+      const selection = inspectContractIndex(index, request.contractId)
+      if (selection === undefined) {
+        throw new ContractOperationError(
+          'CONTRACT_NOT_FOUND',
+          `Contract ${request.contractId} is not present in the current contract index.`,
+          snapshot.fingerprint,
+        )
+      }
+
+      return Object.freeze({
+        snapshotFingerprint: snapshot.fingerprint,
+        data: Object.freeze({
+          contractIndexFingerprint: index.fingerprint,
+          contract: selection.contract,
+          evidence: [...selection.evidence],
+        }),
+      })
     },
   })
 }
