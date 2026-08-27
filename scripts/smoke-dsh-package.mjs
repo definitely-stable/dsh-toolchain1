@@ -228,7 +228,7 @@ export function apply(rootCtx) {
       const request = { profile, dshHome, dshPackageRoot }
       const descriptor = ctx.toolchain.describe()
       const service = await ctx.toolchain.resolveTarget(request, 'dsh-smoke-service')
-      const agent = ctx.agentLoop.create('dsh-toolchain-smoke-agent')
+      const agent = ctx.agentLoop.create('dsh-toolchain-smoke-agent-' + profile)
       const schemas = ctx.tools.schemas(agent)
       const targetVisible = schemas.some(schema => schema.name === 'toolchain_target_resolve')
       const contractSearchVisible = schemas.some(schema => schema.name === 'toolchain_contract_search')
