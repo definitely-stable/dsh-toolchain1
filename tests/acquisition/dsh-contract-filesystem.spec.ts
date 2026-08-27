@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile, mkdir, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -28,6 +28,33 @@ interface PackageFixture {
   readonly version: string
   readonly manifest: Record<string, unknown>
   readonly files?: Readonly<Record<string, string>>
+}
+
+interface TestContractAcquisitionBudget {
+  readonly maxDeclarationFilesPerPackage: number
+  readonly maxDeclarationBytesPerFile: number
+  readonly maxDeclarationBytesPerPackage: number
+  readonly maxDeclarationReferenceEdgesPerPackage: number
+  readonly maxDeclarationDepth: number
+}
+
+function budget(overrides: Partial<TestContractAcquisitionBudget> = {}): TestContractAcquisitionBudget {
+  return {
+    maxDeclarationFilesPerPackage: 100,
+    maxDeclarationBytesPerFile: 1_000_000,
+    maxDeclarationBytesPerPackage: 10_000_000,
+    maxDeclarationReferenceEdgesPerPackage: 100,
+    maxDeclarationDepth: 20,
+    ...overrides,
+  }
+}
+
+function acquisitionWithBudget(value: TestContractAcquisitionBudget) {
+  const options = {
+    digest: createNodeSha256Port(),
+    budget: value,
+  }
+  return createDshContractFilesystemAcquisition(options)
 }
 
 async function writePackage(root: string, fixture: PackageFixture): Promise<{ manifestLocation: string; manifestContent: string }> {
@@ -247,6 +274,59 @@ describe('DSH Contract filesystem acquisition', () => {
     )
   })
 
+  it('accepts exactly the declaration file budget and rejects one file beyond it', async () => {
+    const fixture = await createFixture()
+
+    await expect(acquisitionWithBudget(budget({ maxDeclarationFilesPerPackage: 2 })).acquire(fixture.target)).resolves.toBeDefined()
+    await expect(acquisitionWithBudget(budget({ maxDeclarationFilesPerPackage: 1 })).acquire(fixture.target)).rejects.toMatchObject({
+      code: 'CONTRACT_DECLARATION_LIMIT_EXCEEDED',
+    })
+  })
+
+  it('accepts exactly the per-file byte budget and rejects one byte beyond it', async () => {
+    const fixture = await createFixture()
+    const declaration = path.join(path.dirname(fixture.toolsManifestLocation), 'dist', 'tool.d.ts')
+    const content = `export interface ToolDefinition { readonly payload: '${'x'.repeat(1024)}' }\n`
+    await writeFile(declaration, content, 'utf8')
+    const bytes = Buffer.byteLength(content, 'utf8')
+
+    await expect(acquisitionWithBudget(budget({ maxDeclarationBytesPerFile: bytes })).acquire(fixture.target)).resolves.toBeDefined()
+    await expect(acquisitionWithBudget(budget({ maxDeclarationBytesPerFile: bytes - 1 })).acquire(fixture.target)).rejects.toMatchObject({
+      code: 'CONTRACT_DECLARATION_LIMIT_EXCEEDED',
+    })
+  })
+
+  it('accepts exactly the package byte budget and rejects one byte beyond it', async () => {
+    const fixture = await createFixture()
+    const packageRoot = path.dirname(fixture.toolsManifestLocation)
+    const indexContent = await readFile(path.join(packageRoot, 'dist', 'index.d.ts'), 'utf8')
+    const toolContent = await readFile(path.join(packageRoot, 'dist', 'tool.d.ts'), 'utf8')
+    const bytes = Buffer.byteLength(indexContent, 'utf8') + Buffer.byteLength(toolContent, 'utf8')
+
+    await expect(acquisitionWithBudget(budget({ maxDeclarationBytesPerPackage: bytes })).acquire(fixture.target)).resolves.toBeDefined()
+    await expect(acquisitionWithBudget(budget({ maxDeclarationBytesPerPackage: bytes - 1 })).acquire(fixture.target)).rejects.toMatchObject({
+      code: 'CONTRACT_DECLARATION_LIMIT_EXCEEDED',
+    })
+  })
+
+  it('accepts exactly the declaration graph edge budget and rejects one edge beyond it', async () => {
+    const fixture = await createFixture()
+
+    await expect(acquisitionWithBudget(budget({ maxDeclarationReferenceEdgesPerPackage: 1 })).acquire(fixture.target)).resolves.toBeDefined()
+    await expect(acquisitionWithBudget(budget({ maxDeclarationReferenceEdgesPerPackage: 0 })).acquire(fixture.target)).rejects.toMatchObject({
+      code: 'CONTRACT_DECLARATION_LIMIT_EXCEEDED',
+    })
+  })
+
+  it('accepts exactly the declaration graph depth budget and rejects one level beyond it', async () => {
+    const fixture = await createFixture()
+
+    await expect(acquisitionWithBudget(budget({ maxDeclarationDepth: 1 })).acquire(fixture.target)).resolves.toBeDefined()
+    await expect(acquisitionWithBudget(budget({ maxDeclarationDepth: 0 })).acquire(fixture.target)).rejects.toMatchObject({
+      code: 'CONTRACT_DECLARATION_LIMIT_EXCEEDED',
+    })
+  })
+
   it('rejects declaration entrypoints that escape the exact package root', async () => {
     const fixture = await createFixture()
     const manifest = JSON.parse(await readFile(fixture.toolsManifestLocation, 'utf8')) as Record<string, unknown>
@@ -261,6 +341,25 @@ describe('DSH Contract filesystem acquisition', () => {
     const acquisition = createDshContractFilesystemAcquisition({ digest: createNodeSha256Port() })
 
     await expect(acquisition.acquire(target)).rejects.toMatchObject({
+      code: 'CONTRACT_DECLARATION_INVALID',
+    })
+  })
+
+  it('rejects declaration references whose in-package path is a symlink to outside', async () => {
+    const fixture = await createFixture()
+    const packageRoot = path.dirname(fixture.toolsManifestLocation)
+    const outside = path.join(fixture.root, 'outside.d.ts')
+    const insideLink = path.join(packageRoot, 'dist', 'outside-link.d.ts')
+    await writeFile(outside, 'export interface OutsideContract {}\n', 'utf8')
+    await symlink(outside, insideLink, 'file')
+    await writeFile(
+      path.join(packageRoot, 'dist', 'index.d.ts'),
+      "export { OutsideContract } from './outside-link.js'\n",
+      'utf8',
+    )
+    const acquisition = createDshContractFilesystemAcquisition({ digest: createNodeSha256Port() })
+
+    await expect(acquisition.acquire(fixture.target)).rejects.toMatchObject({
       code: 'CONTRACT_DECLARATION_INVALID',
     })
   })
