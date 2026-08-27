@@ -15,6 +15,11 @@ export interface DshRuntimeTargetBindingOptions {
   readonly baseUrl: string
   /** Authoritative value from the Host-provided `dshHomePath()` capability. */
   readonly dshHome: string
+  /**
+   * Immutable M1 fingerprint captured once when Toolchain mounts in this Host.
+   * Absence fails closed; path identity alone is never sufficient for live evidence.
+   */
+  readonly startupTargetFingerprint?: string | Promise<string | undefined>
   /** Exact running process argv, including Node script path. */
   readonly argv?: readonly string[]
   /** Working directory used by the official launcher to resolve `--patch` paths. */
@@ -157,13 +162,28 @@ function snapshotEvidenceLocation(snapshot: TargetSnapshot, evidenceId: string):
   return typeof evidence?.location === 'string' ? evidence.location : undefined
 }
 
+async function matchesStartupFingerprint(
+  startupTargetFingerprint: DshRuntimeTargetBindingOptions['startupTargetFingerprint'],
+  snapshot: TargetSnapshot,
+): Promise<boolean> {
+  if (startupTargetFingerprint === undefined) return false
+  try {
+    const fingerprint = await startupTargetFingerprint
+    return fingerprint !== undefined && fingerprint === snapshot.fingerprint
+  } catch {
+    return false
+  }
+}
+
 /**
  * Build a conservative automatic binding for the official DSH launcher.
  *
- * Current upstream exposes the exact profile directory (`ctx.root.baseUrl`) and
- * DSH home (`dshHomePath()`), but not the boot-time hashes of arbitrary
- * `--patch` overlays. Therefore automatic live binding deliberately rejects
- * every invocation containing explicit launcher overlays instead of guessing.
+ * Path/runtime checks prove this is the same process/profile installation.
+ * The startup fingerprint additionally freezes the M1 semantic target observed
+ * when Toolchain mounted; a later same-path filesystem/HMR drift therefore
+ * disables live enrichment instead of mixing old runtime evidence with a new
+ * TargetSnapshot. Current upstream still lacks a launcher-owned composition
+ * generation attestation, so explicit overlays remain unsupported here.
  */
 export function createDshRuntimeTargetBinding(
   options: DshRuntimeTargetBindingOptions,
@@ -183,6 +203,10 @@ export function createDshRuntimeTargetBinding(
 
   return Object.freeze({
     async matches(snapshot: TargetSnapshot): Promise<boolean> {
+      // The frozen startup semantic baseline is the byte-sensitive M1 guard.
+      // Never upgrade a path-only match to live evidence when it is unavailable.
+      if (!await matchesStartupFingerprint(options.startupTargetFingerprint, snapshot)) return false
+
       // Upstream does not publish boot-time overlay hashes. Reject rather than
       // compare the requested target against mutable overlay files after boot.
       if (launch.patches.length !== 0 || snapshot.profile.overlayPatchHashes.length !== 0) return false
