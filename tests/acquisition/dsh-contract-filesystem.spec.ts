@@ -139,9 +139,9 @@ describe('DSH Contract filesystem acquisition', () => {
       expect.objectContaining({ key: 'declaration-symbol', value: 'ToolDefinition' }),
     ]))
     expect(result.evidence.filter(item => item.kind === 'type-declaration').map(item => item.source)).toEqual([
-      '@deepseek-ai/dsh/index.d.ts',
       '@deepseek-ai/dsh-tools/dist/index.d.ts',
       '@deepseek-ai/dsh-tools/dist/tool.d.ts',
+      '@deepseek-ai/dsh/index.d.ts',
     ])
   })
 
