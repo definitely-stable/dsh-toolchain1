@@ -23,6 +23,12 @@ interface AcquisitionOptions {
 interface ExpectedPackage {
   readonly name: string
   readonly version: string
+  readonly manifestEvidenceIds: readonly string[]
+}
+
+interface PackageCandidate {
+  readonly name: string
+  readonly version: string
   readonly manifestEvidenceId: string
 }
 
@@ -84,9 +90,41 @@ function bundleManifestEvidenceIds(snapshot: TargetSnapshot): Map<string, string
   )
 }
 
+function groupPackageCandidates(candidates: readonly PackageCandidate[]): readonly ExpectedPackage[] {
+  const grouped = new Map<string, { version: string; manifestEvidenceIds: Set<string> }>()
+  for (const candidate of candidates) {
+    const existing = grouped.get(candidate.name)
+    if (existing === undefined) {
+      grouped.set(candidate.name, {
+        version: candidate.version,
+        manifestEvidenceIds: new Set([candidate.manifestEvidenceId]),
+      })
+      continue
+    }
+    if (existing.version !== candidate.version) {
+      throw acquisitionError(
+        'CONTRACT_MANIFEST_INVALID',
+        `Target snapshot resolves ${candidate.name} at multiple versions: ${existing.version} and ${candidate.version}`,
+        [],
+      )
+    }
+    existing.manifestEvidenceIds.add(candidate.manifestEvidenceId)
+  }
+
+  return Object.freeze(
+    [...grouped.entries()]
+      .map(([name, value]) => Object.freeze({
+        name,
+        version: value.version,
+        manifestEvidenceIds: Object.freeze([...value.manifestEvidenceIds].toSorted(compareCodePoints)),
+      }))
+      .toSorted((left, right) => compareCodePoints(left.name, right.name)),
+  )
+}
+
 function expectedPackages(snapshot: TargetSnapshot): readonly ExpectedPackage[] {
   const bundleEvidenceIds = bundleManifestEvidenceIds(snapshot)
-  const bundles = snapshot.profile.bundles.map(bundle => {
+  const bundles: PackageCandidate[] = snapshot.profile.bundles.map(bundle => {
     const candidates = bundleEvidenceIds.get(bundle.name)
     const manifestEvidenceId = candidates?.shift()
     if (manifestEvidenceId === undefined) {
@@ -103,7 +141,7 @@ function expectedPackages(snapshot: TargetSnapshot): readonly ExpectedPackage[] 
     }
   })
 
-  return [
+  return groupPackageCandidates([
     {
       name: snapshot.dsh.name,
       version: snapshot.dsh.version,
@@ -115,7 +153,7 @@ function expectedPackages(snapshot: TargetSnapshot): readonly ExpectedPackage[] 
       version: dependency.version,
       manifestEvidenceId: `manifest:dependency:${dependency.name}`,
     })),
-  ]
+  ])
 }
 
 async function readUtf8(location: string): Promise<string> {
@@ -134,9 +172,10 @@ async function readUtf8(location: string): Promise<string> {
 async function acquireManifest(
   snapshot: TargetSnapshot,
   expected: ExpectedPackage,
+  manifestEvidenceId: string,
   digest: Sha256Port,
 ): Promise<ManifestRecord> {
-  const evidence = snapshot.evidence.find(item => item.id === expected.manifestEvidenceId)
+  const evidence = snapshot.evidence.find(item => item.id === manifestEvidenceId)
   if (
     evidence === undefined
     || evidence.kind !== 'manifest'
@@ -196,6 +235,35 @@ async function acquireManifest(
     )
   }
   return { evidence: Object.freeze({ ...evidence }), packageRoot, canonicalPackageRoot, value }
+}
+
+async function acquireManifestAliases(
+  snapshot: TargetSnapshot,
+  expected: ExpectedPackage,
+  digest: Sha256Port,
+): Promise<readonly ManifestRecord[]> {
+  const manifests: ManifestRecord[] = []
+  for (const manifestEvidenceId of expected.manifestEvidenceIds) {
+    manifests.push(await acquireManifest(snapshot, expected, manifestEvidenceId, digest))
+  }
+  const primary = manifests[0]
+  if (primary === undefined) {
+    throw acquisitionError(
+      'CONTRACT_EVIDENCE_READ_FAILED',
+      `Target snapshot has no manifest evidence aliases for ${expected.name}`,
+      [],
+    )
+  }
+  for (const alias of manifests.slice(1)) {
+    if (alias.canonicalPackageRoot !== primary.canonicalPackageRoot) {
+      throw acquisitionError(
+        'CONTRACT_MANIFEST_INVALID',
+        `Target snapshot resolves ${expected.name}@${expected.version} to multiple installed package roots`,
+        manifests.map(item => item.evidence.location).filter((location): location is string => location !== undefined),
+      )
+    }
+  }
+  return Object.freeze(manifests)
 }
 
 function collectExportTypePaths(value: unknown, result: Set<string>): void {
@@ -401,13 +469,17 @@ async function acquirePackage(
   expected: ExpectedPackage,
   digest: Sha256Port,
 ): Promise<{ readonly contract: ContractDefinition; readonly evidence: readonly Evidence[] }> {
-  const manifest = await acquireManifest(snapshot, expected, digest)
+  const manifests = await acquireManifestAliases(snapshot, expected, digest)
+  const manifest = manifests[0]
+  if (manifest === undefined) throw new Error(`Manifest aliases disappeared for ${expected.name}`)
+  const manifestEvidence = manifests.map(item => item.evidence)
+  const manifestEvidenceIds = manifestEvidence.map(item => item.id).toSorted(compareCodePoints)
   const entrypoints = declarationEntrypoints(manifest.value)
   const declarations = await readDeclarationGraph(manifest, expected.name, entrypoints, digest)
   const facts: ContractFact[] = [{
     key: 'version',
     value: expected.version,
-    evidenceIds: [manifest.evidence.id],
+    evidenceIds: [...manifestEvidenceIds],
   }]
   for (const entry of declarations.entries) {
     facts.push({ key: 'declaration-entry', value: entry.relativePath, evidenceIds: [entry.evidenceId] })
@@ -419,7 +491,7 @@ async function acquirePackage(
   }
 
   const declarationEvidence = declarations.records.map(record => record.evidence)
-  const evidence = Object.freeze([manifest.evidence, ...declarationEvidence])
+  const evidence = Object.freeze([...manifestEvidence, ...declarationEvidence])
   const evidenceIds = Object.freeze(evidence.map(item => item.id).toSorted(compareCodePoints))
   return {
     contract: Object.freeze({
