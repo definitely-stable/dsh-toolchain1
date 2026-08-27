@@ -54,10 +54,10 @@ class TestCordisInspectService extends Service {
     return [{
       platform: 'host',
       id: 'Service',
-      description: 'test service catalog',
+      description: 'test generated Service API catalog',
       methods: [{
         name: 'listService',
-        description: 'test compact service catalog',
+        description: 'test compact Service API catalog',
         inputSchema: { type: 'object', additionalProperties: false },
         outputSchema: { type: 'object' },
       }],
@@ -77,7 +77,7 @@ class TestCordisInspectService extends Service {
       mode: 'catalog',
       services: [{
         key: 'liveAlpha',
-        description: 'Live Alpha service visible only to this Agent.',
+        description: 'Alpha Service API contract from the generated Harness catalog.',
         methods: [{ signature: 'ping(): string' }],
       }],
     })
@@ -231,7 +231,7 @@ describe('native DSH Toolchain tools', () => {
     await toolchainFiber.dispose()
   })
 
-  it('enriches native search and inspect from the current Agent-scoped Host Inspect surface only', async () => {
+  it('enriches native search and inspect from the Host Service API catalog without overstating liveness', async () => {
     const ctx = new Context()
     const inspectFiber = await ctx.plugin(TestCordisInspectService)
     const toolchainFiber = await ctx.plugin(ToolchainService)
@@ -259,13 +259,13 @@ describe('native DSH Toolchain tools', () => {
       expect.objectContaining({
         id: 'service:host:liveAlpha',
         kind: 'service',
-        availability: 'available',
+        availability: 'unknown',
       }),
     ])
     expect(liveSearch.data.evidence).toEqual([
       expect.objectContaining({
-        kind: 'runtime',
-        strength: 'observed',
+        kind: 'generated-catalog',
+        strength: 'authoritative',
         source: 'cordis-inspect:host/Service/listService',
       }),
     ])
@@ -282,7 +282,7 @@ describe('native DSH Toolchain tools', () => {
         contractIndexFingerprint: liveSearch.data.contractIndexFingerprint,
         contract: {
           id: 'service:host:liveAlpha',
-          availability: 'available',
+          availability: 'unknown',
         },
       },
     })
