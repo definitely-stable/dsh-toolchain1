@@ -80,6 +80,44 @@ describe('TypeScript declaration syntax adapter', () => {
     ])
   })
 
+  it('keeps already-declaration re-export specifiers idempotent', () => {
+    const parsed = parseTypeScriptDeclarationSyntax('index.d.ts', [
+      "export * from './already.d.ts'",
+      "export * from './module.d.mts'",
+      "export * from './legacy.d.cts'",
+      '',
+    ].join('\n'))
+
+    expect(parsed.relativeReexports).toEqual([
+      { kind: 'star', specifier: './already.d.ts' },
+      { kind: 'star', specifier: './legacy.d.cts' },
+      { kind: 'star', specifier: './module.d.mts' },
+    ])
+  })
+
+  it('normalizes relative triple-slash source extensions to declaration siblings idempotently', () => {
+    const parsed = parseTypeScriptDeclarationSyntax('index.d.ts', [
+      '/// <reference path="./context.ts" />',
+      '/// <reference path="./module.mts" />',
+      '/// <reference path="./legacy.cts" />',
+      '/// <reference path="./view.tsx" />',
+      '/// <reference path="./already.d.ts" />',
+      '/// <reference path="./already-module.d.mts" />',
+      '/// <reference path="./already-legacy.d.cts" />',
+      '',
+    ].join('\n'))
+
+    expect(parsed.relativePathReferences).toEqual([
+      './already-legacy.d.cts',
+      './already-module.d.mts',
+      './already.d.ts',
+      './context.d.ts',
+      './legacy.d.cts',
+      './module.d.mts',
+      './view.d.ts',
+    ])
+  })
+
   it('treats exported import-equals as a public relative edge without flattening its target', () => {
     const parsed = parseTypeScriptDeclarationSyntax(
       'index.d.ts',
