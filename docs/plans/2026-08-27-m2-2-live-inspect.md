@@ -1,224 +1,175 @@
-# M2.2 Agent-scoped Live Inspect — Implementation Plan
+# M2.2 Agent-scoped Host Inspect — Implementation / Verification Record
 
-> **Execution rule:** use TDD. Every behavioral change must have an observed RED before the minimal GREEN. Do not add a dummy Agent, global/current-Agent state, an Agent-keyed cache, or a parallel live Contract Index.
+> **Execution rule:** TDD for behavioral changes. Do not add a dummy Agent, global/current-Agent state, an Agent-keyed cache, Client-page race semantics, or a parallel live Contract Index.
 
 **Issue:** #31  
 **Parent:** #28  
 **Base:** M2.1 squash merge `0c647dceb0af00b36ca28a91cb520bd697a33efb`  
-**Upstream DSH baseline:** `deepseek-ai/deepseek-harness@b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` / `dsh@0.1.1-rc.2`.
+**Published live-test baseline:** `dsh@0.1.1-rc.2`.  
+**Older target-only compatibility train:** `dsh@0.1.0-rc.8`.  
+**Upstream source watch:** `deepseek-ai/deepseek-harness@cd5ef814...` declares source `0.1.2-alpha.1` + `profile.patchReload`; npm does not currently publish that version. See #33.
 
 ## Goal
 
-Enrich the existing target-bound Contract Index with authoritative live DSH Cordis Inspect evidence only when native DSH Contract Intelligence is executing for a real Agent. CLI, MCP and ordinary `ctx.toolchain` Service calls remain valid offline paths. DSH `Agent`, Cordis `Context`, ToolExecution and provider DTO types stop at the DSH integration boundary.
+Enrich the existing M2.1 target-bound Contract Index with official bounded Host Inspect evidence only inside a real native DSH ToolExecution carrying a real Agent and AbortSignal. CLI, MCP and ordinary `ctx.toolchain` Service calls remain valid offline paths. Kernel/model own merge, fingerprint and Contract semantics; DSH runtime types stop at the integration boundary.
 
-M2.2 is not M2 completion. M2.3 remains a separate frozen retrieval evaluation before parent #28 can close.
+M2.2 is not M2 completion. M2.3 remains the separate frozen retrieval evaluation required before parent #28 can close.
 
-## Verified upstream seam
-
-The official `CordisInspectRegistryService` exposes:
-
-```ts
-list(): CordisInspectProviderView[]
-query(platform, providerId, methodName, input, agent, signal): Promise<JsonValue>
-```
-
-`query(...)` requires the requesting real `Agent` and the tool-call `AbortSignal`, validates provider input/output, and forwards cancellation. At the pinned upstream baseline first-party Host providers are:
-
-- `host/Service/listService` — compact Service + method-signature directory, or one exact Service coding contract;
-- `host/Event/listEvents` — compact Event + signature directory, or one exact Event coding contract;
-- `host/Tool/listTools` — every Tool schema currently callable by the requesting Agent;
-- `host/Builtin/listBuiltins` — dynamic Host builtins.
-
-Client providers include `client/Slots/listSubTree`, but Client work follows the proven Host path.
-
-## Corrected design decisions
-
-### 1. Narrow capability projection is a hard boundary
-
-Native `ToolExecution` is never passed downstream by type assertion. `contract-tool.ts` constructs a new immutable `{ agent, signal }` object and drops every other execution capability before invoking a resolver. An extra field on the Host execution object must be unobservable downstream.
-
-### 2. Offline acquisition and live enrichment are distinct internal ports
-
-M2.1 `ContractAcquisitionPort.acquire(snapshot)` remains the read-only static acquisition seam. M2.2 adds a Toolchain-owned, runtime-neutral request-aware enrichment seam. Kernel owns merge, canonicalization and `dsh-contract-index-v1`; the DSH integration adapter only converts official Inspect JSON into Toolchain-owned `Evidence` / `ContractDefinition` values.
-
-CLI/MCP/ordinary Service calls omit the enrichment seam and retain exact M2.1 behavior.
-
-### 3. Search/inspect identity continuity beats hidden richness
-
-A stateless `contract.inspect` must be able to rebuild the same index fingerprint returned by `contract.search`. Therefore M2.2 indexes only the stable compact live surface that can be reacquired identically for both operations: Host Service/Event directories and Agent-scoped Tool schemas.
-
-An exact `Service.listService({service})`, `Event.listEvents({event})`, or Client Slot query must **not** silently add new indexed facts after search, because that would change the content-addressed Contract Index and make a valid search fingerprint stale by construction. Exact provider detail is postponed unless it can be represented without changing indexed semantics, or a later explicit protocol/identity decision introduces a separate detail identity.
-
-### 4. Availability semantics are positive-proof only in M2.2
-
-- a live directory/tool row proves that normalized contract `available` in the observed Agent scope;
-- missing Inspect capability/provider/client page is `no live evidence`, not `unavailable`;
-- absence from a provider result is not normalized to `unavailable` unless the provider contract is explicitly exhaustive for the exact queried scope and a test proves that interpretation;
-- offline declarations remain `unknown` when live evidence says nothing about them.
-
-This slice therefore primarily upgrades `unknown -> available`; it does not manufacture negative runtime claims.
-
-### 5. Agent/session identity is not semantic fingerprint input
-
-Agent object identity, Agent id/session id, request id, AbortSignal identity and timestamps never enter `dsh-contract-index-v1`. Different Agents produce different fingerprints only when the normalized contract/evidence semantics visible to them differ.
-
-### 6. Live observations are invocation-scoped, not an atomic runtime snapshot claim
-
-The upstream registry exposes no global epoch/version marker covering multiple provider queries. M2.2 therefore defines one enrichment as an **ordered observational sample within one tool invocation**, not a claim that all providers were read atomically. Deterministic query order and normalized results define the sample; no wall-clock metadata enters semantic identity.
-
-A later upstream epoch seam may strengthen freshness without changing the rule that mixed evidence is never presented as an atomic snapshot unless such a seam exists.
-
-### 7. Live acquisition is bounded before materialization where possible
-
-Defaults are internal safety policy, not Protocol fields. The implementation must bound at least:
-
-- provider directory entries consumed;
-- normalized live contracts;
-- live facts per contract and total facts;
-- serialized provider result bytes;
-- Tool schema serialized bytes per tool and total;
-- recursively inspected JSON depth/node count where provider values are normalized.
-
-Exceeding a live safety bound fails the native operation explicitly; it must not truncate silently into a false complete contract set.
-
-### 8. Provider text is untrusted contract data
-
-Descriptions/schema text returned by installed plugins are preserved only as bounded data/facts. They are never interpreted as Toolchain instructions, system prompts, or executable code.
-
-## Data flow
+## Final slice semantics
 
 ```text
-real DSH ToolExecution
-        │
-        ├─ project new { agent, signal } only
-        ▼
-DSH live Inspect adapter
-        │  list official provider directory
-        │  query supported provider methods in deterministic order
-        ▼
-Toolchain-owned live Evidence + ContractDefinition[]
+explicit requested TargetSnapshot
         │
         ▼
-Kernel merge with M2.1 AcquiredContractFacts
+runtime/profile/install eligibility
+        +
+frozen startup M1 target fingerprint
         │
-        ▼
-createContractIndex(...)
+        ├─ mismatch/absent/overlay/drift ──► offline M2.1 only
         │
-        ├─ contract.search
-        └─ contract.inspect
+        └─ match
+             │
+real ToolExecution { Agent, AbortSignal }
+             │
+             ▼
+official Host cordisInspect
+   ┌─────────┼─────────┐
+Service     Event      Tool
+catalog     catalog    Agent-scoped runtime
+unknown     unknown    available
+   └─────────┼─────────┘
+             ▼
+Toolchain-owned bounded evidence/contracts
+             ▼
+deterministic merge into dsh-contract-index-v1
 ```
 
-## Task 1 — Close the native execution boundary
+### Indexed providers
 
-**Files**
-- Test: `tests/dsh/contract-tool.spec.ts`
-- Modify: `src/integrations/dsh/contract-tool.ts`
+- `host/Service/listService({})`: generated Harness API catalog, authoritative facts, `availability = unknown`.
+- `host/Event/listEvents({})`: generated Harness API catalog, authoritative facts, `availability = unknown`.
+- `host/Tool/listTools({})`: current Agent-visible Tool schemas, observed runtime evidence, `availability = available`.
+- Builtin is not normalized without a concrete ContractKind/use case.
+- Client providers are out of M2.2. Current mirrored-manifest / first-success Client routing lacks deterministic page identity/lifetime for a content-addressed index.
 
-- [ ] RED: pass an execution object containing `agent`, `signal`, and an unrelated capability; prove the resolver currently receives the unrelated capability.
-- [ ] GREEN: construct and freeze a new narrow execution object containing only captured `agent` and valid `AbortSignal`.
-- [ ] Preserve object identity of the actual `agent` and `signal`; do not clone or replace them.
-- [ ] Non-object execution remains absent context.
+Exact Service/Event detail is not silently fetched during `contract.inspect`: search and inspect must rebuild the same indexed semantic surface or a valid search fingerprint would make itself stale.
 
-## Task 2 — Add the structural Inspect adapter and safety budget
+## Runtime target guard
 
-**Files**
-- Create: `src/integrations/dsh/live-inspect.ts`
-- Test: `tests/dsh/live-inspect.spec.ts`
-- Modify: `src/integrations/dsh/index.ts`
+Path equality is only an eligibility check. Toolchain captures one M1 `dsh-target-v2` fingerprint when `ToolchainService` mounts and never refreshes it. Native live enrichment is allowed only if the later requested snapshot has the same fingerprint and profile/home/runtime/install eligibility still matches.
 
-- [ ] RED: structural registry `list/query` receives the exact projected Agent and AbortSignal.
-- [ ] GREEN: adapt `ctx.cordisInspect` structurally; never import/bundle DSH Agent or cordis-host-runner runtime identity.
-- [ ] Select supported provider/method pairs only from `list()`; provider absence yields no enrichment.
-- [ ] Query in deterministic order independent of registry insertion order.
-- [ ] Forward the same signal to every query; an abort/rejection is awaited and never detached.
-- [ ] Enforce explicit live result/contract/fact/schema budgets with deterministic failures.
+This rule rejects:
+- another profile/home/install/runtime;
+- explicit launcher/request overlays whose boot-time hashes are not attested;
+- missing startup baseline;
+- same-path profile/DSH/bundle manifest drift;
+- same-path bundle/profile/home patch drift after Toolchain mount.
 
-## Task 3 — Normalize Host Service/Event/Tool compact evidence
+The guard is intentionally conservative: mismatch means no Inspect query and a valid offline index. It is not a launcher-owned boot attestation. Current published DSH exposes no immutable running composition generation, leaving a narrow compose→Toolchain-mount TOCTOU window. A future launcher composition/generation seam is the correct way to remove that limitation rather than adding more mutable post-fact filesystem guesses.
 
-**Files**
-- Create: `src/integrations/dsh/live-contract-normalizer.ts`
-- Test: `tests/dsh/live-contract-normalizer.spec.ts`
+## Safety / determinism
 
-- [ ] `Service.listService({})`: normalize compact rows to `service` contracts with stable ids, summary and method-signature facts.
-- [ ] `Event.listEvents({})`: normalize compact rows to `event` contracts with stable ids, summary/mode/signature facts.
-- [ ] `Tool.listTools({})`: normalize Agent-scoped tool schemas to `tool` contracts using bounded canonical JSON facts.
-- [ ] Mark only positively observed rows `available`.
-- [ ] Every live contract/fact references authoritative or observed live evidence whose `source` canonically names `platform/provider/method` and whose `contentHash` binds the exact normalized provider JSON consumed.
-- [ ] Provider array/object order differences that are semantically irrelevant normalize deterministically; meaningful schema/contract changes alter evidence/index identity.
-- [ ] Ignore `Builtin` until a concrete baseline `ContractKind`/use case requires it.
+Live acquisition fails explicitly when limits are exceeded. Current policy bounds:
+- provider directory entries;
+- advertised methods on a supported provider;
+- provider-result serialized bytes;
+- JSON depth and nodes;
+- normalized contracts;
+- facts per contract and total facts;
+- Tool parameter schema bytes per Tool and total.
 
-## Task 4 — Add runtime-neutral enrichment/merge semantics to model/kernel
+Unsupported providers are filtered by platform/id before Toolchain accesses their method manifests. Supported providers are queried in canonical `Service → Event → Tool` order. Semantic sorting is code-point based. Tool JSON object keys are recursively canonicalized; array order remains part of observed representation unless a future keyword-specific rule proves it set-like.
 
-**Files**
-- Modify: `src/model/contract.ts`
-- Modify: `src/kernel/index.ts`
-- Test: `tests/model/contract.spec.ts`
-- Test: `tests/kernel/contract-intelligence.spec.ts`
+Provider text/schema descriptions are untrusted contract data, never Toolchain instructions. Expected provider races/failures become Toolchain acquisition diagnostics; actual abort remains cancellation. Provider promises are awaited rather than detached.
 
-- [ ] RED: same offline target plus changed normalized live evidence changes `dsh-contract-index-v1` while `dsh-target-v2` stays stable.
-- [ ] RED: equal live semantics acquired in different order produce the same index.
-- [ ] GREEN: add a Toolchain-owned optional enrichment seam and deterministic merge; no DSH types in model/kernel.
-- [ ] Merge contracts by stable id. Live facts add evidence-backed semantics; an observed matching contract may upgrade `unknown -> available` but never deletes offline facts.
-- [ ] Conflicting incompatible live/offline identity/kind/name values fail loud instead of silently selecting a winner.
-- [ ] Search still returns minimal evidence witnesses; inspect returns the evidence referenced by the selected merged contract.
+## Completed tasks
 
-## Task 5 — Per-call native DSH orchestration
+### 1 — Native execution boundary
+- [x] RED proved whole ToolExecution capability leakage.
+- [x] Runtime projection constructs/freeze a new `{ agent, signal }` object only.
+- [x] Actual Agent and AbortSignal object identities are preserved.
 
-**Files**
-- Modify: `src/integrations/dsh/index.ts`
-- Modify: `src/integrations/dsh/contract-tool.ts`
-- Test: `tests/dsh/service.spec.ts`
-- Test: `tests/dsh/contract-tool.spec.ts`
+### 2 — Structural Inspect adapter + live budgets
+- [x] Structural Host-owned `list/query` adapter; no DSH Agent/runtime DTO imported into model/kernel.
+- [x] Deterministic supported provider plan.
+- [x] Raw and normalized live budgets, including supported-provider method count.
+- [x] Cancellation forwarding and provider error normalization.
 
-- [ ] Native `toolchain_contract_search` and `toolchain_contract_inspect` supply live enrichment only when the current execution has a real Agent, a real AbortSignal, and `ctx.cordisInspect` is present.
-- [ ] Ordinary `ctx.toolchain.searchContracts/inspectContract`, CLI and MCP remain M2.1 offline semantics.
-- [ ] Two overlapping native calls with different Agent objects cannot cross-contaminate queries/results.
-- [ ] Agent ids themselves do not affect the fingerprint when returned live semantics are equal.
-- [ ] Aborted calls forward one signal through all provider work and settle only after the awaited provider query settles.
+### 3 — Host normalization
+- [x] Service compact catalog → service facts / unknown availability.
+- [x] Event compact catalog → event facts / unknown availability.
+- [x] Agent-scoped Tool schemas → available Tool contracts.
+- [x] Evidence provenance/content hashes and deterministic canonicalization.
+- [x] Client Slots explicitly removed from this slice after corrective review.
 
-## Task 6 — Client Slots after Host semantics are stable
+### 4 — Runtime-neutral merge / identity
+- [x] `ContractEnrichmentPort` remains Toolchain-owned and runtime-neutral.
+- [x] Offline facts survive merge.
+- [x] `unknown + available → available`; unsupported negative claims are not manufactured.
+- [x] Incompatible identity/availability/evidence collisions fail closed.
+- [x] Equal semantics/order permutations retain fingerprint; consumed live semantic drift changes it.
 
-**Files**
-- Extend `live-inspect.ts` / normalizer tests only after Tasks 1–5 are GREEN.
+### 5 — Per-call orchestration
+- [x] Live only for native DSH ToolExecution with Agent + AbortSignal + Inspect + matching runtime-target guard.
+- [x] CLI, MCP, ordinary Service remain offline.
+- [x] Concurrent different Agents remain isolated without ambient state.
+- [x] Agent identity itself does not enter fingerprint.
+- [x] Abort settles through awaited provider work.
 
-- [ ] Discover `client/Slots/listSubTree` only from the official registry directory.
-- [ ] Normalize compact trees to stable `client-slot` contracts without assuming a responding Client exists.
-- [ ] Provider/page absence or cancellation does not manufacture `unavailable` slots.
-- [ ] Keep the same live budgets and observational-sample semantics.
-- [ ] Do not index exact selected Slot details unless identity continuity is explicitly solved.
+### 6 — Runtime/target corrective gate
+- [x] Profile/home/runtime/install/launcher eligibility tests.
+- [x] RED reproduced `same path + changed bytes` across profile manifest, DSH manifest, bundle manifest, bundle patch, profile patch and home patch.
+- [x] Frozen startup M1 fingerprint rejects all post-mount drift before Inspect.
+- [x] Missing baseline fails closed.
+- [x] Explicit overlays fail closed because current published DSH exposes no immutable boot-time overlay identity.
+- [x] Limitation documented: startup capture is not launcher-owned boot/generation attestation.
 
-## Task 7 — Exact packed-artifact verification
+### 7 — Exact packed-artifact verification
+- [x] Exact branch `.tgz` installed into real DSH minimal/Web profiles.
+- [x] External probe creates a real Agent and verifies registration.
+- [x] Native Host Tool search consumes real Agent-scoped runtime evidence.
+- [x] Offline index lacks that runtime Tool; native live index differs.
+- [x] Native inspect with search fingerprint preserves target/index continuity and runtime evidence.
+- [x] Missing-Inspect real Agent probe preserves offline index.
+- [x] Published rc.2 live smoke and rc.2/rc.8 read-only target train smoke remain primary-lane artifact gates.
 
-**Files**
-- Modify: `scripts/smoke-dsh-package.mjs`
-- Modify policy regression only if the smoke contract requires it.
+### 8 — Governance / M2.3 handoff
+- [x] README describes actual M2.2 Host-only semantics and conservative target guard.
+- [x] Roadmap separates M2.2 implementation from M2.3 frozen evaluation.
+- [x] This plan reconciled with actual implementation/corrective decisions.
+- [ ] Issue #31 body/acceptance chronology reconciled.
+- [ ] PR #32 body/review chronology reconciled.
+- [ ] Exact final governance HEAD full CI green.
+- [ ] PR #32 merged/Issue #31 closed only after final review gate.
 
-- [ ] Pack the exact branch artifact and compose it into real DSH `0.1.1-rc.2` minimal/Web profiles.
-- [ ] Real host-owned ToolRuntime executes native Contract Intelligence with an actual Agent-scoped ToolExecution.
-- [ ] Prove at least one Host live contract/evidence row and that the live Contract Index differs from the offline-only index when live semantics add capability facts.
-- [ ] Prove repeated search/inspect in equivalent Agent live state retains index continuity.
-- [ ] Negative packed smoke: missing optional Inspect capability/provider preserves the valid offline path.
-- [ ] Existing shipped-Web `ToolDefinition -> package:@deepseek-ai/dsh-tools -> inspect` proof stays green.
-- [ ] Multi-train target-only smoke remains unchanged; live proof is pinned only to DSH trains exposing the verified Inspect contract.
+## Accepted RED / GREEN chronology
 
-## Task 8 — Governance/doc reconciliation and M2.3 handoff
-
-**Files**
-- Modify: `README.md`
-- Modify: `docs/roadmap.md`
-- Update Issue #31 / PR #32 chronology.
-
-- [ ] README/roadmap explicitly separate M2.2 implementation from M2.3 frozen retrieval evaluation.
-- [ ] Record every accepted RED and corresponding GREEN by exact commit/run id.
-- [ ] Do not mark parent M2 complete after #31; create/confirm the M2.3 implementation issue first.
+- CI #354 — rejected RED: test harness did not compile; production unchanged.
+- CI #356 — accepted execution-capability leak RED → `41498935...` narrow projection GREEN.
+- CI #358 — accepted live Service vertical RED → `19e0c21...` initial Service enrichment.
+- CI #359 — frontend calling-convention regression → `3a1d1f4...`; CI #360 full GREEN.
+- CI #362 — accepted live resource-budget RED → `603b31c4...`; CI #363 full GREEN.
+- CI #364 — accepted Event/Agent-Tool RED → `b684571d...`; CI #365 full GREEN.
+- `aac16506...` — identity/order/concurrency/cancellation invariants passed without additional runtime state.
+- Initial Client Slot exploration was later removed from indexed M2.2 after corrective review identified deterministic page/lifetime ambiguity.
+- CI #372 — accepted corrective RED for Service/Event availability, Client querying, semantic order and raw Inspect failure → `727f37ef...` + assertion correction; CI #374 full GREEN.
+- CI #375 — accepted unproven runtime-target binding RED → fail-closed target binding work.
+- CI #387 — exact-head real Agent packed live smoke GREEN on the first complete corrective Host path.
+- CI #388 — accepted same-path semantic-drift RED: 263 previous tests passed, exactly six new drift tests failed.
+- `260f1725...` + `4c8ce399...` + `c609acb...` — startup semantic baseline guard; CI #391 full GREEN including real Agent `.tgz` smoke.
+- CI #393 — registry evidence proved source-declared `0.1.2-alpha.1` is not an npm-published train; Issue #33 owns its `patchReload` target-identity follow-up.
+- CI #396 — accepted provider-directory hardening RED: 270 previous tests passed, exactly two new tests failed.
+- `a290f389...` — supported-provider method bound + irrelevant-provider short-circuit; CI #397 full GREEN.
 
 ## Final merge gate
 
-- [ ] Protocol/generated checks unchanged unless an explicit higher-level contract decision requires a schema change.
-- [ ] Architecture/package/CI-storage gates GREEN.
-- [ ] Full tests/lint/typechecks GREEN on Node 22.19/24.19/26.
-- [ ] Windows 2025/macOS 15 boundary smoke GREEN.
-- [ ] Exact packed-artifact real DSH live smoke GREEN on the exact final HEAD.
-- [ ] PR comments/reviews/threads reconciled on exact final HEAD.
-- [ ] Issue #31 contains RED→GREEN chronology and final CI evidence before merge.
+- [x] Protocol/generated schema contract unchanged.
+- [x] Architecture/package/CI-storage gates green on code-final HEAD.
+- [x] Node 22.19/24.19/26 tests/lint/typechecks green on code-final HEAD.
+- [x] Windows 2025/macOS 15 boundary smoke green on code-final HEAD.
+- [x] Exact packed-artifact real DSH Agent live smoke green on code-final HEAD.
+- [x] Published multi-train read-only target smoke green on code-final HEAD.
+- [ ] Governance-final HEAD full CI green.
+- [ ] PR review/comments/threads checked on governance-final HEAD.
+- [ ] Issue #31 chronology and acceptance status current before merge.
 - [ ] Parent #28 remains open for M2.3.
