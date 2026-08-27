@@ -94,18 +94,12 @@ function targetSnapshot(
 }
 
 describe('M2.1 semantic correctness regressions', () => {
-  it('discovers DSH API authorities through the installed DSH dependency closure without crawling third-party packages', async () => {
+  it('discovers DSH API authorities from explicit DSH roots without crawling third-party packages', async () => {
     const root = await temporaryRoot()
     const modulesRoot = path.join(root, 'runner', 'node_modules')
 
     const dsh = await writeInstalledPackage(modulesRoot, {
       name: '@deepseek-ai/dsh',
-      manifest: {
-        dependencies: {
-          '@deepseek-ai/dsh-base': '0.1.1-rc.2',
-          '@deepseek-ai/dsh-web-app': '0.1.1-rc.2',
-        },
-      },
     })
     const base = await writeInstalledPackage(modulesRoot, {
       name: '@deepseek-ai/dsh-base',
@@ -166,6 +160,17 @@ describe('M2.1 semantic correctness regressions', () => {
     ).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: 'declaration-export', value: 'ToolDefinition' }),
     ]))
+
+    await expect(createDshContractFilesystemAcquisition({
+      digest: createNodeSha256Port(),
+      budget: { maxContractPackages: 4 },
+    }).acquire(target)).resolves.toBeDefined()
+    await expect(createDshContractFilesystemAcquisition({
+      digest: createNodeSha256Port(),
+      budget: { maxContractPackages: 3 },
+    }).acquire(target)).rejects.toMatchObject({
+      code: 'CONTRACT_DECLARATION_LIMIT_EXCEEDED',
+    })
   })
 
   it('normalizes only the effective public export surface of package entrypoints', async () => {
@@ -234,6 +239,17 @@ describe('M2.1 semantic correctness regressions', () => {
       .toSorted()
 
     expect(exportedNames).toEqual(['Renamed', 'StarPublic', 'namespaceApi'])
+
+    await expect(createDshContractFilesystemAcquisition({
+      digest: createNodeSha256Port(),
+      budget: { maxNormalizedFactsPerPackage: 5 },
+    }).acquire(target)).resolves.toBeDefined()
+    await expect(createDshContractFilesystemAcquisition({
+      digest: createNodeSha256Port(),
+      budget: { maxNormalizedFactsPerPackage: 4 },
+    }).acquire(target)).rejects.toMatchObject({
+      code: 'CONTRACT_DECLARATION_LIMIT_EXCEEDED',
+    })
   })
 
   it('rejects parser-recovery ASTs for syntactically malformed declarations', () => {
