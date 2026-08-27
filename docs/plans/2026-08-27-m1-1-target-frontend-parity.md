@@ -58,16 +58,21 @@
 - [x] Tool is marked read-only/idempotent.
 - [x] CI #218 passed all six lanes, including exact pack/composition and multi-train target smoke.
 
-## Task 5 — parity, exact-package smoke, docs — in final verification
+## Task 5 — parity, exact-package smoke, docs — implementation complete
 
 **Files:** frontend parity tests, `scripts/smoke-dsh-package.mjs`, smoke-policy tests, README/roadmap/development docs.
 
 - [x] RED: real DSH native-tool visibility/execution receipt required — CI #222 (103 pass / 2 intentional failures).
 - [x] GREEN: CI #223 exact `.tgz` boot proved `ctx.toolchain.resolveTarget()`, real host-owned `ctx.tools.schemas()`, `ctx.tools.execute()` of `toolchain_target_resolve`, JSON rendering, and identical `dsh-target-v2` fingerprints from Service and native tool; minimal/Web composition and the multi-train target smoke also passed.
-- [x] Cross-frontend parity tests were added for CLI / native DSH tool / MCP success and expected target failure; transport request IDs are the only normalized difference.
-- [ ] Record final parity/docs head green across Protocol/generated/architecture/package/lint/type/tests/build/pack/consumer/DSH gates.
-- [ ] Final diff/review check; PR evidence must name final head and actual CI run.
-- [ ] Squash merge only after all final-head required lanes are green.
+- [x] Cross-frontend parity tests cover CLI / native DSH tool / MCP success and expected target failure; transport request IDs are the only normalized difference.
+- [x] README, roadmap and development/release policy describe the implemented capability, explicit-profile limitation, host-owned tools identity and live artifact gate.
+- [x] PR diff/review surface was checked for unrelated contract/fingerprint/dependency changes and open review conversations before the final merge gate.
+
+## Final merge gate
+
+The exact final branch SHA, final full CI run, and merge result are recorded in PR #24 rather than this tracked file. Writing that evidence into the repository after a green run would itself create a new head and recursively invalidate the claim that the cited run verified the final head.
+
+PR #24 may be squash-merged only when its then-current head passes the complete repository matrix: Protocol/generated/architecture/package/lint/type/tests, build, exact pack inspection, consumer smoke, minimal/Web exact-package composition + live DSH Service/native ToolRuntime parity, multi-train target resolution, Node 22/24/26, Windows and macOS. Issue #25 remains open until that merge completes.
 
 ## Non-goals
 
