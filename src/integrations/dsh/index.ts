@@ -34,6 +34,7 @@ import {
 import {
   bindContractEnrichmentToRuntimeTarget,
   createDshRuntimeTargetBinding,
+  parseRunningDshProfileInvocation,
   type DshRuntimeTargetBindingPort,
 } from './runtime-target-binding.js'
 import {
@@ -70,7 +71,12 @@ function inspectFromContext(ctx: Context): DshCordisInspectRegistryPort | undefi
     : undefined
 }
 
-function runtimeTargetBindingFromContext(ctx: Context): DshRuntimeTargetBindingPort | undefined {
+interface RunningTargetContextIdentity {
+  readonly baseUrl: string
+  readonly dshHome: string
+}
+
+function runningTargetContextIdentity(ctx: Context): RunningTargetContextIdentity | undefined {
   const root = (ctx as unknown as { readonly root?: { readonly baseUrl?: unknown } }).root
   const baseUrl = root?.baseUrl
   const dshHomePath = ctx.get('dshHomePath') as unknown
@@ -82,8 +88,43 @@ function runtimeTargetBindingFromContext(ctx: Context): DshRuntimeTargetBindingP
   } catch {
     return undefined
   }
-  if (typeof dshHome !== 'string' || dshHome.length === 0) return undefined
-  return createDshRuntimeTargetBinding({ baseUrl, dshHome })
+  return typeof dshHome === 'string' && dshHome.length !== 0
+    ? Object.freeze({ baseUrl, dshHome })
+    : undefined
+}
+
+async function captureStartupTargetFingerprint(
+  ctx: Context,
+  kernel: ReturnType<typeof createNodeKernel>,
+): Promise<string | undefined> {
+  const identity = runningTargetContextIdentity(ctx)
+  const launch = parseRunningDshProfileInvocation(process.argv)
+  if (identity === undefined || launch === undefined || launch.patches.length !== 0) return undefined
+
+  try {
+    const resolved = await kernel.resolveTarget({
+      profile: launch.profile,
+      dshHome: identity.dshHome,
+    })
+    return resolved.snapshot.fingerprint
+  } catch {
+    // A baseline that cannot be proven must disable live enrichment rather than
+    // weaken the runtime-target binding to path identity alone.
+    return undefined
+  }
+}
+
+function runtimeTargetBindingFromContext(
+  ctx: Context,
+  startupTargetFingerprint: Promise<string | undefined>,
+): DshRuntimeTargetBindingPort | undefined {
+  const identity = runningTargetContextIdentity(ctx)
+  if (identity === undefined) return undefined
+  return createDshRuntimeTargetBinding({
+    baseUrl: identity.baseUrl,
+    dshHome: identity.dshHome,
+    startupTargetFingerprint,
+  })
 }
 
 interface NativeContractResolvers {
@@ -121,11 +162,15 @@ function registerNativeTools(
 export class ToolchainService extends Service {
   private readonly digest: Sha256Port
   private readonly kernel: ReturnType<typeof createNodeKernel>
+  private readonly startupTargetFingerprint: Promise<string | undefined>
 
   constructor(ctx: Context) {
     super(ctx, 'toolchain')
     this.digest = createNodeSha256Port()
     this.kernel = createNodeKernel(this.digest)
+    // Start the immutable M1 baseline capture immediately when Toolchain mounts.
+    // It is never refreshed from mutable filesystem state later in this Host.
+    this.startupTargetFingerprint = captureStartupTargetFingerprint(ctx, this.kernel)
 
     ctx.inject(['tools'], (toolCtx) => registerNativeTools(
       toolCtx,
@@ -171,7 +216,7 @@ export class ToolchainService extends Service {
     if (registry === undefined) return undefined
     const enrichment = createDshLiveContractEnrichment({ registry, execution, digest: this.digest })
     if (enrichment === undefined) return undefined
-    const binding = runtimeTargetBindingFromContext(ctx)
+    const binding = runtimeTargetBindingFromContext(ctx, this.startupTargetFingerprint)
     if (binding === undefined) return undefined
     return bindContractEnrichmentToRuntimeTarget(enrichment, binding)
   }
