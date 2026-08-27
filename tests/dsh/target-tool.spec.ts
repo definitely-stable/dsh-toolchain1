@@ -1,9 +1,10 @@
 import { fileURLToPath } from 'node:url'
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import ToolchainService from '../../src/integrations/dsh/index.js'
+import { createTargetResolveToolDefinition } from '../../src/integrations/dsh/target-tool.js'
 
 interface TestToolDefinition {
   readonly name: string
@@ -127,5 +128,25 @@ describe('native DSH target tool', () => {
 
     await toolsFiber.dispose()
     await toolchainFiber.dispose()
+  })
+
+  it.each([
+    null,
+    {},
+    { profile: '' },
+    { profile: '..' },
+    { profile: 'web', unexpected: true },
+    { profile: 'web', dshHome: '' },
+    { profile: 'web', dshPackageRoot: '' },
+    { profile: 'web', patches: 'overlay.yml' },
+    { profile: 'web', patches: ['overlay.yml', ''] },
+  ])('rejects malformed raw arguments before invoking Toolchain Service: %j', async (args) => {
+    const resolve = vi.fn(async () => {
+      throw new Error('resolver must not run for invalid tool arguments')
+    })
+    const definition = createTargetResolveToolDefinition(resolve)
+
+    await expect(definition.execute(args)).rejects.toThrow(/invalid target\.resolve arguments/i)
+    expect(resolve).not.toHaveBeenCalled()
   })
 })
