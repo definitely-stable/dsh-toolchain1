@@ -55,6 +55,8 @@ Non-goals: DSH contract search, candidate runtime verification, DSH Web UI, npm 
 
 **Goal:** identify the exact installed DSH target reproducibly and give later operations one stable identity to bind to.
 
+**Status:** implemented and merged.
+
 Capabilities:
 - canonical `TargetResolveRequest` / `TargetResolveResult` rather than speculative future request models;
 - installed DSH/profile/package discovery with no active-profile mutation;
@@ -83,20 +85,27 @@ Exit criteria:
 
 **Goal:** make the installed DSH Plugin and generic agent integration useful immediately after the CLI vertical slice without creating another target implementation.
 
+**Status:** implemented in PR #24 / Issue #25 and in final merge verification.
+
 Capabilities:
+- one shared `resolveTargetResponse()` application path for success and expected `TARGET_*` acquisition failures;
 - `ctx.toolchain.resolveTarget()` backed by the existing application-kernel use case;
-- one deliberately small native DSH model-facing `target.resolve` tool;
-- MCP `target.resolve` with Protocol v1 structured results;
-- Host-provided installation context where native DSH can provide stronger target acquisition hints than a detached CLI;
-- parity tests proving CLI/DSH/MCP project the same request/result semantics and diagnostic identities.
+- one deliberately small lifecycle-owned native DSH model-facing `toolchain_target_resolve` tool;
+- raw native-tool input validation at the DSH transport boundary without bundling a second `@deepseek-ai/dsh-tools` runtime;
+- MCP `target.resolve` with Protocol v1 structured results and validators projected from Protocol JSON Schema;
+- parity tests proving CLI / native DSH tool / MCP project the same success/failure semantics apart from transport correlation IDs;
+- exact packed-artifact live DSH proof that Service resolution and real host-owned `ctx.tools.execute()` return the same `dsh-target-v2` fingerprint.
 
 Exit criteria:
-- no frontend reimplements target acquisition, normalization or fingerprinting;
-- DSH Plugin users can ask an agent to resolve the current target through the installed plugin rather than shelling out to a separate implementation;
-- MCP clients can obtain the same snapshot without a transport-owned DTO;
+- no frontend reimplements target acquisition, normalization, fingerprinting, or expected target diagnostic mapping;
+- DSH Plugin users can resolve a target through the installed plugin rather than shelling out to a separate implementation;
+- native tool registration follows the lifecycle of host `ctx.tools` and does not create an identity-split tools runtime;
+- MCP clients obtain the same snapshot without a transport-owned DTO;
+- current upstream absence of a supported active-profile capability is handled explicitly: `profile` remains an argument rather than an argv/PATH heuristic;
+- exact `.tgz` boot proves native tool visibility/execution through the real ToolRuntime and Service/native fingerprint equality;
 - adding the projections does not broaden M2 contract vocabulary prematurely.
 
-M1.1 is the immediate post-M1 implementation slice and precedes broad M2 work.
+After M1.1 merge, the next capability milestone is M2 rather than additional frontend/framework work.
 
 ## M2 — Contract Intelligence
 
