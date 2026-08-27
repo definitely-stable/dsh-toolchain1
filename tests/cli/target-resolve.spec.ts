@@ -145,14 +145,15 @@ describe('target resolve CLI projection', () => {
     })
   })
 
-  it('does not advertise unimplemented M2/M3 operations in help', async () => {
+  it('advertises implemented M2 contract commands but not future plugin verification', async () => {
     const streams = io()
     const code = await runCli(['--help'], streams.value, dependencies(async () => result()))
 
     expect(code).toBe(0)
     expect(streams.stdout()).toContain('target resolve')
     expect(streams.stdout()).toContain('--patch <path>')
-    expect(streams.stdout()).not.toContain('contract search')
+    expect(streams.stdout()).toContain('contract search')
+    expect(streams.stdout()).toContain('contract inspect')
     expect(streams.stdout()).not.toContain('plugin verify')
   })
 })
