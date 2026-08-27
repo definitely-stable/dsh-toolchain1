@@ -15,14 +15,14 @@ function leadingSpaces(line) {
   return /^\s*/.exec(line)?.[0].length ?? 0
 }
 
-function collectActionBlocks(source, action) {
+function collectStepBlocks(source) {
   const lines = source.split(/\r?\n/)
   const blocks = []
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]
-    const match = /^(\s*)-\s+uses:\s+([^\s#]+)(?:\s+#.*)?$/.exec(line)
-    if (!match || !match[2].startsWith(`${action}@`)) continue
+    const match = /^(\s*)-\s+(?:name:|uses:|if:|run:)/.exec(line)
+    if (!match) continue
 
     const indent = match[1].length
     const block = [line]
@@ -36,12 +36,23 @@ function collectActionBlocks(source, action) {
 
     blocks.push({
       line: index + 1,
-      use: match[2],
       text: block.join('\n'),
     })
+    index = cursor - 1
   }
 
   return blocks
+}
+
+function actionUse(block) {
+  const match = /^\s*(?:-\s*)?uses:\s+([^\s#]+)(?:\s+#.*)?$/m.exec(block.text)
+  return match?.[1]
+}
+
+function collectActionBlocks(source, action) {
+  return collectStepBlocks(source)
+    .map((block) => ({ ...block, use: actionUse(block) }))
+    .filter((block) => block.use?.startsWith(`${action}@`))
 }
 
 function hasLine(block, pattern) {

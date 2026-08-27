@@ -6,11 +6,13 @@ import { checkCiStoragePolicy } from '../../scripts/check-ci-storage-policy.mjs'
 const root = new URL('../../', import.meta.url)
 
 const bootstrap = `
-      - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
+      - name: Install pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
           install: false
 
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24.19.0'
           cache: pnpm
@@ -27,11 +29,11 @@ describe('CI storage policy', () => {
     const violations = checkCiStoragePolicy(`jobs:
   primary:
     steps:${bootstrap}
-      - uses: actions/cache@deadbeef
+      - uses: actions/cache@1111111111111111111111111111111111111111
         with:
           path: node_modules
           key: broad-cache
-      - uses: actions/upload-artifact@deadbeef
+      - uses: actions/upload-artifact@2222222222222222222222222222222222222222
         with:
           name: package
           path: .artifacts/dsh-toolchain.tgz
@@ -50,11 +52,13 @@ describe('CI storage policy', () => {
     const source = `jobs:
   primary:
     steps:
-      - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+      - name: Install pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
         with:
           install: true
           cache: true
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: '24.19.0'
           cache: pnpm
