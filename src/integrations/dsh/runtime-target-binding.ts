@@ -1,5 +1,5 @@
 import { readFile, realpath } from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { AcquiredContractFacts, ContractEnrichmentPort } from '../../model/contract.js'
@@ -188,7 +188,7 @@ export function createDshRuntimeTargetBinding(
       if (launch.patches.length !== 0 || snapshot.profile.overlayPatchHashes.length !== 0) return false
       if (snapshot.profile.name !== launch.profile) return false
       if (
-        snapshot.runtime.node !== nodeVersion
+        snapshot.runtime.nodeVersion !== nodeVersion
         || snapshot.runtime.platform !== platform
         || snapshot.runtime.arch !== arch
       ) return false
