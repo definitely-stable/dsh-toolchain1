@@ -5,6 +5,7 @@ import {
   CONTRACT_SEARCH_TOOL_NAME,
   createContractInspectToolDefinition,
   createContractSearchToolDefinition,
+  type DshContractToolExecutionContext,
 } from '../../src/integrations/dsh/contract-tool.js'
 import type {
   ContractInspectResponse,
@@ -127,8 +128,22 @@ describe('native DSH Contract Intelligence tools', () => {
   })
 
   it('projects only Agent and AbortSignal from the current DSH execution object', async () => {
-    const searchResolver = vi.fn(async () => searchResponse())
-    const inspectResolver = vi.fn(async () => inspectResponse())
+    let searchExecution: DshContractToolExecutionContext | undefined
+    let inspectExecution: DshContractToolExecutionContext | undefined
+    const searchResolver = vi.fn(async (
+      _request: Parameters<Parameters<typeof createContractSearchToolDefinition>[0]>[0],
+      execution?: DshContractToolExecutionContext,
+    ) => {
+      searchExecution = execution
+      return searchResponse()
+    })
+    const inspectResolver = vi.fn(async (
+      _request: Parameters<Parameters<typeof createContractInspectToolDefinition>[0]>[0],
+      execution?: DshContractToolExecutionContext,
+    ) => {
+      inspectExecution = execution
+      return inspectResponse()
+    })
     const search = createContractSearchToolDefinition(searchResolver)
     const inspect = createContractInspectToolDefinition(inspectResolver)
     const controller = new AbortController()
@@ -145,7 +160,6 @@ describe('native DSH Contract Intelligence tools', () => {
       kinds: ['package'] as const,
     }
     await search.execute(searchRequest, execution)
-    const searchExecution = searchResolver.mock.calls[0]?.[1]
     expect(searchExecution).toEqual({ agent, signal: controller.signal })
     expect(searchExecution).not.toBe(execution)
     expect(searchExecution).not.toHaveProperty('internalCapability')
@@ -156,7 +170,6 @@ describe('native DSH Contract Intelligence tools', () => {
       contractId: 'package:@deepseek-ai/dsh-tools',
     }
     await inspect.execute(inspectRequest, execution)
-    const inspectExecution = inspectResolver.mock.calls[0]?.[1]
     expect(inspectExecution).toEqual({ agent, signal: controller.signal })
     expect(inspectExecution).not.toBe(execution)
     expect(inspectExecution).not.toHaveProperty('internalCapability')
