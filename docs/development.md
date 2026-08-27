@@ -31,7 +31,7 @@ Host-identity packages are maintained as an explicit executable registry rather 
 
 The package policy also rejects install-time lifecycle scripts from the distributable package.
 
-M1.1 deliberately does not add `@deepseek-ai/dsh-tools` as a Toolchain runtime dependency. The native target tool is registered through a structural view of the already-mounted host `ctx.tools` service, so the DSH Host remains the sole owner of that identity-sensitive runtime. Because Toolchain supplies a raw ToolDefinition rather than importing DSH's authoring helper, the adapter validates its `unknown` arguments before delegating to `ctx.toolchain.resolveTarget()`.
+M1.1/M2.1 deliberately do not add `@deepseek-ai/dsh-tools` as a Toolchain runtime dependency. Native target and contract tools are registered through a structural view of the already-mounted host `ctx.tools` service, so the DSH Host remains the sole owner of that identity-sensitive runtime. Because Toolchain supplies raw ToolDefinitions rather than importing DSH's authoring helper, each adapter validates its `unknown` arguments before delegating to `ctx.toolchain`.
 
 ### Toolchain-owned runtime dependencies
 
@@ -71,7 +71,7 @@ Build configuration MUST preserve architecture direction: frontend/DSH faces dep
 
 The `src/` architecture is closed-world. Every production module belongs to an explicit layer and every relative source edge is validated against the architecture matrix. A new generic source directory is not implicitly trusted. JavaScript-family files under `src/` are rejected; repository `.mjs` scripts live outside this product boundary and have their own lint/static-check gate.
 
-M1 gives the internal application kernel real acquisition/digest ports and `resolveTarget()`. M1.1 adds one shared `resolveTargetResponse()` application path and projects it through CLI, `ctx.toolchain.resolveTarget()`, a lifecycle-owned native DSH tool, and MCP. Frontends own correlation IDs, input/rendering constraints, and transport framing only; acquisition, normalization, target fingerprinting, and expected `TARGET_*` diagnostic mapping remain shared.
+M1 gives the internal application kernel real acquisition/digest ports and `resolveTarget()`. M1.1 adds one shared `resolveTargetResponse()` application path and projects it through CLI, `ctx.toolchain.resolveTarget()`, a lifecycle-owned native DSH tool, and MCP. M2.1 extends the same pattern with `searchContracts()` / `inspectContract()` plus shared Protocol response helpers. Frontends own correlation IDs, input/rendering constraints, and transport framing only; target/contract acquisition, normalization, fingerprints, ranking, freshness, and expected diagnostic mapping remain shared.
 
 The npm root still does not expose the kernel factory as a stable external API. DSH Host, CLI, and MCP compose Node acquisition/digest adapters internally. Promote the factory only when an independent external consumer lifecycle justifies that compatibility promise.
 
@@ -90,6 +90,26 @@ When a detached caller omits `dshPackageRoot`, acquisition may use deterministic
 Current upstream DSH does not expose its selected profile name as a supported Cordis capability. Native Toolchain callers therefore still supply `profile` explicitly; DSH integration MUST NOT infer it from `process.argv`, PATH, undocumented launcher state, or another detached subprocess.
 
 The `runtime` coordinates in a TargetSnapshot describe the runtime under which Toolchain resolves compatibility for that snapshot. Later live/verification evidence records the actually executed runtime and must not silently reuse a runtime-sensitive claim when those semantics differ.
+
+## Contract acquisition and index policy
+
+M2.1 contract acquisition is another read-only observation boundary. It begins from a completed M1 `TargetSnapshot` and uses the snapshot's captured manifest coordinates/content hashes rather than rediscovering a different package graph.
+
+The offline evidence policy is deliberately narrow:
+
+- exact installed `package.json` manifests captured by M1;
+- public `types`, `typings`, and `exports.*.types` declaration entrypoints;
+- relative declaration references that remain lexically and canonically inside the same exact package root;
+- declaration content hashes and normalized exported symbol facts;
+- no package JavaScript execution;
+- no private generated DSH source-path imports;
+- no live-availability inference from declarations alone.
+
+Every target-captured manifest hash is rechecked before contract facts are produced. Changed captured manifest bytes yield `CONTRACT_EVIDENCE_STALE`; changed same-version declaration bytes are valid new evidence and therefore change `dsh-contract-index-v1` without changing the M1 target fingerprint.
+
+A package may occupy multiple DSH composition coordinates, such as bundle plus top-level dependency. M2.1 groups those aliases only when they identify the same name/version and resolve to the same canonical installed package root. The resulting package Contract retains every captured manifest evidence ID. Conflicting versions or package roots fail loudly rather than silently collapsing different installed instances.
+
+Contract Index identity follows ADR-0008. The semantic projection contains the target fingerprint, normalized evidence identity/content hashes, and normalized contracts/facts. Machine `location`, timestamps, traversal order, request IDs, and frontend transport metadata are excluded. Contract indexes are currently rebuilt per operation; there is no persistent contract-index cache in M2.1.
 
 ## CI security policy
 
@@ -118,12 +138,12 @@ Current CI shape:
 - Node compatibility lanes: Ubuntu + Node 22.19, 24.19, and current Node 26 major;
 - platform boundary lanes: Windows and macOS on Node 24.19 for build/CLI/public-import behavior;
 - exact-package composition: primary lane only, using the packed Toolchain tarball against both a minimal `toolchain-smoke` profile and the shipped `web` profile;
-- exact-package live target parity: primary lane only, using an external disposable DSH probe bundle in `toolchain-smoke` to observe `ctx.toolchain` and host-owned `ctx.tools`, resolve through `ctx.toolchain.resolveTarget()`, verify native `toolchain_target_resolve` visibility through `ctx.tools.schemas()`, execute it through the real `ctx.tools.execute()` pipeline, verify rendered JSON/value consistency, and require the Service/native paths to report the same `dsh-target-v2` fingerprint before clean launcher-owned `ctx.appExit` shutdown;
+- exact-package live Toolchain proof: primary lane only, using an external disposable DSH probe bundle in `toolchain-smoke` to observe `ctx.toolchain` and host-owned `ctx.tools`, resolve through `ctx.toolchain.resolveTarget()`, verify all three native Toolchain tools through `ctx.tools.schemas()`, execute target resolution plus contract search→inspect through the real `ctx.tools.execute()` pipeline, require rendered JSON/value consistency, and require Service/native/contract paths to share one `dsh-target-v2` target while search and inspect share one `dsh-contract-index-v1` fingerprint before clean launcher-owned `ctx.appExit` shutdown;
 - target-resolution compatibility: primary lane only, co-installing the exact Toolchain tarball with DSH `0.1.1-rc.2` and `0.1.0-rc.8`, resolving shipped `headless` profiles through both no-hint and explicit-root discovery.
 
-The minimal package profile proves base composition and live Service/native-tool parity. The `web` profile is separately required because current upstream DSH composes it from `@deepseek-ai/dsh-base` plus `@deepseek-ai/dsh-web-app`; the canonical README installation path is therefore tested directly rather than inferred from the minimal profile.
+The minimal package profile proves base composition and live Service/native-tool/contract ToolRuntime wiring. The `web` profile is separately required because current upstream DSH composes it from `@deepseek-ai/dsh-base` plus `@deepseek-ai/dsh-web-app`; the canonical README installation path is therefore tested directly rather than inferred from the minimal profile.
 
-The live probe is a runtime integration gate, not an M4 verification receipt: it proves that the exact packed M1.1 artifact is wired into the real DSH capability/runtime seams and that both frontend paths bind to one target identity. It does not make arbitrary plugin behavior or future verification claims.
+The live probe is a runtime integration gate, not an M4 verification receipt: it proves that the exact packed artifact is wired into the real DSH capability/runtime seams and that M1/M2.1 frontend paths bind to coherent target/index identities. It does not make arbitrary plugin behavior, live DSH availability, or future verification claims.
 
 The multi-train target smoke is deliberately separate from the exact-tarball boot smoke. DSH itself first initializes the disposable shipped profile. Toolchain then snapshots the profile tree, performs `target resolve`, snapshots again, and requires byte-identical state. The semantic profile is copied to another absolute `DSH_HOME`; no-hint and explicit-root acquisition paths MUST retain the same v2 fingerprint. This proves read-only/path/discovery stability without pretending that DSH's own profile initialization is read-only.
 
@@ -144,7 +164,7 @@ Target policy:
 
 ## Versioning and release channels
 
-Toolchain software versions use SemVer. Toolchain Protocol versions, target-fingerprint namespaces, and DSH target versions are separate compatibility dimensions.
+Toolchain software versions use SemVer. Toolchain Protocol versions, target-fingerprint namespaces, Contract Index fingerprint namespaces, and DSH target versions are separate compatibility dimensions.
 
 Before a useful public vertical slice, private-incubator versions may remain `0.0.x` and need not be published to npm.
 
@@ -181,7 +201,7 @@ clean checkout
   -> install that tarball into a throwaway Node consumer and resolve public package exports/bins
   -> install the same tarball into isolated minimal and shipped Web DSH profiles
   -> compose/dump-config each profile
-  -> boot the exact tarball through real DSH and prove target resolution through ctx.toolchain + host-owned ctx.tools with one target fingerprint
+  -> boot the exact tarball through real DSH and prove target resolution plus native contract search/inspect through ctx.toolchain + host-owned ctx.tools with coherent target/index fingerprints
   -> separately co-install the exact tarball with pinned current + older DSH trains and resolve read-only target snapshots
   -> publish from the verified artifact lineage
 ```
