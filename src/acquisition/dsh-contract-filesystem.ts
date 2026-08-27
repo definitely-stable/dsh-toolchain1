@@ -36,7 +36,6 @@ interface ManifestRecord {
 interface DeclarationRecord {
   readonly location: string
   readonly relativePath: string
-  readonly content: string
   readonly evidence: Evidence
   readonly symbols: readonly string[]
   readonly references: readonly string[]
@@ -181,29 +180,32 @@ function portableRelative(root: string, location: string): string {
   return path.relative(root, location).split(path.sep).join('/')
 }
 
-function ensureInsidePackage(
-  packageRoot: string,
+function escapesRoot(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate)
+  return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)
+}
+
+function assertLexicallyInsidePackage(packageRoot: string, requested: string, candidate: string): void {
+  if (!escapesRoot(packageRoot, candidate)) return
+  throw acquisitionError(
+    'CONTRACT_DECLARATION_INVALID',
+    `Declaration reference escapes package root: ${requested}`,
+    [candidate],
+  )
+}
+
+function assertCanonicallyInsidePackage(
   canonicalPackageRoot: string,
   requested: string,
   candidate: string,
   canonicalCandidate: string,
 ): void {
-  const lexical = path.relative(packageRoot, candidate)
-  const canonical = path.relative(canonicalPackageRoot, canonicalCandidate)
-  if (
-    lexical === '..'
-    || lexical.startsWith(`..${path.sep}`)
-    || path.isAbsolute(lexical)
-    || canonical === '..'
-    || canonical.startsWith(`..${path.sep}`)
-    || path.isAbsolute(canonical)
-  ) {
-    throw acquisitionError(
-      'CONTRACT_DECLARATION_INVALID',
-      `Declaration reference escapes package root: ${requested}`,
-      [candidate],
-    )
-  }
+  if (!escapesRoot(canonicalPackageRoot, canonicalCandidate)) return
+  throw acquisitionError(
+    'CONTRACT_DECLARATION_INVALID',
+    `Declaration reference escapes package root through a symlink: ${requested}`,
+    [candidate],
+  )
 }
 
 function declarationCandidates(base: string, specifier: string): readonly string[] {
@@ -240,6 +242,10 @@ async function resolveDeclaration(
   }
 
   for (const candidate of candidates) {
+    // Reject lexical traversal before touching the filesystem so a nonexistent
+    // escape is not misreported as ordinary missing declaration evidence.
+    assertLexicallyInsidePackage(manifest.packageRoot, specifier, candidate)
+
     let canonicalCandidate: string
     try {
       canonicalCandidate = await realpath(candidate)
@@ -252,8 +258,7 @@ async function resolveDeclaration(
         cause,
       )
     }
-    ensureInsidePackage(
-      manifest.packageRoot,
+    assertCanonicallyInsidePackage(
       manifest.canonicalPackageRoot,
       specifier,
       candidate,
@@ -306,9 +311,10 @@ async function readDeclarationGraph(
   readonly entries: readonly { relativePath: string; evidenceId: string }[]
 }> {
   const queue: string[] = []
-  const entries: { relativePath: string; evidenceId: string }[] = []
+  const entryLocations = new Map<string, string>()
   for (const entrypoint of entrypoints) {
     const location = await resolveDeclaration(manifest, manifest.packageRoot, entrypoint)
+    entryLocations.set(entrypoint, location)
     queue.push(location)
   }
 
@@ -330,7 +336,6 @@ async function readDeclarationGraph(
     const record: DeclarationRecord = {
       location,
       relativePath,
-      content,
       evidence,
       symbols: declarationSymbols(content),
       references: declarationReferences(content),
@@ -343,12 +348,11 @@ async function readDeclarationGraph(
     }
   }
 
-  for (const entrypoint of entrypoints) {
-    const location = await resolveDeclaration(manifest, manifest.packageRoot, entrypoint)
+  const entries = [...entryLocations.values()].map(location => {
     const record = records.get(location)
-    if (record === undefined) throw new Error(`Declaration graph lost entrypoint ${entrypoint}`)
-    entries.push({ relativePath: record.relativePath, evidenceId: record.evidence.id })
-  }
+    if (record === undefined) throw new Error(`Declaration graph lost entrypoint ${location}`)
+    return { relativePath: record.relativePath, evidenceId: record.evidence.id }
+  })
 
   return {
     records: Object.freeze([...records.values()].toSorted((left, right) => compareCodePoints(left.relativePath, right.relativePath))),
@@ -389,7 +393,7 @@ async function acquirePackage(
       qualifiedName: `package:${expected.name}`,
       availability: 'unknown',
       summary: `Installed package ${expected.name}@${expected.version}`,
-      facts: Object.freeze(facts),
+      facts: [...facts],
       evidenceIds: [...evidenceIds],
     }),
     evidence,
@@ -402,9 +406,10 @@ export function createDshContractFilesystemAcquisition(
   const digest = options.digest ?? createNodeSha256Port()
   return {
     async acquire(snapshot): Promise<AcquiredContractFacts> {
-      const packages = expectedPackages(snapshot)
-      const acquired = []
-      for (const expected of packages) acquired.push(await acquirePackage(snapshot, expected, digest))
+      const acquired: Array<{ readonly contract: ContractDefinition; readonly evidence: readonly Evidence[] }> = []
+      for (const expected of expectedPackages(snapshot)) {
+        acquired.push(await acquirePackage(snapshot, expected, digest))
+      }
 
       return Object.freeze({
         contracts: Object.freeze(acquired.map(item => item.contract).toSorted((left, right) => compareCodePoints(left.id, right.id))),
