@@ -18,6 +18,9 @@ const bootstrap = `
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
           package-manager-cache: false
+
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
 `
 
 describe('CI storage policy', () => {
@@ -63,6 +66,8 @@ describe('CI storage policy', () => {
           node-version: '24.19.0'
           cache: pnpm
           cache-dependency-path: package.json
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
 `
 
     expect(checkCiStoragePolicy(source).map((violation) => violation.rule)).toEqual([
@@ -71,6 +76,11 @@ describe('CI storage policy', () => {
       'pnpm-cache-config',
       'pnpm-cache-config',
     ])
+  })
+
+  it('rejects a cache lane that no longer performs the authoritative frozen install', () => {
+    expect(checkCiStoragePolicy(`jobs:\n  primary:\n    steps:${bootstrap.replace('pnpm install --frozen-lockfile --ignore-scripts', 'pnpm install')}`)
+      .map((violation) => violation.rule)).toEqual(['frozen-install-count'])
   })
 
   it('keeps the required repository CI storage-policy clean', async () => {

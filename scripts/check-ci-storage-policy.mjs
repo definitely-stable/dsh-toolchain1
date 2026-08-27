@@ -65,6 +65,7 @@ export function checkCiStoragePolicy(source) {
   const setupNodeBlocks = collectActionBlocks(source, 'actions/setup-node')
   const directCacheBlocks = collectActionBlocks(source, 'actions/cache')
   const artifactBlocks = collectActionBlocks(source, 'actions/upload-artifact')
+  const frozenInstallCount = (source.match(/^\s*run:\s*pnpm install --frozen-lockfile --ignore-scripts\s*$/gm) ?? []).length
 
   if (setupNodeBlocks.length === 0) {
     violations.push({
@@ -77,6 +78,13 @@ export function checkCiStoragePolicy(source) {
     violations.push({
       rule: 'pnpm-bootstrap-count',
       message: `expected one pnpm/setup bootstrap per setup-node lane; found ${pnpmSetupBlocks.length} pnpm/setup and ${setupNodeBlocks.length} setup-node blocks`,
+    })
+  }
+
+  if (frozenInstallCount !== setupNodeBlocks.length) {
+    violations.push({
+      rule: 'frozen-install-count',
+      message: `expected one authoritative frozen pnpm install per setup-node lane; found ${frozenInstallCount} installs for ${setupNodeBlocks.length} lanes`,
     })
   }
 
