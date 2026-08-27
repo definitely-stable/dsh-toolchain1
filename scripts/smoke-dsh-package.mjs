@@ -146,7 +146,7 @@ export function apply(rootCtx) {
         ? undefined
         : contractSearchResult.value?.data?.contractIndexFingerprint
       if (typeof contractIndexFingerprint !== 'string') {
-        throw new Error('DSH contract search did not return a contract index fingerprint')
+        throw new Error('DSH contract search did not return a contract index fingerprint: ' + JSON.stringify(contractSearchResult))
       }
 
       const contractInspectResult = await ctx.tools.execute({
