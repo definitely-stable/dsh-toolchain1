@@ -7,7 +7,7 @@ import {
   type ContractIndex,
 } from '../../src/model/contract.js'
 import type { Sha256Port } from '../../src/model/digest.js'
-import type { ContractDefinition, Evidence } from '../../src/protocol/index.js'
+import type { ContractDefinition, ContractFact, Evidence } from '../../src/protocol/index.js'
 
 const digest: Sha256Port = {
   async sha256Utf8(value) {
@@ -125,6 +125,57 @@ describe('ContractIndex', () => {
         : contract,
     )
     expect((await makeIndex(baseEvidence(), semanticsChanged)).fingerprint).not.toBe(baseline)
+  })
+
+  it('deep-freezes every hashed contract semantic collection after fingerprint creation', async () => {
+    const index = await makeIndex()
+    const contract = index.contracts[0]
+    const fact = contract?.facts[0]
+    expect(contract).toBeDefined()
+    expect(fact).toBeDefined()
+
+    expect(Object.isFrozen(index)).toBe(true)
+    expect(Object.isFrozen(index.contracts)).toBe(true)
+    expect(Object.isFrozen(contract)).toBe(true)
+    expect(Object.isFrozen(contract?.facts)).toBe(true)
+    expect(Object.isFrozen(fact)).toBe(true)
+    expect(Object.isFrozen(fact?.evidenceIds)).toBe(true)
+    expect(Object.isFrozen(contract?.evidenceIds)).toBe(true)
+
+    expect(() => {
+      (index.contracts as unknown as ContractDefinition[]).push(baseContracts()[0]!)
+    }).toThrow(TypeError)
+    expect(() => {
+      (contract!.facts as unknown as ContractFact[]).push({
+        key: 'mutation',
+        value: 'forbidden',
+        evidenceIds: ['manifest:tools'],
+      })
+    }).toThrow(TypeError)
+    expect(() => {
+      (fact!.evidenceIds as unknown as string[]).push('manifest:agent')
+    }).toThrow(TypeError)
+    expect(() => {
+      (contract!.evidenceIds as unknown as string[]).push('manifest:agent')
+    }).toThrow(TypeError)
+  })
+
+  it('rejects normalized facts without supporting evidence', async () => {
+    const contracts = baseContracts().map(contract =>
+      contract.id === 'package:@deepseek-ai/dsh-tools'
+        ? {
+            ...contract,
+            facts: [
+              ...contract.facts,
+              { key: 'unsupported', value: 'claim', evidenceIds: [] },
+            ],
+          }
+        : contract,
+    )
+
+    await expect(makeIndex(baseEvidence(), contracts)).rejects.toThrow(
+      'must reference at least one evidence id',
+    )
   })
 
   it('ranks exact, prefix and fact matches deterministically and returns compact references', async () => {
