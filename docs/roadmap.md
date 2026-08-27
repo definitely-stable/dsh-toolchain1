@@ -85,7 +85,7 @@ Exit criteria:
 
 **Goal:** make the installed DSH Plugin and generic agent integration useful immediately after the CLI vertical slice without creating another target implementation.
 
-**Status:** implemented in PR #24 / Issue #25 and in final merge verification.
+**Status:** implemented and merged via PR #24 / Issue #25.
 
 Capabilities:
 - one shared `resolveTargetResponse()` application path for success and expected `TARGET_*` acquisition failures;
@@ -105,28 +105,53 @@ Exit criteria:
 - exact `.tgz` boot proves native tool visibility/execution through the real ToolRuntime and Service/native fingerprint equality;
 - adding the projections does not broaden M2 contract vocabulary prematurely.
 
-After M1.1 merge, the next capability milestone is M2 rather than additional frontend/framework work.
-
 ## M2 — Contract Intelligence
 
 **Goal:** let an agent discover exact DSH capabilities without loading the complete catalog or guessing from model memory.
 
+### M2.1 — Offline target-bound Contract Index
+
+**Status:** implementation and verification complete under Issue #29; GitHub tracks review/merge state.
+
 Capabilities:
-- official DSH `cordis_inspect_*`/runtime evidence provider where the target exposes it;
-- generated Tool/Cordis catalog, types/config/package/source providers as fallback/companion evidence;
-- normalized contract model that separates declared capability from live availability;
-- deterministic contract index;
-- **target-bound contract evidence/index identity** over the concrete catalog/type/source/runtime evidence actually consumed, so same-version local content changes cannot reuse a stale contract cache merely because package versions match;
-- `contract.search` and `contract.inspect`;
-- provenance for every returned contract fact;
+- installed package-manifest and public TypeScript declaration evidence acquired from the exact M1 target without executing package JavaScript;
+- normalized contract model separating declared capability from live availability; offline availability remains `unknown`;
+- deterministic `dsh-contract-index-v1:<sha256>` from ADR-0008, separately bound to the M1 target fingerprint plus consumed evidence/content hashes and normalized semantics;
+- same-version declaration drift changes Contract Index identity without pretending `dsh-target-v2` changed;
+- one exact package Contract when one canonical installed package appears through multiple DSH composition coordinates, while preserving every captured manifest evidence alias;
+- progressive deterministic `contract.search` with compact references/ranking metadata;
+- stale-safe `contract.inspect` requiring the caller's exact Contract Index fingerprint;
+- evidence/provenance for returned contract facts;
+- shared kernel response paths projected through CLI, `ctx.toolchain`, native DSH ToolRuntime, and MCP;
+- cross-frontend search/stale parity tests;
+- exact packed `.tgz` live DSH proof of native target resolution plus real ToolRuntime contract search→inspect with one target and Contract Index identity.
+
+Exit criteria:
+- package/type evidence is read-only and never executes candidate/package JavaScript;
+- machine paths/timestamps do not enter Contract Index identity;
+- package version or TargetFingerprint equality alone cannot validate same-version changed contract evidence;
+- offline declarations never become a false `available` claim;
+- stale target evidence returns `CONTRACT_EVIDENCE_STALE` rather than a mixed-epoch successful index;
+- stale caller Contract Index returns `CONTRACT_INDEX_STALE` without a contract payload;
+- CLI/native DSH/MCP share kernel semantics instead of duplicating ranking/acquisition logic;
+- exact `.tgz` boot proves `toolchain_contract_search` and `toolchain_contract_inspect` visibility/execution through the host-owned real ToolRuntime and search→inspect index continuity.
+
+### M2.2 — Live Inspect enrichment and evaluation
+
+**Status:** next Contract Intelligence slice; parent M2 tracking remains open.
+
+Capabilities:
+- official DSH `ctx.cordisInspect` / `cordis_inspect_*` runtime evidence where the target exposes a real Agent-scoped Inspect seam;
+- target-bound live evidence merged into the existing normalized Contract Index rather than creating a parallel reflection identity;
+- explicit distinction between declared capability and observed `available` / `unavailable` runtime state;
+- additional generated catalog/config/source companion evidence only where it adds facts not already supported by official/public evidence and does not rely on private DSH internals;
 - AI evaluation against frozen real DSH development tasks.
 
 Exit criteria:
-- Toolchain does not reimplement DSH reflection when official inspect evidence is available;
-- retrieved contracts are source/evidence backed;
-- opt-in/live Inspect absence does not make offline target intelligence unusable;
-- contract-index cache validity depends on the evidence identity, not package version alone;
-- stale target/evidence handling is correct;
+- Toolchain does not reimplement DSH reflection when official Inspect evidence is available;
+- live availability claims are backed by current runtime evidence and scoped correctly;
+- absence of live Inspect/Agent scope does not make M2.1 offline contract intelligence unusable;
+- live evidence participates in the same Contract Index identity/freshness model;
 - evaluation shows materially fewer invalid API guesses than static-doc/model-memory baseline.
 
 ### First usable alpha gate — Exact Target Plugin Check
