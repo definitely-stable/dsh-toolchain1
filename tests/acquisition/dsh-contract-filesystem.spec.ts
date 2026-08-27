@@ -182,6 +182,44 @@ describe('DSH Contract filesystem acquisition', () => {
     }))
   })
 
+  it('collapses one package resolved as both bundle and dependency while preserving both manifest evidence aliases', async () => {
+    const fixture = await createFixture()
+    const toolsManifest = await readFile(fixture.toolsManifestLocation, 'utf8')
+    const target: TargetSnapshot = {
+      ...fixture.target,
+      profile: {
+        ...fixture.target.profile,
+        bundles: [
+          ...fixture.target.profile.bundles,
+          { name: '@deepseek-ai/dsh-tools', version: '0.1.1-rc.2', patchHash: 'e'.repeat(64) },
+        ],
+      },
+      evidence: [
+        ...fixture.target.evidence,
+        manifestEvidence(
+          'manifest:bundle:1:@deepseek-ai/dsh-tools',
+          '@deepseek-ai/dsh-tools',
+          fixture.toolsManifestLocation,
+          toolsManifest,
+        ),
+      ],
+    }
+    const acquisition = createDshContractFilesystemAcquisition({ digest: createNodeSha256Port() })
+
+    const result = await acquisition.acquire(target)
+    const matching = result.contracts.filter(contract => contract.id === 'package:@deepseek-ai/dsh-tools')
+
+    expect(matching).toHaveLength(1)
+    expect(matching[0]?.evidenceIds).toEqual(expect.arrayContaining([
+      'manifest:bundle:1:@deepseek-ai/dsh-tools',
+      'manifest:dependency:@deepseek-ai/dsh-tools',
+    ]))
+    expect(result.evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'manifest:bundle:1:@deepseek-ai/dsh-tools' }),
+      expect.objectContaining({ id: 'manifest:dependency:@deepseek-ai/dsh-tools' }),
+    ]))
+  })
+
   it('reports stale when a target-captured manifest changes before contract acquisition', async () => {
     const fixture = await createFixture()
     await writeFile(fixture.toolsManifestLocation, '{"name":"@deepseek-ai/dsh-tools","version":"0.1.1-rc.2"}\n', 'utf8')
