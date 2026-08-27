@@ -11,11 +11,16 @@ import {
   searchContractsResponse,
   type ApplicationKernel,
 } from '../../kernel/index.js'
-import type {
-  ContractInspectRequest,
-  ContractKind,
-  ContractSearchRequest,
-  TargetResolveRequest,
+import {
+  CONTRACT_INDEX_FINGERPRINT_PATTERN,
+  CONTRACT_KINDS,
+  parseContractInspectRequest,
+  parseContractSearchRequest,
+  parseTargetResolveRequest,
+  type ContractInspectRequest,
+  type ContractKind,
+  type ContractSearchRequest,
+  type TargetResolveRequest,
 } from '../../protocol/index.js'
 
 export interface CliWriter {
@@ -33,15 +38,7 @@ export interface CliDependencies {
   readonly requestId?: () => string
 }
 
-const CONTRACT_KINDS = new Set<ContractKind>([
-  'service',
-  'method',
-  'event',
-  'tool',
-  'client-slot',
-  'config',
-  'package',
-])
+const contractKindSet = new Set<ContractKind>(CONTRACT_KINDS)
 
 const HELP = `DSH Toolchain
 
@@ -101,13 +98,18 @@ function targetRequest(values: CliOptionValues): TargetResolveRequest | undefine
     ? values.patch.filter((value): value is string => typeof value === 'string')
     : []
 
-  return {
+  const candidate = {
     profile,
     ...(typeof values['dsh-home'] === 'string' ? { dshHome: values['dsh-home'] } : {}),
     ...(typeof values['dsh-package-root'] === 'string'
       ? { dshPackageRoot: values['dsh-package-root'] }
       : {}),
     ...(patches.length === 0 ? {} : { patches: [...patches] }),
+  }
+  try {
+    return parseTargetResolveRequest(candidate)
+  } catch {
+    return undefined
   }
 }
 
@@ -135,10 +137,10 @@ function contractKinds(values: CliOptionValues): readonly ContractKind[] | undef
   const raw = Array.isArray(values.kind) ? values.kind : [values.kind]
   const kinds: ContractKind[] = []
   for (const value of raw) {
-    if (typeof value !== 'string' || !CONTRACT_KINDS.has(value as ContractKind)) return undefined
+    if (typeof value !== 'string' || !contractKindSet.has(value as ContractKind)) return undefined
     kinds.push(value as ContractKind)
   }
-  return kinds
+  return new Set(kinds).size === kinds.length ? kinds : undefined
 }
 
 function contractLimit(values: CliOptionValues): number | undefined | null {
@@ -156,11 +158,15 @@ function contractSearchRequest(values: CliOptionValues): ContractSearchRequest |
   if (values.kind !== undefined && kinds === undefined) return undefined
   const limit = contractLimit(values)
   if (limit === null) return undefined
-  return {
-    target,
-    query,
-    ...(kinds === undefined ? {} : { kinds: [...kinds] }),
-    ...(limit === undefined ? {} : { limit }),
+  try {
+    return parseContractSearchRequest({
+      target,
+      query,
+      ...(kinds === undefined ? {} : { kinds: [...kinds] }),
+      ...(limit === undefined ? {} : { limit }),
+    })
+  } catch {
+    return undefined
   }
 }
 
@@ -171,11 +177,13 @@ function contractInspectRequest(values: CliOptionValues): ContractInspectRequest
   if (
     target === undefined
     || typeof contractIndexFingerprint !== 'string'
-    || contractIndexFingerprint.length === 0
     || typeof contractId !== 'string'
-    || contractId.length === 0
   ) return undefined
-  return { target, contractIndexFingerprint, contractId }
+  try {
+    return parseContractInspectRequest({ target, contractIndexFingerprint, contractId })
+  } catch {
+    return undefined
+  }
 }
 
 export async function runCli(
@@ -249,7 +257,7 @@ export async function runCli(
 
     const request = targetRequest(parsed.values)
     if (request === undefined) {
-      io.stderr.write('Error: --profile is required for target resolve\n')
+      io.stderr.write('Error: --profile must be a valid profile for target resolve\n')
       return 2
     }
 
@@ -270,7 +278,7 @@ export async function runCli(
       return 2
     }
     if (targetRequest(parsed.values) === undefined) {
-      io.stderr.write('Error: --profile is required for contract search\n')
+      io.stderr.write('Error: --profile must be a valid profile for contract search\n')
       return 2
     }
     if (typeof parsed.values.query !== 'string' || parsed.values.query.trim().length === 0) {
@@ -278,7 +286,7 @@ export async function runCli(
       return 2
     }
     if (parsed.values.kind !== undefined && contractKinds(parsed.values) === undefined) {
-      io.stderr.write('Error: --kind must be a supported contract kind\n')
+      io.stderr.write('Error: --kind must be a supported, non-duplicate contract kind\n')
       return 2
     }
     if (contractLimit(parsed.values) === null) {
@@ -287,7 +295,10 @@ export async function runCli(
     }
 
     const request = contractSearchRequest(parsed.values)
-    if (request === undefined) throw new Error('validated contract search request could not be constructed')
+    if (request === undefined) {
+      io.stderr.write('Error: invalid contract search request\n')
+      return 2
+    }
     const requestId = (dependencies.requestId ?? randomUUID)()
     const kernel = dependencies.kernel ?? createNodeKernel()
     const response = await searchContractsResponse(kernel, request, requestId)
@@ -305,11 +316,15 @@ export async function runCli(
       return 2
     }
     if (targetRequest(parsed.values) === undefined) {
-      io.stderr.write('Error: --profile is required for contract inspect\n')
+      io.stderr.write('Error: --profile must be a valid profile for contract inspect\n')
       return 2
     }
     if (typeof parsed.values['contract-index'] !== 'string' || parsed.values['contract-index'].length === 0) {
       io.stderr.write('Error: --contract-index is required for contract inspect\n')
+      return 2
+    }
+    if (!CONTRACT_INDEX_FINGERPRINT_PATTERN.test(parsed.values['contract-index'])) {
+      io.stderr.write('Error: --contract-index must be a valid dsh-contract-index-v1 fingerprint\n')
       return 2
     }
     if (typeof parsed.values['contract-id'] !== 'string' || parsed.values['contract-id'].length === 0) {
@@ -318,7 +333,10 @@ export async function runCli(
     }
 
     const request = contractInspectRequest(parsed.values)
-    if (request === undefined) throw new Error('validated contract inspect request could not be constructed')
+    if (request === undefined) {
+      io.stderr.write('Error: invalid contract inspect request\n')
+      return 2
+    }
     const requestId = (dependencies.requestId ?? randomUUID)()
     const kernel = dependencies.kernel ?? createNodeKernel()
     const response = await inspectContractResponse(kernel, request, requestId)
