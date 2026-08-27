@@ -18,7 +18,7 @@ export const CONTRACT_INSPECT_TOOL_NAME = 'toolchain_contract_inspect'
 /**
  * Per-call execution data owned by the native DSH integration boundary.
  * The Agent stays opaque here so no DSH runtime identity leaks into shared
- * kernel/model code; the live Inspect adapter narrows this shape further.
+ * kernel/model code.
  */
 export interface DshContractToolExecutionContext {
   readonly agent?: unknown
@@ -36,9 +36,16 @@ type ContractInspectResolver = (
 ) => Promise<ContractInspectResponse>
 
 function executionContext(execution: unknown): DshContractToolExecutionContext | undefined {
-  return execution !== null && typeof execution === 'object'
-    ? execution as DshContractToolExecutionContext
-    : undefined
+  if (execution === null || typeof execution !== 'object') return undefined
+
+  const source = execution as {
+    readonly agent?: unknown
+    readonly signal?: unknown
+  }
+  return Object.freeze({
+    ...(source.agent === undefined ? {} : { agent: source.agent }),
+    ...(source.signal instanceof AbortSignal ? { signal: source.signal } : {}),
+  })
 }
 
 function output(description: string): DshToolDefinition['output'] {
