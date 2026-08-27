@@ -13,6 +13,7 @@ describe('Target Intelligence smoke policy', () => {
     const smoke = await import('../../scripts/smoke-target-resolve.mjs') as Record<string, unknown>
 
     expect(smoke.TARGET_SMOKE_DSH_VERSIONS).toEqual([
+      '0.1.2-alpha.1',
       '0.1.1-rc.2',
       '0.1.0-rc.8',
     ])
