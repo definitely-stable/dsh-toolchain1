@@ -80,20 +80,8 @@ interface ToolCatalogRow {
   readonly parametersSchema: string
 }
 
-interface ClientSlotCatalogRow {
-  readonly name: string
-  readonly kind: string
-  readonly scope: string
-  readonly parent?: string
-  readonly purpose?: string
-  readonly replaceRisk?: string
-  readonly registration: readonly string[]
-  readonly keyDomain?: string
-  readonly allowedKeys: readonly string[]
-}
-
 interface InspectProviderPlan {
-  readonly platform: 'host' | 'client'
+  readonly platform: 'host'
   readonly id: string
   readonly method: string
   normalize(
@@ -103,14 +91,18 @@ interface InspectProviderPlan {
   ): Promise<AcquiredContractFacts>
 }
 
+function compareCodePoints(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 function objectValue(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined
 }
 
-function invalidLiveEvidence(message: string): ContractAcquisitionError {
-  return new ContractAcquisitionError('CONTRACT_LIVE_EVIDENCE_INVALID', message)
+function invalidLiveEvidence(message: string, options?: ErrorOptions): ContractAcquisitionError {
+  return new ContractAcquisitionError('CONTRACT_LIVE_EVIDENCE_INVALID', message, [], options)
 }
 
 function liveLimitExceeded(message: string): ContractAcquisitionError {
@@ -189,7 +181,7 @@ function validateJsonValue(
     serialized = encoded
   } catch (error) {
     if (error instanceof ContractAcquisitionError) throw error
-    throw invalidLiveEvidence('Cordis Inspect provider result is not JSON-serializable.')
+    throw invalidLiveEvidence('Cordis Inspect provider result is not JSON-serializable.', { cause: error })
   }
 
   const bytes = utf8Bytes(serialized)
@@ -200,13 +192,18 @@ function validateJsonValue(
   }
 }
 
+/**
+ * Canonical JSON for observed schemas. Object key order is non-semantic here;
+ * array order remains part of the observed representation unless a later
+ * keyword-specific rule proves a particular array is set-like.
+ */
 function canonicalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalizeJson)
   const object = objectValue(value)
   if (object === undefined) return value
   return Object.fromEntries(
     Object.keys(object)
-      .toSorted()
+      .toSorted(compareCodePoints)
       .map(key => [key, canonicalizeJson(object[key])]),
   )
 }
@@ -299,14 +296,14 @@ function serviceCatalog(
         throw invalidLiveEvidence(`Host Service Inspect returned an invalid method row for ${service.key}.`)
       }
       return methodRow.signature
-    }).toSorted()
+    }).toSorted(compareCodePoints)
     return {
       key: service.key,
       ...(typeof service.description === 'string' ? { description: service.description } : {}),
       signatures,
     }
   })
-  return Object.freeze(rows.toSorted((left, right) => left.key.localeCompare(right.key, 'en-US')))
+  return Object.freeze(rows.toSorted((left, right) => compareCodePoints(left.key, right.key)))
 }
 
 function eventCatalog(
@@ -339,7 +336,7 @@ function eventCatalog(
       mode: event.mode,
       signature: event.signature,
     }
-  }).toSorted((left, right) => left.name.localeCompare(right.name, 'en-US')))
+  }).toSorted((left, right) => compareCodePoints(left.name, right.name)))
 }
 
 function toolCatalog(
@@ -389,133 +386,37 @@ function toolCatalog(
       parametersSchema,
     }
   })
-  return Object.freeze(rows.toSorted((left, right) => left.name.localeCompare(right.name, 'en-US')))
-}
-
-function optionalString(
-  object: Record<string, unknown>,
-  key: string,
-  label: string,
-): string | undefined {
-  const value = object[key]
-  if (value === undefined) return undefined
-  if (typeof value !== 'string') throw invalidLiveEvidence(`${label} must be a string when present.`)
-  return value
-}
-
-function slotRegistration(value: unknown, slotName: string): readonly string[] {
-  if (value === undefined) return Object.freeze([])
-  if (!Array.isArray(value)) {
-    throw invalidLiveEvidence(`Client Slot ${slotName} registration metadata is not an array.`)
-  }
-  const rows = value.map((entry) => {
-    const option = objectValue(entry)
-    if (
-      option === undefined
-      || typeof option.name !== 'string'
-      || typeof option.type !== 'string'
-      || typeof option.required !== 'boolean'
-    ) {
-      throw invalidLiveEvidence(`Client Slot ${slotName} has invalid registration metadata.`)
-    }
-    return canonicalJson({ name: option.name, type: option.type, required: option.required })
-  }).toSorted()
-  return Object.freeze(rows)
-}
-
-function slotAllowedKeys(value: unknown, slotName: string): readonly string[] {
-  if (value === undefined) return Object.freeze([])
-  if (!Array.isArray(value)) {
-    throw invalidLiveEvidence(`Client Slot ${slotName} allowedKeys metadata is not an array.`)
-  }
-  const rows = value.map((entry) => {
-    const allowed = objectValue(entry)
-    if (allowed === undefined || typeof allowed.value !== 'string') {
-      throw invalidLiveEvidence(`Client Slot ${slotName} has invalid allowedKeys metadata.`)
-    }
-    const description = optionalString(allowed, 'description', `Client Slot ${slotName} allowed-key description`)
-    return canonicalJson({
-      value: allowed.value,
-      ...(description === undefined ? {} : { description }),
-    })
-  }).toSorted()
-  return Object.freeze(rows)
-}
-
-function clientSlotCatalog(
-  value: unknown,
-  limits: DshLiveContractLimits,
-): readonly ClientSlotCatalogRow[] {
-  const root = objectValue(value)
-  if (!Array.isArray(root?.trees)) {
-    throw invalidLiveEvidence('Client Slots Inspect returned an invalid compact tree response.')
-  }
-
-  const rows: ClientSlotCatalogRow[] = []
-  const seen = new Set<string>()
-  const pending: Array<{ readonly value: unknown; readonly parent?: string }> = root.trees.map(entry => ({ value: entry }))
-
-  while (pending.length > 0) {
-    const current = pending.pop()
-    if (current === undefined) break
-    const slot = objectValue(current.value)
-    if (
-      slot === undefined
-      || typeof slot.name !== 'string'
-      || typeof slot.kind !== 'string'
-      || typeof slot.scope !== 'string'
-      || !Array.isArray(slot.children)
-    ) {
-      throw invalidLiveEvidence('Client Slots Inspect returned an invalid compact Slot node.')
-    }
-    if (seen.has(slot.name)) {
-      throw invalidLiveEvidence(`Client Slots Inspect repeats Slot ${slot.name}.`)
-    }
-    seen.add(slot.name)
-    if (seen.size > limits.maxContracts) {
-      throw liveLimitExceeded(
-        `Client Slots Inspect exceeds ${limits.maxContracts} normalized contracts.`,
-      )
-    }
-
-    const purpose = optionalString(slot, 'purpose', `Client Slot ${slot.name} purpose`)
-    const replaceRisk = optionalString(slot, 'replaceRisk', `Client Slot ${slot.name} replaceRisk`)
-    const keyDomain = optionalString(slot, 'keyDomain', `Client Slot ${slot.name} keyDomain`)
-    const registration = slotRegistration(slot.registration, slot.name)
-    const allowedKeys = slotAllowedKeys(slot.allowedKeys, slot.name)
-    rows.push({
-      name: slot.name,
-      kind: slot.kind,
-      scope: slot.scope,
-      ...(current.parent === undefined ? {} : { parent: current.parent }),
-      ...(purpose === undefined ? {} : { purpose }),
-      ...(replaceRisk === undefined ? {} : { replaceRisk }),
-      registration,
-      ...(keyDomain === undefined ? {} : { keyDomain }),
-      allowedKeys,
-    })
-
-    for (const child of slot.children) pending.push({ value: child, parent: slot.name })
-  }
-
-  return Object.freeze(rows.toSorted((left, right) => left.name.localeCompare(right.name, 'en-US')))
+  return Object.freeze(rows.toSorted((left, right) => compareCodePoints(left.name, right.name)))
 }
 
 function serviceQualifiedName(key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `ctx.${key}` : `ctx[${JSON.stringify(key)}]`
 }
 
+function catalogEvidence(
+  providerId: 'Service' | 'Event',
+  methodName: string,
+  contentHash: string,
+): Evidence {
+  return Object.freeze({
+    id: `generated-catalog:cordis-inspect:host:${providerId}:${methodName}`,
+    kind: 'generated-catalog',
+    strength: 'authoritative',
+    source: `cordis-inspect:host/${providerId}/${methodName}`,
+    contentHash,
+  })
+}
+
 function runtimeEvidence(
-  platform: 'host' | 'client',
   providerId: string,
   methodName: string,
   contentHash: string,
 ): Evidence {
   return Object.freeze({
-    id: `runtime:cordis-inspect:${platform}:${providerId}:${methodName}`,
+    id: `runtime:cordis-inspect:host:${providerId}:${methodName}`,
     kind: 'runtime',
     strength: 'observed',
-    source: `cordis-inspect:${platform}/${providerId}/${methodName}`,
+    source: `cordis-inspect:host/${providerId}/${methodName}`,
     contentHash,
   })
 }
@@ -533,7 +434,7 @@ async function normalizeServices(
     signatures: [...row.signatures],
   })))
   const contentHash = await digest.sha256Utf8(canonical)
-  const evidence = runtimeEvidence('host', 'Service', 'listService', contentHash)
+  const evidence = catalogEvidence('Service', 'listService', contentHash)
   const evidenceId = evidence.id
   const contracts = rows.map((row): ContractDefinition => {
     const facts: ContractFact[] = row.signatures.map(signature => ({
@@ -546,7 +447,7 @@ async function normalizeServices(
       kind: 'service',
       name: row.key,
       qualifiedName: serviceQualifiedName(row.key),
-      availability: 'available',
+      availability: 'unknown',
       ...(row.description === undefined ? {} : { summary: row.description }),
       facts,
       evidenceIds: [evidenceId],
@@ -569,14 +470,14 @@ async function normalizeEvents(
     signature: row.signature,
   })))
   const contentHash = await digest.sha256Utf8(canonical)
-  const evidence = runtimeEvidence('host', 'Event', 'listEvents', contentHash)
+  const evidence = catalogEvidence('Event', 'listEvents', contentHash)
   const evidenceId = evidence.id
   const contracts = rows.map((row): ContractDefinition => ({
     id: `event:host:${row.name}`,
     kind: 'event',
     name: row.name,
     qualifiedName: `event:${row.name}`,
-    availability: 'available',
+    availability: 'unknown',
     ...(row.description === undefined ? {} : { summary: row.description }),
     facts: [
       { key: 'dispatch-mode', value: row.mode, evidenceIds: [evidenceId] },
@@ -600,7 +501,7 @@ async function normalizeTools(
     parametersSchema: row.parametersSchema,
   })))
   const contentHash = await digest.sha256Utf8(canonical)
-  const evidence = runtimeEvidence('host', 'Tool', 'listTools', contentHash)
+  const evidence = runtimeEvidence('Tool', 'listTools', contentHash)
   const evidenceId = evidence.id
   const contracts = rows.map((row): ContractDefinition => ({
     id: `tool:host:${row.name}`,
@@ -619,71 +520,50 @@ async function normalizeTools(
   return Object.freeze({ evidence: Object.freeze([evidence]), contracts: Object.freeze(contracts) })
 }
 
-async function normalizeClientSlots(
-  value: unknown,
-  digest: Sha256Port,
-  limits: DshLiveContractLimits,
-): Promise<AcquiredContractFacts> {
-  validateJsonValue(value, limits)
-  const rows = clientSlotCatalog(value, limits)
-  const canonical = JSON.stringify(rows.map(row => ({
-    name: row.name,
-    kind: row.kind,
-    scope: row.scope,
-    ...(row.parent === undefined ? {} : { parent: row.parent }),
-    ...(row.purpose === undefined ? {} : { purpose: row.purpose }),
-    ...(row.replaceRisk === undefined ? {} : { replaceRisk: row.replaceRisk }),
-    registration: [...row.registration],
-    ...(row.keyDomain === undefined ? {} : { keyDomain: row.keyDomain }),
-    allowedKeys: [...row.allowedKeys],
-  })))
-  const contentHash = await digest.sha256Utf8(canonical)
-  const evidence = runtimeEvidence('client', 'Slots', 'listSubTree', contentHash)
-  const evidenceId = evidence.id
-  const contracts = rows.map((row): ContractDefinition => {
-    const facts: ContractFact[] = [
-      { key: 'slot-kind', value: row.kind, evidenceIds: [evidenceId] },
-      { key: 'slot-scope', value: row.scope, evidenceIds: [evidenceId] },
-    ]
-    if (row.parent !== undefined) {
-      facts.push({ key: 'parent-slot', value: row.parent, evidenceIds: [evidenceId] })
-    }
-    if (row.replaceRisk !== undefined) {
-      facts.push({ key: 'replace-risk', value: row.replaceRisk, evidenceIds: [evidenceId] })
-    }
-    for (const option of row.registration) {
-      facts.push({ key: 'registration-option', value: option, evidenceIds: [evidenceId] })
-    }
-    if (row.keyDomain !== undefined) {
-      facts.push({ key: 'key-domain', value: row.keyDomain, evidenceIds: [evidenceId] })
-    }
-    for (const allowedKey of row.allowedKeys) {
-      facts.push({ key: 'allowed-key', value: allowedKey, evidenceIds: [evidenceId] })
-    }
-    return {
-      id: `client-slot:client:${row.name}`,
-      kind: 'client-slot',
-      name: row.name,
-      qualifiedName: `slot:${row.name}`,
-      availability: 'available',
-      ...(row.purpose === undefined ? {} : { summary: row.purpose }),
-      facts,
-      evidenceIds: [evidenceId],
-    }
-  })
-  return Object.freeze({ evidence: Object.freeze([evidence]), contracts: Object.freeze(contracts) })
-}
-
 const PROVIDER_PLAN: readonly InspectProviderPlan[] = Object.freeze([
   Object.freeze({ platform: 'host', id: 'Service', method: 'listService', normalize: normalizeServices }),
   Object.freeze({ platform: 'host', id: 'Event', method: 'listEvents', normalize: normalizeEvents }),
   Object.freeze({ platform: 'host', id: 'Tool', method: 'listTools', normalize: normalizeTools }),
-  Object.freeze({ platform: 'client', id: 'Slots', method: 'listSubTree', normalize: normalizeClientSlots }),
 ])
+
+function isAbortError(error: unknown, signal: AbortSignal): boolean {
+  if (signal.aborted) return true
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : objectValue(error)?.name === 'AbortError'
+}
+
+async function queryProvider(
+  options: DshLiveContractEnrichmentOptions,
+  plan: InspectProviderPlan,
+  agent: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
+  try {
+    return await options.registry.query(
+      plan.platform,
+      plan.id,
+      plan.method,
+      {},
+      agent,
+      signal,
+    )
+  } catch (error) {
+    if (error instanceof ContractAcquisitionError || isAbortError(error, signal)) throw error
+    throw invalidLiveEvidence(
+      `Cordis Inspect ${plan.platform}/${plan.id}/${plan.method} query failed: ${String(error)}`,
+      { cause: error },
+    )
+  }
+}
 
 /**
  * Build one invocation-scoped enrichment port. Missing Agent/signal means the
  * native operation intentionally falls back to the exact M2.1 offline path.
+ *
+ * M2.2 intentionally indexes Host providers only. Client provider manifests
+ * are page-mirrored and do not yet expose deterministic page identity/lifetime
+ * semantics suitable for a content-addressed Contract Index.
  */
 export function createDshLiveContractEnrichment(
   options: DshLiveContractEnrichmentOptions,
@@ -715,14 +595,7 @@ export function createDshLiveContractEnrichment(
         const provider = providers.find(candidate => supportsMethod(candidate, plan))
         if (provider === undefined) continue
 
-        const value = await options.registry.query(
-          plan.platform,
-          plan.id,
-          plan.method,
-          {},
-          agent,
-          signal,
-        )
+        const value = await queryProvider(options, plan, agent, signal)
         const next = await plan.normalize(value, options.digest, limits)
         acquired = mergeAcquiredContractFacts(acquired, next)
         enforceNormalizedLimits(acquired, limits)
