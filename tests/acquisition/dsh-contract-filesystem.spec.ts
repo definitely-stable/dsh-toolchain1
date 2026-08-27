@@ -145,6 +145,43 @@ describe('DSH Contract filesystem acquisition', () => {
     ])
   })
 
+  it('keeps original M1 bundle evidence coordinates after observer bundles are excluded from semantic target identity', async () => {
+    const fixture = await createFixture()
+    const web = await writePackage(fixture.root, {
+      name: '@deepseek-ai/dsh-web-app',
+      version: '0.1.1-rc.2',
+      manifest: {},
+    })
+    const target: TargetSnapshot = {
+      ...fixture.target,
+      profile: {
+        ...fixture.target.profile,
+        bundles: [
+          ...fixture.target.profile.bundles,
+          { name: '@deepseek-ai/dsh-web-app', version: '0.1.1-rc.2', patchHash: 'e'.repeat(64) },
+        ],
+      },
+      evidence: [
+        ...fixture.target.evidence,
+        manifestEvidence(
+          'manifest:bundle:2:@deepseek-ai/dsh-web-app',
+          '@deepseek-ai/dsh-web-app',
+          web.manifestLocation,
+          web.manifestContent,
+        ),
+      ],
+    }
+    const acquisition = createDshContractFilesystemAcquisition({ digest: createNodeSha256Port() })
+
+    const result = await acquisition.acquire(target)
+
+    expect(result.contracts.map(contract => contract.id)).toContain('package:@deepseek-ai/dsh-web-app')
+    expect(result.evidence).toContainEqual(expect.objectContaining({
+      id: 'manifest:bundle:2:@deepseek-ai/dsh-web-app',
+      source: '@deepseek-ai/dsh-web-app',
+    }))
+  })
+
   it('reports stale when a target-captured manifest changes before contract acquisition', async () => {
     const fixture = await createFixture()
     await writeFile(fixture.toolsManifestLocation, '{"name":"@deepseek-ai/dsh-tools","version":"0.1.1-rc.2"}\n', 'utf8')
