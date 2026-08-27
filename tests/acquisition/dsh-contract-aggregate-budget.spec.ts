@@ -103,6 +103,7 @@ async function fixture(): Promise<{
 
 function acquisitionWithTotals(overrides: Record<string, number>) {
   const limits = {
+    maxDeclarationFilesPerPackage: 10_000,
     maxTotalDeclarationFiles: 10_000,
     maxTotalDeclarationBytes: 256 * 1024 * 1024,
     maxTotalNormalizedFacts: 100_000,
