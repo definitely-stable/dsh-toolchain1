@@ -161,14 +161,16 @@ describe('ContractIndex', () => {
   })
 
   it('rejects normalized facts without supporting evidence', async () => {
+    const unsupportedFact = {
+      key: 'unsupported',
+      value: 'claim',
+      evidenceIds: [],
+    } as unknown as ContractFact
     const contracts = baseContracts().map(contract =>
       contract.id === 'package:@deepseek-ai/dsh-tools'
         ? {
             ...contract,
-            facts: [
-              ...contract.facts,
-              { key: 'unsupported', value: 'claim', evidenceIds: [] },
-            ],
+            facts: [...contract.facts, unsupportedFact],
           }
         : contract,
     )
