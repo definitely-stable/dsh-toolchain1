@@ -474,12 +474,20 @@ async function acquirePackage(
   if (manifest === undefined) throw new Error(`Manifest aliases disappeared for ${expected.name}`)
   const manifestEvidence = manifests.map(item => item.evidence)
   const manifestEvidenceIds = manifestEvidence.map(item => item.id).toSorted(compareCodePoints)
+  const firstManifestEvidenceId = manifestEvidenceIds[0]
+  if (firstManifestEvidenceId === undefined) {
+    throw new Error(`Manifest evidence disappeared for ${expected.name}`)
+  }
+  const versionEvidenceIds: ContractFact['evidenceIds'] = [
+    firstManifestEvidenceId,
+    ...manifestEvidenceIds.slice(1),
+  ]
   const entrypoints = declarationEntrypoints(manifest.value)
   const declarations = await readDeclarationGraph(manifest, expected.name, entrypoints, digest)
   const facts: ContractFact[] = [{
     key: 'version',
     value: expected.version,
-    evidenceIds: [...manifestEvidenceIds],
+    evidenceIds: versionEvidenceIds,
   }]
   for (const entry of declarations.entries) {
     facts.push({ key: 'declaration-entry', value: entry.relativePath, evidenceIds: [entry.evidenceId] })
