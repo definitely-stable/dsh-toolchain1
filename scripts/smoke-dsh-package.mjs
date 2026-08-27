@@ -32,8 +32,6 @@ const CONTRACT_INDEX_FINGERPRINT = /^dsh-contract-index-v1:[0-9a-f]{64}$/
 const WEB_CONTRACT_ID = 'package:@deepseek-ai/dsh-tools'
 const WEB_CONTRACT_QUERY = 'ToolDefinition'
 const RUNTIME_TOOL_CONTRACT_ID = 'tool:host:toolchain_target_resolve'
-const RUNTIME_TOOL_QUERY = 'toolchain_target_resolve'
-const RUNTIME_TOOL_EVIDENCE_SOURCE = 'cordis-inspect:host/Tool/listTools'
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -197,7 +195,6 @@ export async function createBootProbePackage(root, options = {}) {
   await writeFile(join(probe, 'cordis.patch.yml'), `- insert:\n${rows.join('\n')}\n`)
 
   await writeFile(join(probe, 'probe.mjs'), `const RUNTIME_TOOL_CONTRACT_ID = ${JSON.stringify(RUNTIME_TOOL_CONTRACT_ID)}
-const RUNTIME_TOOL_EVIDENCE_SOURCE = ${JSON.stringify(RUNTIME_TOOL_EVIDENCE_SOURCE)}
 
 function renderedMatchesValue(result) {
   if (result?.isError) return false
@@ -212,7 +209,7 @@ function renderedMatchesValue(result) {
 
 function hasRuntimeToolEvidence(response) {
   return response?.data?.evidence?.some(item =>
-    item.kind === 'runtime' && item.source === RUNTIME_TOOL_EVIDENCE_SOURCE) === true
+    item.kind === 'runtime' && item.source === 'cordis-inspect:host/Tool/listTools') === true
 }
 
 export function apply(rootCtx) {
