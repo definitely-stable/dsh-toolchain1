@@ -29,12 +29,21 @@ export interface ContractAcquisitionBudgetV1 {
   readonly maxDeclarationReferenceEdgesPerPackage: number
   readonly maxDeclarationDepth: number
   readonly maxNormalizedFactsPerPackage: number
+  readonly maxTotalDeclarationFiles: number
+  readonly maxTotalDeclarationBytes: number
+  readonly maxTotalNormalizedFacts: number
 }
 
 interface AcquisitionOptions {
   readonly digest?: Sha256Port
   readonly budget?: Partial<ContractAcquisitionBudgetV1>
   readonly syntax?: DeclarationSyntaxPort
+}
+
+interface AcquisitionTotals {
+  declarationFiles: number
+  declarationBytes: number
+  normalizedFacts: number
 }
 
 interface ExpectedPackage {
@@ -93,6 +102,8 @@ interface DeclarationGraph {
 }
 
 type ExportWitnessMap = Map<string, readonly string[]>
+type ExportOriginWitnessMap = Map<string, readonly string[]>
+type DeclarationSurface = Map<string, ExportOriginWitnessMap>
 
 const DEFAULT_CONTRACT_ACQUISITION_BUDGET_V1: ContractAcquisitionBudgetV1 = Object.freeze({
   maxContractPackages: 512,
@@ -102,6 +113,9 @@ const DEFAULT_CONTRACT_ACQUISITION_BUDGET_V1: ContractAcquisitionBudgetV1 = Obje
   maxDeclarationReferenceEdgesPerPackage: 8_192,
   maxDeclarationDepth: 64,
   maxNormalizedFactsPerPackage: 16_384,
+  maxTotalDeclarationFiles: 8_192,
+  maxTotalDeclarationBytes: 256 * 1024 * 1024,
+  maxTotalNormalizedFacts: 65_536,
 })
 
 const DECLARATION_READ_CHUNK_BYTES = 64 * 1024
@@ -259,6 +273,7 @@ async function readBoundedDeclarationUtf8(
   location: string,
   budget: ContractAcquisitionBudgetV1,
   packageBytesUsed: number,
+  totalBytesUsed: number,
 ): Promise<{ readonly content: string; readonly bytes: number }> {
   let handle
   try {
@@ -280,13 +295,17 @@ async function readBoundedDeclarationUtf8(
     if (packageBytesUsed + stats.size > budget.maxDeclarationBytesPerPackage) {
       throw resourceLimitError(packageName, 'maxDeclarationBytesPerPackage', location)
     }
+    if (totalBytesUsed + stats.size > budget.maxTotalDeclarationBytes) {
+      throw resourceLimitError(packageName, 'maxTotalDeclarationBytes', location)
+    }
 
     const chunks: Buffer[] = []
     let bytes = 0
     while (true) {
       const remainingPerFile = budget.maxDeclarationBytesPerFile - bytes
       const remainingPerPackage = budget.maxDeclarationBytesPerPackage - packageBytesUsed - bytes
-      const remaining = Math.min(remainingPerFile, remainingPerPackage)
+      const remainingTotal = budget.maxTotalDeclarationBytes - totalBytesUsed - bytes
+      const remaining = Math.min(remainingPerFile, remainingPerPackage, remainingTotal)
       const length = Math.min(DECLARATION_READ_CHUNK_BYTES, Math.max(1, remaining + 1))
       const buffer = Buffer.allocUnsafe(length)
       const { bytesRead } = await handle.read(buffer, { offset: 0, length, position: null })
@@ -298,6 +317,9 @@ async function readBoundedDeclarationUtf8(
       }
       if (packageBytesUsed + bytes > budget.maxDeclarationBytesPerPackage) {
         throw resourceLimitError(packageName, 'maxDeclarationBytesPerPackage', location)
+      }
+      if (totalBytesUsed + bytes > budget.maxTotalDeclarationBytes) {
+        throw resourceLimitError(packageName, 'maxTotalDeclarationBytes', location)
       }
       chunks.push(buffer.subarray(0, bytesRead))
     }
@@ -696,6 +718,51 @@ function addMinimalWitness(surface: ExportWitnessMap, name: string, witness: rea
   return true
 }
 
+function addSurfaceOrigin(
+  surface: DeclarationSurface,
+  name: string,
+  origin: string,
+  witness: readonly string[],
+  packageName: string,
+  location: string,
+  budget: ContractAcquisitionBudgetV1,
+): boolean {
+  let origins = surface.get(name)
+  if (origins === undefined) {
+    if (surface.size >= budget.maxNormalizedFactsPerPackage) {
+      throw resourceLimitError(packageName, 'maxNormalizedFactsPerPackage', location)
+    }
+    origins = new Map()
+    surface.set(name, origins)
+  }
+
+  const normalized = uniqueSorted(witness)
+  const existing = origins.get(origin)
+  if (existing !== undefined) {
+    if (compareWitness(existing, normalized) <= 0) return false
+    origins.set(origin, normalized)
+    return true
+  }
+
+  // Two distinct origins are enough to prove ambiguity. Retaining additional
+  // origins would only increase memory without changing the fail-closed result.
+  if (origins.size >= 2) return false
+  origins.set(origin, normalized)
+  return true
+}
+
+function relativeExplicitExportNames(record: DeclarationRecord): ReadonlySet<string> {
+  const names = new Set<string>()
+  for (const edge of record.reexports) {
+    if (edge.kind === 'named') {
+      for (const binding of edge.bindings) names.add(binding.exportedName)
+    } else if (edge.kind === 'namespace' || edge.kind === 'import-equals') {
+      names.add(edge.exportedName)
+    }
+  }
+  return names
+}
+
 function sortedResolvedReexports(values: readonly ResolvedDeclarationReexportEdge[]): readonly ResolvedDeclarationReexportEdge[] {
   return Object.freeze([...values].toSorted((left, right) => {
     const bySpecifier = compareCodePoints(left.specifier, right.specifier)
@@ -713,6 +780,7 @@ async function readDeclarationGraph(
   digest: Sha256Port,
   budget: ContractAcquisitionBudgetV1,
   syntax: DeclarationSyntaxPort,
+  totals: AcquisitionTotals,
 ): Promise<DeclarationGraph> {
   const queue: DeclarationQueueItem[] = []
   const queued = new Set<string>()
@@ -739,14 +807,20 @@ async function readDeclarationGraph(
     if (records.size >= budget.maxDeclarationFilesPerPackage) {
       throw resourceLimitError(packageName, 'maxDeclarationFilesPerPackage', item.location)
     }
+    if (totals.declarationFiles >= budget.maxTotalDeclarationFiles) {
+      throw resourceLimitError(packageName, 'maxTotalDeclarationFiles', item.location)
+    }
 
     const { content, bytes } = await readBoundedDeclarationUtf8(
       packageName,
       item.location,
       budget,
       packageBytesUsed,
+      totals.declarationBytes,
     )
     packageBytesUsed += bytes
+    totals.declarationFiles += 1
+    totals.declarationBytes += bytes
     const relativePath = portableRelative(manifest.packageRoot, item.location)
     const evidenceId = `types:${packageName}:${relativePath}`
     const evidence: Evidence = {
@@ -768,6 +842,9 @@ async function readDeclarationGraph(
         [item.location],
         cause,
       )
+    }
+    if (parsed.exports.length > budget.maxNormalizedFactsPerPackage) {
+      throw resourceLimitError(packageName, 'maxNormalizedFactsPerPackage', item.location)
     }
 
     const resolvedReexports: ResolvedDeclarationReexportEdge[] = []
@@ -837,11 +914,32 @@ async function readDeclarationGraph(
   })
 }
 
-function declarationSurfaces(graph: DeclarationGraph): Map<string, ExportWitnessMap> {
-  const surfaces = new Map<string, ExportWitnessMap>()
+function declarationSurfaces(
+  graph: DeclarationGraph,
+  packageName: string,
+  budget: ContractAcquisitionBudgetV1,
+): Map<string, DeclarationSurface> {
+  const surfaces = new Map<string, DeclarationSurface>()
+  const explicitNames = new Map<string, ReadonlySet<string>>()
+  const records = new Map(graph.records.map(record => [record.location, record]))
+
   for (const record of graph.records) {
-    const surface: ExportWitnessMap = new Map()
-    for (const exportedName of record.exports) addMinimalWitness(surface, exportedName, [record.evidence.id])
+    const surface: DeclarationSurface = new Map()
+    const relativeNames = relativeExplicitExportNames(record)
+    const recordExplicitNames = new Set(record.exports)
+    explicitNames.set(record.location, recordExplicitNames)
+    for (const exportedName of record.exports) {
+      if (relativeNames.has(exportedName)) continue
+      addSurfaceOrigin(
+        surface,
+        exportedName,
+        `${record.evidence.id}\u0000direct\u0000${exportedName}`,
+        [record.evidence.id],
+        packageName,
+        record.location,
+        budget,
+      )
+    }
     surfaces.set(record.location, surface)
   }
 
@@ -850,14 +948,64 @@ function declarationSurfaces(graph: DeclarationGraph): Map<string, ExportWitness
     changed = false
     for (const record of graph.records) {
       const surface = surfaces.get(record.location)
-      if (surface === undefined) throw new Error(`Declaration surface disappeared for ${record.location}`)
+      const recordExplicitNames = explicitNames.get(record.location)
+      if (surface === undefined || recordExplicitNames === undefined) {
+        throw new Error(`Declaration surface disappeared for ${record.location}`)
+      }
+
       for (const edge of record.reexports) {
-        if (edge.kind !== 'star') continue
         const child = surfaces.get(edge.location)
-        if (child === undefined) throw new Error(`Declaration star target disappeared for ${edge.location}`)
-        for (const [name, witness] of [...child.entries()].toSorted(([left], [right]) => compareCodePoints(left, right))) {
-          if (name === 'default' || name === 'export=') continue
-          if (addMinimalWitness(surface, name, [record.evidence.id, ...witness])) changed = true
+        const childRecord = records.get(edge.location)
+        if (child === undefined || childRecord === undefined) {
+          throw new Error(`Declaration re-export target disappeared for ${edge.location}`)
+        }
+
+        if (edge.kind === 'named') {
+          for (const binding of edge.bindings) {
+            const origins = child.get(binding.importedName)
+            if (origins === undefined) continue
+            for (const [origin, witness] of origins) {
+              if (addSurfaceOrigin(
+                surface,
+                binding.exportedName,
+                origin,
+                [record.evidence.id, ...witness],
+                packageName,
+                record.location,
+                budget,
+              )) changed = true
+            }
+          }
+          continue
+        }
+
+        if (edge.kind === 'namespace' || edge.kind === 'import-equals') {
+          const origin = `${record.evidence.id}\u0000${edge.kind}\u0000${edge.exportedName}\u0000${childRecord.evidence.id}`
+          if (addSurfaceOrigin(
+            surface,
+            edge.exportedName,
+            origin,
+            [record.evidence.id, childRecord.evidence.id],
+            packageName,
+            record.location,
+            budget,
+          )) changed = true
+          continue
+        }
+
+        for (const [name, origins] of [...child.entries()].toSorted(([left], [right]) => compareCodePoints(left, right))) {
+          if (name === 'default' || name === 'export=' || recordExplicitNames.has(name)) continue
+          for (const [origin, witness] of origins) {
+            if (addSurfaceOrigin(
+              surface,
+              name,
+              origin,
+              [record.evidence.id, ...witness],
+              packageName,
+              record.location,
+              budget,
+            )) changed = true
+          }
         }
       }
     }
@@ -865,14 +1013,20 @@ function declarationSurfaces(graph: DeclarationGraph): Map<string, ExportWitness
   return surfaces
 }
 
-function packageExportSurface(graph: DeclarationGraph): ExportWitnessMap {
-  const surfaces = declarationSurfaces(graph)
+function packageExportSurface(
+  graph: DeclarationGraph,
+  packageName: string,
+  budget: ContractAcquisitionBudgetV1,
+): ExportWitnessMap {
+  const surfaces = declarationSurfaces(graph, packageName, budget)
   const result: ExportWitnessMap = new Map()
   for (const entry of graph.entries) {
     const surface = surfaces.get(entry.location)
     if (surface === undefined) throw new Error(`Declaration entry surface disappeared for ${entry.location}`)
-    for (const [name, witness] of [...surface.entries()].toSorted(([left], [right]) => compareCodePoints(left, right))) {
-      addMinimalWitness(result, name, witness)
+    for (const [name, origins] of [...surface.entries()].toSorted(([left], [right]) => compareCodePoints(left, right))) {
+      if (origins.size !== 1) continue
+      const witness = origins.values().next().value
+      if (witness !== undefined) addMinimalWitness(result, name, witness)
     }
   }
   return result
@@ -884,11 +1038,16 @@ function pushFact(
   packageName: string,
   location: string,
   budget: ContractAcquisitionBudgetV1,
+  totals: AcquisitionTotals,
 ): void {
   if (facts.length >= budget.maxNormalizedFactsPerPackage) {
     throw resourceLimitError(packageName, 'maxNormalizedFactsPerPackage', location)
   }
+  if (totals.normalizedFacts >= budget.maxTotalNormalizedFacts) {
+    throw resourceLimitError(packageName, 'maxTotalNormalizedFacts', location)
+  }
   facts.push(fact)
+  totals.normalizedFacts += 1
 }
 
 async function buildPackageContract(
@@ -898,6 +1057,7 @@ async function buildPackageContract(
   digest: Sha256Port,
   budget: ContractAcquisitionBudgetV1,
   syntax: DeclarationSyntaxPort,
+  totals: AcquisitionTotals,
 ): Promise<{ readonly contract: ContractDefinition; readonly evidence: readonly Evidence[] }> {
   const manifest = manifests[0]
   if (manifest === undefined) throw new Error(`Manifest disappeared for ${packageName}`)
@@ -914,6 +1074,7 @@ async function buildPackageContract(
     digest,
     budget,
     syntax,
+    totals,
   )
   const facts: ContractFact[] = []
   const manifestLocation = manifest.evidence.location ?? manifest.packageRoot
@@ -921,17 +1082,17 @@ async function buildPackageContract(
     key: 'version',
     value: packageVersion,
     evidenceIds: [firstManifestEvidenceId, ...manifestEvidenceIds.slice(1)],
-  }, packageName, manifestLocation, budget)
+  }, packageName, manifestLocation, budget, totals)
 
   for (const entry of declarations.entries) {
     pushFact(facts, {
       key: 'declaration-entry',
       value: entry.relativePath,
       evidenceIds: [entry.evidenceId],
-    }, packageName, entry.relativePath, budget)
+    }, packageName, entry.relativePath, budget, totals)
   }
 
-  const exported = packageExportSurface(declarations)
+  const exported = packageExportSurface(declarations, packageName, budget)
   for (const [exportedName, evidenceIds] of [...exported.entries()].toSorted(([left], [right]) => compareCodePoints(left, right))) {
     const firstEvidenceId = evidenceIds[0]
     if (firstEvidenceId === undefined) throw new Error(`Export witness disappeared for ${packageName}:${exportedName}`)
@@ -939,7 +1100,7 @@ async function buildPackageContract(
       key: 'declaration-export',
       value: exportedName,
       evidenceIds: [firstEvidenceId, ...evidenceIds.slice(1)],
-    }, packageName, manifestLocation, budget)
+    }, packageName, manifestLocation, budget, totals)
   }
 
   const declarationEvidence = declarations.records.map(record => record.evidence)
@@ -966,9 +1127,10 @@ async function acquireExplicitPackage(
   digest: Sha256Port,
   budget: ContractAcquisitionBudgetV1,
   syntax: DeclarationSyntaxPort,
+  totals: AcquisitionTotals,
 ): Promise<{ readonly contract: ContractDefinition; readonly evidence: readonly Evidence[] }> {
   const manifests = await acquireManifestAliases(snapshot, expected, digest)
-  return buildPackageContract(expected.name, expected.version, manifests, digest, budget, syntax)
+  return buildPackageContract(expected.name, expected.version, manifests, digest, budget, syntax, totals)
 }
 
 async function acquireDiscoveredPackage(
@@ -976,8 +1138,9 @@ async function acquireDiscoveredPackage(
   digest: Sha256Port,
   budget: ContractAcquisitionBudgetV1,
   syntax: DeclarationSyntaxPort,
+  totals: AcquisitionTotals,
 ): Promise<{ readonly contract: ContractDefinition; readonly evidence: readonly Evidence[] }> {
-  return buildPackageContract(manifest.name, manifest.version, [manifest], digest, budget, syntax)
+  return buildPackageContract(manifest.name, manifest.version, [manifest], digest, budget, syntax, totals)
 }
 
 export function createDshContractFilesystemAcquisition(
@@ -1009,12 +1172,17 @@ export function createDshContractFilesystemAcquisition(
       }
 
       const syntax = await syntaxPort()
+      const totals: AcquisitionTotals = {
+        declarationFiles: 0,
+        declarationBytes: 0,
+        normalizedFacts: 0,
+      }
       const acquired: Array<{ readonly contract: ContractDefinition; readonly evidence: readonly Evidence[] }> = []
       for (const expected of explicit) {
-        acquired.push(await acquireExplicitPackage(snapshot, expected, digest, budget, syntax))
+        acquired.push(await acquireExplicitPackage(snapshot, expected, digest, budget, syntax, totals))
       }
       for (const manifest of discovered) {
-        acquired.push(await acquireDiscoveredPackage(manifest, digest, budget, syntax))
+        acquired.push(await acquireDiscoveredPackage(manifest, digest, budget, syntax, totals))
       }
 
       return Object.freeze({
