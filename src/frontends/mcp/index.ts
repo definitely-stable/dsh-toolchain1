@@ -14,13 +14,15 @@ import {
   searchContractsResponse,
   type ApplicationKernel,
 } from '../../kernel/index.js'
-import type {
-  ContractInspectRequest,
-  ContractInspectResponse,
-  ContractSearchRequest,
-  ContractSearchResponse,
-  TargetResolveRequest,
-  TargetResolveResponse,
+import {
+  parseContractInspectRequest,
+  parseContractSearchRequest,
+  type ContractInspectRequest,
+  type ContractInspectResponse,
+  type ContractSearchRequest,
+  type ContractSearchResponse,
+  type TargetResolveRequest,
+  type TargetResolveResponse,
 } from '../../protocol/index.js'
 
 export type ServeStdio = (factory: () => McpServer) => StdioServerHandle
@@ -155,7 +157,7 @@ export function createContractSearchMcpTool(
       annotations: readOnlyIdempotent,
     },
     callback: async (request) => structuredResult(
-      await searchContractsResponse(kernel, request, requestId()),
+      await searchContractsResponse(kernel, parseContractSearchRequest(request), requestId()),
     ),
   }
 }
@@ -180,7 +182,7 @@ export function createContractInspectMcpTool(
       annotations: readOnlyIdempotent,
     },
     callback: async (request) => structuredResult(
-      await inspectContractResponse(kernel, request, requestId()),
+      await inspectContractResponse(kernel, parseContractInspectRequest(request), requestId()),
     ),
   }
 }
