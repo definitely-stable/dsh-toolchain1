@@ -507,11 +507,20 @@ async function discoverDshAuthorityClosure(
   budget: ContractAcquisitionBudgetV1,
 ): Promise<readonly ManifestRecord[]> {
   const explicitByName = new Map(explicitPackages.map(item => [item.name, item]))
-  const dshExpected = explicitByName.get(snapshot.dsh.name)
-  if (dshExpected === undefined) throw new Error('Expected DSH application package disappeared')
-  const dshManifest = await acquireManifest(snapshot, dshExpected, 'manifest:dsh', digest)
-  const queue: ManifestRecord[] = [dshManifest]
-  const visited = new Set<string>([dshManifest.name])
+  const dshRoots = explicitPackages.filter(item => item.name.startsWith(DSH_AUTHORITY_PREFIX))
+  if (!dshRoots.some(item => item.name === snapshot.dsh.name)) {
+    throw new Error('Expected DSH application package disappeared')
+  }
+
+  const queue: ManifestRecord[] = []
+  for (const expected of dshRoots) {
+    const manifests = await acquireManifestAliases(snapshot, expected, digest)
+    const primary = manifests[0]
+    if (primary === undefined) throw new Error(`Manifest disappeared for DSH root ${expected.name}`)
+    queue.push(primary)
+  }
+
+  const visited = new Set<string>(queue.map(item => item.name))
   const discovered: ManifestRecord[] = []
 
   for (let current = queue.shift(); current !== undefined; current = queue.shift()) {
@@ -519,27 +528,27 @@ async function discoverDshAuthorityClosure(
     if (anchor === undefined) throw new Error(`Manifest location disappeared for ${current.name}`)
     for (const dependencyName of manifestDependencyNames(current.value)) {
       if (visited.has(dependencyName)) continue
-      if (visited.size >= budget.maxContractPackages) {
+
+      const explicit = explicitByName.get(dependencyName)
+      if (explicit === undefined && explicitPackages.length + discovered.length >= budget.maxContractPackages) {
         throw resourceLimitError(snapshot.dsh.name, 'maxContractPackages', anchor)
       }
+
       const manifestLocation = await resolvePackageManifestFromAnchor(anchor, dependencyName)
       if (manifestLocation === undefined) continue
       const manifest = await acquireDiscoveredManifest(dependencyName, manifestLocation, digest)
+
+      if (explicit !== undefined && explicit.version !== manifest.version) {
+        throw acquisitionError(
+          'CONTRACT_MANIFEST_INVALID',
+          `DSH closure resolves ${dependencyName}@${manifest.version} but target root resolves ${explicit.version}`,
+          [manifestLocation],
+        )
+      }
+
       visited.add(dependencyName)
       queue.push(manifest)
-
-      const explicit = explicitByName.get(dependencyName)
-      if (explicit !== undefined) {
-        if (explicit.version !== manifest.version) {
-          throw acquisitionError(
-            'CONTRACT_MANIFEST_INVALID',
-            `DSH closure resolves ${dependencyName}@${manifest.version} but target root resolves ${explicit.version}`,
-            [manifestLocation],
-          )
-        }
-        continue
-      }
-      discovered.push(manifest)
+      if (explicit === undefined) discovered.push(manifest)
     }
   }
 
