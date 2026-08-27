@@ -262,6 +262,11 @@ describe('Contract Intelligence frontend semantic parity', () => {
       { target: { profile: 'web' }, query: 'tool', kinds: ['tool', 'tool'] },
     ],
     [
+      'unknown kind',
+      ['--profile', 'web', '--query', 'tool', '--kind', 'unknown'],
+      { target: { profile: 'web' }, query: 'tool', kinds: ['unknown'] },
+    ],
+    [
       'lower limit breach',
       ['--profile', 'web', '--query', 'tool', '--limit', '0'],
       { target: { profile: 'web' }, query: 'tool', limit: 0 },
@@ -270,6 +275,11 @@ describe('Contract Intelligence frontend semantic parity', () => {
       'upper limit breach',
       ['--profile', 'web', '--query', 'tool', '--limit', '26'],
       { target: { profile: 'web' }, query: 'tool', limit: 26 },
+    ],
+    [
+      'non-integer limit',
+      ['--profile', 'web', '--query', 'tool', '--limit', '1.5'],
+      { target: { profile: 'web' }, query: 'tool', limit: 1.5 },
     ],
     [
       'unknown property',
@@ -290,9 +300,48 @@ describe('Contract Intelligence frontend semantic parity', () => {
 
   it.each([
     [
-      'malformed index fingerprint',
-      ['--profile', 'web', '--contract-index', 'bad', '--contract-id', 'package:x'],
-      { target: { profile: 'web' }, contractIndexFingerprint: 'bad', contractId: 'package:x' },
+      'bad index prefix',
+      ['--profile', 'web', '--contract-index', `other:${'9'.repeat(64)}`, '--contract-id', 'package:x'],
+      { target: { profile: 'web' }, contractIndexFingerprint: `other:${'9'.repeat(64)}`, contractId: 'package:x' },
+    ],
+    [
+      'bad index hash length',
+      [
+        '--profile', 'web',
+        '--contract-index', `dsh-contract-index-v1:${'9'.repeat(63)}`,
+        '--contract-id', 'package:x',
+      ],
+      {
+        target: { profile: 'web' },
+        contractIndexFingerprint: `dsh-contract-index-v1:${'9'.repeat(63)}`,
+        contractId: 'package:x',
+      },
+    ],
+    [
+      'uppercase index hash',
+      [
+        '--profile', 'web',
+        '--contract-index', `dsh-contract-index-v1:${'A'.repeat(64)}`,
+        '--contract-id', 'package:x',
+      ],
+      {
+        target: { profile: 'web' },
+        contractIndexFingerprint: `dsh-contract-index-v1:${'A'.repeat(64)}`,
+        contractId: 'package:x',
+      },
+    ],
+    [
+      'empty contract id',
+      [
+        '--profile', 'web',
+        '--contract-index', `dsh-contract-index-v1:${'9'.repeat(64)}`,
+        '--contract-id', '',
+      ],
+      {
+        target: { profile: 'web' },
+        contractIndexFingerprint: `dsh-contract-index-v1:${'9'.repeat(64)}`,
+        contractId: '',
+      },
     ],
     [
       'unknown property',
