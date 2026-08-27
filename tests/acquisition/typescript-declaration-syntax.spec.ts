@@ -43,7 +43,7 @@ describe('TypeScript declaration syntax adapter', () => {
       '',
     ].join('\n'))
 
-    expect(parsed.exports).toEqual(['PublicType', 'Shape', 'namespaceExport'])
+    expect(parsed.exports).toEqual(['External', 'PublicType', 'Shape', 'namespaceExport'])
     expect(parsed.relativeReexports).toEqual([
       './namespace.js',
       './public.js',
