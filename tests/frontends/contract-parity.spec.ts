@@ -58,7 +58,7 @@ function contractFacts(): AcquiredContractFacts {
       availability: 'unknown',
       summary: 'Installed DSH tools package',
       facts: [{
-        key: 'declaration-symbol',
+        key: 'declaration-export',
         value: 'ToolDefinition',
         evidenceIds: ['manifest:dsh-tools'],
       }],
@@ -137,6 +137,66 @@ async function inspectThroughCli(
   return response
 }
 
+async function expectSearchRejected(
+  cliArgs: readonly string[],
+  rawRequest: unknown,
+): Promise<void> {
+  const appKernel = kernel()
+  const streams = cliIo()
+  const cliCode = await runCli(
+    ['contract', 'search', ...cliArgs],
+    streams.io,
+    {
+      launchMcp: async () => undefined,
+      kernel: appKernel,
+      requestId: () => 'invalid-cli-search',
+    },
+  )
+  expect(cliCode).toBe(2)
+  expect(streams.stdout()).toBe('')
+  expect(streams.stderr()).not.toBe('')
+
+  const dshTool = createContractSearchToolDefinition(
+    candidate => searchContractsResponse(appKernel, candidate, 'invalid-dsh-search'),
+  )
+  const mcpTool = createContractSearchMcpTool(appKernel, () => 'invalid-mcp-search')
+
+  await expect(Promise.resolve().then(() => dshTool.execute(rawRequest)))
+    .rejects.toThrow(/invalid contract\.search arguments/i)
+  await expect(Promise.resolve().then(() => mcpTool.callback(rawRequest as ContractSearchRequest)))
+    .rejects.toThrow(/invalid contract\.search arguments/i)
+}
+
+async function expectInspectRejected(
+  cliArgs: readonly string[],
+  rawRequest: unknown,
+): Promise<void> {
+  const appKernel = kernel()
+  const streams = cliIo()
+  const cliCode = await runCli(
+    ['contract', 'inspect', ...cliArgs],
+    streams.io,
+    {
+      launchMcp: async () => undefined,
+      kernel: appKernel,
+      requestId: () => 'invalid-cli-inspect',
+    },
+  )
+  expect(cliCode).toBe(2)
+  expect(streams.stdout()).toBe('')
+  expect(streams.stderr()).not.toBe('')
+
+  const dshTool = createContractInspectToolDefinition(
+    candidate => inspectContractResponse(appKernel, candidate, 'invalid-dsh-inspect'),
+  )
+  const mcpTool = createContractInspectMcpTool(appKernel, () => 'invalid-mcp-inspect')
+
+  await expect(Promise.resolve().then(() => dshTool.execute(rawRequest)))
+    .rejects.toThrow(/invalid contract\.inspect arguments/i)
+  await expect(Promise.resolve().then(() => mcpTool.callback(rawRequest as ContractInspectRequest)))
+    .rejects.toThrow(/invalid contract\.inspect arguments/i)
+}
+
 describe('Contract Intelligence frontend semantic parity', () => {
   it('projects one successful search identically through CLI, native DSH and MCP', async () => {
     const appKernel = kernel()
@@ -189,4 +249,83 @@ describe('Contract Intelligence frontend semantic parity', () => {
       })
     }
   })
+
+  it.each([
+    [
+      'whitespace-only query',
+      ['--profile', 'web', '--query', '   '],
+      { target: { profile: 'web' }, query: '   ' },
+    ],
+    [
+      'duplicate kinds',
+      ['--profile', 'web', '--query', 'tool', '--kind', 'tool', '--kind', 'tool'],
+      { target: { profile: 'web' }, query: 'tool', kinds: ['tool', 'tool'] },
+    ],
+    [
+      'lower limit breach',
+      ['--profile', 'web', '--query', 'tool', '--limit', '0'],
+      { target: { profile: 'web' }, query: 'tool', limit: 0 },
+    ],
+    [
+      'upper limit breach',
+      ['--profile', 'web', '--query', 'tool', '--limit', '26'],
+      { target: { profile: 'web' }, query: 'tool', limit: 26 },
+    ],
+    [
+      'unknown property',
+      ['--profile', 'web', '--query', 'tool', '--unexpected'],
+      { target: { profile: 'web' }, query: 'tool', unexpected: true },
+    ],
+    [
+      'invalid target value',
+      ['--profile', '..', '--query', 'tool'],
+      { target: { profile: '..' }, query: 'tool' },
+    ],
+  ] as const)(
+    'rejects %s before contract.search kernel semantics through CLI, native DSH and MCP',
+    async (_name, cliArgs, rawRequest) => {
+      await expectSearchRejected(cliArgs, rawRequest)
+    },
+  )
+
+  it.each([
+    [
+      'malformed index fingerprint',
+      ['--profile', 'web', '--contract-index', 'bad', '--contract-id', 'package:x'],
+      { target: { profile: 'web' }, contractIndexFingerprint: 'bad', contractId: 'package:x' },
+    ],
+    [
+      'unknown property',
+      [
+        '--profile', 'web',
+        '--contract-index', `dsh-contract-index-v1:${'9'.repeat(64)}`,
+        '--contract-id', 'package:x',
+        '--unexpected',
+      ],
+      {
+        target: { profile: 'web' },
+        contractIndexFingerprint: `dsh-contract-index-v1:${'9'.repeat(64)}`,
+        contractId: 'package:x',
+        unexpected: true,
+      },
+    ],
+    [
+      'invalid target value',
+      [
+        '--profile', '..',
+        '--contract-index', `dsh-contract-index-v1:${'9'.repeat(64)}`,
+        '--contract-id', 'package:x',
+      ],
+      {
+        target: { profile: '..' },
+        contractIndexFingerprint: `dsh-contract-index-v1:${'9'.repeat(64)}`,
+        contractId: 'package:x',
+      },
+    ],
+  ] as const)(
+    'rejects %s before contract.inspect kernel semantics through CLI, native DSH and MCP',
+    async (_name, cliArgs, rawRequest) => {
+      await expectInspectRejected(cliArgs, rawRequest)
+    },
+  )
 })
