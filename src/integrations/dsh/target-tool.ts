@@ -50,6 +50,13 @@ const parameterProperties = {
   },
 } satisfies Record<keyof TargetResolveRequest, Record<string, unknown>>
 
+export const TARGET_RESOLVE_PARAMETER_SCHEMA: Record<string, unknown> = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  properties: parameterProperties,
+  required: ['profile'],
+})
+
 const targetResolveKeys = new Set<keyof TargetResolveRequest>([
   'profile',
   'dshHome',
@@ -72,7 +79,7 @@ function nonEmptyString(value: unknown): value is string {
  * targetResolveRequest constraints; semantic target validation remains in the
  * shared acquisition/kernel path.
  */
-function parseTargetResolveToolArgs(args: unknown): TargetResolveRequest {
+export function parseTargetResolveToolArgs(args: unknown): TargetResolveRequest {
   if (!isRecord(args)) throw new TypeError('Invalid target.resolve arguments')
   if (Object.keys(args).some(key => !targetResolveKeys.has(key as keyof TargetResolveRequest))) {
     throw new TypeError('Invalid target.resolve arguments')
@@ -109,12 +116,7 @@ export function createTargetResolveToolDefinition(
   return {
     name: TARGET_RESOLVE_TOOL_NAME,
     description: 'Resolve one exact installed DSH target as a Protocol v1 response without mutating the target profile.',
-    parameters: {
-      type: 'object',
-      additionalProperties: false,
-      properties: parameterProperties,
-      required: ['profile'],
-    },
+    parameters: TARGET_RESOLVE_PARAMETER_SCHEMA,
     output: {
       schema: {
         type: 'object',
