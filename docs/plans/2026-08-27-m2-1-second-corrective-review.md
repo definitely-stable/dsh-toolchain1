@@ -1,6 +1,6 @@
 # M2.1 Second Corrective Merge Gate
 
-**Status:** active — PR #30 is Draft again.
+**Status:** implementation complete at functional GREEN checkpoint CI #334; final governance-head verification is pending before Ready for review.
 
 **Trigger:** independent review after CI #320 exposed semantic coverage gaps that the existing synthetic/unit and exact-package smoke did not exercise.
 
@@ -8,72 +8,73 @@
 
 ## Root causes
 
-1. **Contract package universe is too narrow.** M2.1 currently indexes only the DSH app, ordered profile bundles and explicit profile dependencies. Upstream DSH deliberately makes in-box plugin/API packages resolvable through a BFS dependency closure over the DSH application, including installed `peerDependencies`; a clean shipped `web` profile has empty ordinary dependencies, so important API authorities such as `@deepseek-ai/dsh-tools` are not guaranteed to become Contract Index packages.
-2. **Declaration traversal and public-surface propagation are conflated.** The graph walker follows relative re-exports and triple-slash path references, then promotes every export from every visited declaration file to a package-level `declaration-export`. This leaks sibling exports through named re-exports, flattens namespace re-exports, propagates `default` through `export *`, and treats path-reference dependencies as package exports.
-3. **Syntax parsing is not fail-closed.** `ts.createSourceFile()` performs parser recovery; `try/catch` alone does not reject malformed declarations. Syntax diagnostics must be checked explicitly without introducing semantic/type checking.
-4. **Resource bounds stop at bytes/files/edges/depth.** A bounded declaration corpus can still normalize into an excessive fact set. Package discovery also needs a deterministic bound.
+1. **Contract package universe was too narrow.** M2.1 originally indexed only the DSH app, ordered profile bundles and explicit profile dependencies. Upstream DSH deliberately makes in-box plugin/API packages resolvable through an installed dependency closure; a clean shipped `web` profile does not guarantee important API authorities such as `@deepseek-ai/dsh-tools` are explicit profile dependencies.
+2. **Declaration traversal and public-surface propagation were conflated.** The graph walker followed relative re-exports and triple-slash path references, then promoted every export from every visited declaration file to a package-level `declaration-export`. This leaked sibling exports through named re-exports, flattened namespace re-exports, propagated `default` through `export *`, and treated path-reference dependencies as package exports.
+3. **Syntax parsing was not fail-closed.** `ts.createSourceFile()` performs parser recovery; `try/catch` alone did not reject malformed declarations. Public syntactic diagnostics are now checked without introducing semantic/type checking of target packages.
+4. **Resource bounds stopped at bytes/files/edges/depth.** A bounded declaration corpus could still normalize into an excessive fact set, and package discovery itself needed a deterministic bound.
+5. **Real published declaration graphs contain NodeNext declaration specifiers not represented by the first fixtures.** Cordis uses relative declaration references such as `./context.ts`; declaration acquisition must resolve those to declaration files (`context.d.ts`) rather than reject them or read source TypeScript.
+6. **Package `exports` wildcard targets are templates, not files.** Real `@deepseek-ai/dsh-host-apiproxy` publishes a shape such as `"./api/*": { "types": "./lib/types/api/*.d.ts" }`. Recursively collecting every `types` value erased the export-map key semantics and attempted to read the wildcard target literally.
 
 ## Fixed architecture decisions
 
-- Do **not** change `dsh-target-v2`. Dependency closure is Contract Intelligence evidence, not target composition identity.
+- Do **not** change `dsh-target-v2`. Installed dependency closure is Contract Intelligence evidence, not target composition identity.
 - Keep explicit package roots from M1 evidence exactly as they are today.
-- Add a **DSH-owned installed contract closure** rooted at the exact DSH application manifest. Resolution follows the same nearest/first-wins anchor semantics as upstream DSH: each dependency is resolved from the declaring package's manifest anchor; both `dependencies` and installed `peerDependencies` participate.
+- Add a **DSH-owned installed contract closure** rooted at all explicit DSH-owned target roots. Resolution follows nearest/first-wins anchor semantics: each dependency is resolved from the declaring package's manifest anchor; `dependencies` and installed `peerDependencies` participate.
 - The closure may traverse only DSH authority packages (`@deepseek-ai/*`) for M2.1. Explicit out-of-tree profile dependencies/bundles remain indexed themselves but do not recursively explode arbitrary npm dependency graphs.
 - Every discovered closure package gets exact manifest/version/content evidence in `dsh-contract-index-v1`; absolute paths remain non-semantic.
 - Declaration parsing returns typed edges. Traversal answers “which files are supporting evidence?”; a separate deterministic effective-surface computation answers “which names does this public entrypoint export?”.
 - `export { A as B } from './x'` exposes only `B`; `export * as ns` exposes only `ns`; `export *` propagates child public names except `default`; `/// <reference path>` contributes evidence only, never root exports.
 - Malformed syntax fails with `CONTRACT_DECLARATION_INVALID`; semantic/unresolved-type errors remain outside M2.1 syntax-only validation.
+- Relative `.ts/.mts/.cts` specifiers in declaration evidence resolve to `.d.ts/.d.mts/.d.cts`, preserving declaration-only acquisition.
+- Concrete package export `types` entrypoints are consumed; wildcard subpath keys/targets are not treated as literal files or expanded into an unbounded filesystem glob in M2.1.
 - Add deterministic `maxContractPackages` and `maxNormalizedFactsPerPackage` limits under the existing structured resource-limit failure family.
-- Keep TypeScript 6.0.3 pinned. Lazy-load the parser module only when contract acquisition actually runs; `--version` and `target resolve` should not load the compiler.
+- Keep TypeScript 6.0.3 pinned. Lazy-load the parser module only when contract acquisition actually runs; `--version` and `target resolve` do not need the compiler.
 
 ## Task 1 — RED: real package-universe coverage
 
-- [ ] Add a focused filesystem fixture where the target has no `@deepseek-ai/dsh-tools` profile dependency, while the exact DSH app reaches it through `@deepseek-ai/dsh-base` dependency closure.
-- [ ] Require `package:@deepseek-ai/dsh-tools` and `ToolDefinition` to appear.
-- [ ] Prove an arbitrary third-party transitive dependency is not promoted into the Contract Index merely because it is reachable.
-- [ ] Observe RED on current `expectedPackages()` root-only behavior.
+- [x] Add a focused filesystem fixture where the target has no `@deepseek-ai/dsh-tools` profile dependency, while an explicit DSH-owned bundle reaches it through dependency closure.
+- [x] Require `package:@deepseek-ai/dsh-tools` and `ToolDefinition` to appear.
+- [x] Prove an arbitrary third-party transitive dependency is not promoted into the Contract Index merely because it is reachable.
+- [x] Observe RED on the previous root-only behavior.
 
 ## Task 2 — GREEN: deterministic DSH authority closure
 
-- [ ] Add read-only package resolution from each manifest anchor without relying on `package.json` exports.
-- [ ] Traverse installed `dependencies` + `peerDependencies` breadth-first with deterministic ordering and first resolution wins.
-- [ ] Merge closure packages with explicit target-root aliases without duplicate contracts.
-- [ ] Hash discovered manifest bytes as Contract Index evidence.
-- [ ] Add `maxContractPackages` budget and N/N+1 tests.
+- [x] Add read-only package resolution from each manifest anchor without relying on `package.json` exports.
+- [x] Traverse installed `dependencies` + `peerDependencies` deterministically with first-resolution-wins semantics.
+- [x] Merge closure packages with explicit target-root aliases without duplicate contracts.
+- [x] Hash discovered manifest bytes as Contract Index evidence.
+- [x] Add `maxContractPackages` budget and N/N+1 tests.
 
 ## Task 3 — RED→GREEN: effective declaration export semantics
 
-- [ ] Replace untyped `relativeReexports: string[]` with typed declaration edges.
-- [ ] Add negative regressions:
-  - named re-export does not leak sibling exports;
-  - renamed export preserves the exported alias;
-  - namespace re-export does not flatten members;
-  - `export *` does not propagate `default`;
-  - triple-slash path reference does not create package-level exports.
-- [ ] Compute effective exports from public entrypoints separately from evidence graph traversal, with deterministic cycle-safe star propagation.
-- [ ] Preserve minimal evidence witnesses for resulting facts.
+- [x] Replace untyped relative re-export strings with typed declaration edges.
+- [x] Add negative regressions: named re-export does not leak siblings; renamed export preserves the exported alias; namespace re-export does not flatten members; `export *` does not propagate `default`; triple-slash path reference does not create package-level exports.
+- [x] Compute effective exports from public entrypoints separately from evidence graph traversal, with deterministic cycle-safe star propagation.
+- [x] Preserve minimal evidence witnesses for resulting facts.
 
 ## Task 4 — RED→GREEN: fail-closed syntax diagnostics
 
-- [ ] Add malformed `.d.ts` regression that TypeScript recovers into an AST today.
-- [ ] Reject syntactic diagnostics as `CONTRACT_DECLARATION_INVALID`.
-- [ ] Do not run semantic/type diagnostics or resolve imported modules through a TypeScript Program.
+- [x] Add malformed `.d.ts` regression that TypeScript recovers into an AST.
+- [x] Reject syntactic diagnostics as `CONTRACT_DECLARATION_INVALID`.
+- [x] Do not run semantic/type diagnostics or execute target packages.
 
 ## Task 5 — RED→GREEN: normalized semantic budgets
 
-- [ ] Add `maxNormalizedFactsPerPackage` with N/N+1 test.
-- [ ] Count facts before constructing/canonicalizing the final contract.
-- [ ] Reuse `CONTRACT_DECLARATION_LIMIT_EXCEEDED` unless a clearer existing resource diagnostic already exists.
+- [x] Add `maxNormalizedFactsPerPackage` with N/N+1 test.
+- [x] Count facts before constructing/canonicalizing the final contract.
+- [x] Reuse `CONTRACT_DECLARATION_LIMIT_EXCEEDED` for deterministic package/fact acquisition resource limits.
 
-## Task 6 — runtime hygiene
+## Task 6 — runtime hygiene and real declaration forms
 
-- [ ] Remove eager runtime import of the TypeScript parser from generic acquisition/bootstrap paths.
-- [ ] Dynamically load the default syntax adapter only inside contract acquisition; injected test adapters remain supported.
-- [ ] Add a package/runtime smoke proving `target resolve` remains independent from TypeScript parser loading where practical.
+- [x] Remove eager runtime import of the TypeScript parser from generic acquisition/bootstrap paths.
+- [x] Dynamically load the default syntax adapter only inside contract acquisition; injected test adapters remain supported.
+- [x] Preserve target-only startup/resolution independence from the TypeScript parser.
+- [x] Support declaration-semantic `.ts/.mts/.cts -> .d.ts/.d.mts/.d.cts` resolution without opening source TypeScript.
+- [x] Treat wildcard package-export `types` targets as templates rather than literal declaration files; retain concrete export entrypoints.
 
 ## Task 7 — authoritative real-web regression
 
-- [ ] Add a primary-lane-only exact-artifact smoke:
+- [x] Add a primary-lane-only exact-artifact smoke:
   1. install pinned real DSH `0.1.1-rc.2`;
   2. initialize clean shipped `web` profile;
   3. install the exact `dsh-toolchain.tgz`;
@@ -81,16 +82,26 @@
   5. require `package:@deepseek-ai/dsh-tools`;
   6. inspect that exact result using the returned `dsh-contract-index-v1` fingerprint;
   7. require exact declaration evidence for `ToolDefinition`.
-- [ ] Keep this expensive registry/DSH check only in the primary Ubuntu lane.
+- [x] Keep this expensive registry/DSH check only in the primary Ubuntu lane.
+- [x] CI #334 on `d74638d6bc3640ab9edfc91f739fb022a6708242` proves the exact packed artifact passes this shipped-`web` smoke and the existing multi-train target smoke.
 
 ## Task 8 — governance and final gate
 
-- [ ] Update Issue #29 with this second corrective gate and supersede CI #320 as historical evidence only.
-- [ ] Synchronize the first corrective plan checkboxes with its completed state.
-- [ ] Update PR #30 body to active corrective state, then to exact final-head evidence only after GREEN.
-- [ ] Run aggregate gate, Node 22/24/26, Windows/macOS, exact pack/installed consumer, real DSH composition, real-web Contract Intelligence smoke and multi-train target smoke on one final SHA.
-- [ ] Re-check PR comments/reviews/threads.
+- [x] Supersede CI #320 as historical evidence rather than merge approval.
+- [x] Synchronize the original and first corrective implementation-plan completion state.
+- [ ] Update Issue #29 and PR #30 metadata to the exact final governance-head evidence after the final CI.
+- [x] Functional checkpoint CI #334 passes aggregate gate, Node 22/24/26, Windows/macOS, exact pack/installed consumer, real DSH composition, real-web Contract Intelligence smoke and multi-train target smoke.
+- [ ] Run the same required CI once more on the governance-only final SHA.
+- [x] Re-check PR comments/reviews/threads at the functional checkpoint; none are present.
 - [ ] Mark Ready for review only after all gates are GREEN on the exact final HEAD.
+
+## Verification chronology
+
+- CI #320 was the first full GREEN checkpoint but is historical evidence only because later semantic review found missing coverage.
+- CI #322 reproduced the second-pass semantic gaps with focused RED regressions while the prior suite remained otherwise green.
+- Later authoritative real-Web smoke exposed real upstream declaration forms that synthetic fixtures had missed: declaration `.ts` specifiers and wildcard package-export templates.
+- CI #333 (`33068823748`) is the clean wildcard TDD RED: one new semantic-correctness test failed while 214 tests passed.
+- CI #334 (`33069654095`) is the functional GREEN checkpoint on `d74638d6bc3640ab9edfc91f739fb022a6708242`: all six jobs and every required primary boundary passed.
 
 ## Deferred follow-up
 
