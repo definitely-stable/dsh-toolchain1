@@ -259,7 +259,7 @@ describe('DSH live Inspect safety budgets', () => {
 })
 
 describe('DSH live Host provider normalization', () => {
-  it('queries Service, Event, and Agent-scoped Tool in canonical order and normalizes stable contracts', async () => {
+  it('queries Service, Event, and Agent-scoped Tool in canonical order without overstating catalog liveness', async () => {
     const { enrichment, query } = allHostProvidersHarness()
     const acquired = await enrichment.enrich(snapshot)
 
@@ -272,14 +272,14 @@ describe('DSH live Host provider normalization', () => {
       expect.objectContaining({
         id: 'service:host:alpha',
         kind: 'service',
-        availability: 'available',
+        availability: 'unknown',
       }),
       expect.objectContaining({
         id: 'event:host:tools/change',
         kind: 'event',
         name: 'tools/change',
         qualifiedName: 'event:tools/change',
-        availability: 'available',
+        availability: 'unknown',
         facts: expect.arrayContaining([
           expect.objectContaining({ key: 'dispatch-mode', value: 'emit' }),
           expect.objectContaining({ key: 'listener-signature', value: '(): void' }),
@@ -301,14 +301,14 @@ describe('DSH live Host provider normalization', () => {
     ]))
     expect(acquired.evidence).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        id: 'runtime:cordis-inspect:host:Service:listService',
-        kind: 'runtime',
-        strength: 'observed',
+        id: 'generated-catalog:cordis-inspect:host:Service:listService',
+        kind: 'generated-catalog',
+        strength: 'authoritative',
       }),
       expect.objectContaining({
-        id: 'runtime:cordis-inspect:host:Event:listEvents',
-        kind: 'runtime',
-        strength: 'observed',
+        id: 'generated-catalog:cordis-inspect:host:Event:listEvents',
+        kind: 'generated-catalog',
+        strength: 'authoritative',
       }),
       expect.objectContaining({
         id: 'runtime:cordis-inspect:host:Tool:listTools',
@@ -316,5 +316,59 @@ describe('DSH live Host provider normalization', () => {
         strength: 'observed',
       }),
     ]))
+  })
+
+  it('uses code-point ordering rather than locale collation for semantic Service identity', async () => {
+    const { enrichment } = liveHarness(serviceCatalog([
+      { key: 'a', methods: [] },
+      { key: 'Z', methods: [] },
+    ]), generousLimits)
+
+    const acquired = await enrichment.enrich(snapshot)
+    expect(acquired.contracts.map(contract => contract.id)).toEqual([
+      'service:host:Z',
+      'service:host:a',
+    ])
+  })
+
+  it('maps ordinary provider query failures into the Toolchain live-evidence error family', async () => {
+    const controller = new AbortController()
+    const registry: DshCordisInspectRegistryPort = {
+      list: () => [toolProvider()],
+      query: vi.fn(async () => {
+        throw new Error('Host Cordis inspect provider "Tool" is not registered')
+      }),
+    }
+    const enrichment = createDshLiveContractEnrichment({
+      registry,
+      execution: Object.freeze({ agent: Object.freeze({ id: 'race-agent' }), signal: controller.signal }),
+      digest: createNodeSha256Port(),
+    })
+    if (enrichment === undefined) throw new Error('live enrichment unexpectedly unavailable')
+
+    await expect(enrichment.enrich(snapshot)).rejects.toMatchObject({
+      name: 'ContractAcquisitionError',
+      code: 'CONTRACT_LIVE_EVIDENCE_INVALID',
+    })
+  })
+
+  it('preserves provider cancellation instead of relabelling it as invalid evidence', async () => {
+    const controller = new AbortController()
+    const registry: DshCordisInspectRegistryPort = {
+      list: () => [toolProvider()],
+      query: vi.fn(async () => {
+        throw new DOMException('This operation was aborted', 'AbortError')
+      }),
+    }
+    const enrichment = createDshLiveContractEnrichment({
+      registry,
+      execution: Object.freeze({ agent: Object.freeze({ id: 'cancel-agent' }), signal: controller.signal }),
+      digest: createNodeSha256Port(),
+    })
+    if (enrichment === undefined) throw new Error('live enrichment unexpectedly unavailable')
+
+    await expect(enrichment.enrich(snapshot)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
   })
 })
