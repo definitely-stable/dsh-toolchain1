@@ -49,6 +49,53 @@ describe('ToolchainService lifecycle', () => {
     await fiber.dispose()
   })
 
+  it('projects contract search and inspect through the shared Protocol response paths', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(ToolchainService)
+    const target = { profile: 'web', dshHome, dshPackageRoot }
+
+    const search = await ctx.toolchain.searchContracts({
+      target,
+      query: 'a-user-plugin',
+    }, 'dsh-contract-search')
+
+    expect(search).toMatchObject({
+      protocolVersion: '1',
+      requestId: 'dsh-contract-search',
+      status: 'ok',
+      snapshotFingerprint: expect.stringMatching(/^dsh-target-v2:[0-9a-f]{64}$/),
+      data: {
+        contractIndexFingerprint: expect.stringMatching(/^dsh-contract-index-v1:[0-9a-f]{64}$/),
+      },
+    })
+    if (search.status !== 'ok') throw new Error('contract search unexpectedly failed')
+    const match = search.data.matches.find(item => item.id === 'package:a-user-plugin')
+    expect(match).toBeDefined()
+
+    const inspect = await ctx.toolchain.inspectContract({
+      target,
+      contractIndexFingerprint: search.data.contractIndexFingerprint,
+      contractId: 'package:a-user-plugin',
+    }, 'dsh-contract-inspect')
+
+    expect(inspect).toMatchObject({
+      protocolVersion: '1',
+      requestId: 'dsh-contract-inspect',
+      status: 'ok',
+      snapshotFingerprint: search.snapshotFingerprint,
+      data: {
+        contractIndexFingerprint: search.data.contractIndexFingerprint,
+        contract: {
+          id: 'package:a-user-plugin',
+          kind: 'package',
+          availability: 'unknown',
+        },
+      },
+    })
+
+    await fiber.dispose()
+  })
+
   it('preserves shared target diagnostic identity for expected acquisition failures', async () => {
     const ctx = new Context()
     const fiber = await ctx.plugin(ToolchainService)
