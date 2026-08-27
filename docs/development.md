@@ -31,6 +31,8 @@ Host-identity packages are maintained as an explicit executable registry rather 
 
 The package policy also rejects install-time lifecycle scripts from the distributable package.
 
+M1.1 deliberately does not add `@deepseek-ai/dsh-tools` as a Toolchain runtime dependency. The native target tool is registered through a structural view of the already-mounted host `ctx.tools` service, so the DSH Host remains the sole owner of that identity-sensitive runtime. Because Toolchain supplies a raw ToolDefinition rather than importing DSH's authoring helper, the adapter validates its `unknown` arguments before delegating to `ctx.toolchain.resolveTarget()`.
+
 ### Toolchain-owned runtime dependencies
 
 Libraries whose runtime lifecycle is owned by Toolchain belong in `dependencies`.
@@ -69,7 +71,9 @@ Build configuration MUST preserve architecture direction: frontend/DSH faces dep
 
 The `src/` architecture is closed-world. Every production module belongs to an explicit layer and every relative source edge is validated against the architecture matrix. A new generic source directory is not implicitly trusted. JavaScript-family files under `src/` are rejected; repository `.mjs` scripts live outside this product boundary and have their own lint/static-check gate.
 
-M1 gives the internal application kernel real acquisition/digest ports and `resolveTarget()`, but the npm root still does not expose the kernel factory as a stable external API. DSH Host, CLI, and MCP compose Node acquisition/digest adapters internally. Promote the factory only when an independent external consumer lifecycle justifies that compatibility promise.
+M1 gives the internal application kernel real acquisition/digest ports and `resolveTarget()`. M1.1 adds one shared `resolveTargetResponse()` application path and projects it through CLI, `ctx.toolchain.resolveTarget()`, a lifecycle-owned native DSH tool, and MCP. Frontends own correlation IDs, input/rendering constraints, and transport framing only; acquisition, normalization, target fingerprinting, and expected `TARGET_*` diagnostic mapping remain shared.
+
+The npm root still does not expose the kernel factory as a stable external API. DSH Host, CLI, and MCP compose Node acquisition/digest adapters internally. Promote the factory only when an independent external consumer lifecycle justifies that compatibility promise.
 
 ## Target acquisition and pnpm layout policy
 
@@ -82,6 +86,8 @@ Package identity is based on exact installed manifests, not declared semver rang
 pnpm package links require special care: the observed `node_modules/@deepseek-ai/dsh` path may be a symlink while DSH-owned bundle dependencies physically live beside its canonical package target under the pnpm virtual store. Acquisition therefore considers both the observed package anchor and its `realpath()` for package resolution, while retaining the observed evidence location. A regression fixture MUST prove that bundle resolution succeeds without relying on DSH's healed `$DSH_HOME/profiles/node_modules` fallback.
 
 When a detached caller omits `dshPackageRoot`, acquisition may use deterministic Node package-resolution anchors from the installed Toolchain/profile graph. It MUST NOT manufacture fallback links, search PATH, or spawn another DSH merely to guess an installation. The authoritative no-hint CI path co-installs the exact Toolchain tarball and tested DSH train in one disposable package graph; a second explicit-root resolution of an equivalent copied profile must produce the same target fingerprint.
+
+Current upstream DSH does not expose its selected profile name as a supported Cordis capability. Native Toolchain callers therefore still supply `profile` explicitly; DSH integration MUST NOT infer it from `process.argv`, PATH, undocumented launcher state, or another detached subprocess.
 
 The `runtime` coordinates in a TargetSnapshot describe the runtime under which Toolchain resolves compatibility for that snapshot. Later live/verification evidence records the actually executed runtime and must not silently reuse a runtime-sensitive claim when those semantics differ.
 
@@ -112,10 +118,12 @@ Current CI shape:
 - Node compatibility lanes: Ubuntu + Node 22.19, 24.19, and current Node 26 major;
 - platform boundary lanes: Windows and macOS on Node 24.19 for build/CLI/public-import behavior;
 - exact-package composition: primary lane only, using the packed Toolchain tarball against both a minimal `toolchain-smoke` profile and the shipped `web` profile;
-- exact-package live service boot: primary lane only, using an external disposable DSH probe bundle in `toolchain-smoke` to observe `ctx.toolchain`, call `ctx.toolchain.describe()`, and request clean shutdown through launcher-owned `ctx.appExit`;
+- exact-package live target parity: primary lane only, using an external disposable DSH probe bundle in `toolchain-smoke` to observe `ctx.toolchain` and host-owned `ctx.tools`, resolve through `ctx.toolchain.resolveTarget()`, verify native `toolchain_target_resolve` visibility through `ctx.tools.schemas()`, execute it through the real `ctx.tools.execute()` pipeline, verify rendered JSON/value consistency, and require the Service/native paths to report the same `dsh-target-v2` fingerprint before clean launcher-owned `ctx.appExit` shutdown;
 - target-resolution compatibility: primary lane only, co-installing the exact Toolchain tarball with DSH `0.1.1-rc.2` and `0.1.0-rc.8`, resolving shipped `headless` profiles through both no-hint and explicit-root discovery.
 
-The minimal package profile proves base composition and live service visibility. The `web` profile is separately required because current upstream DSH composes it from `@deepseek-ai/dsh-base` plus `@deepseek-ai/dsh-web-app`; the canonical README installation path is therefore tested directly rather than inferred from the minimal profile.
+The minimal package profile proves base composition and live Service/native-tool parity. The `web` profile is separately required because current upstream DSH composes it from `@deepseek-ai/dsh-base` plus `@deepseek-ai/dsh-web-app`; the canonical README installation path is therefore tested directly rather than inferred from the minimal profile.
+
+The live probe is a runtime integration gate, not an M4 verification receipt: it proves that the exact packed M1.1 artifact is wired into the real DSH capability/runtime seams and that both frontend paths bind to one target identity. It does not make arbitrary plugin behavior or future verification claims.
 
 The multi-train target smoke is deliberately separate from the exact-tarball boot smoke. DSH itself first initializes the disposable shipped profile. Toolchain then snapshots the profile tree, performs `target resolve`, snapshots again, and requires byte-identical state. The semantic profile is copied to another absolute `DSH_HOME`; no-hint and explicit-root acquisition paths MUST retain the same v2 fingerprint. This proves read-only/path/discovery stability without pretending that DSH's own profile initialization is read-only.
 
@@ -173,7 +181,7 @@ clean checkout
   -> install that tarball into a throwaway Node consumer and resolve public package exports/bins
   -> install the same tarball into isolated minimal and shipped Web DSH profiles
   -> compose/dump-config each profile
-  -> boot the exact tarball through real DSH and prove ctx.toolchain.describe() through an external probe
+  -> boot the exact tarball through real DSH and prove target resolution through ctx.toolchain + host-owned ctx.tools with one target fingerprint
   -> separately co-install the exact tarball with pinned current + older DSH trains and resolve read-only target snapshots
   -> publish from the verified artifact lineage
 ```
