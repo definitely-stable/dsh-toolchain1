@@ -213,7 +213,7 @@
       "required": ["target", "query"],
       "properties": {
         "target": {"$ref": "#/$defs/targetResolveRequest"},
-        "query": {"type": "string", "minLength": 1},
+        "query": {"type": "string", "minLength": 1, "pattern": "\\S"},
         "kinds": {
           "type": "array",
           "items": {"$ref": "#/$defs/contractKind"},
