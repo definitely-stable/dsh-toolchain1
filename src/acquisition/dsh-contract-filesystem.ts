@@ -1,4 +1,5 @@
 import { open, readFile, realpath } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 
 import type { Sha256Port } from '../model/digest.js'
@@ -15,22 +16,24 @@ import type {
   TargetSnapshot,
 } from '../protocol/index.js'
 import { createNodeSha256Port } from './node-sha256.js'
-import {
-  typescriptDeclarationSyntaxPort,
-  type DeclarationSyntaxPort,
+import type {
+  DeclarationReexportEdge,
+  DeclarationSyntaxPort,
 } from './typescript-declaration-syntax.js'
 
 export interface ContractAcquisitionBudgetV1 {
+  readonly maxContractPackages: number
   readonly maxDeclarationFilesPerPackage: number
   readonly maxDeclarationBytesPerFile: number
   readonly maxDeclarationBytesPerPackage: number
   readonly maxDeclarationReferenceEdgesPerPackage: number
   readonly maxDeclarationDepth: number
+  readonly maxNormalizedFactsPerPackage: number
 }
 
 interface AcquisitionOptions {
   readonly digest?: Sha256Port
-  readonly budget?: ContractAcquisitionBudgetV1
+  readonly budget?: Partial<ContractAcquisitionBudgetV1>
   readonly syntax?: DeclarationSyntaxPort
 }
 
@@ -47,10 +50,21 @@ interface PackageCandidate {
 }
 
 interface ManifestRecord {
+  readonly name: string
+  readonly version: string
   readonly evidence: Evidence
   readonly packageRoot: string
   readonly canonicalPackageRoot: string
   readonly value: Record<string, unknown>
+}
+
+type ResolvedDeclarationReexportEdge = DeclarationReexportEdge & {
+  readonly location: string
+}
+
+interface ResolvedPathReference {
+  readonly specifier: string
+  readonly location: string
 }
 
 interface DeclarationRecord {
@@ -58,7 +72,8 @@ interface DeclarationRecord {
   readonly relativePath: string
   readonly evidence: Evidence
   readonly exports: readonly string[]
-  readonly references: readonly string[]
+  readonly reexports: readonly ResolvedDeclarationReexportEdge[]
+  readonly pathReferences: readonly ResolvedPathReference[]
 }
 
 interface DeclarationQueueItem {
@@ -66,15 +81,31 @@ interface DeclarationQueueItem {
   readonly depth: number
 }
 
+interface DeclarationEntry {
+  readonly location: string
+  readonly relativePath: string
+  readonly evidenceId: string
+}
+
+interface DeclarationGraph {
+  readonly records: readonly DeclarationRecord[]
+  readonly entries: readonly DeclarationEntry[]
+}
+
+type ExportWitnessMap = Map<string, readonly string[]>
+
 const DEFAULT_CONTRACT_ACQUISITION_BUDGET_V1: ContractAcquisitionBudgetV1 = Object.freeze({
+  maxContractPackages: 512,
   maxDeclarationFilesPerPackage: 2_048,
   maxDeclarationBytesPerFile: 4 * 1024 * 1024,
   maxDeclarationBytesPerPackage: 64 * 1024 * 1024,
   maxDeclarationReferenceEdgesPerPackage: 8_192,
   maxDeclarationDepth: 64,
+  maxNormalizedFactsPerPackage: 16_384,
 })
 
 const DECLARATION_READ_CHUNK_BYTES = 64 * 1024
+const DSH_AUTHORITY_PREFIX = '@deepseek-ai/'
 
 function compareCodePoints(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
@@ -97,26 +128,29 @@ function acquisitionError(
   return new ContractAcquisitionError(code, message, locations, cause === undefined ? undefined : { cause })
 }
 
-function declarationLimitError(
-  packageName: string,
+function resourceLimitError(
+  subject: string,
   limit: keyof ContractAcquisitionBudgetV1,
   location: string,
 ): ContractAcquisitionError {
   return acquisitionError(
     'CONTRACT_DECLARATION_LIMIT_EXCEEDED',
-    `Declaration acquisition exceeded ${limit} for ${packageName}`,
-    [location],
+    `Contract acquisition exceeded ${limit} for ${subject}`,
+    location === '' ? [] : [location],
   )
 }
 
-function normalizeBudget(budget: ContractAcquisitionBudgetV1 | undefined): ContractAcquisitionBudgetV1 {
-  const value = budget ?? DEFAULT_CONTRACT_ACQUISITION_BUDGET_V1
+function normalizeBudget(budget: Partial<ContractAcquisitionBudgetV1> | undefined): ContractAcquisitionBudgetV1 {
+  const value: ContractAcquisitionBudgetV1 = {
+    ...DEFAULT_CONTRACT_ACQUISITION_BUDGET_V1,
+    ...budget,
+  }
   for (const [name, limit] of Object.entries(value)) {
     if (!Number.isSafeInteger(limit) || limit < 0) {
       throw new TypeError(`Contract acquisition budget ${name} must be a non-negative safe integer`)
     }
   }
-  return Object.freeze({ ...value })
+  return Object.freeze(value)
 }
 
 function bundleManifestEvidenceIds(snapshot: TargetSnapshot): Map<string, string[]> {
@@ -241,10 +275,10 @@ async function readBoundedDeclarationUtf8(
   try {
     const stats = await handle.stat()
     if (stats.size > budget.maxDeclarationBytesPerFile) {
-      throw declarationLimitError(packageName, 'maxDeclarationBytesPerFile', location)
+      throw resourceLimitError(packageName, 'maxDeclarationBytesPerFile', location)
     }
     if (packageBytesUsed + stats.size > budget.maxDeclarationBytesPerPackage) {
-      throw declarationLimitError(packageName, 'maxDeclarationBytesPerPackage', location)
+      throw resourceLimitError(packageName, 'maxDeclarationBytesPerPackage', location)
     }
 
     const chunks: Buffer[] = []
@@ -260,10 +294,10 @@ async function readBoundedDeclarationUtf8(
 
       bytes += bytesRead
       if (bytes > budget.maxDeclarationBytesPerFile) {
-        throw declarationLimitError(packageName, 'maxDeclarationBytesPerFile', location)
+        throw resourceLimitError(packageName, 'maxDeclarationBytesPerFile', location)
       }
       if (packageBytesUsed + bytes > budget.maxDeclarationBytesPerPackage) {
-        throw declarationLimitError(packageName, 'maxDeclarationBytesPerPackage', location)
+        throw resourceLimitError(packageName, 'maxDeclarationBytesPerPackage', location)
       }
       chunks.push(buffer.subarray(0, bytesRead))
     }
@@ -279,6 +313,75 @@ async function readBoundedDeclarationUtf8(
     )
   } finally {
     await handle.close().catch(() => undefined)
+  }
+}
+
+function parseManifestValue(
+  content: string,
+  location: string,
+  expectedName: string,
+  expectedVersion?: string,
+): { readonly value: Record<string, unknown>; readonly version: string } {
+  let value: unknown
+  try {
+    value = JSON.parse(content) as unknown
+  } catch (cause) {
+    throw acquisitionError(
+      'CONTRACT_MANIFEST_INVALID',
+      `Contract package manifest is invalid: ${location}`,
+      [location],
+      cause,
+    )
+  }
+  if (!isRecord(value) || value.name !== expectedName || typeof value.version !== 'string' || value.version === '') {
+    throw acquisitionError(
+      'CONTRACT_MANIFEST_INVALID',
+      `Expected exact package ${expectedName} in ${location}`,
+      [location],
+    )
+  }
+  if (expectedVersion !== undefined && value.version !== expectedVersion) {
+    throw acquisitionError(
+      'CONTRACT_MANIFEST_INVALID',
+      `Expected exact package ${expectedName}@${expectedVersion} in ${location}`,
+      [location],
+    )
+  }
+  return { value, version: value.version }
+}
+
+async function manifestRecord(
+  name: string,
+  version: string,
+  evidence: Evidence,
+  value: Record<string, unknown>,
+): Promise<ManifestRecord> {
+  if (evidence.location === undefined) {
+    throw acquisitionError(
+      'CONTRACT_EVIDENCE_READ_FAILED',
+      `Contract manifest evidence for ${name} has no location`,
+      [],
+    )
+  }
+  const packageRoot = path.dirname(evidence.location)
+  let canonicalPackageRoot: string
+  try {
+    canonicalPackageRoot = await realpath(packageRoot)
+  } catch (cause) {
+    throw acquisitionError(
+      'CONTRACT_EVIDENCE_READ_FAILED',
+      `Could not resolve contract package root: ${packageRoot}`,
+      [packageRoot],
+      cause,
+    )
+  }
+  return {
+    name,
+    version,
+    evidence: Object.freeze({ ...evidence }),
+    packageRoot,
+    canonicalPackageRoot,
+    value,
   }
 }
 
@@ -312,42 +415,8 @@ async function acquireManifest(
     )
   }
 
-  let value: unknown
-  try {
-    value = JSON.parse(content) as unknown
-  } catch (cause) {
-    throw acquisitionError(
-      'CONTRACT_MANIFEST_INVALID',
-      `Contract package manifest is invalid: ${evidence.location}`,
-      [evidence.location],
-      cause,
-    )
-  }
-  if (
-    !isRecord(value)
-    || value.name !== expected.name
-    || value.version !== expected.version
-  ) {
-    throw acquisitionError(
-      'CONTRACT_MANIFEST_INVALID',
-      `Expected exact package ${expected.name}@${expected.version} in ${evidence.location}`,
-      [evidence.location],
-    )
-  }
-
-  const packageRoot = path.dirname(evidence.location)
-  let canonicalPackageRoot: string
-  try {
-    canonicalPackageRoot = await realpath(packageRoot)
-  } catch (cause) {
-    throw acquisitionError(
-      'CONTRACT_EVIDENCE_READ_FAILED',
-      `Could not resolve contract package root: ${packageRoot}`,
-      [packageRoot],
-      cause,
-    )
-  }
-  return { evidence: Object.freeze({ ...evidence }), packageRoot, canonicalPackageRoot, value }
+  const parsed = parseManifestValue(content, evidence.location, expected.name, expected.version)
+  return manifestRecord(expected.name, parsed.version, evidence, parsed.value)
 }
 
 async function acquireManifestAliases(
@@ -377,6 +446,104 @@ async function acquireManifestAliases(
     }
   }
   return Object.freeze(manifests)
+}
+
+async function resolvePackageManifestFromAnchor(
+  anchor: string,
+  packageName: string,
+): Promise<string | undefined> {
+  for (const searchPath of createRequire(anchor).resolve.paths(packageName) ?? []) {
+    const candidate = path.join(searchPath, packageName, 'package.json')
+    try {
+      await realpath(candidate)
+      return candidate
+    } catch (cause) {
+      if (isMissing(cause)) continue
+      throw acquisitionError(
+        'CONTRACT_EVIDENCE_READ_FAILED',
+        `Could not resolve installed contract package ${packageName}: ${candidate}`,
+        [candidate],
+        cause,
+      )
+    }
+  }
+  return undefined
+}
+
+async function acquireDiscoveredManifest(
+  name: string,
+  location: string,
+  digest: Sha256Port,
+): Promise<ManifestRecord> {
+  const content = await readUtf8(location)
+  const parsed = parseManifestValue(content, location, name)
+  const evidence: Evidence = {
+    id: `manifest:closure:${name}`,
+    kind: 'manifest',
+    strength: 'authoritative',
+    source: `${name}/package.json`,
+    contentHash: await digest.sha256Utf8(content),
+    location,
+  }
+  return manifestRecord(name, parsed.version, evidence, parsed.value)
+}
+
+function manifestDependencyNames(manifest: Record<string, unknown>): readonly string[] {
+  const names = new Set<string>()
+  for (const key of ['dependencies', 'peerDependencies'] as const) {
+    const section = manifest[key]
+    if (!isRecord(section)) continue
+    for (const name of Object.keys(section)) {
+      if (name.startsWith(DSH_AUTHORITY_PREFIX)) names.add(name)
+    }
+  }
+  return Object.freeze([...names].toSorted(compareCodePoints))
+}
+
+async function discoverDshAuthorityClosure(
+  snapshot: TargetSnapshot,
+  explicitPackages: readonly ExpectedPackage[],
+  digest: Sha256Port,
+  budget: ContractAcquisitionBudgetV1,
+): Promise<readonly ManifestRecord[]> {
+  const explicitByName = new Map(explicitPackages.map(item => [item.name, item]))
+  const dshExpected = explicitByName.get(snapshot.dsh.name)
+  if (dshExpected === undefined) throw new Error('Expected DSH application package disappeared')
+  const dshManifest = await acquireManifest(snapshot, dshExpected, 'manifest:dsh', digest)
+  const queue: ManifestRecord[] = [dshManifest]
+  const visited = new Set<string>([dshManifest.name])
+  const discovered: ManifestRecord[] = []
+
+  for (let current = queue.shift(); current !== undefined; current = queue.shift()) {
+    const anchor = current.evidence.location
+    if (anchor === undefined) throw new Error(`Manifest location disappeared for ${current.name}`)
+    for (const dependencyName of manifestDependencyNames(current.value)) {
+      if (visited.has(dependencyName)) continue
+      if (visited.size >= budget.maxContractPackages) {
+        throw resourceLimitError(snapshot.dsh.name, 'maxContractPackages', anchor)
+      }
+      const manifestLocation = await resolvePackageManifestFromAnchor(anchor, dependencyName)
+      if (manifestLocation === undefined) continue
+      const manifest = await acquireDiscoveredManifest(dependencyName, manifestLocation, digest)
+      visited.add(dependencyName)
+      queue.push(manifest)
+
+      const explicit = explicitByName.get(dependencyName)
+      if (explicit !== undefined) {
+        if (explicit.version !== manifest.version) {
+          throw acquisitionError(
+            'CONTRACT_MANIFEST_INVALID',
+            `DSH closure resolves ${dependencyName}@${manifest.version} but target root resolves ${explicit.version}`,
+            [manifestLocation],
+          )
+        }
+        continue
+      }
+      discovered.push(manifest)
+    }
+  }
+
+  return Object.freeze(discovered.toSorted((left, right) => compareCodePoints(left.name, right.name)))
 }
 
 function collectExportTypePaths(value: unknown, result: Set<string>): void {
@@ -459,8 +626,6 @@ async function resolveDeclaration(
   }
 
   for (const candidate of candidates) {
-    // Reject lexical traversal before touching the filesystem so a nonexistent
-    // escape is not misreported as ordinary missing declaration evidence.
     assertLexicallyInsidePackage(manifest.packageRoot, specifier, candidate)
 
     let canonicalCandidate: string
@@ -496,6 +661,29 @@ function uniqueSorted(values: readonly string[]): readonly string[] {
   return Object.freeze([...new Set(values)].toSorted(compareCodePoints))
 }
 
+function compareWitness(left: readonly string[], right: readonly string[]): number {
+  if (left.length !== right.length) return left.length - right.length
+  return compareCodePoints(left.join('\u0000'), right.join('\u0000'))
+}
+
+function addMinimalWitness(surface: ExportWitnessMap, name: string, witness: readonly string[]): boolean {
+  const normalized = uniqueSorted(witness)
+  const existing = surface.get(name)
+  if (existing !== undefined && compareWitness(existing, normalized) <= 0) return false
+  surface.set(name, normalized)
+  return true
+}
+
+function sortedResolvedReexports(values: readonly ResolvedDeclarationReexportEdge[]): readonly ResolvedDeclarationReexportEdge[] {
+  return Object.freeze([...values].toSorted((left, right) => {
+    const bySpecifier = compareCodePoints(left.specifier, right.specifier)
+    if (bySpecifier !== 0) return bySpecifier
+    const byKind = compareCodePoints(left.kind, right.kind)
+    if (byKind !== 0) return byKind
+    return compareCodePoints(left.location, right.location)
+  }))
+}
+
 async function readDeclarationGraph(
   manifest: ManifestRecord,
   packageName: string,
@@ -503,10 +691,7 @@ async function readDeclarationGraph(
   digest: Sha256Port,
   budget: ContractAcquisitionBudgetV1,
   syntax: DeclarationSyntaxPort,
-): Promise<{
-  readonly records: readonly DeclarationRecord[]
-  readonly entries: readonly { relativePath: string; evidenceId: string }[]
-}> {
+): Promise<DeclarationGraph> {
   const queue: DeclarationQueueItem[] = []
   const queued = new Set<string>()
   const entryLocations = new Map<string, string>()
@@ -527,10 +712,10 @@ async function readDeclarationGraph(
     queued.delete(item.location)
     if (records.has(item.location)) continue
     if (item.depth > budget.maxDeclarationDepth) {
-      throw declarationLimitError(packageName, 'maxDeclarationDepth', item.location)
+      throw resourceLimitError(packageName, 'maxDeclarationDepth', item.location)
     }
     if (records.size >= budget.maxDeclarationFilesPerPackage) {
-      throw declarationLimitError(packageName, 'maxDeclarationFilesPerPackage', item.location)
+      throw resourceLimitError(packageName, 'maxDeclarationFilesPerPackage', item.location)
     }
 
     const { content, bytes } = await readBoundedDeclarationUtf8(
@@ -562,58 +747,196 @@ async function readDeclarationGraph(
         cause,
       )
     }
-    const references = uniqueSorted([
-      ...parsed.relativeReexports,
-      ...parsed.relativePathReferences,
-    ])
-    const record: DeclarationRecord = {
-      location: item.location,
-      relativePath,
-      evidence,
-      exports: parsed.exports,
-      references,
-    }
-    records.set(item.location, record)
 
-    for (const specifier of record.references) {
-      const edgeId = `${item.location}\u0000${specifier}`
+    const resolvedReexports: ResolvedDeclarationReexportEdge[] = []
+    const resolvedPathReferences: ResolvedPathReference[] = []
+    const references: Array<{ readonly specifier: string; readonly kind: 'reexport' | 'path-reference'; readonly edge?: DeclarationReexportEdge }> = [
+      ...parsed.relativeReexports.map(edge => ({ kind: 'reexport' as const, specifier: edge.specifier, edge })),
+      ...parsed.relativePathReferences.map(specifier => ({ kind: 'path-reference' as const, specifier })),
+    ].toSorted((left, right) => {
+      const bySpecifier = compareCodePoints(left.specifier, right.specifier)
+      return bySpecifier !== 0 ? bySpecifier : compareCodePoints(left.kind, right.kind)
+    })
+
+    for (const reference of references) {
+      const edgeId = `${item.location}\u0000${reference.kind}\u0000${reference.specifier}`
       if (!edges.has(edgeId)) {
         if (edges.size >= budget.maxDeclarationReferenceEdgesPerPackage) {
-          throw declarationLimitError(
-            packageName,
-            'maxDeclarationReferenceEdgesPerPackage',
-            item.location,
-          )
+          throw resourceLimitError(packageName, 'maxDeclarationReferenceEdgesPerPackage', item.location)
         }
         edges.add(edgeId)
       }
 
-      const referenced = await resolveDeclaration(manifest, path.dirname(item.location), specifier)
+      const referenced = await resolveDeclaration(manifest, path.dirname(item.location), reference.specifier)
+      if (reference.kind === 'reexport') {
+        if (reference.edge === undefined) throw new Error('Re-export reference lost its edge')
+        resolvedReexports.push(Object.freeze({ ...reference.edge, location: referenced }))
+      } else {
+        resolvedPathReferences.push(Object.freeze({ specifier: reference.specifier, location: referenced }))
+      }
+
       if (records.has(referenced) || queued.has(referenced)) continue
       const nextDepth = item.depth + 1
       if (nextDepth > budget.maxDeclarationDepth) {
-        throw declarationLimitError(packageName, 'maxDeclarationDepth', referenced)
+        throw resourceLimitError(packageName, 'maxDeclarationDepth', referenced)
       }
       queued.add(referenced)
       queue.push({ location: referenced, depth: nextDepth })
     }
+
+    records.set(item.location, Object.freeze({
+      location: item.location,
+      relativePath,
+      evidence: Object.freeze(evidence),
+      exports: Object.freeze([...parsed.exports]),
+      reexports: sortedResolvedReexports(resolvedReexports),
+      pathReferences: Object.freeze(resolvedPathReferences.toSorted((left, right) => {
+        const bySpecifier = compareCodePoints(left.specifier, right.specifier)
+        return bySpecifier !== 0 ? bySpecifier : compareCodePoints(left.location, right.location)
+      })),
+    }))
   }
 
   const entries = [...entryLocations.values()].map(location => {
     const record = records.get(location)
     if (record === undefined) throw new Error(`Declaration graph lost entrypoint ${location}`)
-    return { relativePath: record.relativePath, evidenceId: record.evidence.id }
+    return Object.freeze({
+      location,
+      relativePath: record.relativePath,
+      evidenceId: record.evidence.id,
+    })
   })
 
-  return {
+  return Object.freeze({
     records: Object.freeze(
       [...records.values()].toSorted((left, right) => compareCodePoints(left.relativePath, right.relativePath)),
     ),
     entries: Object.freeze(entries.toSorted((left, right) => compareCodePoints(left.relativePath, right.relativePath))),
-  }
+  })
 }
 
-async function acquirePackage(
+function declarationSurfaces(graph: DeclarationGraph): Map<string, ExportWitnessMap> {
+  const surfaces = new Map<string, ExportWitnessMap>()
+  for (const record of graph.records) {
+    const surface: ExportWitnessMap = new Map()
+    for (const exportedName of record.exports) addMinimalWitness(surface, exportedName, [record.evidence.id])
+    surfaces.set(record.location, surface)
+  }
+
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const record of graph.records) {
+      const surface = surfaces.get(record.location)
+      if (surface === undefined) throw new Error(`Declaration surface disappeared for ${record.location}`)
+      for (const edge of record.reexports) {
+        if (edge.kind !== 'star') continue
+        const child = surfaces.get(edge.location)
+        if (child === undefined) throw new Error(`Declaration star target disappeared for ${edge.location}`)
+        for (const [name, witness] of [...child.entries()].toSorted(([left], [right]) => compareCodePoints(left, right))) {
+          if (name === 'default' || name === 'export=') continue
+          if (addMinimalWitness(surface, name, [record.evidence.id, ...witness])) changed = true
+        }
+      }
+    }
+  }
+  return surfaces
+}
+
+function packageExportSurface(graph: DeclarationGraph): ExportWitnessMap {
+  const surfaces = declarationSurfaces(graph)
+  const result: ExportWitnessMap = new Map()
+  for (const entry of graph.entries) {
+    const surface = surfaces.get(entry.location)
+    if (surface === undefined) throw new Error(`Declaration entry surface disappeared for ${entry.location}`)
+    for (const [name, witness] of [...surface.entries()].toSorted(([left], [right]) => compareCodePoints(left, right))) {
+      addMinimalWitness(result, name, witness)
+    }
+  }
+  return result
+}
+
+function pushFact(
+  facts: ContractFact[],
+  fact: ContractFact,
+  packageName: string,
+  location: string,
+  budget: ContractAcquisitionBudgetV1,
+): void {
+  if (facts.length >= budget.maxNormalizedFactsPerPackage) {
+    throw resourceLimitError(packageName, 'maxNormalizedFactsPerPackage', location)
+  }
+  facts.push(fact)
+}
+
+async function buildPackageContract(
+  packageName: string,
+  packageVersion: string,
+  manifests: readonly ManifestRecord[],
+  digest: Sha256Port,
+  budget: ContractAcquisitionBudgetV1,
+  syntax: DeclarationSyntaxPort,
+): Promise<{ readonly contract: ContractDefinition; readonly evidence: readonly Evidence[] }> {
+  const manifest = manifests[0]
+  if (manifest === undefined) throw new Error(`Manifest disappeared for ${packageName}`)
+  const manifestEvidence = manifests.map(item => item.evidence)
+  const manifestEvidenceIds = manifestEvidence.map(item => item.id).toSorted(compareCodePoints)
+  const firstManifestEvidenceId = manifestEvidenceIds[0]
+  if (firstManifestEvidenceId === undefined) throw new Error(`Manifest evidence disappeared for ${packageName}`)
+
+  const entrypoints = declarationEntrypoints(manifest.value)
+  const declarations = await readDeclarationGraph(
+    manifest,
+    packageName,
+    entrypoints,
+    digest,
+    budget,
+    syntax,
+  )
+  const facts: ContractFact[] = []
+  const manifestLocation = manifest.evidence.location ?? manifest.packageRoot
+  pushFact(facts, {
+    key: 'version',
+    value: packageVersion,
+    evidenceIds: [firstManifestEvidenceId, ...manifestEvidenceIds.slice(1)],
+  }, packageName, manifestLocation, budget)
+
+  for (const entry of declarations.entries) {
+    pushFact(facts, {
+      key: 'declaration-entry',
+      value: entry.relativePath,
+      evidenceIds: [entry.evidenceId],
+    }, packageName, entry.relativePath, budget)
+  }
+
+  const exported = packageExportSurface(declarations)
+  for (const [exportedName, evidenceIds] of [...exported.entries()].toSorted(([left], [right]) => compareCodePoints(left, right))) {
+    pushFact(facts, {
+      key: 'declaration-export',
+      value: exportedName,
+      evidenceIds: [...evidenceIds],
+    }, packageName, manifestLocation, budget)
+  }
+
+  const declarationEvidence = declarations.records.map(record => record.evidence)
+  const evidence = Object.freeze([...manifestEvidence, ...declarationEvidence])
+  const evidenceIds = Object.freeze(evidence.map(item => item.id).toSorted(compareCodePoints))
+  return Object.freeze({
+    contract: Object.freeze({
+      id: `package:${packageName}`,
+      kind: 'package',
+      name: packageName,
+      qualifiedName: `package:${packageName}`,
+      availability: 'unknown',
+      summary: `Installed package ${packageName}@${packageVersion}`,
+      facts: [...facts],
+      evidenceIds: [...evidenceIds],
+    }),
+    evidence,
+  })
+}
+
+async function acquireExplicitPackage(
   snapshot: TargetSnapshot,
   expected: ExpectedPackage,
   digest: Sha256Port,
@@ -621,61 +944,16 @@ async function acquirePackage(
   syntax: DeclarationSyntaxPort,
 ): Promise<{ readonly contract: ContractDefinition; readonly evidence: readonly Evidence[] }> {
   const manifests = await acquireManifestAliases(snapshot, expected, digest)
-  const manifest = manifests[0]
-  if (manifest === undefined) throw new Error(`Manifest aliases disappeared for ${expected.name}`)
-  const manifestEvidence = manifests.map(item => item.evidence)
-  const manifestEvidenceIds = manifestEvidence.map(item => item.id).toSorted(compareCodePoints)
-  const firstManifestEvidenceId = manifestEvidenceIds[0]
-  if (firstManifestEvidenceId === undefined) {
-    throw new Error(`Manifest evidence disappeared for ${expected.name}`)
-  }
-  const versionEvidenceIds: ContractFact['evidenceIds'] = [
-    firstManifestEvidenceId,
-    ...manifestEvidenceIds.slice(1),
-  ]
-  const entrypoints = declarationEntrypoints(manifest.value)
-  const declarations = await readDeclarationGraph(
-    manifest,
-    expected.name,
-    entrypoints,
-    digest,
-    budget,
-    syntax,
-  )
-  const facts: ContractFact[] = [{
-    key: 'version',
-    value: expected.version,
-    evidenceIds: versionEvidenceIds,
-  }]
-  for (const entry of declarations.entries) {
-    facts.push({ key: 'declaration-entry', value: entry.relativePath, evidenceIds: [entry.evidenceId] })
-  }
-  for (const declaration of declarations.records) {
-    for (const exportedName of declaration.exports) {
-      facts.push({
-        key: 'declaration-export',
-        value: exportedName,
-        evidenceIds: [declaration.evidence.id],
-      })
-    }
-  }
+  return buildPackageContract(expected.name, expected.version, manifests, digest, budget, syntax)
+}
 
-  const declarationEvidence = declarations.records.map(record => record.evidence)
-  const evidence = Object.freeze([...manifestEvidence, ...declarationEvidence])
-  const evidenceIds = Object.freeze(evidence.map(item => item.id).toSorted(compareCodePoints))
-  return {
-    contract: Object.freeze({
-      id: `package:${expected.name}`,
-      kind: 'package',
-      name: expected.name,
-      qualifiedName: `package:${expected.name}`,
-      availability: 'unknown',
-      summary: `Installed package ${expected.name}@${expected.version}`,
-      facts: [...facts],
-      evidenceIds: [...evidenceIds],
-    }),
-    evidence,
-  }
+async function acquireDiscoveredPackage(
+  manifest: ManifestRecord,
+  digest: Sha256Port,
+  budget: ContractAcquisitionBudgetV1,
+  syntax: DeclarationSyntaxPort,
+): Promise<{ readonly contract: ContractDefinition; readonly evidence: readonly Evidence[] }> {
+  return buildPackageContract(manifest.name, manifest.version, [manifest], digest, budget, syntax)
 }
 
 export function createDshContractFilesystemAcquisition(
@@ -683,12 +961,36 @@ export function createDshContractFilesystemAcquisition(
 ): ContractAcquisitionPort {
   const digest = options.digest ?? createNodeSha256Port()
   const budget = normalizeBudget(options.budget)
-  const syntax = options.syntax ?? typescriptDeclarationSyntaxPort
+  let defaultSyntax: Promise<DeclarationSyntaxPort> | undefined
+
+  async function syntaxPort(): Promise<DeclarationSyntaxPort> {
+    if (options.syntax !== undefined) return options.syntax
+    defaultSyntax ??= import('./typescript-declaration-syntax.js')
+      .then(module => module.typescriptDeclarationSyntaxPort)
+    return defaultSyntax
+  }
+
   return {
     async acquire(snapshot): Promise<AcquiredContractFacts> {
+      const explicit = expectedPackages(snapshot)
+      if (explicit.length > budget.maxContractPackages) {
+        const location = snapshot.evidence.find(item => item.id === 'manifest:dsh')?.location ?? ''
+        throw resourceLimitError(snapshot.dsh.name, 'maxContractPackages', location)
+      }
+
+      const discovered = await discoverDshAuthorityClosure(snapshot, explicit, digest, budget)
+      if (explicit.length + discovered.length > budget.maxContractPackages) {
+        const location = snapshot.evidence.find(item => item.id === 'manifest:dsh')?.location ?? ''
+        throw resourceLimitError(snapshot.dsh.name, 'maxContractPackages', location)
+      }
+
+      const syntax = await syntaxPort()
       const acquired: Array<{ readonly contract: ContractDefinition; readonly evidence: readonly Evidence[] }> = []
-      for (const expected of expectedPackages(snapshot)) {
-        acquired.push(await acquirePackage(snapshot, expected, digest, budget, syntax))
+      for (const expected of explicit) {
+        acquired.push(await acquireExplicitPackage(snapshot, expected, digest, budget, syntax))
+      }
+      for (const manifest of discovered) {
+        acquired.push(await acquireDiscoveredPackage(manifest, digest, budget, syntax))
       }
 
       return Object.freeze({

@@ -30,7 +30,7 @@ describe('TypeScript declaration syntax adapter', () => {
     ])
   })
 
-  it('follows relative public re-exports and path references but ignores ordinary imports and comments', () => {
+  it('preserves relative re-export semantics and keeps path references distinct', () => {
     const parsed = parseTypeScriptDeclarationSyntax('index.d.ts', [
       '/// <reference path="./ambient.d.ts" />',
       "import type { PrivateType } from './private.js'",
@@ -45,24 +45,39 @@ describe('TypeScript declaration syntax adapter', () => {
 
     expect(parsed.exports).toEqual(['External', 'PublicType', 'Shape', 'namespaceExport'])
     expect(parsed.relativeReexports).toEqual([
-      './namespace.js',
-      './public.js',
-      './star.js',
+      {
+        kind: 'namespace',
+        specifier: './namespace.js',
+        exportedName: 'namespaceExport',
+      },
+      {
+        kind: 'named',
+        specifier: './public.js',
+        bindings: [
+          { importedName: 'PublicShape', exportedName: 'Shape' },
+          { importedName: 'PublicType', exportedName: 'PublicType' },
+        ],
+      },
+      { kind: 'star', specifier: './star.js' },
     ])
     expect(parsed.relativePathReferences).toEqual(['./ambient.d.ts'])
   })
 
-  it('treats exported import-equals as a public relative edge', () => {
+  it('treats exported import-equals as a public relative edge without flattening its target', () => {
     const parsed = parseTypeScriptDeclarationSyntax(
       'index.d.ts',
       "export import LegacyApi = require('./legacy.js')\n",
     )
 
     expect(parsed.exports).toEqual(['LegacyApi'])
-    expect(parsed.relativeReexports).toEqual(['./legacy.js'])
+    expect(parsed.relativeReexports).toEqual([{
+      kind: 'import-equals',
+      specifier: './legacy.js',
+      exportedName: 'LegacyApi',
+    }])
   })
 
-  it('returns deterministic deeply immutable result collections', () => {
+  it('returns deterministic deeply immutable result collections and typed edges', () => {
     const parsed = parseTypeScriptDeclarationSyntax(
       'index.d.ts',
       "export { Zed, Alpha } from './z.js'\nexport { Beta } from './a.js'\n",
@@ -72,7 +87,29 @@ describe('TypeScript declaration syntax adapter', () => {
     expect(Object.isFrozen(parsed.exports)).toBe(true)
     expect(Object.isFrozen(parsed.relativeReexports)).toBe(true)
     expect(Object.isFrozen(parsed.relativePathReferences)).toBe(true)
+    expect(Object.isFrozen(parsed.relativeReexports[0])).toBe(true)
     expect(parsed.exports).toEqual(['Alpha', 'Beta', 'Zed'])
-    expect(parsed.relativeReexports).toEqual(['./a.js', './z.js'])
+    expect(parsed.relativeReexports).toEqual([
+      {
+        kind: 'named',
+        specifier: './a.js',
+        bindings: [{ importedName: 'Beta', exportedName: 'Beta' }],
+      },
+      {
+        kind: 'named',
+        specifier: './z.js',
+        bindings: [
+          { importedName: 'Alpha', exportedName: 'Alpha' },
+          { importedName: 'Zed', exportedName: 'Zed' },
+        ],
+      },
+    ])
+  })
+
+  it('rejects malformed declarations using public syntactic diagnostics instead of parser recovery', () => {
+    expect(() => parseTypeScriptDeclarationSyntax(
+      'index.d.ts',
+      'export interface ToolDefinition {\n',
+    )).toThrow(/TS1005/u)
   })
 })
