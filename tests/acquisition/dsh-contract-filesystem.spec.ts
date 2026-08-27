@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createDshContractFilesystemAcquisition } from '../../src/acquisition/dsh-contract-filesystem.js'
-import { ContractAcquisitionError } from '../../src/model/contract.js'
 import { createNodeSha256Port } from '../../src/acquisition/node-sha256.js'
 import type { Evidence, TargetSnapshot } from '../../src/protocol/index.js'
 
@@ -151,7 +150,7 @@ describe('DSH Contract filesystem acquisition', () => {
     await writeFile(fixture.toolsManifestLocation, '{"name":"@deepseek-ai/dsh-tools","version":"0.1.1-rc.2"}\n', 'utf8')
     const acquisition = createDshContractFilesystemAcquisition({ digest: createNodeSha256Port() })
 
-    await expect(acquisition.acquire(fixture.target)).rejects.toMatchObject<Partial<ContractAcquisitionError>>({
+    await expect(acquisition.acquire(fixture.target)).rejects.toMatchObject({
       code: 'CONTRACT_EVIDENCE_STALE',
     })
   })
@@ -186,7 +185,7 @@ describe('DSH Contract filesystem acquisition', () => {
     ))
     const acquisition = createDshContractFilesystemAcquisition({ digest: createNodeSha256Port() })
 
-    await expect(acquisition.acquire(target)).rejects.toMatchObject<Partial<ContractAcquisitionError>>({
+    await expect(acquisition.acquire(target)).rejects.toMatchObject({
       code: 'CONTRACT_DECLARATION_INVALID',
     })
   })
@@ -204,7 +203,7 @@ describe('DSH Contract filesystem acquisition', () => {
     ))
     const acquisition = createDshContractFilesystemAcquisition({ digest: createNodeSha256Port() })
 
-    await expect(acquisition.acquire(target)).rejects.toMatchObject<Partial<ContractAcquisitionError>>({
+    await expect(acquisition.acquire(target)).rejects.toMatchObject({
       code: 'CONTRACT_EVIDENCE_READ_FAILED',
     })
   })
