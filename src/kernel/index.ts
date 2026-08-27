@@ -227,7 +227,9 @@ export async function searchContractsResponse(
   enrichment?: ContractEnrichmentPort,
 ): Promise<ContractSearchResponse> {
   try {
-    const outcome = await kernel.searchContracts(request, enrichment)
+    const outcome = enrichment === undefined
+      ? await kernel.searchContracts(request)
+      : await kernel.searchContracts(request, enrichment)
     const response: ContractSearchSuccessResponse = {
       protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
       requestId,
@@ -275,7 +277,9 @@ export async function inspectContractResponse(
   enrichment?: ContractEnrichmentPort,
 ): Promise<ContractInspectResponse> {
   try {
-    const outcome = await kernel.inspectContract(request, enrichment)
+    const outcome = enrichment === undefined
+      ? await kernel.inspectContract(request)
+      : await kernel.inspectContract(request, enrichment)
     const response: ContractInspectSuccessResponse = {
       protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
       requestId,
