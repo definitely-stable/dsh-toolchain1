@@ -38,13 +38,15 @@ The normalized contract semantics are part of the hash so a future normalizer ch
 
 M2.1 emits conservative `package` contracts only; it does not infer Service/Event/Tool semantics from declaration syntax.
 
-One package contract represents each exact DSH package participating in the M1 target: the DSH app itself, ordered profile bundles, and non-observer profile dependencies. It contains evidence-backed facts for:
+One package contract represents each exact DSH package participating in the M1 target: the DSH app itself, ordered profile bundles, non-observer profile dependencies, plus the deterministic DSH-owned installed dependency/peer-dependency authority closure discovered from those explicit DSH roots. Explicit third-party roots remain indexable but their arbitrary transitive npm graphs are not crawled. It contains evidence-backed facts for:
 
 - exact package version;
-- public declaration entrypoints resolved from `types` / `typings` and supported `exports.*.types` shapes;
-- declaration symbols/tokens discovered from the public declaration graph as **search facts**, without upgrading them to runtime Service/method claims.
+- public declaration entrypoints resolved from `types` / `typings` and supported concrete `exports.*.types` shapes;
+- syntax-proven public declaration exports discovered from those entrypoints as **search facts**, without upgrading them to runtime Service/method claims.
 
-The declaration graph follows only relative declaration references/re-exports that remain inside the package root. It never imports/executes package JavaScript. Traversal is deterministic and bounded. Missing optional declarations leave a valid manifest-backed package contract; unreadable/corrupt declared evidence fails loudly.
+Wildcard package-export templates such as `./api/* -> ./lib/types/api/*.d.ts` are not literal declaration files and are not expanded by M2.1. Relative declaration specifiers ending in `.ts/.mts/.cts` are resolved to their declaration counterparts (`.d.ts/.d.mts/.d.cts`) rather than reading source TypeScript.
+
+The declaration graph follows only relative declaration references/re-exports that remain inside the package root. It never imports/executes package JavaScript. Traversal is deterministic and bounded. Missing optional declarations leave a valid manifest-backed package contract; unreadable/corrupt concrete declared evidence fails loudly.
 
 ### Contract DTOs
 
@@ -78,7 +80,7 @@ Within a tier, deterministic secondary score may reward more query tokens. Final
 ## Error / freshness model
 
 - Target acquisition retains existing `TARGET_*` diagnostics.
-- New expected contract acquisition failures use `CONTRACT_EVIDENCE_*` codes in diagnostic domain `contract`.
+- New expected contract acquisition failures use `CONTRACT_EVIDENCE_*` codes in diagnostic domain `contract`; deterministic resource-budget breaches use `CONTRACT_DECLARATION_LIMIT_EXCEEDED`.
 - If a manifest captured by the just-resolved TargetSnapshot changes before contract acquisition consumes it, return stale rather than mixing target evidence epochs.
 - `contract.inspect` always reacquires/rebuilds the current index. If its fingerprint differs from the caller-supplied fingerprint, return `CONTRACT_INDEX_STALE`; do not silently inspect another index.
 - Missing `contractId` in a current index is `CONTRACT_NOT_FOUND` / failed, distinct from stale fingerprint.
@@ -91,41 +93,42 @@ Every behavior task follows RED -> verify intended failure -> minimal GREEN -> f
 
 **Files:** `docs/decisions/ADR-0008-contract-index-fingerprint-v1.md`, `spec/protocol.md`, `spec/schemas/v1/toolchain-protocol.schema.json`, `spec/examples/v1/contract-*.json`, `src/protocol/generated.ts` via generator, `tests/protocol/protocol.spec.ts`.
 
-- [ ] RED: protocol tests require closed search/inspect DTOs, canonical examples, stale response and generated TS names.
-- [ ] GREEN: add schema/spec/ADR/examples atomically and regenerate with `pnpm generate`.
-- [ ] Prove response objects are closed and invalid limits/kinds/empty query are rejected.
-- [ ] Prove stale inspect cannot carry successful contract data.
+- [x] RED: protocol tests require closed search/inspect DTOs, canonical examples, stale response and generated TS names.
+- [x] GREEN: add schema/spec/ADR/examples atomically and regenerate with `pnpm generate`.
+- [x] Prove response objects are closed and invalid limits/kinds/empty query are rejected.
+- [x] Prove stale inspect cannot carry successful contract data.
 
 ### Task 2 — pure Contract Index / fingerprint / ranker
 
 **Files:** `src/model/contract.ts`, `tests/model/contract.spec.ts`.
 
-- [ ] RED: canonical fingerprint stability under evidence/contract order permutations and machine-location changes.
-- [ ] RED: target fingerprint, evidence content hash or normalized semantic change changes `dsh-contract-index-v1`.
-- [ ] RED: deterministic ranking tiers, kind filter, limit, stable tie-breaks and compact result shape.
-- [ ] RED: inspect returns exact evidence subset only.
-- [ ] GREEN: runtime-neutral model using existing `Sha256Port`; no Node/DSH/external imports.
+- [x] RED: canonical fingerprint stability under evidence/contract order permutations and machine-location changes.
+- [x] RED: target fingerprint, evidence content hash or normalized semantic change changes `dsh-contract-index-v1`.
+- [x] RED: deterministic ranking tiers, kind filter, limit, stable tie-breaks and compact result shape.
+- [x] RED: inspect returns exact evidence subset only.
+- [x] GREEN: runtime-neutral model using existing `Sha256Port`; no Node/DSH/external imports.
 
 ### Task 3 — read-only installed package/declaration acquisition
 
 **Files:** `src/acquisition/dsh-contract-filesystem.ts`, focused acquisition fixtures/tests.
 
-- [ ] RED: exact target manifest locations lower into package contracts with authoritative manifest evidence.
-- [ ] RED: public `types`/`typings` and supported exports-type entrypoints are hashed and represented as `type-declaration` evidence.
-- [ ] RED: same-version declaration byte drift changes acquired evidence/index while M1 target semantic identity can remain unchanged.
-- [ ] RED: equivalent trees under different absolute roots produce equivalent semantic inputs.
-- [ ] RED: relative declaration traversal cannot escape the package root and never imports/executes target JS.
-- [ ] RED: manifest hash drift relative to TargetSnapshot is reported stale, not mixed.
-- [ ] GREEN: deterministic, bounded filesystem traversal; no package-manager/subprocess/network calls.
+- [x] RED: exact target manifest locations lower into package contracts with authoritative manifest evidence.
+- [x] RED: public `types`/`typings` and supported concrete exports-type entrypoints are hashed and represented as `type-declaration` evidence.
+- [x] RED: same-version declaration byte drift changes acquired evidence/index while M1 target semantic identity can remain unchanged.
+- [x] RED: equivalent trees under different absolute roots produce equivalent semantic inputs.
+- [x] RED: relative declaration traversal cannot escape the package root and never imports/executes target JS.
+- [x] RED: manifest hash drift relative to TargetSnapshot is reported stale, not mixed.
+- [x] GREEN: deterministic, bounded filesystem traversal; no package-manager/subprocess/network calls.
+- [x] Corrective RED→GREEN covers DSH-owned dependency closure, effective re-export semantics, parser diagnostics, normalized fact/package budgets, declaration-extension rewriting, and wildcard export templates.
 
 ### Task 4 — kernel application use cases and Protocol responses
 
 **Files:** `src/kernel/index.ts`, kernel tests.
 
-- [ ] RED: `searchContracts()` resolves one exact target, acquires evidence, builds index, ranks and returns target/index-bound result.
-- [ ] RED: `inspectContract()` rebuilds current index, rejects stale fingerprint, distinguishes not-found from stale.
-- [ ] RED: shared response helpers map expected `TARGET_*` / `CONTRACT_*` errors once; infrastructure errors propagate.
-- [ ] GREEN: optional internal `contractAcquisition` port keeps existing target-only kernel construction/tests valid while default product frontends provide the real adapter.
+- [x] RED: `searchContracts()` resolves one exact target, acquires evidence, builds index, ranks and returns target/index-bound result.
+- [x] RED: `inspectContract()` rebuilds current index, rejects stale fingerprint, distinguishes not-found from stale.
+- [x] RED: shared response helpers map expected `TARGET_*` / `CONTRACT_*` errors once; infrastructure errors propagate.
+- [x] GREEN: optional internal `contractAcquisition` port keeps existing target-only kernel construction/tests valid while default product frontends provide the real adapter.
 
 ### Task 5 — CLI and MCP projections
 
@@ -145,9 +148,9 @@ contract.search
 contract.inspect
 ```
 
-- [ ] RED: parsing/schema registration/delegation/success/failure/stale tests.
-- [ ] GREEN: both project Protocol `$defs` and shared kernel response helpers; no frontend-owned DTO/ranker/acquisition logic.
-- [ ] Tools are read-only/idempotent.
+- [x] RED: parsing/schema registration/delegation/success/failure/stale tests.
+- [x] GREEN: both project Protocol `$defs` and shared kernel response helpers; no frontend-owned DTO/ranker/acquisition logic.
+- [x] Tools are read-only/idempotent.
 
 ### Task 6 — DSH Service + native ToolRuntime projections
 
@@ -160,28 +163,30 @@ toolchain_contract_search
 toolchain_contract_inspect
 ```
 
-- [ ] RED: Service methods and native registration/delegation/runtime argument validation.
-- [ ] GREEN: Service uses the same Node kernel; raw ToolDefinition arguments are validated before delegation just like M1.1.
-- [ ] No `@deepseek-ai/dsh-tools` runtime dependency is added; Host remains identity owner.
-- [ ] No use of `ctx.cordisInspect.query()` in M2.1; live Agent-scoped enrichment belongs to M2.2.
+- [x] RED: Service methods and native registration/delegation/runtime argument validation.
+- [x] GREEN: Service uses the same Node kernel; raw ToolDefinition arguments are validated before delegation just like M1.1.
+- [x] No `@deepseek-ai/dsh-tools` runtime dependency is added; Host remains identity owner.
+- [x] No use of `ctx.cordisInspect.query()` in M2.1; live Agent-scoped enrichment belongs to M2.2.
 
 ### Task 7 — cross-frontend parity + exact package smoke
 
 **Files:** `tests/frontends/contract-parity.spec.ts`, `scripts/smoke-dsh-package.mjs`, smoke-policy tests as needed.
 
-- [ ] RED: CLI/native DSH/MCP responses for equivalent deterministic evidence differ only in request id/transport envelope.
-- [ ] RED: exact packed artifact must expose both native contract tools through real `ctx.tools.schemas()` and execute a representative offline search/inspect path through real ToolRuntime.
-- [ ] GREEN: package smoke preserves existing target Service/native parity and adds M2.1 visibility/execution without weakening any M1 gate.
+- [x] RED: CLI/native DSH/MCP responses for equivalent deterministic evidence differ only in request id/transport envelope.
+- [x] RED: exact packed artifact must expose both native contract tools through real `ctx.tools.schemas()` and execute a representative offline search/inspect path through real ToolRuntime.
+- [x] GREEN: package smoke preserves existing target Service/native parity and adds M2.1 visibility/execution without weakening any M1 gate.
+- [x] Authoritative shipped-`web` smoke proves `ToolDefinition -> package:@deepseek-ai/dsh-tools -> inspect` with exact declaration evidence from the packed artifact.
 
 ### Task 8 — docs, diff audit and merge gate
 
 **Files:** README, roadmap/development docs, this plan, Issue/PR metadata.
 
-- [ ] Document M2.1 as implemented while M2 remains open for live Inspect + evaluation.
-- [ ] Explicitly state offline availability semantics and why private DSH source/catalog imports are forbidden.
-- [ ] Review final diff for generated-file ownership, path leakage, accidental persistence/cache, unrelated M3/M4/Web work and new dependencies.
-- [ ] Check PR comments/reviews/threads.
-- [ ] Final exact-head CI must pass generated/protocol/architecture/package/storage/lint/type/tests, build, exact pack/consumer, real DSH package smoke, multi-train target smoke, Node 22/24/26, Windows and macOS.
+- [x] Document M2.1 as implemented while M2 remains open for live Inspect + evaluation.
+- [x] Explicitly state offline availability semantics and why private DSH source/catalog imports are forbidden.
+- [x] Review final functional diff for generated-file ownership, path leakage, accidental persistence/cache, unrelated M3/M4/Web work and new dependencies.
+- [x] Check PR comments/reviews/threads at the functional GREEN checkpoint; none are present.
+- [x] Functional exact-head CI #334 on `d74638d6bc3640ab9edfc91f739fb022a6708242` passes generated/protocol/architecture/package/storage/lint/type/tests, build, exact pack/consumer, real minimal/Web DSH Contract Intelligence smoke, multi-train target smoke, Node 22/24/26, Windows and macOS.
+- [ ] Require one final exact-head CI after governance-only reconciliation before marking PR Ready.
 - [ ] Squash merge only with expected-head SHA guard; closing Issue #29 must not close parent #28.
 
 ## Non-goals
