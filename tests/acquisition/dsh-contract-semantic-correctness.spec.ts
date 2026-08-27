@@ -252,6 +252,132 @@ describe('M2.1 semantic correctness regressions', () => {
     })
   })
 
+  it('validates relative named re-exports and omits ambiguous star names instead of choosing a witness', async () => {
+    const root = await temporaryRoot()
+    const modulesRoot = path.join(root, 'runner', 'node_modules')
+    const dsh = await writeInstalledPackage(modulesRoot, { name: '@deepseek-ai/dsh' })
+    const tools = await writeInstalledPackage(modulesRoot, {
+      name: '@deepseek-ai/dsh-tools',
+      manifest: { types: './index.d.ts' },
+      files: {
+        'index.d.ts': [
+          "export * from './a.js'",
+          "export * from './b.js'",
+          "export { Real as Alias, Missing } from './child.js'",
+          '',
+        ].join('\n'),
+        'a.d.ts': 'export interface AOnly {}\nexport interface Shared {}\n',
+        'b.d.ts': 'export interface BOnly {}\nexport interface Shared {}\n',
+        'child.d.ts': 'export interface Real {}\n',
+      },
+    })
+    const target = targetSnapshot([
+      manifestEvidence('manifest:dsh', '@deepseek-ai/dsh', dsh.manifestLocation, dsh.manifestContent),
+      manifestEvidence(
+        'manifest:dependency:@deepseek-ai/dsh-tools',
+        '@deepseek-ai/dsh-tools',
+        tools.manifestLocation,
+        tools.manifestContent,
+      ),
+    ], {
+      dependencies: [{ name: '@deepseek-ai/dsh-tools', version: '0.1.1-rc.2' }],
+    })
+
+    const result = await createDshContractFilesystemAcquisition({
+      digest: createNodeSha256Port(),
+    }).acquire(target)
+    const contract = result.contracts.find(item => item.id === 'package:@deepseek-ai/dsh-tools')
+    const exports = contract?.facts.filter(fact => fact.key === 'declaration-export') ?? []
+
+    expect(exports.map(fact => fact.value).toSorted()).toEqual(['AOnly', 'Alias', 'BOnly'])
+    const alias = exports.find(fact => fact.value === 'Alias')
+    expect(alias?.evidenceIds).toEqual(expect.arrayContaining([
+      'types:@deepseek-ai/dsh-tools:index.d.ts',
+      'types:@deepseek-ai/dsh-tools:child.d.ts',
+    ]))
+  })
+
+  it('lets an explicit relative named export resolve a star conflict', async () => {
+    const root = await temporaryRoot()
+    const modulesRoot = path.join(root, 'runner', 'node_modules')
+    const dsh = await writeInstalledPackage(modulesRoot, { name: '@deepseek-ai/dsh' })
+    const tools = await writeInstalledPackage(modulesRoot, {
+      name: '@deepseek-ai/dsh-tools',
+      manifest: { types: './index.d.ts' },
+      files: {
+        'index.d.ts': [
+          "export * from './a.js'",
+          "export * from './b.js'",
+          "export { Shared } from './a.js'",
+          '',
+        ].join('\n'),
+        'a.d.ts': 'export interface Shared {}\n',
+        'b.d.ts': 'export interface Shared {}\n',
+      },
+    })
+    const target = targetSnapshot([
+      manifestEvidence('manifest:dsh', '@deepseek-ai/dsh', dsh.manifestLocation, dsh.manifestContent),
+      manifestEvidence(
+        'manifest:dependency:@deepseek-ai/dsh-tools',
+        '@deepseek-ai/dsh-tools',
+        tools.manifestLocation,
+        tools.manifestContent,
+      ),
+    ], {
+      dependencies: [{ name: '@deepseek-ai/dsh-tools', version: '0.1.1-rc.2' }],
+    })
+
+    const result = await createDshContractFilesystemAcquisition({
+      digest: createNodeSha256Port(),
+    }).acquire(target)
+    const shared = result.contracts
+      .find(item => item.id === 'package:@deepseek-ai/dsh-tools')
+      ?.facts.find(fact => fact.key === 'declaration-export' && fact.value === 'Shared')
+
+    expect(shared?.evidenceIds).toEqual(expect.arrayContaining([
+      'types:@deepseek-ai/dsh-tools:index.d.ts',
+      'types:@deepseek-ai/dsh-tools:a.d.ts',
+    ]))
+    expect(shared?.evidenceIds).not.toContain('types:@deepseek-ai/dsh-tools:b.d.ts')
+  })
+
+  it('does not treat two star paths to the same semantic origin as an ambiguity', async () => {
+    const root = await temporaryRoot()
+    const modulesRoot = path.join(root, 'runner', 'node_modules')
+    const dsh = await writeInstalledPackage(modulesRoot, { name: '@deepseek-ai/dsh' })
+    const tools = await writeInstalledPackage(modulesRoot, {
+      name: '@deepseek-ai/dsh-tools',
+      manifest: { types: './index.d.ts' },
+      files: {
+        'index.d.ts': "export * from './a.js'\nexport * from './b.js'\n",
+        'a.d.ts': "export * from './common.js'\n",
+        'b.d.ts': "export * from './common.js'\n",
+        'common.d.ts': 'export interface Shared {}\n',
+      },
+    })
+    const target = targetSnapshot([
+      manifestEvidence('manifest:dsh', '@deepseek-ai/dsh', dsh.manifestLocation, dsh.manifestContent),
+      manifestEvidence(
+        'manifest:dependency:@deepseek-ai/dsh-tools',
+        '@deepseek-ai/dsh-tools',
+        tools.manifestLocation,
+        tools.manifestContent,
+      ),
+    ], {
+      dependencies: [{ name: '@deepseek-ai/dsh-tools', version: '0.1.1-rc.2' }],
+    })
+
+    const result = await createDshContractFilesystemAcquisition({
+      digest: createNodeSha256Port(),
+    }).acquire(target)
+    const shared = result.contracts
+      .find(item => item.id === 'package:@deepseek-ai/dsh-tools')
+      ?.facts.find(fact => fact.key === 'declaration-export' && fact.value === 'Shared')
+
+    expect(shared).toBeDefined()
+    expect(shared?.evidenceIds).toContain('types:@deepseek-ai/dsh-tools:common.d.ts')
+  })
+
   it('uses concrete exports types entrypoints without treating wildcard templates as files', async () => {
     const root = await temporaryRoot()
     const modulesRoot = path.join(root, 'runner', 'node_modules')
