@@ -32,6 +32,11 @@ import {
   type DshCordisInspectRegistryPort,
 } from './live-inspect.js'
 import {
+  bindContractEnrichmentToRuntimeTarget,
+  createDshRuntimeTargetBinding,
+  type DshRuntimeTargetBindingPort,
+} from './runtime-target-binding.js'
+import {
   createTargetResolveToolDefinition,
   type DshToolRegistryPort,
 } from './target-tool.js'
@@ -63,6 +68,22 @@ function inspectFromContext(ctx: Context): DshCordisInspectRegistryPort | undefi
   return typeof candidate.list === 'function' && typeof candidate.query === 'function'
     ? candidate as DshCordisInspectRegistryPort
     : undefined
+}
+
+function runtimeTargetBindingFromContext(ctx: Context): DshRuntimeTargetBindingPort | undefined {
+  const root = (ctx as unknown as { readonly root?: { readonly baseUrl?: unknown } }).root
+  const baseUrl = root?.baseUrl
+  const dshHomePath = ctx.get('dshHomePath') as unknown
+  if (typeof baseUrl !== 'string' || typeof dshHomePath !== 'function') return undefined
+
+  let dshHome: unknown
+  try {
+    dshHome = (dshHomePath as () => unknown)()
+  } catch {
+    return undefined
+  }
+  if (typeof dshHome !== 'string' || dshHome.length === 0) return undefined
+  return createDshRuntimeTargetBinding({ baseUrl, dshHome })
 }
 
 interface NativeContractResolvers {
@@ -148,7 +169,11 @@ export class ToolchainService extends Service {
     if (execution === undefined) return undefined
     const registry = inspectFromContext(ctx)
     if (registry === undefined) return undefined
-    return createDshLiveContractEnrichment({ registry, execution, digest: this.digest })
+    const enrichment = createDshLiveContractEnrichment({ registry, execution, digest: this.digest })
+    if (enrichment === undefined) return undefined
+    const binding = runtimeTargetBindingFromContext(ctx)
+    if (binding === undefined) return undefined
+    return bindContractEnrichmentToRuntimeTarget(enrichment, binding)
   }
 
   private searchContractsNative(
