@@ -557,8 +557,21 @@ async function discoverDshAuthorityClosure(
 
 function collectExportTypePaths(value: unknown, result: Set<string>): void {
   if (!isRecord(value)) return
-  if (typeof value.types === 'string' && value.types.length > 0) result.add(value.types)
-  for (const child of Object.values(value)) collectExportTypePaths(child, result)
+  const entries = Object.entries(value)
+  const hasSubpathKeys = entries.some(([key]) => key.startsWith('.'))
+  for (const [key, child] of entries) {
+    if (hasSubpathKeys && key.includes('*')) continue
+    if (
+      key === 'types'
+      && typeof child === 'string'
+      && child.length > 0
+      && !child.includes('*')
+    ) {
+      result.add(child)
+      continue
+    }
+    collectExportTypePaths(child, result)
+  }
 }
 
 function declarationEntrypoints(manifest: Record<string, unknown>): readonly string[] {
