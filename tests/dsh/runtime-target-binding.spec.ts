@@ -113,8 +113,10 @@ describe('DSH runtime target binding', () => {
 
   it('rejects a different requested profile', async () => {
     const fixture = await createFixture()
-    const snapshot = structuredClone(fixture.snapshot)
-    snapshot.profile.name = 'headless'
+    const snapshot: TargetSnapshot = {
+      ...fixture.snapshot,
+      profile: { ...fixture.snapshot.profile, name: 'headless' },
+    }
     await expect(createBinding(fixture).matches(snapshot)).resolves.toBe(false)
   })
 
@@ -130,18 +132,25 @@ describe('DSH runtime target binding', () => {
     await mkdir(foreignDsh, { recursive: true })
     const foreignManifest = join(foreignDsh, 'package.json')
     await writeFile(foreignManifest, '{"name":"@deepseek-ai/dsh","version":"0.1.1-rc.2"}\n')
-    const snapshot = structuredClone(fixture.snapshot)
-    const manifest = snapshot.evidence.find(item => item.id === 'manifest:dsh')
-    if (manifest === undefined) throw new Error('fixture omitted DSH manifest evidence')
-    manifest.location = foreignManifest
+    const snapshot: TargetSnapshot = {
+      ...fixture.snapshot,
+      evidence: fixture.snapshot.evidence.map(item => item.id === 'manifest:dsh'
+        ? { ...item, location: foreignManifest }
+        : item),
+    }
 
     await expect(createBinding(fixture).matches(snapshot)).resolves.toBe(false)
   })
 
   it('rejects requested overlays because upstream exposes no immutable boot-time overlay identity', async () => {
     const fixture = await createFixture()
-    const snapshot = structuredClone(fixture.snapshot)
-    snapshot.profile.overlayPatchHashes.push('overlay-hash')
+    const snapshot: TargetSnapshot = {
+      ...fixture.snapshot,
+      profile: {
+        ...fixture.snapshot.profile,
+        overlayPatchHashes: [...fixture.snapshot.profile.overlayPatchHashes, 'overlay-hash'],
+      },
+    }
     await expect(createBinding(fixture).matches(snapshot)).resolves.toBe(false)
   })
 
