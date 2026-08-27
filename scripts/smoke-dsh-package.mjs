@@ -8,13 +8,14 @@ import { pathToFileURL } from 'node:url'
 
 export const DSH_SMOKE_VERSION = '0.1.1-rc.2'
 export const DSH_BOOT_PROBE_PROFILE = 'toolchain-smoke'
+export const DSH_LIVE_BOOT_PROBE_PROFILE = 'web'
 export const DSH_SMOKE_PROFILES = Object.freeze([
   Object.freeze({
     name: DSH_BOOT_PROBE_PROFILE,
     requiredBundles: Object.freeze(['@deepseek-ai/dsh-base']),
   }),
   Object.freeze({
-    name: 'web',
+    name: DSH_LIVE_BOOT_PROBE_PROFILE,
     requiredBundles: Object.freeze(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']),
   }),
 ])
@@ -30,6 +31,7 @@ const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/
 const CONTRACT_INDEX_FINGERPRINT = /^dsh-contract-index-v1:[0-9a-f]{64}$/
 const WEB_CONTRACT_ID = 'package:@deepseek-ai/dsh-tools'
 const WEB_CONTRACT_QUERY = 'ToolDefinition'
+const RUNTIME_TOOL_CONTRACT_ID = 'tool:host:toolchain_target_resolve'
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -133,7 +135,7 @@ export function assertWebContractIntelligence(search, inspect) {
 
 function verifyWebContractIntelligence(profileDir, home, dshPackageRoot, env) {
   const targetArgs = [
-    '--profile', 'web',
+    '--profile', DSH_LIVE_BOOT_PROBE_PROFILE,
     '--dsh-home', home,
     '--dsh-package-root', dshPackageRoot,
   ]
@@ -170,22 +172,31 @@ function verifyWebContractIntelligence(profileDir, home, dshPackageRoot, env) {
   assertWebContractIntelligence(search, inspect)
 }
 
-export async function createBootProbePackage(root) {
-  const probe = join(root, BOOT_PROBE_PACKAGE)
+export async function createBootProbePackage(root, options = {}) {
+  const packageName = options.packageName ?? BOOT_PROBE_PACKAGE
+  const includeInspectProviders = options.includeInspectProviders === true
+  const probe = join(root, packageName)
   await mkdir(probe, { recursive: true })
   await writeFile(join(probe, 'package.json'), JSON.stringify({
-    name: BOOT_PROBE_PACKAGE,
+    name: packageName,
     version: '0.0.0',
     private: true,
     type: 'module',
     exports: './probe.mjs',
     dsh: { bundle: { patch: './cordis.patch.yml' } },
   }, undefined, 2) + '\n')
-  await writeFile(join(probe, 'cordis.patch.yml'), `- insert:
-    - id: ${BOOT_PROBE_PACKAGE}
-      name: ${BOOT_PROBE_PACKAGE}
-`)
-  await writeFile(join(probe, 'probe.mjs'), `function renderedMatchesValue(result) {
+
+  const rows = [
+    ...(includeInspectProviders
+      ? ["    - id: dsh-toolchain-smoke-cordis\n      name: '@deepseek-ai/dsh-tool-cordis'"]
+      : []),
+    `    - id: ${packageName}\n      name: ${packageName}`,
+  ]
+  await writeFile(join(probe, 'cordis.patch.yml'), `- insert:\n${rows.join('\n')}\n`)
+
+  await writeFile(join(probe, 'probe.mjs'), `const RUNTIME_TOOL_CONTRACT_ID = ${JSON.stringify(RUNTIME_TOOL_CONTRACT_ID)}
+
+function renderedMatchesValue(result) {
   if (result?.isError) return false
   const rendered = result?.content?.find(block => block.type === 'text')
   if (rendered?.type !== 'text') return false
@@ -196,24 +207,29 @@ export async function createBootProbePackage(root) {
   }
 }
 
+function hasRuntimeToolEvidence(response) {
+  return response?.data?.evidence?.some(item =>
+    item.kind === 'runtime' && item.source === 'cordis-inspect:host/Tool/listTools') === true
+}
+
 export function apply(rootCtx) {
-  rootCtx.inject(['toolchain', 'tools'], (ctx) => {
+  rootCtx.inject(['toolchain', 'tools', 'agentLoop', 'agents'], (ctx) => {
     const appExit = ctx.get('appExit')
     if (typeof appExit !== 'function') throw new Error('DSH boot probe requires launcher-owned ctx.appExit')
 
     Promise.resolve().then(async () => {
       const dshHome = process.env.DSH_HOME
       const dshPackageRoot = process.env.DSH_TOOLCHAIN_SMOKE_DSH_ROOT
-      if (!dshHome || !dshPackageRoot) throw new Error('DSH boot probe requires target acquisition environment')
-
-      const request = {
-        profile: ${JSON.stringify(DSH_BOOT_PROBE_PROFILE)},
-        dshHome,
-        dshPackageRoot,
+      const profile = process.env.DSH_TOOLCHAIN_SMOKE_PROFILE
+      if (!dshHome || !dshPackageRoot || !profile) {
+        throw new Error('DSH boot probe requires target acquisition environment and profile identity')
       }
+
+      const request = { profile, dshHome, dshPackageRoot }
       const descriptor = ctx.toolchain.describe()
       const service = await ctx.toolchain.resolveTarget(request, 'dsh-smoke-service')
-      const schemas = ctx.tools.schemas()
+      const agent = ctx.agentLoop.create('dsh-toolchain-smoke-agent-' + profile)
+      const schemas = ctx.tools.schemas(agent)
       const targetVisible = schemas.some(schema => schema.name === 'toolchain_target_resolve')
       const contractSearchVisible = schemas.some(schema => schema.name === 'toolchain_contract_search')
       const contractInspectVisible = schemas.some(schema => schema.name === 'toolchain_contract_inspect')
@@ -222,18 +238,26 @@ export function apply(rootCtx) {
         callId: 'dsh-toolchain-smoke-native',
         name: 'toolchain_target_resolve',
         arguments: request,
+        agent,
         signal: new AbortController().signal,
       })
+
+      const searchRequest = {
+        target: request,
+        query: 'toolchain_target_resolve',
+        kinds: ['tool'],
+        limit: 5,
+      }
+      const offlineSearch = await ctx.toolchain.searchContracts(searchRequest, 'dsh-smoke-offline-contract-search')
+      if (offlineSearch.status !== 'ok') {
+        throw new Error('DSH offline contract search failed: ' + JSON.stringify(offlineSearch))
+      }
 
       const contractSearchResult = await ctx.tools.execute({
         callId: 'dsh-toolchain-smoke-contract-search',
         name: 'toolchain_contract_search',
-        arguments: {
-          target: request,
-          query: '@deepseek-ai/dsh',
-          kinds: ['package'],
-          limit: 5,
-        },
+        arguments: searchRequest,
+        agent,
         signal: new AbortController().signal,
       })
       const contractIndexFingerprint = contractSearchResult.isError
@@ -243,19 +267,31 @@ export function apply(rootCtx) {
         throw new Error('DSH contract search did not return a contract index fingerprint: ' + JSON.stringify(contractSearchResult))
       }
 
-      const contractInspectResult = await ctx.tools.execute({
-        callId: 'dsh-toolchain-smoke-contract-inspect',
-        name: 'toolchain_contract_inspect',
-        arguments: {
-          target: request,
-          contractIndexFingerprint,
-          contractId: 'package:@deepseek-ai/dsh',
-        },
-        signal: new AbortController().signal,
-      })
+      const foundRuntimeTool = contractSearchResult.isError
+        ? false
+        : contractSearchResult.value?.data?.matches?.some(match => match.id === RUNTIME_TOOL_CONTRACT_ID) === true
+      const contractInspectResult = foundRuntimeTool
+        ? await ctx.tools.execute({
+            callId: 'dsh-toolchain-smoke-contract-inspect',
+            name: 'toolchain_contract_inspect',
+            arguments: {
+              target: request,
+              contractIndexFingerprint,
+              contractId: 'tool:host:toolchain_target_resolve',
+            },
+            agent,
+            signal: new AbortController().signal,
+          })
+        : undefined
 
       const receipt = {
+        profile,
         descriptor,
+        agent: {
+          id: String(agent.id),
+          registered: ctx.agents.get(agent.id) === agent,
+        },
+        inspectProviderAvailable: ctx.get('cordisInspect') !== undefined,
         service: {
           status: service.status,
           snapshotFingerprint: service.snapshotFingerprint,
@@ -267,28 +303,36 @@ export function apply(rootCtx) {
           snapshotFingerprint: nativeResult.isError ? undefined : nativeResult.value?.snapshotFingerprint,
           renderedMatchesValue: renderedMatchesValue(nativeResult),
         },
+        offlineSearch: {
+          status: offlineSearch.status,
+          contractIndexFingerprint: offlineSearch.data.contractIndexFingerprint,
+          foundRuntimeTool: offlineSearch.data.matches.some(match => match.id === RUNTIME_TOOL_CONTRACT_ID),
+        },
         contractSearch: {
           visible: contractSearchVisible,
           isError: contractSearchResult.isError,
           status: contractSearchResult.isError ? undefined : contractSearchResult.value?.status,
           snapshotFingerprint: contractSearchResult.isError ? undefined : contractSearchResult.value?.snapshotFingerprint,
           contractIndexFingerprint,
-          foundDshPackage: contractSearchResult.isError
-            ? false
-            : contractSearchResult.value?.data?.matches?.some(match => match.id === 'package:@deepseek-ai/dsh') === true,
+          foundRuntimeTool,
+          runtimeEvidence: contractSearchResult.isError ? false : hasRuntimeToolEvidence(contractSearchResult.value),
           renderedMatchesValue: renderedMatchesValue(contractSearchResult),
         },
-        contractInspect: {
-          visible: contractInspectVisible,
-          isError: contractInspectResult.isError,
-          status: contractInspectResult.isError ? undefined : contractInspectResult.value?.status,
-          snapshotFingerprint: contractInspectResult.isError ? undefined : contractInspectResult.value?.snapshotFingerprint,
-          contractIndexFingerprint: contractInspectResult.isError
-            ? undefined
-            : contractInspectResult.value?.data?.contractIndexFingerprint,
-          contractId: contractInspectResult.isError ? undefined : contractInspectResult.value?.data?.contract?.id,
-          renderedMatchesValue: renderedMatchesValue(contractInspectResult),
-        },
+        contractInspect: contractInspectResult === undefined
+          ? null
+          : {
+              visible: contractInspectVisible,
+              isError: contractInspectResult.isError,
+              status: contractInspectResult.isError ? undefined : contractInspectResult.value?.status,
+              snapshotFingerprint: contractInspectResult.isError ? undefined : contractInspectResult.value?.snapshotFingerprint,
+              contractIndexFingerprint: contractInspectResult.isError
+                ? undefined
+                : contractInspectResult.value?.data?.contractIndexFingerprint,
+              contractId: contractInspectResult.isError ? undefined : contractInspectResult.value?.data?.contract?.id,
+              availability: contractInspectResult.isError ? undefined : contractInspectResult.value?.data?.contract?.availability,
+              runtimeEvidence: contractInspectResult.isError ? false : hasRuntimeToolEvidence(contractInspectResult.value),
+              renderedMatchesValue: renderedMatchesValue(contractInspectResult),
+            },
       }
       process.stdout.write(${JSON.stringify(BOOT_PROBE_MARKER)} + JSON.stringify(receipt) + '\\n')
       appExit(0)
@@ -302,7 +346,7 @@ export function apply(rootCtx) {
   return probe
 }
 
-export function assertBootProbeOutput(output) {
+export function assertBootProbeOutput(output, options = {}) {
   const line = output
     .split(/\r?\n/)
     .find(candidate => candidate.startsWith(BOOT_PROBE_MARKER))
@@ -317,8 +361,16 @@ export function assertBootProbeOutput(output) {
     throw new Error('DSH smoke: boot probe emitted an invalid target/contract receipt', { cause })
   }
 
+  const profile = options.profile
+  const expectLive = options.expectLive === true
+  if (typeof profile !== 'string' || receipt?.profile !== profile) {
+    throw new Error(`DSH smoke: boot probe target profile mismatch ${JSON.stringify(receipt?.profile)}`)
+  }
   if (JSON.stringify(receipt?.descriptor) !== JSON.stringify(EXPECTED_DESCRIPTOR)) {
     throw new Error(`DSH smoke: boot probe observed unexpected descriptor ${JSON.stringify(receipt?.descriptor)}`)
+  }
+  if (typeof receipt?.agent?.id !== 'string' || receipt.agent.registered !== true) {
+    throw new Error(`DSH smoke: real DSH Agent was not registered ${JSON.stringify(receipt?.agent)}`)
   }
   if (
     receipt?.service?.status !== 'ok'
@@ -342,6 +394,15 @@ export function assertBootProbeOutput(output) {
   }
 
   if (
+    receipt?.offlineSearch?.status !== 'ok'
+    || typeof receipt.offlineSearch.contractIndexFingerprint !== 'string'
+    || !CONTRACT_INDEX_FINGERPRINT.test(receipt.offlineSearch.contractIndexFingerprint)
+    || receipt.offlineSearch.foundRuntimeTool !== false
+  ) {
+    throw new Error(`DSH smoke: offline Contract baseline unexpectedly contains live Tool evidence ${JSON.stringify(receipt?.offlineSearch)}`)
+  }
+
+  if (
     receipt?.contractSearch?.visible !== true
     || receipt.contractSearch.isError !== false
     || receipt.contractSearch.status !== 'ok'
@@ -350,10 +411,31 @@ export function assertBootProbeOutput(output) {
     || receipt.contractSearch.snapshotFingerprint !== receipt.service.snapshotFingerprint
     || typeof receipt.contractSearch.contractIndexFingerprint !== 'string'
     || !CONTRACT_INDEX_FINGERPRINT.test(receipt.contractSearch.contractIndexFingerprint)
-    || receipt.contractSearch.foundDshPackage !== true
     || receipt.contractSearch.renderedMatchesValue !== true
   ) {
-    throw new Error(`DSH smoke: native contract search was not visible/executable ${JSON.stringify(receipt?.contractSearch)}`)
+    throw new Error(`DSH smoke: native Contract search was not visible/executable ${JSON.stringify(receipt?.contractSearch)}`)
+  }
+
+  if (!expectLive) {
+    if (
+      receipt.inspectProviderAvailable !== false
+      || receipt.contractSearch.foundRuntimeTool !== false
+      || receipt.contractSearch.runtimeEvidence !== false
+      || receipt.contractSearch.contractIndexFingerprint !== receipt.offlineSearch.contractIndexFingerprint
+      || receipt.contractInspect !== null
+    ) {
+      throw new Error(`DSH smoke: Agent-backed offline fallback diverged without Inspect ${JSON.stringify(receipt)}`)
+    }
+    return
+  }
+
+  if (
+    receipt.inspectProviderAvailable !== true
+    || receipt.contractSearch.foundRuntimeTool !== true
+    || receipt.contractSearch.runtimeEvidence !== true
+    || receipt.contractSearch.contractIndexFingerprint === receipt.offlineSearch.contractIndexFingerprint
+  ) {
+    throw new Error(`DSH smoke: live Contract search did not add Agent-scoped runtime evidence ${JSON.stringify(receipt?.contractSearch)}`)
   }
 
   if (
@@ -366,11 +448,38 @@ export function assertBootProbeOutput(output) {
     || typeof receipt.contractInspect.contractIndexFingerprint !== 'string'
     || !CONTRACT_INDEX_FINGERPRINT.test(receipt.contractInspect.contractIndexFingerprint)
     || receipt.contractInspect.contractIndexFingerprint !== receipt.contractSearch.contractIndexFingerprint
-    || receipt.contractInspect.contractId !== 'package:@deepseek-ai/dsh'
+    || receipt.contractInspect.contractId !== RUNTIME_TOOL_CONTRACT_ID
+    || receipt.contractInspect.availability !== 'available'
+    || receipt.contractInspect.runtimeEvidence !== true
     || receipt.contractInspect.renderedMatchesValue !== true
   ) {
-    throw new Error(`DSH smoke: native contract inspect did not preserve search/index continuity ${JSON.stringify(receipt?.contractInspect)}`)
+    throw new Error(`DSH smoke: live Contract inspect did not preserve Agent/index/runtime-evidence continuity ${JSON.stringify(receipt?.contractInspect)}`)
   }
+}
+
+async function installProbe(runner, profile, probe, env) {
+  run('pnpm', [
+    'exec', 'dsh', 'plugin', '--profile', profile,
+    'add', '--ignore-scripts', probe,
+  ], {
+    cwd: runner,
+    env,
+    timeout: 300_000,
+  })
+}
+
+function runBootProbe(runner, profile, env, expectLive) {
+  const appArgs = profile === DSH_LIVE_BOOT_PROBE_PROFILE ? ['--no-open', '--port', '0'] : []
+  const output = run('pnpm', [
+    'exec', 'dsh', '--profile', profile,
+    ...appArgs,
+  ], {
+    cwd: runner,
+    env: { ...env, DSH_TOOLCHAIN_SMOKE_PROFILE: profile },
+    capture: true,
+    timeout: 120_000,
+  })
+  assertBootProbeOutput(output, { profile, expectLive })
 }
 
 export async function smokeDshPackage(tarballPath, options = {}) {
@@ -424,32 +533,34 @@ export async function smokeDshPackage(tarballPath, options = {}) {
       assertDumpConfig(dump)
     }
 
-    if (profiles.some(profile => profile.name === 'web')) {
-      verifyWebContractIntelligence(join(home, 'profiles', 'web'), home, dshPackageRoot, env)
+    if (profiles.some(profile => profile.name === DSH_LIVE_BOOT_PROBE_PROFILE)) {
+      verifyWebContractIntelligence(
+        join(home, 'profiles', DSH_LIVE_BOOT_PROBE_PROFILE),
+        home,
+        dshPackageRoot,
+        env,
+      )
     }
 
-    const probe = await createBootProbePackage(root)
-    run('pnpm', [
-      'exec', 'dsh', 'plugin', '--profile', DSH_BOOT_PROBE_PROFILE,
-      'add', '--ignore-scripts', probe,
-    ], {
-      cwd: runner,
-      env,
-      timeout: 300_000,
-    })
+    if (profiles.some(profile => profile.name === DSH_BOOT_PROBE_PROFILE)) {
+      const negativeProbe = await createBootProbePackage(root, {
+        packageName: `${BOOT_PROBE_PACKAGE}-offline`,
+      })
+      await installProbe(runner, DSH_BOOT_PROBE_PROFILE, negativeProbe, env)
+      runBootProbe(runner, DSH_BOOT_PROBE_PROFILE, env, false)
+    }
 
-    const bootOutput = run('pnpm', [
-      'exec', 'dsh', '--profile', DSH_BOOT_PROBE_PROFILE,
-    ], {
-      cwd: runner,
-      env,
-      capture: true,
-      timeout: 120_000,
-    })
-    assertBootProbeOutput(bootOutput)
+    if (profiles.some(profile => profile.name === DSH_LIVE_BOOT_PROBE_PROFILE)) {
+      const liveProbe = await createBootProbePackage(root, {
+        packageName: `${BOOT_PROBE_PACKAGE}-live`,
+        includeInspectProviders: true,
+      })
+      await installProbe(runner, DSH_LIVE_BOOT_PROBE_PROFILE, liveProbe, env)
+      runBootProbe(runner, DSH_LIVE_BOOT_PROBE_PROFILE, env, true)
+    }
 
     process.stdout.write(
-      `DSH package smoke: ${version} profiles ${profiles.map(profile => profile.name).join(', ')} composition + clean Web ToolDefinition contract search/inspect + live target parity + contract ToolRuntime search/inspect verified\n`,
+      `DSH package smoke: ${version} profiles ${profiles.map(profile => profile.name).join(', ')} composition + clean Web ToolDefinition contract search/inspect + Agent-backed missing-Inspect fallback + exact-target live Host Tool Inspect search/inspect verified\n`,
     )
   } finally {
     await rm(root, { recursive: true, force: true })

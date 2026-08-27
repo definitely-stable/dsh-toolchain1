@@ -14,6 +14,8 @@ export type ContractAcquisitionErrorCode =
   | 'CONTRACT_MANIFEST_INVALID'
   | 'CONTRACT_DECLARATION_INVALID'
   | 'CONTRACT_DECLARATION_LIMIT_EXCEEDED'
+  | 'CONTRACT_LIVE_EVIDENCE_INVALID'
+  | 'CONTRACT_LIVE_EVIDENCE_LIMIT_EXCEEDED'
 
 export class ContractAcquisitionError extends Error {
   readonly code: ContractAcquisitionErrorCode
@@ -39,6 +41,11 @@ export interface AcquiredContractFacts {
 
 export interface ContractAcquisitionPort {
   acquire(snapshot: TargetSnapshot): Promise<AcquiredContractFacts>
+}
+
+/** Optional invocation-scoped facts supplied by a runtime integration. */
+export interface ContractEnrichmentPort {
+  enrich(snapshot: TargetSnapshot): Promise<AcquiredContractFacts>
 }
 
 export interface ContractIndex {
@@ -138,6 +145,115 @@ function freezeContract(contract: ContractDefinition): ContractDefinition {
     ...(contract.summary === undefined ? {} : { summary: contract.summary }),
     facts,
     evidenceIds,
+  })
+}
+
+function sameEvidence(left: Evidence, right: Evidence): boolean {
+  return left.id === right.id
+    && left.kind === right.kind
+    && left.strength === right.strength
+    && left.source === right.source
+    && left.contentHash === right.contentHash
+    && left.location === right.location
+}
+
+function mergedAvailability(
+  left: ContractDefinition['availability'],
+  right: ContractDefinition['availability'],
+  contractId: string,
+): ContractDefinition['availability'] {
+  if (left === right) return left
+  if (left === 'unknown') return right
+  if (right === 'unknown') return left
+  throw new ContractAcquisitionError(
+    'CONTRACT_LIVE_EVIDENCE_INVALID',
+    `Contract ${contractId} has conflicting live availability observations.`,
+  )
+}
+
+function mergedSummary(
+  left: string | undefined,
+  right: string | undefined,
+  contractId: string,
+): string | undefined {
+  if (left === undefined) return right
+  if (right === undefined || left === right) return left
+  throw new ContractAcquisitionError(
+    'CONTRACT_LIVE_EVIDENCE_INVALID',
+    `Contract ${contractId} has conflicting declared/live summaries.`,
+  )
+}
+
+function mergedFacts(left: readonly ContractFact[], right: readonly ContractFact[]): ContractFact[] {
+  const facts = new Map<string, { key: string; value: string; evidenceIds: string[] }>()
+  for (const fact of [...left, ...right]) {
+    const identity = `${fact.key}\u0000${fact.value}`
+    const current = facts.get(identity)
+    if (current === undefined) {
+      facts.set(identity, { key: fact.key, value: fact.value, evidenceIds: [...fact.evidenceIds] })
+    } else {
+      current.evidenceIds.push(...fact.evidenceIds)
+    }
+  }
+  return [...facts.values()].map(fact => {
+    const ids = sortedUnique(fact.evidenceIds)
+    const first = ids[0]
+    if (first === undefined) throw new Error(`Contract fact ${fact.key} must reference evidence`)
+    return { key: fact.key, value: fact.value, evidenceIds: [first, ...ids.slice(1)] }
+  })
+}
+
+function mergeContract(left: ContractDefinition, right: ContractDefinition): ContractDefinition {
+  if (
+    left.kind !== right.kind
+    || left.name !== right.name
+    || left.qualifiedName !== right.qualifiedName
+  ) {
+    throw new ContractAcquisitionError(
+      'CONTRACT_LIVE_EVIDENCE_INVALID',
+      `Contract ${left.id} has conflicting declared/live identity fields.`,
+    )
+  }
+  const summary = mergedSummary(left.summary, right.summary, left.id)
+  return {
+    id: left.id,
+    kind: left.kind,
+    name: left.name,
+    qualifiedName: left.qualifiedName,
+    availability: mergedAvailability(left.availability, right.availability, left.id),
+    ...(summary === undefined ? {} : { summary }),
+    facts: mergedFacts(left.facts, right.facts),
+    evidenceIds: sortedUnique([...left.evidenceIds, ...right.evidenceIds]),
+  }
+}
+
+/** Deterministically combine static acquisition with optional runtime evidence. */
+export function mergeAcquiredContractFacts(
+  base: AcquiredContractFacts,
+  enrichment: AcquiredContractFacts,
+): AcquiredContractFacts {
+  const evidence = new Map<string, Evidence>()
+  for (const item of [...base.evidence, ...enrichment.evidence]) {
+    const current = evidence.get(item.id)
+    if (current === undefined) {
+      evidence.set(item.id, item)
+    } else if (!sameEvidence(current, item)) {
+      throw new ContractAcquisitionError(
+        'CONTRACT_LIVE_EVIDENCE_INVALID',
+        `Contract evidence id ${item.id} has conflicting contents.`,
+      )
+    }
+  }
+
+  const contracts = new Map<string, ContractDefinition>()
+  for (const contract of [...base.contracts, ...enrichment.contracts]) {
+    const current = contracts.get(contract.id)
+    contracts.set(contract.id, current === undefined ? contract : mergeContract(current, contract))
+  }
+
+  return Object.freeze({
+    evidence: Object.freeze([...evidence.values()]),
+    contracts: Object.freeze([...contracts.values()]),
   })
 }
 

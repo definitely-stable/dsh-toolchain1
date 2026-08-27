@@ -20,139 +20,100 @@ The first intended user-facing product is **Exact Target Plugin Check**: one com
 
 ## M0 — Architecture, Governance and Contract Foundation
 
+**Status:** implemented and merged.
+
 **Goal:** make the design executable enough that implementation cannot silently redefine the product, while proving the canonical distribution really is a DSH bundle and repository/release policy is ready for real code.
 
-Capabilities:
-- Toolchain Protocol v1 baseline, schemas, and examples;
-- architecture/security/verification specifications and ADRs;
-- contribution policy shared by humans and AI plus PR/Issue templates;
-- technical development/release/publication policy;
-- one-package TypeScript workspace with explicit kernel/DSH Host/CLI/MCP build faces;
-- installable DSH bundle skeleton and `ToolchainService` capability boundary;
-- CLI/MCP entrypoint skeletons that route through the same application layer;
-- exact Node/pnpm baseline and dependency-ownership policy;
-- schema/type generation and generated-file freshness checks;
-- closed-world architecture dependency fitness checks;
-- contract/schema conformance CI;
-- least-privilege GitHub Actions policy with reviewed SHA-pinned third-party actions where required;
-- Dependabot configuration introduced together with real manifests/workflows, not before them.
-
-Exit criteria:
-- no unresolved normative placeholders;
-- every example validates against Protocol v1 schemas;
-- contribution/security/development policies do not contradict architecture/spec/ADR sources;
-- the package can be installed by DSH as the canonical product shell without requiring a daemon;
-- DSH Host, CLI, and MCP build faces depend on the kernel and not vice versa;
-- DSH/Cordis identity-sensitive host packages are enforced as peer + dev dependencies rather than nested runtime copies;
-- schema/generated-type freshness is CI-enforced;
-- prohibited dependency directions fail CI;
-- CI workflows declare explicit least-privilege permissions;
-- the exact packed artifact is manifest-checked, installed by a throwaway consumer, and composed in minimal + shipped Web DSH profiles.
-
-Non-goals: DSH contract search, candidate runtime verification, DSH Web UI, npm publication from the private incubator, public branch rulesets before their required checks exist.
+Capabilities and exit criteria are implemented by the merged foundation slices: Protocol/schema generation and conformance, closed-world architecture fitness, package/manifest truth, exact `.tgz` consumer/composition proofs, least-privilege CI, and DSH/Cordis host-owned runtime identity policy.
 
 ## M1 — Target Intelligence
 
-**Goal:** identify the exact installed DSH target reproducibly and give later operations one stable identity to bind to.
-
 **Status:** implemented and merged.
 
-Capabilities:
-- canonical `TargetResolveRequest` / `TargetResolveResult` rather than speculative future request models;
-- installed DSH/profile/package discovery with no active-profile mutation;
-- normalized `TargetSnapshot` and explicit evidence;
-- complete current DSH composition identity through `TargetSemanticProjectionV2` + `dsh-target-v2:<sha256>` from ADR-0007;
-- ordered bundle patch hashes, profile patch hash, home patch hash and ordered invocation-overlay hashes without putting machine paths into semantic identity;
-- first real acquisition port in the internal application kernel;
-- initial CLI `target resolve` projection;
-- deterministic no-hint DSH discovery when Toolchain and DSH share a real Node package graph, while preserving explicit `dshPackageRoot` as the escape hatch for detached inspection;
-- fixture coverage across path-independent copies, bundle/profile/home/overlay changes, runtime changes, and more than one DSH layout/train;
-- packaged DSH real-boot/`ctx.toolchain` visibility smoke as a runtime integration hardening gate.
+**Goal:** identify the exact installed DSH target reproducibly and give later operations one stable identity to bind to.
 
-Exit criteria:
-- compatibility-relevant fixture changes alter the fingerprint;
-- irrelevant absolute paths/timestamps do not;
-- bundle order and bundle-patch bytes are fingerprint-sensitive;
-- profile patch, home patch and ordered invocation overlays are fingerprint-sensitive;
-- discovery resolves exact package versions rather than declared ranges;
-- read-only discovery performs no active-profile mutation or discovery-time healing;
-- one real current DSH target and one older supported target resolve through the same normalized model;
-- the first target-resolution contract is closed/typed without pre-designing M2–M4 payloads;
-- the exact packed CLI proves `dshPackageRoot` is truly optional in a supported co-install package graph;
-- real packaged Toolchain boot proves the service is visible through a live DSH seam.
+`TargetSemanticProjectionV2` / `dsh-target-v2:<sha256>` binds exact DSH/runtime coordinates, ordered bundle identities + patch hashes, profile dependencies, profile/home patch hashes and invocation overlays while excluding machine paths/timestamps. Target acquisition is read-only and proves no-hint package-graph discovery plus published current/older DSH train compatibility.
 
 ### M1.1 — Target frontend parity
 
-**Goal:** make the installed DSH Plugin and generic agent integration useful immediately after the CLI vertical slice without creating another target implementation.
-
 **Status:** implemented and merged via PR #24 / Issue #25.
 
-Capabilities:
-- one shared `resolveTargetResponse()` application path for success and expected `TARGET_*` acquisition failures;
-- `ctx.toolchain.resolveTarget()` backed by the existing application-kernel use case;
-- one deliberately small lifecycle-owned native DSH model-facing `toolchain_target_resolve` tool;
-- raw native-tool input validation at the DSH transport boundary without bundling a second `@deepseek-ai/dsh-tools` runtime;
-- MCP `target.resolve` with Protocol v1 structured results and validators projected from Protocol JSON Schema;
-- parity tests proving CLI / native DSH tool / MCP project the same success/failure semantics apart from transport correlation IDs;
-- exact packed-artifact live DSH proof that Service resolution and real host-owned `ctx.tools.execute()` return the same `dsh-target-v2` fingerprint.
-
-Exit criteria:
-- no frontend reimplements target acquisition, normalization, fingerprinting, or expected target diagnostic mapping;
-- DSH Plugin users can resolve a target through the installed plugin rather than shelling out to a separate implementation;
-- native tool registration follows the lifecycle of host `ctx.tools` and does not create an identity-split tools runtime;
-- MCP clients obtain the same snapshot without a transport-owned DTO;
-- current upstream absence of a supported active-profile capability is handled explicitly: `profile` remains an argument rather than an argv/PATH heuristic;
-- exact `.tgz` boot proves native tool visibility/execution through the real ToolRuntime and Service/native fingerprint equality;
-- adding the projections does not broaden M2 contract vocabulary prematurely.
+CLI, installed `ctx.toolchain`, native `toolchain_target_resolve`, and MCP `target.resolve` share the same application semantics and Protocol DTOs. Exact packed-artifact CI proves native ToolRuntime execution without bundling a second identity-sensitive DSH tools runtime.
 
 ## M2 — Contract Intelligence
 
-**Goal:** let an agent discover exact DSH capabilities without loading the complete catalog or guessing from model memory.
+**Goal:** let an agent discover exact DSH capabilities progressively against the exact M1 target, with evidence and a content-addressed Contract Index rather than model-memory guesses.
+
+Parent Issue #28 remains open until all three M2 slices meet their exit criteria.
 
 ### M2.1 — Offline target-bound Contract Index
 
-**Status:** implementation and verification complete under Issue #29; GitHub tracks review/merge state.
+**Status:** implemented and merged via PR #30 / Issue #29.
 
 Capabilities:
-- installed package-manifest and public TypeScript declaration evidence acquired from the exact M1 target without executing package JavaScript;
-- normalized contract model separating declared capability from live availability; offline availability remains `unknown`;
-- deterministic `dsh-contract-index-v1:<sha256>` from ADR-0008, separately bound to the M1 target fingerprint plus consumed evidence/content hashes and normalized semantics;
-- same-version declaration drift changes Contract Index identity without pretending `dsh-target-v2` changed;
-- one exact package Contract when one canonical installed package appears through multiple DSH composition coordinates, while preserving every captured manifest evidence alias;
-- progressive deterministic `contract.search` with compact references/ranking metadata;
-- stale-safe `contract.inspect` requiring the caller's exact Contract Index fingerprint;
-- evidence/provenance for returned contract facts;
-- shared kernel response paths projected through CLI, `ctx.toolchain`, native DSH ToolRuntime, and MCP;
-- cross-frontend search/stale parity tests;
-- exact packed `.tgz` live DSH proof of native target resolution plus real ToolRuntime contract search→inspect with one target and Contract Index identity.
+- read-only installed package-manifest and public TypeScript declaration acquisition from the exact M1 target without executing package JavaScript;
+- normalized contracts separating declared capability from live availability; offline availability is `unknown`;
+- deterministic `dsh-contract-index-v1:<sha256>` from ADR-0008, separately bound to target fingerprint, consumed evidence/content hashes and normalized semantics;
+- same-version evidence drift changes Contract Index identity without pretending `dsh-target-v2` changed;
+- progressive deterministic `contract.search` and stale-safe `contract.inspect` with evidence/provenance;
+- shared CLI / DSH Service/native / MCP application semantics;
+- exact `.tgz` real-DSH ToolRuntime search→inspect proof.
 
-Exit criteria:
-- package/type evidence is read-only and never executes candidate/package JavaScript;
-- machine paths/timestamps do not enter Contract Index identity;
-- package version or TargetFingerprint equality alone cannot validate same-version changed contract evidence;
-- offline declarations never become a false `available` claim;
-- stale target evidence returns `CONTRACT_EVIDENCE_STALE` rather than a mixed-epoch successful index;
-- stale caller Contract Index returns `CONTRACT_INDEX_STALE` without a contract payload;
-- CLI/native DSH/MCP share kernel semantics instead of duplicating ranking/acquisition logic;
-- exact `.tgz` boot proves `toolchain_contract_search` and `toolchain_contract_inspect` visibility/execution through the host-owned real ToolRuntime and search→inspect index continuity.
+### M2.2 — Agent-scoped Host Inspect enrichment
 
-### M2.2 — Live Inspect enrichment and evaluation
-
-**Status:** next Contract Intelligence slice; parent M2 tracking remains open.
+**Status:** implementation and corrective verification complete on PR #32; GitHub tracks review/merge state.
 
 Capabilities:
-- official DSH `ctx.cordisInspect` / `cordis_inspect_*` runtime evidence where the target exposes a real Agent-scoped Inspect seam;
-- target-bound live evidence merged into the existing normalized Contract Index rather than creating a parallel reflection identity;
-- explicit distinction between declared capability and observed `available` / `unavailable` runtime state;
-- additional generated catalog/config/source companion evidence only where it adds facts not already supported by official/public evidence and does not rely on private DSH internals;
-- AI evaluation against frozen real DSH development tasks.
+- real native DSH ToolExecution is projected to a new immutable `{ agent, signal }` boundary; no complete ToolExecution, dummy/global Agent, or DSH runtime DTO enters model/kernel;
+- official Host `cordisInspect` evidence joins the existing M2.1 index only in Agent-scoped native contract calls; CLI, MCP and ordinary Toolchain Service remain offline;
+- `Service.listService({})` and `Event.listEvents({})` contribute bounded authoritative generated-catalog facts with `availability = unknown`;
+- `Tool.listTools({})` contributes bounded Agent-scoped observed runtime Tool schemas with positive `availability = available`;
+- Client providers are out of this slice until deterministic page identity/lifetime semantics exist;
+- exact Service/Event detail is not fetched during inspect when that would change the index identity after search;
+- live provider/result/JSON/contract/fact/schema/method budgets fail loudly rather than silently truncate;
+- provider and semantic ordering use deterministic code-point/canonical JSON rules;
+- Inspect provider failures are mapped to Toolchain acquisition diagnostics while genuine cancellation remains cancellation;
+- per-call isolation, AbortSignal forwarding/quiescence, and Agent-identity-independent fingerprints are regression-tested;
+- offline+live merge preserves offline facts, upgrades only proven availability, fails closed on incompatible identity/evidence collisions, and changes index identity on consumed live semantic drift.
 
-Exit criteria:
-- Toolchain does not reimplement DSH reflection when official Inspect evidence is available;
-- live availability claims are backed by current runtime evidence and scoped correctly;
-- absence of live Inspect/Agent scope does not make M2.1 offline contract intelligence unusable;
-- live evidence participates in the same Contract Index identity/freshness model;
-- evaluation shows materially fewer invalid API guesses than static-doc/model-memory baseline.
+Runtime-target guard:
+- path/runtime/profile/home/install checks are eligibility only, not sufficient evidence by themselves;
+- `ToolchainService` captures one immutable M1 startup target fingerprint when it mounts in the running Host;
+- live evidence is permitted only when every later requested TargetSnapshot has the same fingerprint and the eligibility checks still match;
+- explicit un-attested overlays, missing baseline, foreign target, or same-path post-mount semantic drift fall back to offline **before** the first Inspect query;
+- this is a conservative drift guard, not a launcher-owned boot attestation. Current published DSH exposes no immutable running composition generation, so a narrow compose→Toolchain-mount TOCTOU window remains. A future authoritative launcher generation seam can strengthen this without weakening the fail-closed rule.
+
+Verification:
+- exact packed `dsh@0.1.1-rc.2` Web smoke creates a real registered Agent and proves Host Tool live evidence, offline/live Contract Index divergence, and native search→inspect continuity;
+- a real missing-Inspect probe proves offline fallback;
+- published `0.1.0-rc.8` remains an older target-resolution compatibility train;
+- upstream source `cd5ef814...` declares source version `0.1.2-alpha.1` and new `profile.patchReload`, but npm does not publish that version; Issue #33 owns the target-identity compatibility decision before support claims change.
+
+M2.2 exit criteria:
+- [x] narrow Agent/AbortSignal boundary and no dummy/global Agent;
+- [x] Host Service/Event/Tool normalization with correct provenance/availability semantics;
+- [x] deterministic bounded offline+live merge and fingerprint sensitivity;
+- [x] target mismatch/drift fails closed before Inspect;
+- [x] cancellation and concurrent Agent isolation proven;
+- [x] CLI/MCP/ordinary Service remain offline peers;
+- [x] exact packed real-Agent positive and missing-Inspect negative smokes on published current train;
+- [x] Node 22/24/26 plus Windows/macOS lanes green on corrective implementation HEADs;
+- [ ] PR #32 merged after exact final governance HEAD verification.
+
+### M2.3 — Frozen retrieval evaluation / milestone exit
+
+**Status:** not yet implemented; required after M2.2 before parent M2 can close.
+
+Goal:
+- freeze a small corpus of real DSH development questions/tasks with expected contracts and known-invalid guesses;
+- compare progressive Toolchain search→inspect against static-doc/model-memory baselines;
+- record deterministic Recall@k/MRR/no-result correctness and product-level invalid-API-guess/first-correct-contract outcomes;
+- add embeddings or more complex retrieval only if the frozen evaluation proves lexical progressive retrieval insufficient.
+
+M2 exit criteria:
+- M2.1 and M2.2 are merged and their exact artifact/native boundaries remain green;
+- frozen M2.3 evaluation demonstrates materially fewer invalid DSH API guesses than the baseline;
+- the evaluation evidence, not architectural optimism, decides whether further retrieval machinery is justified.
 
 ### First usable alpha gate — Exact Target Plugin Check
 

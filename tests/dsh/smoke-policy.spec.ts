@@ -106,34 +106,47 @@ describe('DSH package smoke policy', () => {
     })).toThrow(/evidence omitted/i)
   })
 
-  it('requires an actual DSH boot probe for target and contract ToolRuntime paths', () => {
+  it('requires actual DSH Agent-backed negative and live Host Inspect boot probes', () => {
     expect(smokeModule.DSH_BOOT_PROBE_PROFILE).toBe('toolchain-smoke')
+    expect(smokeModule.DSH_LIVE_BOOT_PROBE_PROFILE).toBe('web')
     expect(typeof smokeModule.createBootProbePackage).toBe('function')
     expect(typeof smokeModule.assertBootProbeOutput).toBe('function')
 
-    expect(smokeSource).toContain("rootCtx.inject(['toolchain', 'tools']")
-    expect(smokeSource).toContain('ctx.toolchain.describe()')
-    expect(smokeSource).toContain('ctx.toolchain.resolveTarget(')
-    expect(smokeSource).toContain('ctx.tools.schemas()')
-    expect(smokeSource).toContain('ctx.tools.execute({')
-    expect(smokeSource).toContain("name: 'toolchain_target_resolve'")
-    expect(smokeSource).toContain("name: 'toolchain_contract_search'")
-    expect(smokeSource).toContain("name: 'toolchain_contract_inspect'")
-    expect(smokeSource).toContain("contractId: 'package:@deepseek-ai/dsh'")
-    expect(smokeSource).toContain("ctx.get('appExit')")
-    expect(smokeSource).toContain("'exec', 'dsh', '--profile', DSH_BOOT_PROBE_PROFILE")
+    expect(smokeSource).toContain("rootCtx.inject(['toolchain', 'tools', 'agentLoop', 'agents']")
+    expect(smokeSource).toContain('ctx.agentLoop.create(')
+    expect(smokeSource).toContain('ctx.agents.get(agent.id) === agent')
+    expect(smokeSource).toContain('ctx.tools.schemas(agent)')
+    expect(smokeSource).toContain('ctx.toolchain.searchContracts(')
+    expect(smokeSource).toContain('agent,')
+    expect(smokeSource).toContain("query: 'toolchain_target_resolve'")
+    expect(smokeSource).toContain("kinds: ['tool']")
+    expect(smokeSource).toContain("contractId: 'tool:host:toolchain_target_resolve'")
+    expect(smokeSource).toContain("source === 'cordis-inspect:host/Tool/listTools'")
+    expect(smokeSource).toContain("'exec', 'dsh', '--profile', profile")
+    expect(smokeSource).toContain('runBootProbe(runner, DSH_BOOT_PROBE_PROFILE, env, false)')
+    expect(smokeSource).toContain('runBootProbe(runner, DSH_LIVE_BOOT_PROBE_PROFILE, env, true)')
   })
 
-  it('accepts only a boot receipt proving target parity and contract search-to-inspect continuity', () => {
-    const assertBootProbeOutput = smokeModule.assertBootProbeOutput as (output: string) => void
+  it('accepts only a live receipt proving Agent identity, runtime evidence, index drift, and inspect continuity', () => {
+    const assertBootProbeOutput = smokeModule.assertBootProbeOutput as (
+      output: string,
+      options: { profile: string; expectLive: boolean },
+    ) => void
     const fingerprint = `dsh-target-v2:${'a'.repeat(64)}`
-    const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
+    const offlineIndex = `dsh-contract-index-v1:${'b'.repeat(64)}`
+    const liveIndex = `dsh-contract-index-v1:${'c'.repeat(64)}`
     const receipt = {
+      profile: 'web',
       descriptor: {
         product: 'dsh-toolchain',
         version: '0.0.0',
         protocolVersion: '1',
       },
+      agent: {
+        id: 'dsh-toolchain-smoke-agent',
+        registered: true,
+      },
+      inspectProviderAvailable: true,
       service: {
         status: 'ok',
         snapshotFingerprint: fingerprint,
@@ -145,13 +158,19 @@ describe('DSH package smoke policy', () => {
         snapshotFingerprint: fingerprint,
         renderedMatchesValue: true,
       },
+      offlineSearch: {
+        status: 'ok',
+        contractIndexFingerprint: offlineIndex,
+        foundRuntimeTool: false,
+      },
       contractSearch: {
         visible: true,
         isError: false,
         status: 'ok',
         snapshotFingerprint: fingerprint,
-        contractIndexFingerprint,
-        foundDshPackage: true,
+        contractIndexFingerprint: liveIndex,
+        foundRuntimeTool: true,
+        runtimeEvidence: true,
         renderedMatchesValue: true,
       },
       contractInspect: {
@@ -159,29 +178,93 @@ describe('DSH package smoke policy', () => {
         isError: false,
         status: 'ok',
         snapshotFingerprint: fingerprint,
-        contractIndexFingerprint,
-        contractId: 'package:@deepseek-ai/dsh',
+        contractIndexFingerprint: liveIndex,
+        contractId: 'tool:host:toolchain_target_resolve',
+        availability: 'available',
+        runtimeEvidence: true,
         renderedMatchesValue: true,
       },
     }
 
     expect(() => assertBootProbeOutput(
       `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify(receipt)}\n`,
+      { profile: 'web', expectLive: true },
     )).not.toThrow()
     expect(() => assertBootProbeOutput(
       `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
         ...receipt,
-        nativeTool: { ...receipt.nativeTool, visible: false },
+        agent: { ...receipt.agent, registered: false },
       })}\n`,
-    )).toThrow(/native target tool/i)
+      { profile: 'web', expectLive: true },
+    )).toThrow(/Agent/i)
     expect(() => assertBootProbeOutput(
       `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
         ...receipt,
-        contractInspect: {
-          ...receipt.contractInspect,
-          contractIndexFingerprint: `dsh-contract-index-v1:${'c'.repeat(64)}`,
-        },
+        contractSearch: { ...receipt.contractSearch, contractIndexFingerprint: offlineIndex },
       })}\n`,
-    )).toThrow(/contract inspect/i)
+      { profile: 'web', expectLive: true },
+    )).toThrow(/live Contract search/i)
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
+        ...receipt,
+        contractInspect: { ...receipt.contractInspect, runtimeEvidence: false },
+      })}\n`,
+      { profile: 'web', expectLive: true },
+    )).toThrow(/live Contract inspect/i)
+  })
+
+  it('accepts the Agent-backed missing-Inspect path only when native and offline indexes stay identical', () => {
+    const assertBootProbeOutput = smokeModule.assertBootProbeOutput as (
+      output: string,
+      options: { profile: string; expectLive: boolean },
+    ) => void
+    const fingerprint = `dsh-target-v2:${'a'.repeat(64)}`
+    const offlineIndex = `dsh-contract-index-v1:${'b'.repeat(64)}`
+    const receipt = {
+      profile: 'toolchain-smoke',
+      descriptor: {
+        product: 'dsh-toolchain',
+        version: '0.0.0',
+        protocolVersion: '1',
+      },
+      agent: { id: 'dsh-toolchain-smoke-agent', registered: true },
+      inspectProviderAvailable: false,
+      service: { status: 'ok', snapshotFingerprint: fingerprint },
+      nativeTool: {
+        visible: true,
+        isError: false,
+        status: 'ok',
+        snapshotFingerprint: fingerprint,
+        renderedMatchesValue: true,
+      },
+      offlineSearch: {
+        status: 'ok',
+        contractIndexFingerprint: offlineIndex,
+        foundRuntimeTool: false,
+      },
+      contractSearch: {
+        visible: true,
+        isError: false,
+        status: 'ok',
+        snapshotFingerprint: fingerprint,
+        contractIndexFingerprint: offlineIndex,
+        foundRuntimeTool: false,
+        runtimeEvidence: false,
+        renderedMatchesValue: true,
+      },
+      contractInspect: null,
+    }
+
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify(receipt)}\n`,
+      { profile: 'toolchain-smoke', expectLive: false },
+    )).not.toThrow()
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
+        ...receipt,
+        contractSearch: { ...receipt.contractSearch, contractIndexFingerprint: `dsh-contract-index-v1:${'c'.repeat(64)}` },
+      })}\n`,
+      { profile: 'toolchain-smoke', expectLive: false },
+    )).toThrow(/offline fallback/i)
   })
 })

@@ -34,9 +34,60 @@ class TestToolsService extends Service {
   }
 }
 
+interface InspectQueryCall {
+  readonly platform: string
+  readonly providerId: string
+  readonly methodName: string
+  readonly input: unknown
+  readonly agent: unknown
+  readonly signal: AbortSignal
+}
+
+class TestCordisInspectService extends Service {
+  readonly calls: InspectQueryCall[] = []
+
+  constructor(ctx: Context) {
+    super(ctx, 'cordisInspect')
+  }
+
+  list(): unknown[] {
+    return [{
+      platform: 'host',
+      id: 'Service',
+      description: 'test generated Service API catalog',
+      methods: [{
+        name: 'listService',
+        description: 'test compact Service API catalog',
+        inputSchema: { type: 'object', additionalProperties: false },
+        outputSchema: { type: 'object' },
+      }],
+    }]
+  }
+
+  query(
+    platform: string,
+    providerId: string,
+    methodName: string,
+    input: unknown,
+    agent: unknown,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    this.calls.push({ platform, providerId, methodName, input, agent, signal })
+    return Promise.resolve({
+      mode: 'catalog',
+      services: [{
+        key: 'liveAlpha',
+        description: 'Alpha Service API contract from the generated Harness catalog.',
+        methods: [{ signature: 'ping(): string' }],
+      }],
+    })
+  }
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     tools: TestToolsService
+    cordisInspect: TestCordisInspectService
   }
 }
 
@@ -178,6 +229,35 @@ describe('native DSH Toolchain tools', () => {
 
     await toolsFiber.dispose()
     await toolchainFiber.dispose()
+  })
+
+  it('falls back offline when an Agent and Inspect exist but the running DSH target is not proven', async () => {
+    const ctx = new Context()
+    const inspectFiber = await ctx.plugin(TestCordisInspectService)
+    const toolchainFiber = await ctx.plugin(ToolchainService)
+    const toolsFiber = await ctx.plugin(TestToolsService)
+    const searchDefinition = ctx.tools.definitions.get('toolchain_contract_search')
+    if (searchDefinition === undefined) throw new Error('contract search tool was not registered')
+
+    const target = { profile: 'web', dshHome, dshPackageRoot }
+    const controller = new AbortController()
+    const agent = Object.freeze({ id: 'agent-unbound-runtime' })
+    const execution = Object.freeze({ agent, signal: controller.signal })
+
+    const search = await searchDefinition.execute({
+      target,
+      query: 'liveAlpha',
+      kinds: ['service'],
+    }, execution) as ContractSearchResponse
+
+    expect(search.status).toBe('ok')
+    if (search.status !== 'ok') throw new Error('contract search unexpectedly failed')
+    expect(search.data.matches).toEqual([])
+    expect(ctx.cordisInspect.calls).toEqual([])
+
+    await toolsFiber.dispose()
+    await toolchainFiber.dispose()
+    await inspectFiber.dispose()
   })
 
   it.each([

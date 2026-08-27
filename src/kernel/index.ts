@@ -29,9 +29,11 @@ import {
   ContractAcquisitionError,
   createContractIndex,
   inspectContractIndex,
+  mergeAcquiredContractFacts,
   searchContractIndex,
   type ContractAcquisitionErrorCode,
   type ContractAcquisitionPort,
+  type ContractEnrichmentPort,
   type ContractIndex,
 } from '../model/contract.js'
 import {
@@ -62,8 +64,8 @@ export interface ContractInspectOutcome {
 export interface ApplicationKernel {
   describe(): KernelDescriptor
   resolveTarget(request: TargetResolveRequest): Promise<TargetResolveResult>
-  searchContracts(request: ContractSearchRequest): Promise<ContractSearchOutcome>
-  inspectContract(request: ContractInspectRequest): Promise<ContractInspectOutcome>
+  searchContracts(request: ContractSearchRequest, enrichment?: ContractEnrichmentPort): Promise<ContractSearchOutcome>
+  inspectContract(request: ContractInspectRequest, enrichment?: ContractEnrichmentPort): Promise<ContractInspectOutcome>
 }
 
 export interface ApplicationKernelOptions {
@@ -190,11 +192,6 @@ function isStaleContractError(error: ContractOperationError): boolean {
   return error.code === 'CONTRACT_EVIDENCE_STALE' || error.code === 'CONTRACT_INDEX_STALE'
 }
 
-/**
- * Execute `target.resolve` and project expected acquisition failures into the
- * shared Protocol response. Frontends own correlation ids and transport
- * rendering only; unexpected infrastructure failures remain exceptions.
- */
 export async function resolveTargetResponse(
   kernel: ApplicationKernel,
   request: TargetResolveRequest,
@@ -213,7 +210,6 @@ export async function resolveTargetResponse(
     return response
   } catch (error) {
     if (!(error instanceof TargetAcquisitionError)) throw error
-
     const response: TargetResolveFailureResponse = {
       protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
       requestId,
@@ -228,9 +224,12 @@ export async function searchContractsResponse(
   kernel: ApplicationKernel,
   request: ContractSearchRequest,
   requestId: string,
+  enrichment?: ContractEnrichmentPort,
 ): Promise<ContractSearchResponse> {
   try {
-    const outcome = await kernel.searchContracts(request)
+    const outcome = enrichment === undefined
+      ? await kernel.searchContracts(request)
+      : await kernel.searchContracts(request, enrichment)
     const response: ContractSearchSuccessResponse = {
       protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
       requestId,
@@ -251,7 +250,6 @@ export async function searchContractsResponse(
       return response
     }
     if (!(error instanceof ContractOperationError)) throw error
-
     if (isStaleContractError(error)) {
       const response: ContractSearchStaleResponse = {
         protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
@@ -262,7 +260,6 @@ export async function searchContractsResponse(
       }
       return response
     }
-
     const response: ContractSearchFailureResponse = {
       protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
       requestId,
@@ -277,9 +274,12 @@ export async function inspectContractResponse(
   kernel: ApplicationKernel,
   request: ContractInspectRequest,
   requestId: string,
+  enrichment?: ContractEnrichmentPort,
 ): Promise<ContractInspectResponse> {
   try {
-    const outcome = await kernel.inspectContract(request)
+    const outcome = enrichment === undefined
+      ? await kernel.inspectContract(request)
+      : await kernel.inspectContract(request, enrichment)
     const response: ContractInspectSuccessResponse = {
       protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
       requestId,
@@ -300,7 +300,6 @@ export async function inspectContractResponse(
       return response
     }
     if (!(error instanceof ContractOperationError)) throw error
-
     if (isStaleContractError(error)) {
       const response: ContractInspectStaleResponse = {
         protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
@@ -311,7 +310,6 @@ export async function inspectContractResponse(
       }
       return response
     }
-
     const response: ContractInspectFailureResponse = {
       protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
       requestId,
@@ -333,10 +331,10 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
     return Object.freeze({ snapshot })
   }
 
-  async function buildContractIndex(request: TargetResolveRequest): Promise<{
-    readonly snapshot: TargetSnapshot
-    readonly index: ContractIndex
-  }> {
+  async function buildContractIndex(
+    request: TargetResolveRequest,
+    enrichment?: ContractEnrichmentPort,
+  ): Promise<{ readonly snapshot: TargetSnapshot; readonly index: ContractIndex }> {
     if (options.contractAcquisition === undefined) {
       throw new Error('Contract acquisition is not configured for this application kernel')
     }
@@ -344,6 +342,9 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
     let acquired
     try {
       acquired = await options.contractAcquisition.acquire(snapshot)
+      if (enrichment !== undefined) {
+        acquired = mergeAcquiredContractFacts(acquired, await enrichment.enrich(snapshot))
+      }
     } catch (error) {
       if (error instanceof ContractAcquisitionError) {
         throw wrapContractAcquisition(error, snapshot.fingerprint)
@@ -362,8 +363,11 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
   return Object.freeze({
     describe: () => descriptor,
     resolveTarget,
-    async searchContracts(request: ContractSearchRequest): Promise<ContractSearchOutcome> {
-      const { snapshot, index } = await buildContractIndex(request.target)
+    async searchContracts(
+      request: ContractSearchRequest,
+      enrichment?: ContractEnrichmentPort,
+    ): Promise<ContractSearchOutcome> {
+      const { snapshot, index } = await buildContractIndex(request.target, enrichment)
       const selection = searchContractIndex(index, request.query, request.kinds, request.limit ?? 10)
       return Object.freeze({
         snapshotFingerprint: snapshot.fingerprint,
@@ -374,8 +378,11 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
         }),
       })
     },
-    async inspectContract(request: ContractInspectRequest): Promise<ContractInspectOutcome> {
-      const { snapshot, index } = await buildContractIndex(request.target)
+    async inspectContract(
+      request: ContractInspectRequest,
+      enrichment?: ContractEnrichmentPort,
+    ): Promise<ContractInspectOutcome> {
+      const { snapshot, index } = await buildContractIndex(request.target, enrichment)
       if (index.fingerprint !== request.contractIndexFingerprint) {
         throw new ContractOperationError(
           'CONTRACT_INDEX_STALE',
@@ -383,7 +390,6 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
           snapshot.fingerprint,
         )
       }
-
       const selection = inspectContractIndex(index, request.contractId)
       if (selection === undefined) {
         throw new ContractOperationError(
@@ -392,7 +398,6 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
           snapshot.fingerprint,
         )
       }
-
       return Object.freeze({
         snapshotFingerprint: snapshot.fingerprint,
         data: Object.freeze({

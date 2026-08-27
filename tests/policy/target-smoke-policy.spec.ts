@@ -9,7 +9,7 @@ async function readRepo(path: string): Promise<string> {
 }
 
 describe('Target Intelligence smoke policy', () => {
-  it('covers the current and older DSH trains with one normalized target contract', async () => {
+  it('covers the current published and older DSH registry trains with one normalized target contract', async () => {
     const smoke = await import('../../scripts/smoke-target-resolve.mjs') as Record<string, unknown>
 
     expect(smoke.TARGET_SMOKE_DSH_VERSIONS).toEqual([

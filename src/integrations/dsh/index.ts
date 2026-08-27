@@ -12,6 +12,8 @@ import {
   searchContractsResponse,
   type KernelDescriptor,
 } from '../../kernel/index.js'
+import type { Sha256Port } from '../../model/digest.js'
+import type { ContractEnrichmentPort } from '../../model/contract.js'
 import type {
   ContractInspectRequest,
   ContractInspectResponse,
@@ -23,14 +25,24 @@ import type {
 import {
   createContractInspectToolDefinition,
   createContractSearchToolDefinition,
+  type DshContractToolExecutionContext,
 } from './contract-tool.js'
+import {
+  createDshLiveContractEnrichment,
+  type DshCordisInspectRegistryPort,
+} from './live-inspect.js'
+import {
+  bindContractEnrichmentToRuntimeTarget,
+  createDshRuntimeTargetBinding,
+  parseRunningDshProfileInvocation,
+  type DshRuntimeTargetBindingPort,
+} from './runtime-target-binding.js'
 import {
   createTargetResolveToolDefinition,
   type DshToolRegistryPort,
 } from './target-tool.js'
 
-function createNodeKernel() {
-  const digest = createNodeSha256Port()
+function createNodeKernel(digest: Sha256Port) {
   return createApplicationKernel({
     targetAcquisition: createDshFilesystemTargetAcquisition({ digest }),
     contractAcquisition: createDshContractFilesystemAcquisition({ digest }),
@@ -50,18 +62,94 @@ function toolsFromContext(ctx: Context): DshToolRegistryPort {
   return tools
 }
 
-function registerNativeTools(ctx: Context, tools: DshToolRegistryPort): () => void {
+function inspectFromContext(ctx: Context): DshCordisInspectRegistryPort | undefined {
+  const value = ctx.get('cordisInspect') as unknown
+  if (value === null || typeof value !== 'object') return undefined
+  const candidate = value as Partial<DshCordisInspectRegistryPort>
+  return typeof candidate.list === 'function' && typeof candidate.query === 'function'
+    ? candidate as DshCordisInspectRegistryPort
+    : undefined
+}
+
+interface RunningTargetContextIdentity {
+  readonly baseUrl: string
+  readonly dshHome: string
+}
+
+function runningTargetContextIdentity(ctx: Context): RunningTargetContextIdentity | undefined {
+  const root = (ctx as unknown as { readonly root?: { readonly baseUrl?: unknown } }).root
+  const baseUrl = root?.baseUrl
+  const dshHomePath = ctx.get('dshHomePath') as unknown
+  if (typeof baseUrl !== 'string' || typeof dshHomePath !== 'function') return undefined
+
+  let dshHome: unknown
+  try {
+    dshHome = (dshHomePath as () => unknown)()
+  } catch {
+    return undefined
+  }
+  return typeof dshHome === 'string' && dshHome.length !== 0
+    ? Object.freeze({ baseUrl, dshHome })
+    : undefined
+}
+
+async function captureStartupTargetFingerprint(
+  ctx: Context,
+  kernel: ReturnType<typeof createNodeKernel>,
+): Promise<string | undefined> {
+  const identity = runningTargetContextIdentity(ctx)
+  const launch = parseRunningDshProfileInvocation(process.argv)
+  if (identity === undefined || launch === undefined || launch.patches.length !== 0) return undefined
+
+  try {
+    const resolved = await kernel.resolveTarget({
+      profile: launch.profile,
+      dshHome: identity.dshHome,
+    })
+    return resolved.snapshot.fingerprint
+  } catch {
+    // A baseline that cannot be proven must disable live enrichment rather than
+    // weaken the runtime-target binding to path identity alone.
+    return undefined
+  }
+}
+
+function runtimeTargetBindingFromContext(
+  ctx: Context,
+  startupTargetFingerprint: Promise<string | undefined>,
+): DshRuntimeTargetBindingPort | undefined {
+  const identity = runningTargetContextIdentity(ctx)
+  if (identity === undefined) return undefined
+  return createDshRuntimeTargetBinding({
+    baseUrl: identity.baseUrl,
+    dshHome: identity.dshHome,
+    startupTargetFingerprint,
+  })
+}
+
+interface NativeContractResolvers {
+  search(
+    request: ContractSearchRequest,
+    execution?: DshContractToolExecutionContext,
+  ): Promise<ContractSearchResponse>
+  inspect(
+    request: ContractInspectRequest,
+    execution?: DshContractToolExecutionContext,
+  ): Promise<ContractInspectResponse>
+}
+
+function registerNativeTools(
+  ctx: Context,
+  tools: DshToolRegistryPort,
+  contracts: NativeContractResolvers,
+): () => void {
   const disposers: Array<() => void> = []
   try {
     disposers.push(tools.register(createTargetResolveToolDefinition(
       request => ctx.toolchain.resolveTarget(request),
     )))
-    disposers.push(tools.register(createContractSearchToolDefinition(
-      request => ctx.toolchain.searchContracts(request),
-    )))
-    disposers.push(tools.register(createContractInspectToolDefinition(
-      request => ctx.toolchain.inspectContract(request),
-    )))
+    disposers.push(tools.register(createContractSearchToolDefinition(contracts.search)))
+    disposers.push(tools.register(createContractInspectToolDefinition(contracts.inspect)))
   } catch (error) {
     for (const dispose of disposers.toReversed()) dispose()
     throw error
@@ -72,23 +160,32 @@ function registerNativeTools(ctx: Context, tools: DshToolRegistryPort): () => vo
 }
 
 export class ToolchainService extends Service {
-  private readonly kernel = createNodeKernel()
+  private readonly digest: Sha256Port
+  private readonly kernel: ReturnType<typeof createNodeKernel>
+  private readonly startupTargetFingerprint: Promise<string | undefined>
 
   constructor(ctx: Context) {
     super(ctx, 'toolchain')
+    this.digest = createNodeSha256Port()
+    this.kernel = createNodeKernel(this.digest)
+    // Start the immutable M1 baseline capture immediately when Toolchain mounts.
+    // It is never refreshed from mutable filesystem state later in this Host.
+    this.startupTargetFingerprint = captureStartupTargetFingerprint(ctx, this.kernel)
 
-    ctx.inject(['tools'], (toolCtx) => registerNativeTools(toolCtx, toolsFromContext(toolCtx)))
+    ctx.inject(['tools'], (toolCtx) => registerNativeTools(
+      toolCtx,
+      toolsFromContext(toolCtx),
+      {
+        search: (request, execution) => this.searchContractsNative(toolCtx, request, execution),
+        inspect: (request, execution) => this.inspectContractNative(toolCtx, request, execution),
+      },
+    ))
   }
 
   describe(): KernelDescriptor {
     return this.kernel.describe()
   }
 
-  /**
-   * Resolve an exact target through the same Protocol response path as CLI and
-   * MCP. Callers normally omit `requestId`; the optional value exists for
-   * deterministic same-process correlation/tests and is never target identity.
-   */
   resolveTarget(
     request: TargetResolveRequest,
     requestId: string = randomUUID(),
@@ -108,6 +205,46 @@ export class ToolchainService extends Service {
     requestId: string = randomUUID(),
   ): Promise<ContractInspectResponse> {
     return inspectContractResponse(this.kernel, request, requestId)
+  }
+
+  private liveEnrichment(
+    ctx: Context,
+    execution?: DshContractToolExecutionContext,
+  ): ContractEnrichmentPort | undefined {
+    if (execution === undefined) return undefined
+    const registry = inspectFromContext(ctx)
+    if (registry === undefined) return undefined
+    const enrichment = createDshLiveContractEnrichment({ registry, execution, digest: this.digest })
+    if (enrichment === undefined) return undefined
+    const binding = runtimeTargetBindingFromContext(ctx, this.startupTargetFingerprint)
+    if (binding === undefined) return undefined
+    return bindContractEnrichmentToRuntimeTarget(enrichment, binding)
+  }
+
+  private searchContractsNative(
+    ctx: Context,
+    request: ContractSearchRequest,
+    execution?: DshContractToolExecutionContext,
+  ): Promise<ContractSearchResponse> {
+    return searchContractsResponse(
+      this.kernel,
+      request,
+      randomUUID(),
+      this.liveEnrichment(ctx, execution),
+    )
+  }
+
+  private inspectContractNative(
+    ctx: Context,
+    request: ContractInspectRequest,
+    execution?: DshContractToolExecutionContext,
+  ): Promise<ContractInspectResponse> {
+    return inspectContractResponse(
+      this.kernel,
+      request,
+      randomUUID(),
+      this.liveEnrichment(ctx, execution),
+    )
   }
 }
 

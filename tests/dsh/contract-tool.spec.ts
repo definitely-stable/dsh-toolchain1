@@ -5,6 +5,7 @@ import {
   CONTRACT_SEARCH_TOOL_NAME,
   createContractInspectToolDefinition,
   createContractSearchToolDefinition,
+  type DshContractToolExecutionContext,
 } from '../../src/integrations/dsh/contract-tool.js'
 import type {
   ContractInspectResponse,
@@ -124,6 +125,54 @@ describe('native DSH Contract Intelligence tools', () => {
       contractId: 'package:@deepseek-ai/dsh-tools',
     })
     expect(JSON.parse(inspect.output.render({}, inspectValue)[0]?.text ?? 'null')).toEqual(inspectValue)
+  })
+
+  it('projects only Agent and AbortSignal from the current DSH execution object', async () => {
+    let searchExecution: DshContractToolExecutionContext | undefined
+    let inspectExecution: DshContractToolExecutionContext | undefined
+    const searchResolver = vi.fn(async (
+      _request: Parameters<Parameters<typeof createContractSearchToolDefinition>[0]>[0],
+      execution?: DshContractToolExecutionContext,
+    ) => {
+      searchExecution = execution
+      return searchResponse()
+    })
+    const inspectResolver = vi.fn(async (
+      _request: Parameters<Parameters<typeof createContractInspectToolDefinition>[0]>[0],
+      execution?: DshContractToolExecutionContext,
+    ) => {
+      inspectExecution = execution
+      return inspectResponse()
+    })
+    const search = createContractSearchToolDefinition(searchResolver)
+    const inspect = createContractInspectToolDefinition(inspectResolver)
+    const controller = new AbortController()
+    const agent = Object.freeze({ id: 'agent-live-inspect' })
+    const execution = Object.freeze({
+      agent,
+      signal: controller.signal,
+      internalCapability: Object.freeze({ secret: 'must-not-cross-boundary' }),
+    })
+
+    const searchRequest = {
+      target: { profile: 'web' },
+      query: 'ToolDefinition',
+      kinds: ['package'] as const,
+    }
+    await search.execute(searchRequest, execution)
+    expect(searchExecution).toEqual({ agent, signal: controller.signal })
+    expect(searchExecution).not.toBe(execution)
+    expect(searchExecution).not.toHaveProperty('internalCapability')
+
+    const inspectRequest = {
+      target: { profile: 'web' },
+      contractIndexFingerprint,
+      contractId: 'package:@deepseek-ai/dsh-tools',
+    }
+    await inspect.execute(inspectRequest, execution)
+    expect(inspectExecution).toEqual({ agent, signal: controller.signal })
+    expect(inspectExecution).not.toBe(execution)
+    expect(inspectExecution).not.toHaveProperty('internalCapability')
   })
 
   it.each([

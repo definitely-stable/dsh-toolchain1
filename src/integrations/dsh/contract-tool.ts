@@ -15,6 +15,39 @@ import {
 export const CONTRACT_SEARCH_TOOL_NAME = 'toolchain_contract_search'
 export const CONTRACT_INSPECT_TOOL_NAME = 'toolchain_contract_inspect'
 
+/**
+ * Per-call execution data owned by the native DSH integration boundary.
+ * The Agent stays opaque here so no DSH runtime identity leaks into shared
+ * kernel/model code.
+ */
+export interface DshContractToolExecutionContext {
+  readonly agent?: unknown
+  readonly signal?: AbortSignal
+}
+
+type ContractSearchResolver = (
+  request: ContractSearchRequest,
+  execution?: DshContractToolExecutionContext,
+) => Promise<ContractSearchResponse>
+
+type ContractInspectResolver = (
+  request: ContractInspectRequest,
+  execution?: DshContractToolExecutionContext,
+) => Promise<ContractInspectResponse>
+
+function executionContext(execution: unknown): DshContractToolExecutionContext | undefined {
+  if (execution === null || typeof execution !== 'object') return undefined
+
+  const source = execution as {
+    readonly agent?: unknown
+    readonly signal?: unknown
+  }
+  return Object.freeze({
+    ...(source.agent === undefined ? {} : { agent: source.agent }),
+    ...(source.signal instanceof AbortSignal ? { signal: source.signal } : {}),
+  })
+}
+
 function output(description: string): DshToolDefinition['output'] {
   return {
     schema: { type: 'object', description },
@@ -25,7 +58,7 @@ function output(description: string): DshToolDefinition['output'] {
 }
 
 export function createContractSearchToolDefinition(
-  search: (request: ContractSearchRequest) => Promise<ContractSearchResponse>,
+  search: ContractSearchResolver,
 ): DshToolDefinition {
   return {
     name: CONTRACT_SEARCH_TOOL_NAME,
@@ -46,14 +79,16 @@ export function createContractSearchToolDefinition(
       required: ['target', 'query'],
     },
     output: output('Protocol v1 ContractSearchResponse.'),
-    execute(args: unknown): Promise<ContractSearchResponse> {
-      return search(parseContractSearchRequest(args))
+    execute(args: unknown, execution?: unknown): Promise<ContractSearchResponse> {
+      const request = parseContractSearchRequest(args)
+      const current = executionContext(execution)
+      return current === undefined ? search(request) : search(request, current)
     },
   }
 }
 
 export function createContractInspectToolDefinition(
-  inspect: (request: ContractInspectRequest) => Promise<ContractInspectResponse>,
+  inspect: ContractInspectResolver,
 ): DshToolDefinition {
   return {
     name: CONTRACT_INSPECT_TOOL_NAME,
@@ -72,8 +107,10 @@ export function createContractInspectToolDefinition(
       required: ['target', 'contractIndexFingerprint', 'contractId'],
     },
     output: output('Protocol v1 ContractInspectResponse.'),
-    execute(args: unknown): Promise<ContractInspectResponse> {
-      return inspect(parseContractInspectRequest(args))
+    execute(args: unknown, execution?: unknown): Promise<ContractInspectResponse> {
+      const request = parseContractInspectRequest(args)
+      const current = executionContext(execution)
+      return current === undefined ? inspect(request) : inspect(request, current)
     },
   }
 }
