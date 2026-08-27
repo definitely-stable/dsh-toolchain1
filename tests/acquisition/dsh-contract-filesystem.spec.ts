@@ -163,13 +163,41 @@ describe('DSH Contract filesystem acquisition', () => {
     expect(tools?.facts).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: 'version', value: '0.1.1-rc.2' }),
       expect.objectContaining({ key: 'declaration-entry', value: 'dist/index.d.ts' }),
-      expect.objectContaining({ key: 'declaration-symbol', value: 'ToolDefinition' }),
+      expect.objectContaining({ key: 'declaration-export', value: 'ToolDefinition' }),
     ]))
     expect(result.evidence.filter(item => item.kind === 'type-declaration').map(item => item.source)).toEqual([
       '@deepseek-ai/dsh-tools/dist/index.d.ts',
       '@deepseek-ai/dsh-tools/dist/tool.d.ts',
       '@deepseek-ai/dsh/index.d.ts',
     ])
+  })
+
+  it('uses syntax-aware public re-exports without traversing comments or private type imports', async () => {
+    const fixture = await createFixture()
+    const packageRoot = path.dirname(fixture.toolsManifestLocation)
+    await writeFile(
+      path.join(packageRoot, 'dist', 'index.d.ts'),
+      [
+        "// export { Ghost } from './missing-comment.js'",
+        "import type { PrivateHelper } from './missing-private.js'",
+        "export { ToolDefinition } from './tool.js'",
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+    const acquisition = createDshContractFilesystemAcquisition({ digest: createNodeSha256Port() })
+
+    const result = await acquisition.acquire(fixture.target)
+    const tools = result.contracts.find(contract => contract.id === 'package:@deepseek-ai/dsh-tools')
+
+    expect(tools?.facts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'declaration-export', value: 'ToolDefinition' }),
+    ]))
+    expect(tools?.facts).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'declaration-export', value: 'Ghost' }),
+      expect.objectContaining({ key: 'declaration-export', value: 'PrivateHelper' }),
+    ]))
+    expect(result.evidence.map(item => item.source)).not.toContain('@deepseek-ai/dsh-tools/dist/missing-private.d.ts')
   })
 
   it('keeps original M1 bundle evidence coordinates after observer bundles are excluded from semantic target identity', async () => {

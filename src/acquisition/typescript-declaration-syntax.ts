@@ -3,7 +3,6 @@ import ts from 'typescript'
 export interface ParsedDeclarationSyntax {
   readonly exports: readonly string[]
   readonly relativeReexports: readonly string[]
-  readonly relativeTypeImports: readonly string[]
   readonly relativePathReferences: readonly string[]
 }
 
@@ -50,6 +49,11 @@ function moduleSpecifierText(node: ts.Expression | undefined): string | undefine
   return node !== undefined && ts.isStringLiteralLike(node) ? node.text : undefined
 }
 
+function externalModuleReferenceText(node: ts.ModuleReference): string | undefined {
+  if (!ts.isExternalModuleReference(node)) return undefined
+  return moduleSpecifierText(node.expression)
+}
+
 export function parseTypeScriptDeclarationSyntax(fileName: string, content: string): ParsedDeclarationSyntax {
   const sourceFile = ts.createSourceFile(
     fileName,
@@ -60,7 +64,6 @@ export function parseTypeScriptDeclarationSyntax(fileName: string, content: stri
   )
   const exports = new Set<string>()
   const relativeReexports = new Set<string>()
-  const relativeTypeImports = new Set<string>()
   const relativePathReferences = new Set<string>()
 
   for (const reference of sourceFile.referencedFiles) {
@@ -112,28 +115,16 @@ export function parseTypeScriptDeclarationSyntax(fileName: string, content: stri
       continue
     }
 
-    if (ts.isImportDeclaration(statement)) {
-      const specifier = moduleSpecifierText(statement.moduleSpecifier)
-      if (specifier === undefined || !isRelativeSpecifier(specifier)) continue
-      const clause = statement.importClause
-      if (clause?.isTypeOnly === true) {
-        relativeTypeImports.add(specifier)
-        continue
-      }
-      if (
-        clause?.namedBindings !== undefined
-        && ts.isNamedImports(clause.namedBindings)
-        && clause.namedBindings.elements.some(element => element.isTypeOnly)
-      ) {
-        relativeTypeImports.add(specifier)
-      }
+    if (ts.isImportEqualsDeclaration(statement) && hasModifier(statement, ts.SyntaxKind.ExportKeyword)) {
+      exports.add(statement.name.text)
+      const specifier = externalModuleReferenceText(statement.moduleReference)
+      if (specifier !== undefined && isRelativeSpecifier(specifier)) relativeReexports.add(specifier)
     }
   }
 
   return Object.freeze({
     exports: Object.freeze([...exports].toSorted(compareCodePoints)),
     relativeReexports: Object.freeze([...relativeReexports].toSorted(compareCodePoints)),
-    relativeTypeImports: Object.freeze([...relativeTypeImports].toSorted(compareCodePoints)),
     relativePathReferences: Object.freeze([...relativePathReferences].toSorted(compareCodePoints)),
   })
 }

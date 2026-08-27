@@ -73,6 +73,11 @@ interface ContractIndexProjection {
   readonly contracts: readonly ContractDefinition[]
 }
 
+interface LexicalMatch {
+  readonly score: number
+  readonly evidenceIds: readonly string[]
+}
+
 type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue }
 
 function compareCodePoints(left: string, right: string): number {
@@ -216,39 +221,84 @@ export async function createContractIndex(
   })
 }
 
-function lexicalScore(contract: ContractDefinition, query: string): number | undefined {
+function frozenEvidenceIds(values: readonly string[]): readonly string[] {
+  return Object.freeze(sortedUnique(values))
+}
+
+function contractExistenceWitness(contract: ContractDefinition): readonly string[] {
+  const first = contract.evidenceIds[0]
+  return first === undefined ? Object.freeze([]) : Object.freeze([first])
+}
+
+function factText(fact: ContractFact): string {
+  return `${fact.key} ${fact.value}`.toLocaleLowerCase('en-US')
+}
+
+function factOrSummaryWitness(
+  contract: ContractDefinition,
+  normalizedQuery: string,
+  tokens: readonly string[],
+): readonly string[] | undefined {
+  const summary = contract.summary?.toLocaleLowerCase('en-US') ?? ''
+
+  const exactFact = contract.facts.find(fact => factText(fact).includes(normalizedQuery))
+  if (exactFact !== undefined) return frozenEvidenceIds(exactFact.evidenceIds)
+  if (summary.includes(normalizedQuery)) return contractExistenceWitness(contract)
+  if (tokens.length <= 1) return undefined
+
+  const evidenceIds: string[] = []
+  let summaryUsed = false
+  for (const token of tokens) {
+    const matchingFact = contract.facts.find(fact => factText(fact).includes(token))
+    if (matchingFact !== undefined) {
+      evidenceIds.push(...matchingFact.evidenceIds)
+      continue
+    }
+    if (summary.includes(token)) {
+      summaryUsed = true
+      continue
+    }
+    return undefined
+  }
+  if (summaryUsed) evidenceIds.push(...contractExistenceWitness(contract))
+  return frozenEvidenceIds(evidenceIds)
+}
+
+function lexicalMatch(contract: ContractDefinition, query: string): LexicalMatch | undefined {
   const normalizedQuery = query.trim().toLocaleLowerCase('en-US')
   if (normalizedQuery === '') return undefined
 
   const name = contract.name.toLocaleLowerCase('en-US')
   const qualifiedName = contract.qualifiedName.toLocaleLowerCase('en-US')
-  if (qualifiedName === normalizedQuery) return 600
-  if (name === normalizedQuery) return 550
-  if (name.startsWith(normalizedQuery) || qualifiedName.startsWith(normalizedQuery)) return 500
+  const witness = contractExistenceWitness(contract)
+  if (qualifiedName === normalizedQuery) return Object.freeze({ score: 600, evidenceIds: witness })
+  if (name === normalizedQuery) return Object.freeze({ score: 550, evidenceIds: witness })
+  if (name.startsWith(normalizedQuery) || qualifiedName.startsWith(normalizedQuery)) {
+    return Object.freeze({ score: 500, evidenceIds: witness })
+  }
 
   const tokens = normalizedQuery.split(/\s+/u)
   if (tokens.length > 1 && tokens.every(token => name.includes(token) || qualifiedName.includes(token))) {
-    return 400
+    return Object.freeze({ score: 400, evidenceIds: witness })
   }
-  if (name.includes(normalizedQuery) || qualifiedName.includes(normalizedQuery)) return 300
+  if (name.includes(normalizedQuery) || qualifiedName.includes(normalizedQuery)) {
+    return Object.freeze({ score: 300, evidenceIds: witness })
+  }
 
-  const facts = contract.facts.map(fact => `${fact.key} ${fact.value}`).join('\n').toLocaleLowerCase('en-US')
-  const summary = contract.summary?.toLocaleLowerCase('en-US') ?? ''
-  if (facts.includes(normalizedQuery) || summary.includes(normalizedQuery)) return 200
-  if (tokens.length > 1 && tokens.every(token => facts.includes(token) || summary.includes(token))) return 200
-  return undefined
+  const evidenceIds = factOrSummaryWitness(contract, normalizedQuery, tokens)
+  return evidenceIds === undefined ? undefined : Object.freeze({ score: 200, evidenceIds })
 }
 
-function reference(contract: ContractDefinition, score: number): ContractReference {
+function reference(contract: ContractDefinition, match: LexicalMatch): ContractReference {
   return Object.freeze({
     id: contract.id,
     kind: contract.kind,
     name: contract.name,
     qualifiedName: contract.qualifiedName,
     availability: contract.availability,
-    score,
+    score: match.score,
     ...(contract.summary === undefined ? {} : { summary: contract.summary }),
-    evidenceIds: [...contract.evidenceIds],
+    evidenceIds: match.evidenceIds,
   })
 }
 
@@ -266,8 +316,8 @@ export function searchContractIndex(
   const matches = index.contracts
     .filter(contract => kindSet === undefined || kindSet.has(contract.kind))
     .map(contract => {
-      const score = lexicalScore(contract, query)
-      return score === undefined ? undefined : reference(contract, score)
+      const match = lexicalMatch(contract, query)
+      return match === undefined ? undefined : reference(contract, match)
     })
     .filter((match): match is ContractReference => match !== undefined)
     .toSorted((left, right) =>
