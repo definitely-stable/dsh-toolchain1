@@ -15,6 +15,8 @@ interface TestLiveContractLimits {
   readonly maxContracts: number
   readonly maxFactsPerContract: number
   readonly maxFactsTotal: number
+  readonly maxToolSchemaBytesPerTool: number
+  readonly maxToolSchemaBytesTotal: number
 }
 
 const generousLimits: TestLiveContractLimits = {
@@ -25,16 +27,30 @@ const generousLimits: TestLiveContractLimits = {
   maxContracts: 128,
   maxFactsPerContract: 128,
   maxFactsTotal: 1024,
+  maxToolSchemaBytesPerTool: 16 * 1024,
+  maxToolSchemaBytesTotal: 64 * 1024,
 }
 
 const snapshot = Object.freeze({}) as TargetSnapshot
 
-function serviceProvider(): unknown {
+function inspectProvider(id: string, method: string): unknown {
   return {
     platform: 'host',
-    id: 'Service',
-    methods: [{ name: 'listService' }],
+    id,
+    methods: [{ name: method }],
   }
+}
+
+function serviceProvider(): unknown {
+  return inspectProvider('Service', 'listService')
+}
+
+function eventProvider(): unknown {
+  return inspectProvider('Event', 'listEvents')
+}
+
+function toolProvider(): unknown {
+  return inspectProvider('Tool', 'listTools')
 }
 
 function serviceCatalog(services: readonly unknown[] = []): Record<string, unknown> {
@@ -80,6 +96,71 @@ async function expectLimitFailure(
   await expect(enrichment.enrich(snapshot)).rejects.toMatchObject({
     code: 'CONTRACT_LIVE_EVIDENCE_LIMIT_EXCEEDED',
   })
+}
+
+function providerResult(providerId: string): unknown {
+  if (providerId === 'Service') {
+    return serviceCatalog([{
+      key: 'alpha',
+      description: 'Alpha Service.',
+      methods: [{ signature: 'ping(): string' }],
+    }])
+  }
+  if (providerId === 'Event') {
+    return {
+      mode: 'catalog',
+      events: [{
+        name: 'tools/change',
+        description: 'Tool registry changed.',
+        mode: 'emit',
+        signature: '(): void',
+      }],
+    }
+  }
+  if (providerId === 'Tool') {
+    return {
+      tools: [{
+        name: 'agent_only',
+        description: 'Visible only in this Agent scope.',
+        parameters: {
+          type: 'object',
+          properties: { path: { type: 'string' } },
+        },
+      }],
+    }
+  }
+  throw new Error(`unexpected provider ${providerId}`)
+}
+
+function allHostProvidersHarness(limits: TestLiveContractLimits = generousLimits) {
+  const controller = new AbortController()
+  const agent = Object.freeze({ id: 'agent-scoped-tools' })
+  const query = vi.fn(async (
+    platform: 'host' | 'client',
+    providerId: string,
+    _methodName: string,
+    _input: unknown,
+    actualAgent: unknown,
+    signal: AbortSignal,
+  ) => {
+    expect(platform).toBe('host')
+    expect(actualAgent).toBe(agent)
+    expect(signal).toBe(controller.signal)
+    return providerResult(providerId)
+  })
+  const registry: DshCordisInspectRegistryPort = {
+    // Deliberately reverse the canonical query order.
+    list: () => [toolProvider(), eventProvider(), serviceProvider()],
+    query,
+  }
+  const enrichment = createDshLiveContractEnrichment({
+    registry,
+    execution: Object.freeze({ agent, signal: controller.signal }),
+    digest: createNodeSha256Port(),
+    limits,
+  })
+  if (enrichment === undefined) throw new Error('live enrichment unexpectedly unavailable')
+  return { enrichment, query }
 }
 
 describe('DSH live Inspect safety budgets', () => {
@@ -141,5 +222,99 @@ describe('DSH live Inspect safety budgets', () => {
       { key: 'alpha', methods: [{ signature: 'a(): void' }, { signature: 'b(): void' }] },
       { key: 'beta', methods: [{ signature: 'c(): void' }, { signature: 'd(): void' }] },
     ]), limits)
+  })
+
+  it('rejects one Tool parameter schema beyond its dedicated byte bound', async () => {
+    const limits = { ...generousLimits, maxToolSchemaBytesPerTool: 96 }
+    await expectLimitFailure({
+      tools: [{
+        name: 'oversized_tool',
+        description: 'oversized',
+        parameters: { type: 'object', description: 'x'.repeat(256) },
+      }],
+    }, limits, [toolProvider()])
+  })
+
+  it('rejects aggregate Tool parameter schemas beyond their dedicated byte bound', async () => {
+    const limits = { ...generousLimits, maxToolSchemaBytesTotal: 128 }
+    await expectLimitFailure({
+      tools: [
+        { name: 'alpha', description: 'a', parameters: { type: 'object', description: 'x'.repeat(80) } },
+        { name: 'beta', description: 'b', parameters: { type: 'object', description: 'y'.repeat(80) } },
+      ],
+    }, limits, [toolProvider()])
+  })
+
+  it('applies normalized contract and fact limits across all supported Host providers', async () => {
+    const contractHarness = allHostProvidersHarness({ ...generousLimits, maxContracts: 2 })
+    await expect(contractHarness.enrichment.enrich(snapshot)).rejects.toMatchObject({
+      code: 'CONTRACT_LIVE_EVIDENCE_LIMIT_EXCEEDED',
+    })
+
+    const factHarness = allHostProvidersHarness({ ...generousLimits, maxFactsTotal: 3 })
+    await expect(factHarness.enrichment.enrich(snapshot)).rejects.toMatchObject({
+      code: 'CONTRACT_LIVE_EVIDENCE_LIMIT_EXCEEDED',
+    })
+  })
+})
+
+describe('DSH live Host provider normalization', () => {
+  it('queries Service, Event, and Agent-scoped Tool in canonical order and normalizes stable contracts', async () => {
+    const { enrichment, query } = allHostProvidersHarness()
+    const acquired = await enrichment.enrich(snapshot)
+
+    expect(query.mock.calls.map(call => call.slice(0, 4))).toEqual([
+      ['host', 'Service', 'listService', {}],
+      ['host', 'Event', 'listEvents', {}],
+      ['host', 'Tool', 'listTools', {}],
+    ])
+    expect(acquired.contracts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'service:host:alpha',
+        kind: 'service',
+        availability: 'available',
+      }),
+      expect.objectContaining({
+        id: 'event:host:tools/change',
+        kind: 'event',
+        name: 'tools/change',
+        qualifiedName: 'event:tools/change',
+        availability: 'available',
+        facts: expect.arrayContaining([
+          expect.objectContaining({ key: 'dispatch-mode', value: 'emit' }),
+          expect.objectContaining({ key: 'listener-signature', value: '(): void' }),
+        ]),
+      }),
+      expect.objectContaining({
+        id: 'tool:host:agent_only',
+        kind: 'tool',
+        name: 'agent_only',
+        qualifiedName: 'tool:agent_only',
+        availability: 'available',
+        facts: expect.arrayContaining([
+          expect.objectContaining({
+            key: 'parameters-schema',
+            value: '{"properties":{"path":{"type":"string"}},"type":"object"}',
+          }),
+        ]),
+      }),
+    ]))
+    expect(acquired.evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'runtime:cordis-inspect:host:Service:listService',
+        kind: 'runtime',
+        strength: 'observed',
+      }),
+      expect.objectContaining({
+        id: 'runtime:cordis-inspect:host:Event:listEvents',
+        kind: 'runtime',
+        strength: 'observed',
+      }),
+      expect.objectContaining({
+        id: 'runtime:cordis-inspect:host:Tool:listTools',
+        kind: 'runtime',
+        strength: 'observed',
+      }),
+    ]))
   })
 })
