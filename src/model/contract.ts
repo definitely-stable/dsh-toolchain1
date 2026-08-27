@@ -101,7 +101,7 @@ function freezeFact(fact: ContractFact): ContractFact {
   return Object.freeze({
     key: fact.key,
     value: fact.value,
-    evidenceIds: [...sortedUnique(fact.evidenceIds)],
+    evidenceIds: sortedUnique(fact.evidenceIds),
   })
 }
 
@@ -121,8 +121,8 @@ function freezeContract(contract: ContractDefinition): ContractDefinition {
     qualifiedName: contract.qualifiedName,
     availability: contract.availability,
     ...(contract.summary === undefined ? {} : { summary: contract.summary }),
-    facts: [...facts],
-    evidenceIds: [...evidenceIds],
+    facts,
+    evidenceIds,
   })
 }
 
@@ -156,6 +156,11 @@ function validateReferences(evidence: readonly Evidence[], contracts: readonly C
   for (const contract of contracts) {
     if (contractIds.has(contract.id)) throw new Error(`Contract index repeats id ${contract.id}`)
     contractIds.add(contract.id)
+    for (const fact of contract.facts) {
+      if (fact.evidenceIds.length === 0) {
+        throw new Error(`Contract fact ${contract.id}/${fact.key} must reference at least one evidence id`)
+      }
+    }
     for (const evidenceId of [...contract.evidenceIds, ...contract.facts.flatMap(fact => fact.evidenceIds)]) {
       if (!ids.has(evidenceId)) {
         throw new Error(`Contract ${contract.id} references missing evidence ${evidenceId}`)
