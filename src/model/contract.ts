@@ -13,6 +13,7 @@ export type ContractAcquisitionErrorCode =
   | 'CONTRACT_EVIDENCE_READ_FAILED'
   | 'CONTRACT_MANIFEST_INVALID'
   | 'CONTRACT_DECLARATION_INVALID'
+  | 'CONTRACT_DECLARATION_LIMIT_EXCEEDED'
 
 export class ContractAcquisitionError extends Error {
   readonly code: ContractAcquisitionErrorCode
