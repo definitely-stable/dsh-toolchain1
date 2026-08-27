@@ -35,7 +35,7 @@ interface ReadOnlyIdempotentAnnotations {
   readonly idempotentHint: true
 }
 
-interface McpStructuredResult<T> {
+type McpStructuredResult<T> = {
   readonly content: [{ readonly type: 'text'; readonly text: string }]
   readonly structuredContent: T
 }
