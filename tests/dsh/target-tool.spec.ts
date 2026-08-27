@@ -34,9 +34,60 @@ class TestToolsService extends Service {
   }
 }
 
+interface InspectQueryCall {
+  readonly platform: string
+  readonly providerId: string
+  readonly methodName: string
+  readonly input: unknown
+  readonly agent: unknown
+  readonly signal: AbortSignal
+}
+
+class TestCordisInspectService extends Service {
+  readonly calls: InspectQueryCall[] = []
+
+  constructor(ctx: Context) {
+    super(ctx, 'cordisInspect')
+  }
+
+  list(): unknown[] {
+    return [{
+      platform: 'host',
+      id: 'Service',
+      description: 'test service catalog',
+      methods: [{
+        name: 'listService',
+        description: 'test compact service catalog',
+        inputSchema: { type: 'object', additionalProperties: false },
+        outputSchema: { type: 'object' },
+      }],
+    }]
+  }
+
+  query(
+    platform: string,
+    providerId: string,
+    methodName: string,
+    input: unknown,
+    agent: unknown,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    this.calls.push({ platform, providerId, methodName, input, agent, signal })
+    return Promise.resolve({
+      mode: 'catalog',
+      services: [{
+        key: 'liveAlpha',
+        description: 'Live Alpha service visible only to this Agent.',
+        methods: [{ signature: 'ping(): string' }],
+      }],
+    })
+  }
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     tools: TestToolsService
+    cordisInspect: TestCordisInspectService
   }
 }
 
@@ -178,6 +229,88 @@ describe('native DSH Toolchain tools', () => {
 
     await toolsFiber.dispose()
     await toolchainFiber.dispose()
+  })
+
+  it('enriches native search and inspect from the current Agent-scoped Host Inspect surface only', async () => {
+    const ctx = new Context()
+    const inspectFiber = await ctx.plugin(TestCordisInspectService)
+    const toolchainFiber = await ctx.plugin(ToolchainService)
+    const toolsFiber = await ctx.plugin(TestToolsService)
+    const searchDefinition = ctx.tools.definitions.get('toolchain_contract_search')
+    const inspectDefinition = ctx.tools.definitions.get('toolchain_contract_inspect')
+    if (searchDefinition === undefined || inspectDefinition === undefined) {
+      throw new Error('contract tools were not registered')
+    }
+
+    const target = { profile: 'web', dshHome, dshPackageRoot }
+    const controller = new AbortController()
+    const agent = Object.freeze({ id: 'agent-live-alpha' })
+    const execution = Object.freeze({ agent, signal: controller.signal })
+
+    const liveSearch = await searchDefinition.execute({
+      target,
+      query: 'liveAlpha',
+      kinds: ['service'],
+    }, execution) as ContractSearchResponse
+
+    expect(liveSearch.status).toBe('ok')
+    if (liveSearch.status !== 'ok') throw new Error('live contract search unexpectedly failed')
+    expect(liveSearch.data.matches).toEqual([
+      expect.objectContaining({
+        id: 'service:host:liveAlpha',
+        kind: 'service',
+        availability: 'available',
+      }),
+    ])
+    expect(liveSearch.data.evidence).toEqual([
+      expect.objectContaining({
+        kind: 'runtime',
+        strength: 'observed',
+        source: 'cordis-inspect:host/Service/listService',
+      }),
+    ])
+
+    const liveInspect = await inspectDefinition.execute({
+      target,
+      contractIndexFingerprint: liveSearch.data.contractIndexFingerprint,
+      contractId: 'service:host:liveAlpha',
+    }, execution)
+    expect(liveInspect).toMatchObject({
+      status: 'ok',
+      snapshotFingerprint: liveSearch.snapshotFingerprint,
+      data: {
+        contractIndexFingerprint: liveSearch.data.contractIndexFingerprint,
+        contract: {
+          id: 'service:host:liveAlpha',
+          availability: 'available',
+        },
+      },
+    })
+
+    expect(ctx.cordisInspect.calls).toHaveLength(2)
+    for (const call of ctx.cordisInspect.calls) {
+      expect(call).toMatchObject({
+        platform: 'host',
+        providerId: 'Service',
+        methodName: 'listService',
+        input: {},
+      })
+      expect(call.agent).toBe(agent)
+      expect(call.signal).toBe(controller.signal)
+    }
+
+    const offlineSearch = await ctx.toolchain.searchContracts({
+      target,
+      query: 'liveAlpha',
+      kinds: ['service'],
+    }, 'service-stays-offline')
+    expect(offlineSearch.status).toBe('ok')
+    if (offlineSearch.status === 'ok') expect(offlineSearch.data.matches).toEqual([])
+    expect(ctx.cordisInspect.calls).toHaveLength(2)
+
+    await toolsFiber.dispose()
+    await toolchainFiber.dispose()
+    await inspectFiber.dispose()
   })
 
   it.each([
