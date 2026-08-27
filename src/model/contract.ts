@@ -298,7 +298,7 @@ function reference(contract: ContractDefinition, match: LexicalMatch): ContractR
     availability: contract.availability,
     score: match.score,
     ...(contract.summary === undefined ? {} : { summary: contract.summary }),
-    evidenceIds: match.evidenceIds,
+    evidenceIds: [...match.evidenceIds],
   })
 }
 
