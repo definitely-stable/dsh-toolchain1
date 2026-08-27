@@ -127,9 +127,9 @@ async function sameExistingPath(left: string | undefined, right: string): Promis
   return a !== undefined && b !== undefined && a === b
 }
 
-async function packageNameAt(location: string): Promise<string | undefined> {
+async function packageNameAt(manifestPath: string): Promise<string | undefined> {
   try {
-    const parsed = JSON.parse(await readFile(location, 'utf8')) as { name?: unknown }
+    const parsed = JSON.parse(await readFile(manifestPath, 'utf8')) as { name?: unknown }
     return typeof parsed.name === 'string' ? parsed.name : undefined
   } catch {
     return undefined
@@ -152,7 +152,7 @@ async function owningPackageManifest(
   }
 }
 
-function location(snapshot: TargetSnapshot, evidenceId: string): string | undefined {
+function snapshotEvidenceLocation(snapshot: TargetSnapshot, evidenceId: string): string | undefined {
   const evidence = evidenceById(snapshot, evidenceId)
   return typeof evidence?.location === 'string' ? evidence.location : undefined
 }
@@ -194,27 +194,27 @@ export function createDshRuntimeTargetBinding(
       ) return false
 
       if (!await sameExistingPath(profileDirectory, expectedProfileDirectory)) return false
-      if (!await sameExistingPath(location(snapshot, 'manifest:profile'), join(profileDirectory, 'package.json'))) {
+      if (!await sameExistingPath(snapshotEvidenceLocation(snapshot, 'manifest:profile'), join(profileDirectory, 'package.json'))) {
         return false
       }
-      if (!await sameExistingPath(location(snapshot, 'patch:profile'), join(profileDirectory, 'cordis.patch.yml'))) {
+      if (!await sameExistingPath(snapshotEvidenceLocation(snapshot, 'patch:profile'), join(profileDirectory, 'cordis.patch.yml'))) {
         // Optional target patches still record the canonical expected location;
         // absence is represented by an observed sentinel hash, so compare the
         // parent profile path when the file itself is absent.
-        const profilePatch = location(snapshot, 'patch:profile')
+        const profilePatch = snapshotEvidenceLocation(snapshot, 'patch:profile')
         if (profilePatch === undefined || resolve(profilePatch) !== resolve(join(profileDirectory, 'cordis.patch.yml'))) {
           return false
         }
       }
-      if (!await sameExistingPath(location(snapshot, 'patch:home'), join(home, 'cordis.patch.yml'))) {
-        const homePatch = location(snapshot, 'patch:home')
+      if (!await sameExistingPath(snapshotEvidenceLocation(snapshot, 'patch:home'), join(home, 'cordis.patch.yml'))) {
+        const homePatch = snapshotEvidenceLocation(snapshot, 'patch:home')
         if (homePatch === undefined || resolve(homePatch) !== resolve(join(home, 'cordis.patch.yml'))) return false
       }
 
       if (scriptPath === undefined) return false
       const runtimeDshManifest = await owningPackageManifest(scriptPath, '@deepseek-ai/dsh')
       if (runtimeDshManifest === undefined) return false
-      if (!await sameExistingPath(location(snapshot, 'manifest:dsh'), runtimeDshManifest)) return false
+      if (!await sameExistingPath(snapshotEvidenceLocation(snapshot, 'manifest:dsh'), runtimeDshManifest)) return false
 
       return true
     },
@@ -227,7 +227,7 @@ export function bindContractEnrichmentToRuntimeTarget(
   binding: DshRuntimeTargetBindingPort,
 ): ContractEnrichmentPort {
   return Object.freeze({
-    async enrich(snapshot): Promise<AcquiredContractFacts> {
+    async enrich(snapshot: TargetSnapshot): Promise<AcquiredContractFacts> {
       return await binding.matches(snapshot)
         ? enrichment.enrich(snapshot)
         : EMPTY_ACQUIRED
