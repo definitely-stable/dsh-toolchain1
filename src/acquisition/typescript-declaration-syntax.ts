@@ -64,6 +64,24 @@ function isRelativeSpecifier(value: string): boolean {
   return value.startsWith('./') || value.startsWith('../')
 }
 
+/**
+ * TypeScript with `rewriteRelativeImportExtensions` can emit `.d.ts` files
+ * whose module specifiers deliberately retain the source `.ts/.mts/.cts/.tsx`
+ * spelling. A declaration-only consumer resolves those spellings to the
+ * corresponding emitted declaration when source files are not published.
+ *
+ * M2.1 intentionally consumes declaration evidence only, so canonicalize
+ * those emitted source-extension spellings to their declaration sibling
+ * rather than widening acquisition into arbitrary target TypeScript source.
+ */
+function declarationReexportSpecifier(value: string): string {
+  if (value.endsWith('.mts')) return `${value.slice(0, -4)}.d.mts`
+  if (value.endsWith('.cts')) return `${value.slice(0, -4)}.d.cts`
+  if (value.endsWith('.tsx')) return `${value.slice(0, -4)}.d.ts`
+  if (value.endsWith('.ts') && !value.endsWith('.d.ts')) return `${value.slice(0, -3)}.d.ts`
+  return value
+}
+
 function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
   return ts.canHaveModifiers(node)
     && (ts.getModifiers(node)?.some(modifier => modifier.kind === kind) ?? false)
@@ -199,11 +217,14 @@ export function parseTypeScriptDeclarationSyntax(fileName: string, content: stri
     }
 
     if (ts.isExportDeclaration(statement)) {
-      const specifier = moduleSpecifierText(statement.moduleSpecifier)
-      const relative = specifier !== undefined && isRelativeSpecifier(specifier)
+      const rawSpecifier = moduleSpecifierText(statement.moduleSpecifier)
+      const relative = rawSpecifier !== undefined && isRelativeSpecifier(rawSpecifier)
+      const specifier = relative && rawSpecifier !== undefined
+        ? declarationReexportSpecifier(rawSpecifier)
+        : rawSpecifier
 
       if (statement.exportClause === undefined) {
-        if (relative) relativeReexports.push({ kind: 'star', specifier })
+        if (relative && specifier !== undefined) relativeReexports.push({ kind: 'star', specifier })
         continue
       }
 
@@ -213,7 +234,7 @@ export function parseTypeScriptDeclarationSyntax(fileName: string, content: stri
           exportedName: element.name.text,
         }))
         for (const binding of bindings) exports.add(binding.exportedName)
-        if (relative) {
+        if (relative && specifier !== undefined) {
           relativeReexports.push({
             kind: 'named',
             specifier,
@@ -225,7 +246,7 @@ export function parseTypeScriptDeclarationSyntax(fileName: string, content: stri
 
       const exportedName = statement.exportClause.name.text
       exports.add(exportedName)
-      if (relative) relativeReexports.push({ kind: 'namespace', specifier, exportedName })
+      if (relative && specifier !== undefined) relativeReexports.push({ kind: 'namespace', specifier, exportedName })
       continue
     }
 
@@ -241,11 +262,11 @@ export function parseTypeScriptDeclarationSyntax(fileName: string, content: stri
 
     if (ts.isImportEqualsDeclaration(statement) && hasModifier(statement, ts.SyntaxKind.ExportKeyword)) {
       exports.add(statement.name.text)
-      const specifier = externalModuleReferenceText(statement.moduleReference)
-      if (specifier !== undefined && isRelativeSpecifier(specifier)) {
+      const rawSpecifier = externalModuleReferenceText(statement.moduleReference)
+      if (rawSpecifier !== undefined && isRelativeSpecifier(rawSpecifier)) {
         relativeReexports.push({
           kind: 'import-equals',
-          specifier,
+          specifier: declarationReexportSpecifier(rawSpecifier),
           exportedName: statement.name.text,
         })
       }
@@ -258,7 +279,3 @@ export function parseTypeScriptDeclarationSyntax(fileName: string, content: stri
     relativePathReferences: Object.freeze([...relativePathReferences].toSorted(compareCodePoints)),
   })
 }
-
-export const typescriptDeclarationSyntaxPort: DeclarationSyntaxPort = Object.freeze({
-  parse: parseTypeScriptDeclarationSyntax,
-})
