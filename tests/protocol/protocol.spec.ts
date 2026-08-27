@@ -25,6 +25,9 @@ interface ProtocolSchema {
     targetSnapshot?: unknown
     resolvedBundleIdentity?: unknown
     contractSearchRequest?: unknown
+    contractSearchResult?: {
+      properties?: Record<string, unknown>
+    }
     contractSearchResponse?: {
       oneOf?: Array<{ $ref?: string }>
     }
@@ -185,6 +188,10 @@ describe('Protocol v1 generated contract', () => {
       { $ref: '#/$defs/contractInspectFailureResponse' },
       { $ref: '#/$defs/contractInspectStaleResponse' },
     ])
+    expect(schema.$defs.contractSearchResult?.properties?.contractIndexFingerprint).toEqual({
+      type: 'string',
+      pattern: '^dsh-contract-index-v1:[0-9a-f]{64}$',
+    })
   })
 
   it('validates bounded search requests and exact-index inspect requests', async () => {
@@ -243,6 +250,5 @@ describe('Protocol v1 generated contract', () => {
     ]) {
       expect(generated).toContain(`export type ${typeName} =`)
     }
-    expect(generated).toContain('dsh-contract-index-v1')
   })
 })
