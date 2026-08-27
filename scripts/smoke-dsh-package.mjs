@@ -26,6 +26,7 @@ const EXPECTED_DESCRIPTOR = Object.freeze({
   version: '0.0.0',
   protocolVersion: '1',
 })
+const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -90,12 +91,60 @@ export async function createBootProbePackage(root) {
       name: ${BOOT_PROBE_PACKAGE}
 `)
   await writeFile(join(probe, 'probe.mjs'), `export function apply(rootCtx) {
-  rootCtx.inject(['toolchain'], (ctx) => {
-    const descriptor = ctx.toolchain.describe()
-    process.stdout.write(${JSON.stringify(BOOT_PROBE_MARKER)} + JSON.stringify(descriptor) + '\\n')
+  rootCtx.inject(['toolchain', 'tools'], (ctx) => {
     const appExit = ctx.get('appExit')
     if (typeof appExit !== 'function') throw new Error('DSH boot probe requires launcher-owned ctx.appExit')
-    appExit(0)
+
+    Promise.resolve().then(async () => {
+      const dshHome = process.env.DSH_HOME
+      const dshPackageRoot = process.env.DSH_TOOLCHAIN_SMOKE_DSH_ROOT
+      if (!dshHome || !dshPackageRoot) throw new Error('DSH boot probe requires target acquisition environment')
+
+      const request = {
+        profile: ${JSON.stringify(DSH_BOOT_PROBE_PROFILE)},
+        dshHome,
+        dshPackageRoot,
+      }
+      const descriptor = ctx.toolchain.describe()
+      const service = await ctx.toolchain.resolveTarget(request, 'dsh-smoke-service')
+      const visible = ctx.tools.schemas().some(schema => schema.name === 'toolchain_target_resolve')
+      const nativeResult = await ctx.tools.execute({
+        callId: 'dsh-toolchain-smoke-native',
+        name: 'toolchain_target_resolve',
+        arguments: request,
+        signal: new AbortController().signal,
+      })
+
+      let renderedMatchesValue = false
+      if (!nativeResult.isError) {
+        const rendered = nativeResult.content.find(block => block.type === 'text')
+        if (rendered?.type === 'text') {
+          try {
+            renderedMatchesValue = JSON.stringify(JSON.parse(rendered.text)) === JSON.stringify(nativeResult.value)
+          } catch {}
+        }
+      }
+
+      const receipt = {
+        descriptor,
+        service: {
+          status: service.status,
+          snapshotFingerprint: service.snapshotFingerprint,
+        },
+        nativeTool: {
+          visible,
+          isError: nativeResult.isError,
+          status: nativeResult.isError ? undefined : nativeResult.value?.status,
+          snapshotFingerprint: nativeResult.isError ? undefined : nativeResult.value?.snapshotFingerprint,
+          renderedMatchesValue,
+        },
+      }
+      process.stdout.write(${JSON.stringify(BOOT_PROBE_MARKER)} + JSON.stringify(receipt) + '\\n')
+      appExit(0)
+    }).catch((error) => {
+      process.stderr.write('DSH_TOOLCHAIN_BOOT_PROBE_ERROR ' + String(error?.stack ?? error) + '\\n')
+      appExit(1)
+    })
   })
 }
 `)
@@ -107,17 +156,38 @@ export function assertBootProbeOutput(output) {
     .split(/\r?\n/)
     .find(candidate => candidate.startsWith(BOOT_PROBE_MARKER))
   if (line === undefined) {
-    throw new Error('DSH smoke: real boot did not observe ctx.toolchain')
+    throw new Error('DSH smoke: real boot did not emit a Toolchain target receipt')
   }
 
-  let descriptor
+  let receipt
   try {
-    descriptor = JSON.parse(line.slice(BOOT_PROBE_MARKER.length))
+    receipt = JSON.parse(line.slice(BOOT_PROBE_MARKER.length))
   } catch (cause) {
-    throw new Error('DSH smoke: boot probe emitted an invalid descriptor', { cause })
+    throw new Error('DSH smoke: boot probe emitted an invalid target receipt', { cause })
   }
-  if (JSON.stringify(descriptor) !== JSON.stringify(EXPECTED_DESCRIPTOR)) {
-    throw new Error(`DSH smoke: boot probe observed unexpected descriptor ${JSON.stringify(descriptor)}`)
+
+  if (JSON.stringify(receipt?.descriptor) !== JSON.stringify(EXPECTED_DESCRIPTOR)) {
+    throw new Error(`DSH smoke: boot probe observed unexpected descriptor ${JSON.stringify(receipt?.descriptor)}`)
+  }
+  if (
+    receipt?.service?.status !== 'ok'
+    || typeof receipt.service.snapshotFingerprint !== 'string'
+    || !TARGET_FINGERPRINT.test(receipt.service.snapshotFingerprint)
+  ) {
+    throw new Error(`DSH smoke: Toolchain Service did not resolve an exact target ${JSON.stringify(receipt?.service)}`)
+  }
+  if (
+    receipt?.nativeTool?.visible !== true
+    || receipt.nativeTool.isError !== false
+    || receipt.nativeTool.status !== 'ok'
+    || typeof receipt.nativeTool.snapshotFingerprint !== 'string'
+    || !TARGET_FINGERPRINT.test(receipt.nativeTool.snapshotFingerprint)
+    || receipt.nativeTool.renderedMatchesValue !== true
+  ) {
+    throw new Error(`DSH smoke: native target tool was not visible/executable ${JSON.stringify(receipt?.nativeTool)}`)
+  }
+  if (receipt.nativeTool.snapshotFingerprint !== receipt.service.snapshotFingerprint) {
+    throw new Error('DSH smoke: Service and native target tool resolved different target fingerprints')
   }
 }
 
@@ -128,11 +198,13 @@ export async function smokeDshPackage(tarballPath, options = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-toolchain-smoke-'))
   const runner = join(root, 'runner')
   const home = join(root, 'dsh-home')
+  const dshPackageRoot = join(runner, 'node_modules', '@deepseek-ai', 'dsh')
   const env = {
     ...process.env,
     CI: 'true',
     COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
     DSH_HOME: home,
+    DSH_TOOLCHAIN_SMOKE_DSH_ROOT: dshPackageRoot,
   }
 
   try {
@@ -191,7 +263,7 @@ export async function smokeDshPackage(tarballPath, options = {}) {
     assertBootProbeOutput(bootOutput)
 
     process.stdout.write(
-      `DSH package smoke: ${version} profiles ${profiles.map(profile => profile.name).join(', ')} composition + real service boot verified\n`,
+      `DSH package smoke: ${version} profiles ${profiles.map(profile => profile.name).join(', ')} composition + live target Service/native ToolRuntime parity verified\n`,
     )
   } finally {
     await rm(root, { recursive: true, force: true })

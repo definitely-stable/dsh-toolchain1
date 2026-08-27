@@ -48,13 +48,51 @@ describe('DSH package smoke policy', () => {
 `)).toThrow(/dsh-toolchain row/)
   })
 
-  it('requires an actual DSH boot probe that observes the packaged toolchain service and exits through the launcher', () => {
+  it('requires an actual DSH boot probe that resolves through Service and native ToolRuntime', () => {
     expect(smokeModule.DSH_BOOT_PROBE_PROFILE).toBe('toolchain-smoke')
     expect(typeof smokeModule.createBootProbePackage).toBe('function')
     expect(typeof smokeModule.assertBootProbeOutput).toBe('function')
 
+    expect(smokeSource).toContain("rootCtx.inject(['toolchain', 'tools']")
     expect(smokeSource).toContain('ctx.toolchain.describe()')
+    expect(smokeSource).toContain('ctx.toolchain.resolveTarget(')
+    expect(smokeSource).toContain('ctx.tools.schemas()')
+    expect(smokeSource).toContain('ctx.tools.execute({')
+    expect(smokeSource).toContain("name: 'toolchain_target_resolve'")
     expect(smokeSource).toContain("ctx.get('appExit')")
     expect(smokeSource).toContain("'exec', 'dsh', '--profile', DSH_BOOT_PROBE_PROFILE")
+  })
+
+  it('accepts only a boot receipt proving Service/native-tool fingerprint parity', () => {
+    const assertBootProbeOutput = smokeModule.assertBootProbeOutput as (output: string) => void
+    const fingerprint = `dsh-target-v2:${'a'.repeat(64)}`
+    const receipt = {
+      descriptor: {
+        product: 'dsh-toolchain',
+        version: '0.0.0',
+        protocolVersion: '1',
+      },
+      service: {
+        status: 'ok',
+        snapshotFingerprint: fingerprint,
+      },
+      nativeTool: {
+        visible: true,
+        isError: false,
+        status: 'ok',
+        snapshotFingerprint: fingerprint,
+        renderedMatchesValue: true,
+      },
+    }
+
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify(receipt)}\n`,
+    )).not.toThrow()
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
+        ...receipt,
+        nativeTool: { ...receipt.nativeTool, visible: false },
+      })}\n`,
+    )).toThrow(/native target tool/i)
   })
 })
