@@ -279,3 +279,7 @@ export function parseTypeScriptDeclarationSyntax(fileName: string, content: stri
     relativePathReferences: Object.freeze([...relativePathReferences].toSorted(compareCodePoints)),
   })
 }
+
+export const typescriptDeclarationSyntaxPort: DeclarationSyntaxPort = Object.freeze({
+  parse: parseTypeScriptDeclarationSyntax,
+})
