@@ -122,8 +122,9 @@ describe('DSH package smoke policy', () => {
     expect(smokeSource).toContain("kinds: ['tool']")
     expect(smokeSource).toContain("contractId: 'tool:host:toolchain_target_resolve'")
     expect(smokeSource).toContain("source === 'cordis-inspect:host/Tool/listTools'")
-    expect(smokeSource).toContain("'exec', 'dsh', '--profile', DSH_BOOT_PROBE_PROFILE")
-    expect(smokeSource).toContain("'exec', 'dsh', '--profile', DSH_LIVE_BOOT_PROBE_PROFILE")
+    expect(smokeSource).toContain("'exec', 'dsh', '--profile', profile")
+    expect(smokeSource).toContain('runBootProbe(runner, DSH_BOOT_PROBE_PROFILE, env, false)')
+    expect(smokeSource).toContain('runBootProbe(runner, DSH_LIVE_BOOT_PROBE_PROFILE, env, true)')
   })
 
   it('accepts only a live receipt proving Agent identity, runtime evidence, index drift, and inspect continuity', () => {
