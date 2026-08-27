@@ -911,10 +911,12 @@ async function buildPackageContract(
 
   const exported = packageExportSurface(declarations)
   for (const [exportedName, evidenceIds] of [...exported.entries()].toSorted(([left], [right]) => compareCodePoints(left, right))) {
+    const firstEvidenceId = evidenceIds[0]
+    if (firstEvidenceId === undefined) throw new Error(`Export witness disappeared for ${packageName}:${exportedName}`)
     pushFact(facts, {
       key: 'declaration-export',
       value: exportedName,
-      evidenceIds: [...evidenceIds],
+      evidenceIds: [firstEvidenceId, ...evidenceIds.slice(1)],
     }, packageName, manifestLocation, budget)
   }
 
