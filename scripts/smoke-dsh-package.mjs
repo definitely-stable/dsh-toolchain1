@@ -28,6 +28,8 @@ const EXPECTED_DESCRIPTOR = Object.freeze({
 })
 const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/
 const CONTRACT_INDEX_FINGERPRINT = /^dsh-contract-index-v1:[0-9a-f]{64}$/
+const WEB_CONTRACT_ID = 'package:@deepseek-ai/dsh-tools'
+const WEB_CONTRACT_QUERY = 'ToolDefinition'
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -47,6 +49,14 @@ function run(command, args, options = {}) {
   }
 
   return typeof result.stdout === 'string' ? result.stdout : ''
+}
+
+function parseJsonCommand(label, output) {
+  try {
+    return JSON.parse(output)
+  } catch (cause) {
+    throw new Error(`DSH smoke: ${label} did not emit Protocol JSON`, { cause })
+  }
 }
 
 export function assertProfileManifest(manifest, requiredBundles = []) {
@@ -74,6 +84,90 @@ export function assertDumpConfig(dump) {
   if (!dump.includes("name: 'dsh-toolchain/dsh'") && !dump.includes('name: dsh-toolchain/dsh')) {
     throw new Error('DSH smoke: composed config does not mount dsh-toolchain/dsh')
   }
+}
+
+export function assertWebContractIntelligence(search, inspect) {
+  if (
+    search?.status !== 'ok'
+    || typeof search.snapshotFingerprint !== 'string'
+    || !TARGET_FINGERPRINT.test(search.snapshotFingerprint)
+    || typeof search?.data?.contractIndexFingerprint !== 'string'
+    || !CONTRACT_INDEX_FINGERPRINT.test(search.data.contractIndexFingerprint)
+  ) {
+    throw new Error(`DSH smoke: Web contract search did not resolve an exact index ${JSON.stringify(search)}`)
+  }
+
+  const match = search.data.matches?.find(candidate => candidate.id === WEB_CONTRACT_ID)
+  if (match === undefined || !Array.isArray(match.evidenceIds) || match.evidenceIds.length === 0) {
+    throw new Error(`DSH smoke: Web contract search did not find ${WEB_CONTRACT_QUERY} in ${WEB_CONTRACT_ID}`)
+  }
+
+  if (
+    inspect?.status !== 'ok'
+    || inspect.snapshotFingerprint !== search.snapshotFingerprint
+    || inspect?.data?.contractIndexFingerprint !== search.data.contractIndexFingerprint
+    || inspect?.data?.contract?.id !== WEB_CONTRACT_ID
+  ) {
+    throw new Error(`DSH smoke: Web contract inspect did not preserve target/index continuity ${JSON.stringify(inspect)}`)
+  }
+
+  const toolDefinition = inspect.data.contract.facts?.find(fact =>
+    fact.key === 'declaration-export' && fact.value === WEB_CONTRACT_QUERY)
+  if (toolDefinition === undefined || !Array.isArray(toolDefinition.evidenceIds) || toolDefinition.evidenceIds.length === 0) {
+    throw new Error(`DSH smoke: Web inspect did not expose declaration-export ${WEB_CONTRACT_QUERY}`)
+  }
+
+  const evidence = new Map((inspect.data.evidence ?? []).map(item => [item.id, item]))
+  const supporting = toolDefinition.evidenceIds.map(id => evidence.get(id))
+  if (supporting.some(item => item === undefined)) {
+    throw new Error('DSH smoke: Web ToolDefinition fact references evidence omitted by inspect')
+  }
+  if (!supporting.some(item =>
+    item?.kind === 'type-declaration'
+    && typeof item.source === 'string'
+    && item.source.startsWith('@deepseek-ai/dsh-tools/'))
+  ) {
+    throw new Error('DSH smoke: Web ToolDefinition fact lacks exact @deepseek-ai/dsh-tools declaration evidence')
+  }
+}
+
+function verifyWebContractIntelligence(profileDir, home, dshPackageRoot, env) {
+  const targetArgs = [
+    '--profile', 'web',
+    '--dsh-home', home,
+    '--dsh-package-root', dshPackageRoot,
+  ]
+  const search = parseJsonCommand('Web contract search', run('pnpm', [
+    'exec', 'dsh-toolchain', 'contract', 'search',
+    ...targetArgs,
+    '--query', WEB_CONTRACT_QUERY,
+    '--kind', 'package',
+    '--limit', '5',
+  ], {
+    cwd: profileDir,
+    env,
+    capture: true,
+    timeout: 180_000,
+  }))
+
+  const contractIndexFingerprint = search?.data?.contractIndexFingerprint
+  if (typeof contractIndexFingerprint !== 'string') {
+    throw new Error(`DSH smoke: Web contract search omitted index fingerprint ${JSON.stringify(search)}`)
+  }
+
+  const inspect = parseJsonCommand('Web contract inspect', run('pnpm', [
+    'exec', 'dsh-toolchain', 'contract', 'inspect',
+    ...targetArgs,
+    '--contract-index', contractIndexFingerprint,
+    '--contract-id', WEB_CONTRACT_ID,
+  ], {
+    cwd: profileDir,
+    env,
+    capture: true,
+    timeout: 180_000,
+  }))
+
+  assertWebContractIntelligence(search, inspect)
 }
 
 export async function createBootProbePackage(root) {
@@ -330,6 +424,10 @@ export async function smokeDshPackage(tarballPath, options = {}) {
       assertDumpConfig(dump)
     }
 
+    if (profiles.some(profile => profile.name === 'web')) {
+      verifyWebContractIntelligence(join(home, 'profiles', 'web'), home, dshPackageRoot, env)
+    }
+
     const probe = await createBootProbePackage(root)
     run('pnpm', [
       'exec', 'dsh', 'plugin', '--profile', DSH_BOOT_PROBE_PROFILE,
@@ -351,7 +449,7 @@ export async function smokeDshPackage(tarballPath, options = {}) {
     assertBootProbeOutput(bootOutput)
 
     process.stdout.write(
-      `DSH package smoke: ${version} profiles ${profiles.map(profile => profile.name).join(', ')} composition + live target parity + contract ToolRuntime search/inspect verified\n`,
+      `DSH package smoke: ${version} profiles ${profiles.map(profile => profile.name).join(', ')} composition + clean Web ToolDefinition contract search/inspect + live target parity + contract ToolRuntime search/inspect verified\n`,
     )
   } finally {
     await rm(root, { recursive: true, force: true })
