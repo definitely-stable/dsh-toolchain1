@@ -4,8 +4,41 @@ import type {
   ContractKind,
   ContractReference,
   Evidence,
+  TargetSnapshot,
 } from '../protocol/index.js'
 import type { Sha256Port } from './digest.js'
+
+export type ContractAcquisitionErrorCode =
+  | 'CONTRACT_EVIDENCE_STALE'
+  | 'CONTRACT_EVIDENCE_READ_FAILED'
+  | 'CONTRACT_MANIFEST_INVALID'
+  | 'CONTRACT_DECLARATION_INVALID'
+
+export class ContractAcquisitionError extends Error {
+  readonly code: ContractAcquisitionErrorCode
+  readonly locations: readonly string[]
+
+  constructor(
+    code: ContractAcquisitionErrorCode,
+    message: string,
+    locations: readonly string[] = [],
+    options?: ErrorOptions,
+  ) {
+    super(message, options)
+    this.name = 'ContractAcquisitionError'
+    this.code = code
+    this.locations = Object.freeze([...locations])
+  }
+}
+
+export interface AcquiredContractFacts {
+  readonly evidence: readonly Evidence[]
+  readonly contracts: readonly ContractDefinition[]
+}
+
+export interface ContractAcquisitionPort {
+  acquire(snapshot: TargetSnapshot): Promise<AcquiredContractFacts>
+}
 
 export interface ContractIndex {
   readonly targetFingerprint: string
