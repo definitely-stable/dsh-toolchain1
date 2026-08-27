@@ -67,20 +67,24 @@ describe('native DSH Toolchain tools', () => {
       properties: {
         profile: {
           type: 'string',
+          minLength: 1,
+          pattern: '^(?!\\.{1,2}$)(?!node_modules$)[^/\\\\]+$',
           description: 'DSH profile name to resolve.',
         },
         dshHome: {
           type: 'string',
+          minLength: 1,
           description: 'Optional DSH home override for read-only acquisition.',
         },
         dshPackageRoot: {
           type: 'string',
+          minLength: 1,
           description: 'Optional installed @deepseek-ai/dsh package root.',
         },
         patches: {
           type: 'array',
           description: 'Ordered DSH --patch overlay paths.',
-          items: { type: 'string' },
+          items: { type: 'string', minLength: 1 },
         },
       },
       required: ['profile'],
