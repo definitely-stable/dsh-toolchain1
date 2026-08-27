@@ -252,6 +252,57 @@ describe('M2.1 semantic correctness regressions', () => {
     })
   })
 
+  it('uses concrete exports types entrypoints without treating wildcard templates as files', async () => {
+    const root = await temporaryRoot()
+    const modulesRoot = path.join(root, 'runner', 'node_modules')
+    const dsh = await writeInstalledPackage(modulesRoot, { name: '@deepseek-ai/dsh' })
+    const apiProxy = await writeInstalledPackage(modulesRoot, {
+      name: '@deepseek-ai/dsh-host-apiproxy',
+      manifest: {
+        exports: {
+          '.': { types: './lib/types/index.d.ts', default: './lib/index.js' },
+          './api': { types: './lib/types/api/index.d.ts', default: './lib/types/api/index.js' },
+          './api/*': { types: './lib/types/api/*.d.ts', default: './lib/types/api/*.js' },
+          './client': { types: './lib/types/fetch/client.d.ts', default: './lib/types/fetch/client.js' },
+        },
+      },
+      files: {
+        'lib/types/index.d.ts': 'export interface ApiProxyRoot {}\n',
+        'lib/types/api/index.d.ts': 'export interface ApiProxyApi {}\n',
+        'lib/types/fetch/client.d.ts': 'export interface ApiProxyClient {}\n',
+      },
+    })
+
+    const target = targetSnapshot([
+      manifestEvidence('manifest:dsh', '@deepseek-ai/dsh', dsh.manifestLocation, dsh.manifestContent),
+      manifestEvidence(
+        'manifest:dependency:@deepseek-ai/dsh-host-apiproxy',
+        '@deepseek-ai/dsh-host-apiproxy',
+        apiProxy.manifestLocation,
+        apiProxy.manifestContent,
+      ),
+    ], {
+      dependencies: [{ name: '@deepseek-ai/dsh-host-apiproxy', version: '0.1.1-rc.2' }],
+    })
+
+    const result = await createDshContractFilesystemAcquisition({
+      digest: createNodeSha256Port(),
+    }).acquire(target)
+    const contract = result.contracts.find(item => item.id === 'package:@deepseek-ai/dsh-host-apiproxy')
+
+    expect(contract?.facts.filter(fact => fact.key === 'declaration-entry').map(fact => fact.value)).toEqual([
+      'lib/types/api/index.d.ts',
+      'lib/types/fetch/client.d.ts',
+      'lib/types/index.d.ts',
+    ])
+    expect(contract?.facts.filter(fact => fact.key === 'declaration-export').map(fact => fact.value).toSorted()).toEqual([
+      'ApiProxyApi',
+      'ApiProxyClient',
+      'ApiProxyRoot',
+    ])
+    expect(result.evidence.map(item => item.source)).not.toContain('@deepseek-ai/dsh-host-apiproxy/lib/types/api/*.d.ts')
+  })
+
   it('rejects parser-recovery ASTs for syntactically malformed declarations', () => {
     expect(() => parseTypeScriptDeclarationSyntax(
       'index.d.ts',
