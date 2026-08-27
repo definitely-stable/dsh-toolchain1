@@ -63,7 +63,10 @@ function createKernel(contractAcquisition: ContractAcquisitionPort) {
     targetAcquisition: { acquire: async () => targetFacts },
     contractAcquisition,
     digest: {
-      sha256Utf8: async value => value.includes('dsh-contract-index-v1') ? 'b'.repeat(64) : 'a'.repeat(64),
+      sha256Utf8: async value => {
+        if (!value.includes('dsh-contract-index-v1')) return 'a'.repeat(64)
+        return value.includes('DifferentSymbol') ? 'c'.repeat(64) : 'b'.repeat(64)
+      },
     },
     now: () => '2026-08-27T00:00:00.000Z',
   })
