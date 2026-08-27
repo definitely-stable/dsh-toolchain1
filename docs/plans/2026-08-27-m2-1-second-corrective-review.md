@@ -1,6 +1,6 @@
 # M2.1 Second Corrective Merge Gate
 
-**Status:** implementation complete at functional GREEN checkpoint CI #334; final governance-head verification is pending before Ready for review.
+**Status:** completed. Functional GREEN was CI #334 and governance-head GREEN was CI #337. A later independent review opened a separate third corrective gate; this file is now historical execution evidence for the second pass.
 
 **Trigger:** independent review after CI #320 exposed semantic coverage gaps that the existing synthetic/unit and exact-package smoke did not exercise.
 
@@ -89,11 +89,11 @@
 
 - [x] Supersede CI #320 as historical evidence rather than merge approval.
 - [x] Synchronize the original and first corrective implementation-plan completion state.
-- [ ] Update Issue #29 and PR #30 metadata to the exact final governance-head evidence after the final CI.
+- [x] Update Issue #29 and PR #30 metadata to the exact final governance-head evidence after the final CI.
 - [x] Functional checkpoint CI #334 passes aggregate gate, Node 22/24/26, Windows/macOS, exact pack/installed consumer, real DSH composition, real-web Contract Intelligence smoke and multi-train target smoke.
-- [ ] Run the same required CI once more on the governance-only final SHA.
-- [x] Re-check PR comments/reviews/threads at the functional checkpoint; none are present.
-- [ ] Mark Ready for review only after all gates are GREEN on the exact final HEAD.
+- [x] Run the same required CI once more on governance-only SHA `2c7609badaae9f1a9b54ea345e14481b604d42ea`: CI #337 (`33070190485`) GREEN.
+- [x] Re-check PR comments/reviews/threads; none were present at the second-pass final checkpoint.
+- [x] Mark Ready for review after CI #337. A later independent review subsequently returned PR #30 to Draft for the separate third corrective gate.
 
 ## Verification chronology
 
@@ -102,6 +102,7 @@
 - Later authoritative real-Web smoke exposed real upstream declaration forms that synthetic fixtures had missed: declaration `.ts` specifiers and wildcard package-export templates.
 - CI #333 (`33068823748`) is the clean wildcard TDD RED: one new semantic-correctness test failed while 214 tests passed.
 - CI #334 (`33069654095`) is the functional GREEN checkpoint on `d74638d6bc3640ab9edfc91f739fb022a6708242`: all six jobs and every required primary boundary passed.
+- CI #337 (`33070190485`) is the completed governance-head GREEN on `2c7609badaae9f1a9b54ea345e14481b604d42ea` for this second corrective pass.
 
 ## Deferred follow-up
 
