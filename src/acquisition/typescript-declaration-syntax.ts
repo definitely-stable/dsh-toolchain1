@@ -65,20 +65,22 @@ function isRelativeSpecifier(value: string): boolean {
 }
 
 /**
- * TypeScript with `rewriteRelativeImportExtensions` can emit `.d.ts` files
- * whose module specifiers deliberately retain the source `.ts/.mts/.cts/.tsx`
- * spelling. A declaration-only consumer resolves those spellings to the
- * corresponding emitted declaration when source files are not published.
- *
- * M2.1 intentionally consumes declaration evidence only, so canonicalize
- * those emitted source-extension spellings to their declaration sibling
- * rather than widening acquisition into arbitrary target TypeScript source.
+ * TypeScript with `rewriteRelativeImportExtensions` can emit declaration files
+ * whose relative module/path references retain source `.ts/.mts/.cts/.tsx`
+ * spellings. M2.1 consumes declaration evidence only, so resolve those
+ * spellings to emitted declaration siblings while keeping declaration-form
+ * specifiers idempotent.
  */
-function declarationReexportSpecifier(value: string): string {
+function declarationTargetSpecifier(value: string): string {
+  if (
+    value.endsWith('.d.ts')
+    || value.endsWith('.d.mts')
+    || value.endsWith('.d.cts')
+  ) return value
   if (value.endsWith('.mts')) return `${value.slice(0, -4)}.d.mts`
   if (value.endsWith('.cts')) return `${value.slice(0, -4)}.d.cts`
   if (value.endsWith('.tsx')) return `${value.slice(0, -4)}.d.ts`
-  if (value.endsWith('.ts') && !value.endsWith('.d.ts')) return `${value.slice(0, -3)}.d.ts`
+  if (value.endsWith('.ts')) return `${value.slice(0, -3)}.d.ts`
   return value
 }
 
@@ -192,7 +194,9 @@ export function parseTypeScriptDeclarationSyntax(fileName: string, content: stri
   const relativePathReferences = new Set<string>()
 
   for (const reference of sourceFile.referencedFiles) {
-    if (isRelativeSpecifier(reference.fileName)) relativePathReferences.add(reference.fileName)
+    if (isRelativeSpecifier(reference.fileName)) {
+      relativePathReferences.add(declarationTargetSpecifier(reference.fileName))
+    }
   }
 
   for (const statement of sourceFile.statements) {
@@ -220,7 +224,7 @@ export function parseTypeScriptDeclarationSyntax(fileName: string, content: stri
       const rawSpecifier = moduleSpecifierText(statement.moduleSpecifier)
       const relative = rawSpecifier !== undefined && isRelativeSpecifier(rawSpecifier)
       const specifier = relative && rawSpecifier !== undefined
-        ? declarationReexportSpecifier(rawSpecifier)
+        ? declarationTargetSpecifier(rawSpecifier)
         : rawSpecifier
 
       if (statement.exportClause === undefined) {
@@ -266,7 +270,7 @@ export function parseTypeScriptDeclarationSyntax(fileName: string, content: stri
       if (rawSpecifier !== undefined && isRelativeSpecifier(rawSpecifier)) {
         relativeReexports.push({
           kind: 'import-equals',
-          specifier: declarationReexportSpecifier(rawSpecifier),
+          specifier: declarationTargetSpecifier(rawSpecifier),
           exportedName: statement.name.text,
         })
       }
