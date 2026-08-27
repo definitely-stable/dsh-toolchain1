@@ -126,15 +126,17 @@ describe('native DSH Contract Intelligence tools', () => {
     expect(JSON.parse(inspect.output.render({}, inspectValue)[0]?.text ?? 'null')).toEqual(inspectValue)
   })
 
-  it('forwards the current DSH execution object per call instead of dropping Agent-scoped context', async () => {
+  it('projects only Agent and AbortSignal from the current DSH execution object', async () => {
     const searchResolver = vi.fn(async () => searchResponse())
     const inspectResolver = vi.fn(async () => inspectResponse())
     const search = createContractSearchToolDefinition(searchResolver)
     const inspect = createContractInspectToolDefinition(inspectResolver)
     const controller = new AbortController()
+    const agent = Object.freeze({ id: 'agent-live-inspect' })
     const execution = Object.freeze({
-      agent: Object.freeze({ id: 'agent-live-inspect' }),
+      agent,
       signal: controller.signal,
+      internalCapability: Object.freeze({ secret: 'must-not-cross-boundary' }),
     })
 
     const searchRequest = {
@@ -143,7 +145,10 @@ describe('native DSH Contract Intelligence tools', () => {
       kinds: ['package'] as const,
     }
     await search.execute(searchRequest, execution)
-    expect(searchResolver).toHaveBeenCalledWith(searchRequest, execution)
+    const searchExecution = searchResolver.mock.calls[0]?.[1]
+    expect(searchExecution).toEqual({ agent, signal: controller.signal })
+    expect(searchExecution).not.toBe(execution)
+    expect(searchExecution).not.toHaveProperty('internalCapability')
 
     const inspectRequest = {
       target: { profile: 'web' },
@@ -151,7 +156,10 @@ describe('native DSH Contract Intelligence tools', () => {
       contractId: 'package:@deepseek-ai/dsh-tools',
     }
     await inspect.execute(inspectRequest, execution)
-    expect(inspectResolver).toHaveBeenCalledWith(inspectRequest, execution)
+    const inspectExecution = inspectResolver.mock.calls[0]?.[1]
+    expect(inspectExecution).toEqual({ agent, signal: controller.signal })
+    expect(inspectExecution).not.toBe(execution)
+    expect(inspectExecution).not.toHaveProperty('internalCapability')
   })
 
   it.each([
