@@ -51,7 +51,7 @@ function contractFacts(symbol = 'ToolDefinition'): AcquiredContractFacts {
     summary: 'Installed package @deepseek-ai/dsh-tools@0.1.1-rc.2',
     facts: [
       { key: 'version', value: '0.1.1-rc.2', evidenceIds: [manifest.id] },
-      { key: 'declaration-symbol', value: symbol, evidenceIds: [types.id] },
+      { key: 'declaration-export', value: symbol, evidenceIds: [types.id] },
     ],
     evidenceIds: [manifest.id, types.id],
   }
@@ -84,7 +84,6 @@ describe('Contract Intelligence kernel', () => {
       expect.objectContaining({ id: 'package:@deepseek-ai/dsh-tools', score: 200 }),
     ])
     expect(outcome.data.evidence.map(item => item.id)).toEqual([
-      'manifest:tools',
       'types:tools:index.d.ts',
     ])
   })
