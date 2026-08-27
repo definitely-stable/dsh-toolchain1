@@ -1,6 +1,7 @@
 import type { Sha256Port } from '../../model/digest.js'
 import {
   ContractAcquisitionError,
+  mergeAcquiredContractFacts,
   type AcquiredContractFacts,
   type ContractEnrichmentPort,
 } from '../../model/contract.js'
@@ -37,6 +38,8 @@ export interface DshLiveContractLimits {
   readonly maxContracts: number
   readonly maxFactsPerContract: number
   readonly maxFactsTotal: number
+  readonly maxToolSchemaBytesPerTool: number
+  readonly maxToolSchemaBytesTotal: number
 }
 
 export interface DshLiveContractEnrichmentOptions {
@@ -54,12 +57,37 @@ const DEFAULT_LIVE_CONTRACT_LIMITS: DshLiveContractLimits = Object.freeze({
   maxContracts: 4096,
   maxFactsPerContract: 512,
   maxFactsTotal: 32_768,
+  maxToolSchemaBytesPerTool: 512 * 1024,
+  maxToolSchemaBytesTotal: 3 * 1024 * 1024,
 })
 
 interface ServiceCatalogRow {
   readonly key: string
   readonly description?: string
   readonly signatures: readonly string[]
+}
+
+interface EventCatalogRow {
+  readonly name: string
+  readonly description?: string
+  readonly mode: string
+  readonly signature: string
+}
+
+interface ToolCatalogRow {
+  readonly name: string
+  readonly description: string
+  readonly parametersSchema: string
+}
+
+interface HostProviderPlan {
+  readonly id: string
+  readonly method: string
+  normalize(
+    value: unknown,
+    digest: Sha256Port,
+    limits: DshLiveContractLimits,
+  ): Promise<AcquiredContractFacts>
 }
 
 function objectValue(value: unknown): Record<string, unknown> | undefined {
@@ -84,6 +112,10 @@ function resolveLimits(overrides: Partial<DshLiveContractLimits> | undefined): D
     }
   }
   return Object.freeze(resolved)
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength
 }
 
 function validateJsonValue(
@@ -147,12 +179,27 @@ function validateJsonValue(
     throw invalidLiveEvidence('Cordis Inspect provider result is not JSON-serializable.')
   }
 
-  const bytes = new TextEncoder().encode(serialized).byteLength
+  const bytes = utf8Bytes(serialized)
   if (bytes > limits.maxProviderResultBytes) {
     throw liveLimitExceeded(
       `Cordis Inspect provider result exceeds ${limits.maxProviderResultBytes} serialized bytes.`,
     )
   }
+}
+
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson)
+  const object = objectValue(value)
+  if (object === undefined) return value
+  return Object.fromEntries(
+    Object.keys(object)
+      .toSorted()
+      .map(key => [key, canonicalizeJson(object[key])]),
+  )
+}
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(canonicalizeJson(value))
 }
 
 function providerView(value: unknown): InspectProviderView | undefined {
@@ -167,6 +214,42 @@ function providerView(value: unknown): InspectProviderView | undefined {
       : []
   })
   return { platform: object.platform, id: object.id, methods }
+}
+
+function supportsHostMethod(
+  provider: InspectProviderView,
+  id: string,
+  method: string,
+): boolean {
+  return provider.platform === 'host'
+    && provider.id === id
+    && provider.methods.some(candidate => candidate.name === method)
+}
+
+function enforceNormalizedLimits(
+  acquired: AcquiredContractFacts,
+  limits: DshLiveContractLimits,
+): void {
+  if (acquired.contracts.length > limits.maxContracts) {
+    throw liveLimitExceeded(
+      `Live Inspect exceeds ${limits.maxContracts} normalized contracts in total.`,
+    )
+  }
+
+  let totalFacts = 0
+  for (const contract of acquired.contracts) {
+    if (contract.facts.length > limits.maxFactsPerContract) {
+      throw liveLimitExceeded(
+        `Live contract ${contract.id} exceeds ${limits.maxFactsPerContract} normalized facts.`,
+      )
+    }
+    totalFacts += contract.facts.length
+    if (totalFacts > limits.maxFactsTotal) {
+      throw liveLimitExceeded(
+        `Live Inspect exceeds ${limits.maxFactsTotal} normalized facts in total.`,
+      )
+    }
+  }
 }
 
 function serviceCatalog(
@@ -217,8 +300,105 @@ function serviceCatalog(
   return Object.freeze(rows.toSorted((left, right) => left.key.localeCompare(right.key, 'en-US')))
 }
 
+function eventCatalog(
+  value: unknown,
+  limits: DshLiveContractLimits,
+): readonly EventCatalogRow[] {
+  const root = objectValue(value)
+  if (root?.mode !== 'catalog' || !Array.isArray(root.events)) {
+    throw invalidLiveEvidence('Host Event Inspect returned an invalid compact catalog.')
+  }
+  if (root.events.length > limits.maxContracts) {
+    throw liveLimitExceeded(
+      `Host Event Inspect exceeds ${limits.maxContracts} normalized contracts.`,
+    )
+  }
+
+  return Object.freeze(root.events.map((entry): EventCatalogRow => {
+    const event = objectValue(entry)
+    if (
+      event === undefined
+      || typeof event.name !== 'string'
+      || typeof event.mode !== 'string'
+      || typeof event.signature !== 'string'
+    ) {
+      throw invalidLiveEvidence('Host Event Inspect returned an invalid event row.')
+    }
+    return {
+      name: event.name,
+      ...(typeof event.description === 'string' ? { description: event.description } : {}),
+      mode: event.mode,
+      signature: event.signature,
+    }
+  }).toSorted((left, right) => left.name.localeCompare(right.name, 'en-US')))
+}
+
+function toolCatalog(
+  value: unknown,
+  limits: DshLiveContractLimits,
+): readonly ToolCatalogRow[] {
+  const root = objectValue(value)
+  if (!Array.isArray(root?.tools)) {
+    throw invalidLiveEvidence('Host Tool Inspect returned an invalid Agent-scoped Tool catalog.')
+  }
+  if (root.tools.length > limits.maxContracts) {
+    throw liveLimitExceeded(
+      `Host Tool Inspect exceeds ${limits.maxContracts} normalized contracts.`,
+    )
+  }
+
+  let totalSchemaBytes = 0
+  const rows = root.tools.map((entry): ToolCatalogRow => {
+    const tool = objectValue(entry)
+    const parameters = tool === undefined ? undefined : objectValue(tool.parameters)
+    if (
+      tool === undefined
+      || typeof tool.name !== 'string'
+      || typeof tool.description !== 'string'
+      || parameters === undefined
+    ) {
+      throw invalidLiveEvidence('Host Tool Inspect returned an invalid Tool schema row.')
+    }
+
+    const parametersSchema = canonicalJson(parameters)
+    const schemaBytes = utf8Bytes(parametersSchema)
+    if (schemaBytes > limits.maxToolSchemaBytesPerTool) {
+      throw liveLimitExceeded(
+        `Host Tool ${tool.name} parameter schema exceeds ${limits.maxToolSchemaBytesPerTool} bytes.`,
+      )
+    }
+    totalSchemaBytes += schemaBytes
+    if (totalSchemaBytes > limits.maxToolSchemaBytesTotal) {
+      throw liveLimitExceeded(
+        `Host Tool parameter schemas exceed ${limits.maxToolSchemaBytesTotal} bytes in total.`,
+      )
+    }
+
+    return {
+      name: tool.name,
+      description: tool.description,
+      parametersSchema,
+    }
+  })
+  return Object.freeze(rows.toSorted((left, right) => left.name.localeCompare(right.name, 'en-US')))
+}
+
 function serviceQualifiedName(key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `ctx.${key}` : `ctx[${JSON.stringify(key)}]`
+}
+
+function runtimeEvidence(
+  providerId: string,
+  methodName: string,
+  contentHash: string,
+): Evidence {
+  return Object.freeze({
+    id: `runtime:cordis-inspect:host:${providerId}:${methodName}`,
+    kind: 'runtime',
+    strength: 'observed',
+    source: `cordis-inspect:host/${providerId}/${methodName}`,
+    contentHash,
+  })
 }
 
 async function normalizeServices(
@@ -234,14 +414,8 @@ async function normalizeServices(
     signatures: [...row.signatures],
   })))
   const contentHash = await digest.sha256Utf8(canonical)
-  const evidenceId = 'runtime:cordis-inspect:host:Service:listService'
-  const evidence: Evidence = Object.freeze({
-    id: evidenceId,
-    kind: 'runtime',
-    strength: 'observed',
-    source: 'cordis-inspect:host/Service/listService',
-    contentHash,
-  })
+  const evidence = runtimeEvidence('Service', 'listService', contentHash)
+  const evidenceId = evidence.id
   const contracts = rows.map((row): ContractDefinition => {
     const facts: ContractFact[] = row.signatures.map(signature => ({
       key: 'method-signature',
@@ -262,11 +436,75 @@ async function normalizeServices(
   return Object.freeze({ evidence: Object.freeze([evidence]), contracts: Object.freeze(contracts) })
 }
 
-function supportsServiceCatalog(provider: InspectProviderView): boolean {
-  return provider.platform === 'host'
-    && provider.id === 'Service'
-    && provider.methods.some(method => method.name === 'listService')
+async function normalizeEvents(
+  value: unknown,
+  digest: Sha256Port,
+  limits: DshLiveContractLimits,
+): Promise<AcquiredContractFacts> {
+  validateJsonValue(value, limits)
+  const rows = eventCatalog(value, limits)
+  const canonical = JSON.stringify(rows.map(row => ({
+    name: row.name,
+    ...(row.description === undefined ? {} : { description: row.description }),
+    mode: row.mode,
+    signature: row.signature,
+  })))
+  const contentHash = await digest.sha256Utf8(canonical)
+  const evidence = runtimeEvidence('Event', 'listEvents', contentHash)
+  const evidenceId = evidence.id
+  const contracts = rows.map((row): ContractDefinition => ({
+    id: `event:host:${row.name}`,
+    kind: 'event',
+    name: row.name,
+    qualifiedName: `event:${row.name}`,
+    availability: 'available',
+    ...(row.description === undefined ? {} : { summary: row.description }),
+    facts: [
+      { key: 'dispatch-mode', value: row.mode, evidenceIds: [evidenceId] },
+      { key: 'listener-signature', value: row.signature, evidenceIds: [evidenceId] },
+    ],
+    evidenceIds: [evidenceId],
+  }))
+  return Object.freeze({ evidence: Object.freeze([evidence]), contracts: Object.freeze(contracts) })
 }
+
+async function normalizeTools(
+  value: unknown,
+  digest: Sha256Port,
+  limits: DshLiveContractLimits,
+): Promise<AcquiredContractFacts> {
+  validateJsonValue(value, limits)
+  const rows = toolCatalog(value, limits)
+  const canonical = JSON.stringify(rows.map(row => ({
+    name: row.name,
+    description: row.description,
+    parametersSchema: row.parametersSchema,
+  })))
+  const contentHash = await digest.sha256Utf8(canonical)
+  const evidence = runtimeEvidence('Tool', 'listTools', contentHash)
+  const evidenceId = evidence.id
+  const contracts = rows.map((row): ContractDefinition => ({
+    id: `tool:host:${row.name}`,
+    kind: 'tool',
+    name: row.name,
+    qualifiedName: `tool:${row.name}`,
+    availability: 'available',
+    summary: row.description,
+    facts: [{
+      key: 'parameters-schema',
+      value: row.parametersSchema,
+      evidenceIds: [evidenceId],
+    }],
+    evidenceIds: [evidenceId],
+  }))
+  return Object.freeze({ evidence: Object.freeze([evidence]), contracts: Object.freeze(contracts) })
+}
+
+const HOST_PROVIDER_PLAN: readonly HostProviderPlan[] = Object.freeze([
+  Object.freeze({ id: 'Service', method: 'listService', normalize: normalizeServices }),
+  Object.freeze({ id: 'Event', method: 'listEvents', normalize: normalizeEvents }),
+  Object.freeze({ id: 'Tool', method: 'listTools', normalize: normalizeTools }),
+])
 
 /**
  * Build one invocation-scoped enrichment port. Missing Agent/signal means the
@@ -293,19 +531,28 @@ export function createDshLiveContractEnrichment(
       const providers = listed
         .map(providerView)
         .filter((value): value is InspectProviderView => value !== undefined)
-      const service = providers.find(supportsServiceCatalog)
-      if (service === undefined) {
-        return Object.freeze({ evidence: Object.freeze([]), contracts: Object.freeze([]) })
+
+      let acquired: AcquiredContractFacts = Object.freeze({
+        evidence: Object.freeze([]),
+        contracts: Object.freeze([]),
+      })
+      for (const plan of HOST_PROVIDER_PLAN) {
+        const provider = providers.find(candidate => supportsHostMethod(candidate, plan.id, plan.method))
+        if (provider === undefined) continue
+
+        const value = await options.registry.query(
+          'host',
+          plan.id,
+          plan.method,
+          {},
+          agent,
+          signal,
+        )
+        const next = await plan.normalize(value, options.digest, limits)
+        acquired = mergeAcquiredContractFacts(acquired, next)
+        enforceNormalizedLimits(acquired, limits)
       }
-      const value = await options.registry.query(
-        'host',
-        'Service',
-        'listService',
-        {},
-        agent,
-        signal,
-      )
-      return normalizeServices(value, options.digest, limits)
+      return acquired
     },
   })
 }
