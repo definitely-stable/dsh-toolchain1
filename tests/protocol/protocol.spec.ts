@@ -24,6 +24,7 @@ interface ProtocolSchema {
     }
     targetSnapshot?: unknown
     resolvedBundleIdentity?: unknown
+    contractFact?: unknown
     contractSearchRequest?: unknown
     contractSearchResult?: {
       properties?: Record<string, unknown>
@@ -73,14 +74,15 @@ async function contractValidators() {
   const ajv = new Ajv2020({ allErrors: true, strict: true })
   addFormats(ajv)
   ajv.addSchema(schema)
+  const fact = ajv.getSchema(`${schema.$id}#/$defs/contractFact`)
   const searchRequest = ajv.getSchema(`${schema.$id}#/$defs/contractSearchRequest`)
   const searchResponse = ajv.getSchema(`${schema.$id}#/$defs/contractSearchResponse`)
   const inspectRequest = ajv.getSchema(`${schema.$id}#/$defs/contractInspectRequest`)
   const inspectResponse = ajv.getSchema(`${schema.$id}#/$defs/contractInspectResponse`)
-  if (!searchRequest || !searchResponse || !inspectRequest || !inspectResponse) {
+  if (!fact || !searchRequest || !searchResponse || !inspectRequest || !inspectResponse) {
     throw new Error('Contract protocol validators are not resolvable')
   }
-  return { ajv, searchRequest, searchResponse, inspectRequest, inspectResponse }
+  return { ajv, fact, searchRequest, searchResponse, inspectRequest, inspectResponse }
 }
 
 describe('Protocol v1 generated contract', () => {
@@ -192,6 +194,21 @@ describe('Protocol v1 generated contract', () => {
       type: 'string',
       pattern: '^dsh-contract-index-v1:[0-9a-f]{64}$',
     })
+  })
+
+  it('requires every normalized contract fact to reference supporting evidence', async () => {
+    const { ajv, fact } = await contractValidators()
+
+    expect(fact({
+      key: 'version',
+      value: '0.1.1-rc.2',
+      evidenceIds: ['manifest:dsh'],
+    }), ajv.errorsText(fact.errors)).toBe(true)
+    expect(fact({
+      key: 'unsupported',
+      value: 'claim',
+      evidenceIds: [],
+    }), ajv.errorsText(fact.errors)).toBe(false)
   })
 
   it('validates bounded search requests and exact-index inspect requests', async () => {
