@@ -8,16 +8,6 @@ import {
 import type { ContractDefinition, ContractFact, Evidence } from '../../protocol/index.js'
 import type { DshContractToolExecutionContext } from './contract-tool.js'
 
-interface InspectMethodView {
-  readonly name: string
-}
-
-interface InspectProviderView {
-  readonly platform: 'host' | 'client'
-  readonly id: string
-  readonly methods: readonly InspectMethodView[]
-}
-
 export interface DshCordisInspectRegistryPort {
   list(): readonly unknown[]
   query(
@@ -32,6 +22,7 @@ export interface DshCordisInspectRegistryPort {
 
 export interface DshLiveContractLimits {
   readonly maxProviderEntries: number
+  readonly maxMethodsPerRelevantProvider: number
   readonly maxProviderResultBytes: number
   readonly maxJsonDepth: number
   readonly maxJsonNodes: number
@@ -51,6 +42,7 @@ export interface DshLiveContractEnrichmentOptions {
 
 const DEFAULT_LIVE_CONTRACT_LIMITS: DshLiveContractLimits = Object.freeze({
   maxProviderEntries: 256,
+  maxMethodsPerRelevantProvider: 256,
   maxProviderResultBytes: 4 * 1024 * 1024,
   maxJsonDepth: 64,
   maxJsonNodes: 100_000,
@@ -212,24 +204,24 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(canonicalizeJson(value))
 }
 
-function providerView(value: unknown): InspectProviderView | undefined {
+function providerSupportsPlan(
+  value: unknown,
+  plan: InspectProviderPlan,
+  limits: DshLiveContractLimits,
+): boolean {
   const object = objectValue(value)
-  if (object === undefined) return undefined
-  if (object.platform !== 'host' && object.platform !== 'client') return undefined
-  if (typeof object.id !== 'string' || !Array.isArray(object.methods)) return undefined
-  const methods = object.methods.flatMap(method => {
+  if (object === undefined || object.platform !== plan.platform || object.id !== plan.id) return false
+  const methods = object.methods
+  if (!Array.isArray(methods)) return false
+  if (methods.length > limits.maxMethodsPerRelevantProvider) {
+    throw liveLimitExceeded(
+      `Cordis Inspect ${plan.platform}/${plan.id} provider exceeds ${limits.maxMethodsPerRelevantProvider} advertised methods.`,
+    )
+  }
+  return methods.some((method) => {
     const candidate = objectValue(method)
-    return candidate !== undefined && typeof candidate.name === 'string'
-      ? [{ name: candidate.name }]
-      : []
+    return candidate !== undefined && candidate.name === plan.method
   })
-  return { platform: object.platform, id: object.id, methods }
-}
-
-function supportsMethod(provider: InspectProviderView, plan: InspectProviderPlan): boolean {
-  return provider.platform === plan.platform
-    && provider.id === plan.id
-    && provider.methods.some(candidate => candidate.name === plan.method)
 }
 
 function enforceNormalizedLimits(
@@ -583,16 +575,13 @@ export function createDshLiveContractEnrichment(
           `Cordis Inspect provider directory exceeds ${limits.maxProviderEntries} entries.`,
         )
       }
-      const providers = listed
-        .map(providerView)
-        .filter((value): value is InspectProviderView => value !== undefined)
 
       let acquired: AcquiredContractFacts = Object.freeze({
         evidence: Object.freeze([]),
         contracts: Object.freeze([]),
       })
       for (const plan of PROVIDER_PLAN) {
-        const provider = providers.find(candidate => supportsMethod(candidate, plan))
+        const provider = listed.find(candidate => providerSupportsPlan(candidate, plan, limits))
         if (provider === undefined) continue
 
         const value = await queryProvider(options, plan, agent, signal)
