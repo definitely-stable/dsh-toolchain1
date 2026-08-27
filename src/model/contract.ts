@@ -89,8 +89,8 @@ function canonicalizeValue(value: JsonValue): JsonValue {
   ) as { readonly [key: string]: JsonValue }
 }
 
-function sortedUnique(values: readonly string[]): readonly string[] {
-  return Object.freeze([...new Set(values)].toSorted(compareCodePoints))
+function sortedUnique(values: readonly string[]): string[] {
+  return [...new Set(values)].toSorted(compareCodePoints)
 }
 
 function freezeEvidence(item: Evidence): Evidence {
@@ -98,10 +98,17 @@ function freezeEvidence(item: Evidence): Evidence {
 }
 
 function freezeFact(fact: ContractFact): ContractFact {
+  const sorted = sortedUnique(fact.evidenceIds)
+  const first = sorted[0]
+  if (first === undefined) {
+    throw new Error(`Contract fact ${fact.key} must reference at least one evidence id`)
+  }
+  const evidenceIds: ContractFact['evidenceIds'] = [first, ...sorted.slice(1)]
+  Object.freeze(evidenceIds)
   return Object.freeze({
     key: fact.key,
     value: fact.value,
-    evidenceIds: sortedUnique(fact.evidenceIds),
+    evidenceIds,
   })
 }
 
@@ -112,8 +119,10 @@ function compareFacts(left: ContractFact, right: ContractFact): number {
 }
 
 function freezeContract(contract: ContractDefinition): ContractDefinition {
-  const facts = Object.freeze(contract.facts.map(freezeFact).toSorted(compareFacts))
+  const facts = contract.facts.map(freezeFact).toSorted(compareFacts)
+  Object.freeze(facts)
   const evidenceIds = sortedUnique(contract.evidenceIds)
+  Object.freeze(evidenceIds)
   return Object.freeze({
     id: contract.id,
     kind: contract.kind,
