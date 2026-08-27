@@ -216,6 +216,10 @@ export async function runCli(
   }
 
   if (parsed.values.version && parsed.positionals.length === 0) {
+    if (hasTargetHint(parsed.values) && !hasSearchOption(parsed.values) && !hasInspectOption(parsed.values)) {
+      io.stderr.write('Error: target options require the target resolve command\n')
+      return 2
+    }
     if (hasOperationOption(parsed.values)) {
       io.stderr.write('Error: operation options require a target or contract command\n')
       return 2
