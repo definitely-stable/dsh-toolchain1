@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans task-by-task. Every behavior change is RED -> verified failure -> minimal GREEN -> focused verification.
 
-**Status:** implementation complete. Behavioral RED is CI #343; functional GREEN is CI #345 on `a7fb3871d1f3a25c9555989dfcb1ab93e6c42f20`. This documentation commit exists only to reconcile governance after the functional GREEN; the final merge gate is one fresh full CI on the resulting exact governance HEAD.
+**Status:** completed. Behavioral RED is CI #343; functional GREEN is CI #345 on `a7fb3871d1f3a25c9555989dfcb1ab93e6c42f20`; governance reconciliation GREEN is CI #346 on `2fee7eefbc27e3996d04347e69ae09665af44fcd`. This closeout commit changes only this Markdown execution record. GitHub Actions must pass once more on the resulting exact branch HEAD; that authoritative run is recorded in Issue #29 and PR #30 metadata rather than causing another documentation commit.
 
 **Goal:** close the remaining declaration-surface and aggregate-resource false-positive risks found by the post-CI #337 independent review without expanding M2.1 into full TypeScript semantic checking.
 
@@ -95,9 +95,9 @@ maxTotalNormalizedFacts  = 65,536
 - [x] CI #345 passed build, exact `pnpm pack`, manifest inspection and installed consumer.
 - [x] CI #345 passed real DSH `0.1.1-rc.2` minimal/Web composition and shipped-Web `ToolDefinition -> package:@deepseek-ai/dsh-tools -> inspect`.
 - [x] CI #345 preserved multi-train target smoke against `0.1.1-rc.2` and `0.1.0-rc.8`.
-- [ ] Run one fresh full CI on the governance-only HEAD produced by this file reconciliation.
-- [ ] Re-check PR comments/reviews/threads and base/head state on that exact HEAD.
-- [ ] Update Issue #29 and PR #30 metadata to that exact final HEAD and mark PR Ready for review again.
+- [x] CI #346 repeated the full required matrix on the governance reconciliation HEAD `2fee7eefbc27e3996d04347e69ae09665af44fcd` and completed GREEN.
+- [x] PR conversation comments, submitted reviews and review threads were re-checked after CI #346: all are empty; PR remained mergeable against unchanged `main` base `69aacdb926ff0e038916cb76b0c5280ca53d562d`.
+- [x] This file is the final branch-content closeout. The automatically triggered CI on this exact Markdown-only HEAD is the authoritative merge checkpoint; Issue/PR metadata is updated after that run and does not change the branch SHA.
 
 ## Verification chronology
 
@@ -105,7 +105,8 @@ maxTotalNormalizedFacts  = 65,536
 - CI #342 stopped at TypeScript weak-type checking in the newly added aggregate-budget test harness; production remained untouched and this run is not treated as behavioral RED evidence.
 - CI #343 (`33075046379`) is the accepted third-pass RED: generated/protocol/architecture/package/lint/typechecks passed, then exactly 8 new behavioral regressions failed while 216 previous tests passed. Failures covered `.d.mts/.d.cts` idempotence, triple-slash normalization, missing/ambiguous re-export semantics, explicit re-export evidence, total files/bytes/facts, and early surface-budget enforcement.
 - CI #345 (`33075669576`) is the functional GREEN on `a7fb3871d1f3a25c9555989dfcb1ab93e6c42f20`: all six jobs passed, including Node 22/24/26, Windows/macOS, aggregate checks, exact pack, installed consumer, real minimal/Web DSH, shipped-Web Contract Intelligence and multi-train target smoke.
-- The next CI on the documentation-only governance HEAD is the authoritative merge checkpoint.
+- CI #346 (`33076836089`) is the governance-reconciliation GREEN on `2fee7eefbc27e3996d04347e69ae09665af44fcd`; it repeated the same full matrix after the implementation plan was synchronized.
+- The automatically triggered workflow for this final Markdown-only closeout HEAD is the authoritative exact-head merge evidence and is recorded in Issue #29 / PR #30 metadata after completion.
 
 ## Review disposition
 
