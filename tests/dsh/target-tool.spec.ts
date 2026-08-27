@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import ToolchainService from '../../src/integrations/dsh/index.js'
 import { createTargetResolveToolDefinition } from '../../src/integrations/dsh/target-tool.js'
+import type { ContractSearchResponse } from '../../src/protocol/index.js'
 
 interface TestToolDefinition {
   readonly name: string
@@ -42,7 +43,7 @@ declare module '@deepseek-ai/cordis' {
 const dshHome = fileURLToPath(new URL('../fixtures/targets/valid/dsh-home/', import.meta.url))
 const dshPackageRoot = fileURLToPath(new URL('../fixtures/targets/valid/dsh-package/', import.meta.url))
 
-describe('native DSH target tool', () => {
+describe('native DSH Toolchain tools', () => {
   it('appears only when the tools capability is mounted and follows its lifecycle', async () => {
     const ctx = new Context()
     const toolchainFiber = await ctx.plugin(ToolchainService)
@@ -53,6 +54,11 @@ describe('native DSH target tool', () => {
     const tools = ctx.tools
     const definition = tools.definitions.get('toolchain_target_resolve')
 
+    expect([...tools.definitions.keys()]).toEqual([
+      'toolchain_target_resolve',
+      'toolchain_contract_search',
+      'toolchain_contract_inspect',
+    ])
     expect(definition).toBeDefined()
     expect(definition?.description).toContain('exact installed DSH target')
     expect(definition?.parameters).toEqual({
@@ -85,13 +91,13 @@ describe('native DSH target tool', () => {
     })
 
     await toolsFiber.dispose()
-    expect(tools.definitions.has('toolchain_target_resolve')).toBe(false)
+    expect(tools.definitions.size).toBe(0)
     expect(ctx.toolchain.describe().product).toBe('dsh-toolchain')
 
     await toolchainFiber.dispose()
   })
 
-  it('delegates successful and expected-failure calls to ctx.toolchain semantics', async () => {
+  it('delegates target success and expected failure to ctx.toolchain semantics', async () => {
     const ctx = new Context()
     const toolchainFiber = await ctx.plugin(ToolchainService)
     const toolsFiber = await ctx.plugin(TestToolsService)
@@ -130,6 +136,46 @@ describe('native DSH target tool', () => {
     await toolchainFiber.dispose()
   })
 
+  it('executes registered contract search then inspect through ctx.toolchain semantics', async () => {
+    const ctx = new Context()
+    const toolchainFiber = await ctx.plugin(ToolchainService)
+    const toolsFiber = await ctx.plugin(TestToolsService)
+    const searchDefinition = ctx.tools.definitions.get('toolchain_contract_search')
+    const inspectDefinition = ctx.tools.definitions.get('toolchain_contract_inspect')
+    if (searchDefinition === undefined || inspectDefinition === undefined) {
+      throw new Error('contract tools were not registered')
+    }
+
+    const search = await searchDefinition.execute({
+      target: { profile: 'web', dshHome, dshPackageRoot },
+      query: 'a-user-plugin',
+    }) as ContractSearchResponse
+
+    expect(search.status).toBe('ok')
+    if (search.status !== 'ok') throw new Error('registered contract search unexpectedly failed')
+    expect(search.data.matches).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'package:a-user-plugin', availability: 'unknown' }),
+    ]))
+
+    const inspect = await inspectDefinition.execute({
+      target: { profile: 'web', dshHome, dshPackageRoot },
+      contractIndexFingerprint: search.data.contractIndexFingerprint,
+      contractId: 'package:a-user-plugin',
+    })
+    expect(inspect).toMatchObject({
+      protocolVersion: '1',
+      status: 'ok',
+      snapshotFingerprint: search.snapshotFingerprint,
+      data: {
+        contractIndexFingerprint: search.data.contractIndexFingerprint,
+        contract: { id: 'package:a-user-plugin', availability: 'unknown' },
+      },
+    })
+
+    await toolsFiber.dispose()
+    await toolchainFiber.dispose()
+  })
+
   it.each([
     null,
     {},
@@ -140,7 +186,7 @@ describe('native DSH target tool', () => {
     { profile: 'web', dshPackageRoot: '' },
     { profile: 'web', patches: 'overlay.yml' },
     { profile: 'web', patches: ['overlay.yml', ''] },
-  ])('rejects malformed raw arguments before invoking Toolchain Service: %j', async (args) => {
+  ])('rejects malformed raw target arguments before invoking Toolchain Service: %j', async (args) => {
     const resolve = vi.fn(async () => {
       throw new Error('resolver must not run for invalid tool arguments')
     })
