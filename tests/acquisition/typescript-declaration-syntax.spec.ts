@@ -63,6 +63,23 @@ describe('TypeScript declaration syntax adapter', () => {
     expect(parsed.relativePathReferences).toEqual(['./ambient.d.ts'])
   })
 
+  it('maps emitted source-extension re-exports to declaration siblings only', () => {
+    const parsed = parseTypeScriptDeclarationSyntax('index.d.ts', [
+      "export * from './context.ts'",
+      "export * from './module.mts'",
+      "export * from './legacy.cts'",
+      "export * from './view.tsx'",
+      '',
+    ].join('\n'))
+
+    expect(parsed.relativeReexports).toEqual([
+      { kind: 'star', specifier: './context.d.ts' },
+      { kind: 'star', specifier: './legacy.d.cts' },
+      { kind: 'star', specifier: './module.d.mts' },
+      { kind: 'star', specifier: './view.d.ts' },
+    ])
+  })
+
   it('treats exported import-equals as a public relative edge without flattening its target', () => {
     const parsed = parseTypeScriptDeclarationSyntax(
       'index.d.ts',
