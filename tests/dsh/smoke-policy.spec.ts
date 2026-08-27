@@ -48,6 +48,64 @@ describe('DSH package smoke policy', () => {
 `)).toThrow(/dsh-toolchain row/)
   })
 
+  it('requires a clean Web ToolDefinition search-to-inspect proof from exact declaration evidence', () => {
+    expect(typeof smokeModule.assertWebContractIntelligence).toBe('function')
+    expect(smokeSource).toContain("'exec', 'dsh-toolchain', 'contract', 'search'")
+    expect(smokeSource).toContain("'--query', WEB_CONTRACT_QUERY")
+    expect(smokeSource).toContain("const WEB_CONTRACT_QUERY = 'ToolDefinition'")
+    expect(smokeSource).toContain("const WEB_CONTRACT_ID = 'package:@deepseek-ai/dsh-tools'")
+    expect(smokeSource).toContain("'exec', 'dsh-toolchain', 'contract', 'inspect'")
+    expect(smokeSource).toContain("item.source.startsWith('@deepseek-ai/dsh-tools/')")
+
+    const assertWebContractIntelligence = smokeModule.assertWebContractIntelligence as (
+      search: unknown,
+      inspect: unknown,
+    ) => void
+    const snapshotFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
+    const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
+    const evidenceId = 'types:@deepseek-ai/dsh-tools:dist/index.d.ts'
+    const search = {
+      status: 'ok',
+      snapshotFingerprint,
+      data: {
+        contractIndexFingerprint,
+        matches: [{
+          id: 'package:@deepseek-ai/dsh-tools',
+          evidenceIds: [evidenceId],
+        }],
+      },
+    }
+    const inspect = {
+      status: 'ok',
+      snapshotFingerprint,
+      data: {
+        contractIndexFingerprint,
+        contract: {
+          id: 'package:@deepseek-ai/dsh-tools',
+          facts: [{
+            key: 'declaration-export',
+            value: 'ToolDefinition',
+            evidenceIds: [evidenceId],
+          }],
+        },
+        evidence: [{
+          id: evidenceId,
+          kind: 'type-declaration',
+          source: '@deepseek-ai/dsh-tools/dist/index.d.ts',
+        }],
+      },
+    }
+
+    expect(() => assertWebContractIntelligence(search, inspect)).not.toThrow()
+    expect(() => assertWebContractIntelligence(search, {
+      ...inspect,
+      data: {
+        ...inspect.data,
+        evidence: [],
+      },
+    })).toThrow(/evidence omitted/i)
+  })
+
   it('requires an actual DSH boot probe for target and contract ToolRuntime paths', () => {
     expect(smokeModule.DSH_BOOT_PROBE_PROFILE).toBe('toolchain-smoke')
     expect(typeof smokeModule.createBootProbePackage).toBe('function')
