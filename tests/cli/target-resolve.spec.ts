@@ -87,7 +87,7 @@ describe('target resolve CLI projection', () => {
     })
   })
 
-  it('requires --profile and reserves exit code 2 for CLI syntax errors', async () => {
+  it('rejects a missing profile through the shared Protocol validator with exit code 2', async () => {
     const streams = io()
     const resolveTarget = vi.fn(async () => result())
 
@@ -99,7 +99,7 @@ describe('target resolve CLI projection', () => {
 
     expect(code).toBe(2)
     expect(streams.stdout()).toBe('')
-    expect(streams.stderr()).toContain('--profile is required')
+    expect(streams.stderr()).toContain('--profile must be a valid profile for target resolve')
     expect(resolveTarget).not.toHaveBeenCalled()
   })
 
@@ -145,14 +145,15 @@ describe('target resolve CLI projection', () => {
     })
   })
 
-  it('does not advertise unimplemented M2/M3 operations in help', async () => {
+  it('advertises implemented M2 contract commands but not future plugin verification', async () => {
     const streams = io()
     const code = await runCli(['--help'], streams.value, dependencies(async () => result()))
 
     expect(code).toBe(0)
     expect(streams.stdout()).toContain('target resolve')
     expect(streams.stdout()).toContain('--patch <path>')
-    expect(streams.stdout()).not.toContain('contract search')
+    expect(streams.stdout()).toContain('contract search')
+    expect(streams.stdout()).toContain('contract inspect')
     expect(streams.stdout()).not.toContain('plugin verify')
   })
 })

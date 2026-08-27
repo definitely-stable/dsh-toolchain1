@@ -124,7 +124,9 @@ Allowed `strength` values:
 
 An implementation MUST NOT upgrade a heuristic to an authoritative claim merely because several heuristics agree.
 
-Target identity deliberately does not hash every package/source file. Later evidence consumers MUST bind caches/claims to the concrete evidence they use. In particular, M2 Contract Intelligence MUST define a target-bound contract evidence/index identity over its actual generated-catalog/type/source/runtime inputs; package-version equality alone MUST NOT validate a contract cache when same-version local content may differ.
+Target identity deliberately does not hash every package/source file. Later evidence consumers MUST bind caches/claims to the concrete evidence they use. M2 Contract Intelligence uses the separate `dsh-contract-index-v1:<sha256>` identity defined by ADR-0008 over the exact contract evidence and normalized semantics it consumes. Package-version or `TargetFingerprint` equality alone MUST NOT validate a contract cache when same-version local content may differ.
+
+Evidence `location` MAY be used as an acquisition coordinate but MUST NOT by itself affect the Contract Index fingerprint. `contentHash`, when present and consumed, is semantic evidence identity.
 
 ## Diagnostics
 
@@ -139,20 +141,57 @@ Expected invalid plugin input SHOULD yield diagnostics and as much independently
 
 ## Contract discovery
 
-### `contract.search`
-
-Search MUST be progressive: it returns compact references/ranking metadata and MUST NOT require returning complete definitions for all matches.
-
-Search results MUST identify the snapshot against which they were computed and, once the M2 evidence/index identity is introduced, MUST be traceable to the contract evidence/index state that produced them.
-
-### `contract.inspect`
-
-Inspection returns the normalized definition plus evidence/provenance for one selected contract. It SHOULD distinguish capability from current runtime availability.
+M2 Contract Intelligence is progressive and target-bound. It MUST NOT advertise the complete DSH catalog to a model when a compact search reference is sufficient, and it MUST retain evidence/provenance for returned facts.
 
 The baseline contract kinds are:
 `service`, `method`, `event`, `tool`, `client-slot`, `config`, `package`.
 
-These M2 contracts remain descriptive baseline text until their operation-specific schemas and implementations are introduced. Do not infer a callable M1 capability from their presence here.
+Contract availability is independent from declared capability:
+
+- `available` means current runtime evidence proves the capability is mounted/callable in the observed scope;
+- `unavailable` means current runtime evidence proves it is not available in that scope;
+- `unknown` means the evidence proves a declaration/capability fact but does not establish current runtime availability.
+
+Offline declaration/package evidence MUST NOT be upgraded from `unknown` merely because a declaration exists.
+
+### Contract Index identity
+
+Every successful search/inspection result MUST contain `contractIndexFingerprint` in the `dsh-contract-index-v1:<sha256>` namespace from ADR-0008. The fingerprint is bound to the exact M1 `snapshotFingerprint`, consumed evidence identities/content hashes, and normalized contract semantics. `TargetFingerprint` and `ContractIndexFingerprint` are separate identity axes.
+
+Machine paths, timestamps, acquisition traversal order, request ids, and frontend transport metadata MUST NOT contribute to the Contract Index fingerprint.
+
+### `contract.search`
+
+`contract.search` request contains:
+
+- `target` — the same closed `TargetResolveRequest` used by `target.resolve`;
+- `query` — non-empty lexical query;
+- optional `kinds` — unique baseline contract kinds;
+- optional `limit` — integer `1..25`; implementations use `10` when omitted.
+
+Search MUST be progressive: it returns compact `ContractReference` rows and MUST NOT require returning complete definitions for all matches.
+
+The initial ranker is deterministic and local. It MAY rank exact/prefix/token/name matches above fact/summary matches, but equal semantic inputs MUST produce equal ordering independent of acquisition order. Embeddings or model ranking MUST NOT be required for M2.1.
+
+A successful response has `status: "ok"`, the M1 `snapshotFingerprint`, `ContractSearchResult`, the Contract Index fingerprint, compact matches, and the evidence subset referenced by those matches.
+
+If target acquisition cannot produce a snapshot, expected `TARGET_*` conditions return `status: "failed"` without a `snapshotFingerprint`. If evidence captured by the resolved target changes before contract acquisition can consume one coherent epoch, the response MUST be `status: "stale"` with `CONTRACT_EVIDENCE_STALE`, MUST identify the starting `snapshotFingerprint`, and MUST NOT contain successful `data`.
+
+### `contract.inspect`
+
+`contract.inspect` request contains:
+
+- `target`;
+- the caller's exact `contractIndexFingerprint`;
+- one non-empty `contractId` selected from search.
+
+Inspection MUST reacquire/rebuild the current target-bound index rather than silently trusting caller-supplied cached facts. If the current fingerprint differs from the requested fingerprint, the response MUST be `status: "stale"` with `CONTRACT_INDEX_STALE`, MUST identify the current operation's target snapshot, and MUST NOT return a contract payload.
+
+If the fingerprint is current but `contractId` is absent, the response is `status: "failed"` with `CONTRACT_NOT_FOUND`. This is distinct from stale index state.
+
+A successful inspection returns exactly one normalized `ContractDefinition`, its `contractIndexFingerprint`, and the evidence needed to support that contract. Facts carry their own `evidenceIds`; callers MUST NOT infer stronger provenance than those references establish.
+
+Current DSH exposes official read-only runtime inspection through `ctx.cordisInspect` / `cordis_inspect_list` / `cordis_inspect_query`. Toolchain MUST prefer/consume that official seam for live runtime contract evidence when the target exposes it rather than reimplementing DSH reflection. Because those queries are Agent-scoped, offline CLI/MCP calls without a real DSH Agent remain usable through package/manifest/type evidence and report live availability as `unknown`.
 
 ## Plugin analysis and validation
 
@@ -202,6 +241,8 @@ The DSH bundle MUST expose the same application semantics through a Cordis Toolc
 
 The M1 CLI vertical slice proves `target.resolve`; immediate post-M1 frontend parity projects that same kernel call through the Toolchain Service/native DSH tool rather than reimplementing target acquisition in the adapter.
 
+M2 contract projections MUST call the same kernel search/inspect use cases. The DSH adapter MAY enrich live evidence through the host-owned Inspect capability when a real Agent scope exists; it MUST NOT create a second identity-sensitive tools/Inspect runtime merely for Toolchain.
+
 ### DSH Web
 
 Web MUST consume Host application semantics rather than implement validation/verification rules in the browser.
@@ -210,7 +251,7 @@ Web MUST consume Host application semantics rather than implement validation/ver
 
 The MCP projection uses structured results conforming to the Toolchain Protocol. MCP-specific task support MAY map Toolchain Operations onto the current MCP Tasks extension without changing kernel semantics.
 
-Immediate post-M1 target parity MUST project the existing kernel `target.resolve` semantics rather than introducing an MCP-owned target DTO.
+Immediate post-M1 target parity MUST project the existing kernel `target.resolve` semantics rather than introducing an MCP-owned target DTO. M2 `contract.search` / `contract.inspect` likewise project Protocol DTOs and shared kernel behavior rather than MCP-owned ranking/acquisition logic.
 
 ### CLI
 

@@ -76,6 +76,63 @@ export type TargetResolveResult = {
   readonly "snapshot": TargetSnapshot
 }
 
+export type ContractKind = "service" | "method" | "event" | "tool" | "client-slot" | "config" | "package"
+
+export type ContractAvailability = "available" | "unavailable" | "unknown"
+
+export type ContractFact = {
+  readonly "key": string
+  readonly "value": string
+  readonly "evidenceIds": [string, ...Array<string>]
+}
+
+export type ContractReference = {
+  readonly "id": string
+  readonly "kind": ContractKind
+  readonly "name": string
+  readonly "qualifiedName": string
+  readonly "availability": ContractAvailability
+  readonly "score": number
+  readonly "summary"?: string
+  readonly "evidenceIds": Array<string>
+}
+
+export type ContractDefinition = {
+  readonly "id": string
+  readonly "kind": ContractKind
+  readonly "name": string
+  readonly "qualifiedName": string
+  readonly "availability": ContractAvailability
+  readonly "summary"?: string
+  readonly "facts": Array<ContractFact>
+  readonly "evidenceIds": Array<string>
+}
+
+export type ContractSearchRequest = {
+  readonly "target": TargetResolveRequest
+  readonly "query": string
+  readonly "kinds"?: Array<ContractKind>
+  readonly "limit"?: number
+}
+
+export type ContractSearchResult = {
+  readonly "contractIndexFingerprint": string
+  readonly "matches": Array<ContractReference>
+  readonly "evidence": Array<Evidence>
+}
+
+export type ContractInspectRequest = {
+  readonly "target": TargetResolveRequest
+  readonly "contractIndexFingerprint": string
+  readonly "contractId": string
+}
+
+export type ContractInspectResult = {
+  readonly "contractIndexFingerprint": string
+  readonly "contract": ContractDefinition
+  readonly "evidence": Array<Evidence>
+}
+
 export type Operation = {
   readonly "id": string
   readonly "state": "queued" | "running" | "input-required" | "succeeded" | "failed" | "cancelled"
@@ -129,5 +186,57 @@ export type TargetResolveFailureResponse = {
 }
 
 export type TargetResolveResponse = TargetResolveSuccessResponse | TargetResolveFailureResponse
+
+export type ContractSearchSuccessResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "snapshotFingerprint": string
+  readonly "status": "ok"
+  readonly "data": ContractSearchResult
+  readonly "diagnostics": Array<Diagnostic>
+}
+
+export type ContractSearchFailureResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "failed"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type ContractSearchStaleResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "snapshotFingerprint": string
+  readonly "status": "stale"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type ContractSearchResponse = ContractSearchSuccessResponse | ContractSearchFailureResponse | ContractSearchStaleResponse
+
+export type ContractInspectSuccessResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "snapshotFingerprint": string
+  readonly "status": "ok"
+  readonly "data": ContractInspectResult
+  readonly "diagnostics": Array<Diagnostic>
+}
+
+export type ContractInspectFailureResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "failed"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type ContractInspectStaleResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "snapshotFingerprint": string
+  readonly "status": "stale"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type ContractInspectResponse = ContractInspectSuccessResponse | ContractInspectFailureResponse | ContractInspectStaleResponse
 
 export type ToolchainProtocolResponse = ResponseEnvelope

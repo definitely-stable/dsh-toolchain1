@@ -27,6 +27,9 @@ const EXPECTED_DESCRIPTOR = Object.freeze({
   protocolVersion: '1',
 })
 const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/
+const CONTRACT_INDEX_FINGERPRINT = /^dsh-contract-index-v1:[0-9a-f]{64}$/
+const WEB_CONTRACT_ID = 'package:@deepseek-ai/dsh-tools'
+const WEB_CONTRACT_QUERY = 'ToolDefinition'
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -46,6 +49,14 @@ function run(command, args, options = {}) {
   }
 
   return typeof result.stdout === 'string' ? result.stdout : ''
+}
+
+function parseJsonCommand(label, output) {
+  try {
+    return JSON.parse(output)
+  } catch (cause) {
+    throw new Error(`DSH smoke: ${label} did not emit Protocol JSON`, { cause })
+  }
 }
 
 export function assertProfileManifest(manifest, requiredBundles = []) {
@@ -75,6 +86,90 @@ export function assertDumpConfig(dump) {
   }
 }
 
+export function assertWebContractIntelligence(search, inspect) {
+  if (
+    search?.status !== 'ok'
+    || typeof search.snapshotFingerprint !== 'string'
+    || !TARGET_FINGERPRINT.test(search.snapshotFingerprint)
+    || typeof search?.data?.contractIndexFingerprint !== 'string'
+    || !CONTRACT_INDEX_FINGERPRINT.test(search.data.contractIndexFingerprint)
+  ) {
+    throw new Error(`DSH smoke: Web contract search did not resolve an exact index ${JSON.stringify(search)}`)
+  }
+
+  const match = search.data.matches?.find(candidate => candidate.id === WEB_CONTRACT_ID)
+  if (match === undefined || !Array.isArray(match.evidenceIds) || match.evidenceIds.length === 0) {
+    throw new Error(`DSH smoke: Web contract search did not find ${WEB_CONTRACT_QUERY} in ${WEB_CONTRACT_ID}`)
+  }
+
+  if (
+    inspect?.status !== 'ok'
+    || inspect.snapshotFingerprint !== search.snapshotFingerprint
+    || inspect?.data?.contractIndexFingerprint !== search.data.contractIndexFingerprint
+    || inspect?.data?.contract?.id !== WEB_CONTRACT_ID
+  ) {
+    throw new Error(`DSH smoke: Web contract inspect did not preserve target/index continuity ${JSON.stringify(inspect)}`)
+  }
+
+  const toolDefinition = inspect.data.contract.facts?.find(fact =>
+    fact.key === 'declaration-export' && fact.value === WEB_CONTRACT_QUERY)
+  if (toolDefinition === undefined || !Array.isArray(toolDefinition.evidenceIds) || toolDefinition.evidenceIds.length === 0) {
+    throw new Error(`DSH smoke: Web inspect did not expose declaration-export ${WEB_CONTRACT_QUERY}`)
+  }
+
+  const evidence = new Map((inspect.data.evidence ?? []).map(item => [item.id, item]))
+  const supporting = toolDefinition.evidenceIds.map(id => evidence.get(id))
+  if (supporting.some(item => item === undefined)) {
+    throw new Error('DSH smoke: Web ToolDefinition fact references evidence omitted by inspect')
+  }
+  if (!supporting.some(item =>
+    item?.kind === 'type-declaration'
+    && typeof item.source === 'string'
+    && item.source.startsWith('@deepseek-ai/dsh-tools/'))
+  ) {
+    throw new Error('DSH smoke: Web ToolDefinition fact lacks exact @deepseek-ai/dsh-tools declaration evidence')
+  }
+}
+
+function verifyWebContractIntelligence(profileDir, home, dshPackageRoot, env) {
+  const targetArgs = [
+    '--profile', 'web',
+    '--dsh-home', home,
+    '--dsh-package-root', dshPackageRoot,
+  ]
+  const search = parseJsonCommand('Web contract search', run('pnpm', [
+    'exec', 'dsh-toolchain', 'contract', 'search',
+    ...targetArgs,
+    '--query', WEB_CONTRACT_QUERY,
+    '--kind', 'package',
+    '--limit', '5',
+  ], {
+    cwd: profileDir,
+    env,
+    capture: true,
+    timeout: 180_000,
+  }))
+
+  const contractIndexFingerprint = search?.data?.contractIndexFingerprint
+  if (typeof contractIndexFingerprint !== 'string') {
+    throw new Error(`DSH smoke: Web contract search omitted index fingerprint ${JSON.stringify(search)}`)
+  }
+
+  const inspect = parseJsonCommand('Web contract inspect', run('pnpm', [
+    'exec', 'dsh-toolchain', 'contract', 'inspect',
+    ...targetArgs,
+    '--contract-index', contractIndexFingerprint,
+    '--contract-id', WEB_CONTRACT_ID,
+  ], {
+    cwd: profileDir,
+    env,
+    capture: true,
+    timeout: 180_000,
+  }))
+
+  assertWebContractIntelligence(search, inspect)
+}
+
 export async function createBootProbePackage(root) {
   const probe = join(root, BOOT_PROBE_PACKAGE)
   await mkdir(probe, { recursive: true })
@@ -90,7 +185,18 @@ export async function createBootProbePackage(root) {
     - id: ${BOOT_PROBE_PACKAGE}
       name: ${BOOT_PROBE_PACKAGE}
 `)
-  await writeFile(join(probe, 'probe.mjs'), `export function apply(rootCtx) {
+  await writeFile(join(probe, 'probe.mjs'), `function renderedMatchesValue(result) {
+  if (result?.isError) return false
+  const rendered = result?.content?.find(block => block.type === 'text')
+  if (rendered?.type !== 'text') return false
+  try {
+    return JSON.stringify(JSON.parse(rendered.text)) === JSON.stringify(result.value)
+  } catch {
+    return false
+  }
+}
+
+export function apply(rootCtx) {
   rootCtx.inject(['toolchain', 'tools'], (ctx) => {
     const appExit = ctx.get('appExit')
     if (typeof appExit !== 'function') throw new Error('DSH boot probe requires launcher-owned ctx.appExit')
@@ -107,7 +213,11 @@ export async function createBootProbePackage(root) {
       }
       const descriptor = ctx.toolchain.describe()
       const service = await ctx.toolchain.resolveTarget(request, 'dsh-smoke-service')
-      const visible = ctx.tools.schemas().some(schema => schema.name === 'toolchain_target_resolve')
+      const schemas = ctx.tools.schemas()
+      const targetVisible = schemas.some(schema => schema.name === 'toolchain_target_resolve')
+      const contractSearchVisible = schemas.some(schema => schema.name === 'toolchain_contract_search')
+      const contractInspectVisible = schemas.some(schema => schema.name === 'toolchain_contract_inspect')
+
       const nativeResult = await ctx.tools.execute({
         callId: 'dsh-toolchain-smoke-native',
         name: 'toolchain_target_resolve',
@@ -115,15 +225,34 @@ export async function createBootProbePackage(root) {
         signal: new AbortController().signal,
       })
 
-      let renderedMatchesValue = false
-      if (!nativeResult.isError) {
-        const rendered = nativeResult.content.find(block => block.type === 'text')
-        if (rendered?.type === 'text') {
-          try {
-            renderedMatchesValue = JSON.stringify(JSON.parse(rendered.text)) === JSON.stringify(nativeResult.value)
-          } catch {}
-        }
+      const contractSearchResult = await ctx.tools.execute({
+        callId: 'dsh-toolchain-smoke-contract-search',
+        name: 'toolchain_contract_search',
+        arguments: {
+          target: request,
+          query: '@deepseek-ai/dsh',
+          kinds: ['package'],
+          limit: 5,
+        },
+        signal: new AbortController().signal,
+      })
+      const contractIndexFingerprint = contractSearchResult.isError
+        ? undefined
+        : contractSearchResult.value?.data?.contractIndexFingerprint
+      if (typeof contractIndexFingerprint !== 'string') {
+        throw new Error('DSH contract search did not return a contract index fingerprint: ' + JSON.stringify(contractSearchResult))
       }
+
+      const contractInspectResult = await ctx.tools.execute({
+        callId: 'dsh-toolchain-smoke-contract-inspect',
+        name: 'toolchain_contract_inspect',
+        arguments: {
+          target: request,
+          contractIndexFingerprint,
+          contractId: 'package:@deepseek-ai/dsh',
+        },
+        signal: new AbortController().signal,
+      })
 
       const receipt = {
         descriptor,
@@ -132,11 +261,33 @@ export async function createBootProbePackage(root) {
           snapshotFingerprint: service.snapshotFingerprint,
         },
         nativeTool: {
-          visible,
+          visible: targetVisible,
           isError: nativeResult.isError,
           status: nativeResult.isError ? undefined : nativeResult.value?.status,
           snapshotFingerprint: nativeResult.isError ? undefined : nativeResult.value?.snapshotFingerprint,
-          renderedMatchesValue,
+          renderedMatchesValue: renderedMatchesValue(nativeResult),
+        },
+        contractSearch: {
+          visible: contractSearchVisible,
+          isError: contractSearchResult.isError,
+          status: contractSearchResult.isError ? undefined : contractSearchResult.value?.status,
+          snapshotFingerprint: contractSearchResult.isError ? undefined : contractSearchResult.value?.snapshotFingerprint,
+          contractIndexFingerprint,
+          foundDshPackage: contractSearchResult.isError
+            ? false
+            : contractSearchResult.value?.data?.matches?.some(match => match.id === 'package:@deepseek-ai/dsh') === true,
+          renderedMatchesValue: renderedMatchesValue(contractSearchResult),
+        },
+        contractInspect: {
+          visible: contractInspectVisible,
+          isError: contractInspectResult.isError,
+          status: contractInspectResult.isError ? undefined : contractInspectResult.value?.status,
+          snapshotFingerprint: contractInspectResult.isError ? undefined : contractInspectResult.value?.snapshotFingerprint,
+          contractIndexFingerprint: contractInspectResult.isError
+            ? undefined
+            : contractInspectResult.value?.data?.contractIndexFingerprint,
+          contractId: contractInspectResult.isError ? undefined : contractInspectResult.value?.data?.contract?.id,
+          renderedMatchesValue: renderedMatchesValue(contractInspectResult),
         },
       }
       process.stdout.write(${JSON.stringify(BOOT_PROBE_MARKER)} + JSON.stringify(receipt) + '\\n')
@@ -156,14 +307,14 @@ export function assertBootProbeOutput(output) {
     .split(/\r?\n/)
     .find(candidate => candidate.startsWith(BOOT_PROBE_MARKER))
   if (line === undefined) {
-    throw new Error('DSH smoke: real boot did not emit a Toolchain target receipt')
+    throw new Error('DSH smoke: real boot did not emit a Toolchain target/contract receipt')
   }
 
   let receipt
   try {
     receipt = JSON.parse(line.slice(BOOT_PROBE_MARKER.length))
   } catch (cause) {
-    throw new Error('DSH smoke: boot probe emitted an invalid target receipt', { cause })
+    throw new Error('DSH smoke: boot probe emitted an invalid target/contract receipt', { cause })
   }
 
   if (JSON.stringify(receipt?.descriptor) !== JSON.stringify(EXPECTED_DESCRIPTOR)) {
@@ -188,6 +339,37 @@ export function assertBootProbeOutput(output) {
   }
   if (receipt.nativeTool.snapshotFingerprint !== receipt.service.snapshotFingerprint) {
     throw new Error('DSH smoke: Service and native target tool resolved different target fingerprints')
+  }
+
+  if (
+    receipt?.contractSearch?.visible !== true
+    || receipt.contractSearch.isError !== false
+    || receipt.contractSearch.status !== 'ok'
+    || typeof receipt.contractSearch.snapshotFingerprint !== 'string'
+    || !TARGET_FINGERPRINT.test(receipt.contractSearch.snapshotFingerprint)
+    || receipt.contractSearch.snapshotFingerprint !== receipt.service.snapshotFingerprint
+    || typeof receipt.contractSearch.contractIndexFingerprint !== 'string'
+    || !CONTRACT_INDEX_FINGERPRINT.test(receipt.contractSearch.contractIndexFingerprint)
+    || receipt.contractSearch.foundDshPackage !== true
+    || receipt.contractSearch.renderedMatchesValue !== true
+  ) {
+    throw new Error(`DSH smoke: native contract search was not visible/executable ${JSON.stringify(receipt?.contractSearch)}`)
+  }
+
+  if (
+    receipt?.contractInspect?.visible !== true
+    || receipt.contractInspect.isError !== false
+    || receipt.contractInspect.status !== 'ok'
+    || typeof receipt.contractInspect.snapshotFingerprint !== 'string'
+    || !TARGET_FINGERPRINT.test(receipt.contractInspect.snapshotFingerprint)
+    || receipt.contractInspect.snapshotFingerprint !== receipt.service.snapshotFingerprint
+    || typeof receipt.contractInspect.contractIndexFingerprint !== 'string'
+    || !CONTRACT_INDEX_FINGERPRINT.test(receipt.contractInspect.contractIndexFingerprint)
+    || receipt.contractInspect.contractIndexFingerprint !== receipt.contractSearch.contractIndexFingerprint
+    || receipt.contractInspect.contractId !== 'package:@deepseek-ai/dsh'
+    || receipt.contractInspect.renderedMatchesValue !== true
+  ) {
+    throw new Error(`DSH smoke: native contract inspect did not preserve search/index continuity ${JSON.stringify(receipt?.contractInspect)}`)
   }
 }
 
@@ -242,6 +424,10 @@ export async function smokeDshPackage(tarballPath, options = {}) {
       assertDumpConfig(dump)
     }
 
+    if (profiles.some(profile => profile.name === 'web')) {
+      verifyWebContractIntelligence(join(home, 'profiles', 'web'), home, dshPackageRoot, env)
+    }
+
     const probe = await createBootProbePackage(root)
     run('pnpm', [
       'exec', 'dsh', 'plugin', '--profile', DSH_BOOT_PROBE_PROFILE,
@@ -263,7 +449,7 @@ export async function smokeDshPackage(tarballPath, options = {}) {
     assertBootProbeOutput(bootOutput)
 
     process.stdout.write(
-      `DSH package smoke: ${version} profiles ${profiles.map(profile => profile.name).join(', ')} composition + live target Service/native ToolRuntime parity verified\n`,
+      `DSH package smoke: ${version} profiles ${profiles.map(profile => profile.name).join(', ')} composition + clean Web ToolDefinition contract search/inspect + live target parity + contract ToolRuntime search/inspect verified\n`,
     )
   } finally {
     await rm(root, { recursive: true, force: true })

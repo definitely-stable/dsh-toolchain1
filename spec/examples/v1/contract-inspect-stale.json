@@ -1,0 +1,14 @@
+{
+  "protocolVersion": "1",
+  "requestId": "req-contract-inspect-3",
+  "snapshotFingerprint": "dsh-target-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "stale",
+  "diagnostics": [
+    {
+      "code": "CONTRACT_INDEX_STALE",
+      "severity": "error",
+      "domain": "contract",
+      "summary": "Requested contract index is stale for the current target evidence."
+    }
+  ]
+}

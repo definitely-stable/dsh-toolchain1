@@ -1,6 +1,7 @@
-import type {
-  TargetResolveRequest,
-  TargetResolveResponse,
+import {
+  parseTargetResolveRequest,
+  type TargetResolveRequest,
+  type TargetResolveResponse,
 } from '../../protocol/index.js'
 
 export const TARGET_RESOLVE_TOOL_NAME = 'toolchain_target_resolve'
@@ -33,74 +34,40 @@ export interface DshToolRegistryPort {
 const parameterProperties = {
   profile: {
     type: 'string',
+    minLength: 1,
+    pattern: '^(?!\\.{1,2}$)(?!node_modules$)[^/\\\\]+$',
     description: 'DSH profile name to resolve.',
   },
   dshHome: {
     type: 'string',
+    minLength: 1,
     description: 'Optional DSH home override for read-only acquisition.',
   },
   dshPackageRoot: {
     type: 'string',
+    minLength: 1,
     description: 'Optional installed @deepseek-ai/dsh package root.',
   },
   patches: {
     type: 'array',
     description: 'Ordered DSH --patch overlay paths.',
-    items: { type: 'string' },
+    items: { type: 'string', minLength: 1 },
   },
 } satisfies Record<keyof TargetResolveRequest, Record<string, unknown>>
 
-const targetResolveKeys = new Set<keyof TargetResolveRequest>([
-  'profile',
-  'dshHome',
-  'dshPackageRoot',
-  'patches',
-])
-const profilePattern = /^(?!\.{1,2}$)(?!node_modules$)[^/\\]+$/
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function nonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
-}
+export const TARGET_RESOLVE_PARAMETER_SCHEMA: Record<string, unknown> = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  properties: parameterProperties,
+  required: ['profile'],
+})
 
 /**
- * Raw DSH ToolDefinitions receive `unknown` arguments and therefore own their
- * runtime validation. Keep this narrow mirror aligned with Protocol v1's
- * targetResolveRequest constraints; semantic target validation remains in the
- * shared acquisition/kernel path.
+ * Raw DSH ToolDefinitions receive `unknown` arguments. The validation rules
+ * themselves live in Protocol so CLI, native DSH and MCP can share one parser.
  */
-function parseTargetResolveToolArgs(args: unknown): TargetResolveRequest {
-  if (!isRecord(args)) throw new TypeError('Invalid target.resolve arguments')
-  if (Object.keys(args).some(key => !targetResolveKeys.has(key as keyof TargetResolveRequest))) {
-    throw new TypeError('Invalid target.resolve arguments')
-  }
-
-  const { profile, dshHome, dshPackageRoot, patches } = args
-  if (!nonEmptyString(profile) || !profilePattern.test(profile)) {
-    throw new TypeError('Invalid target.resolve arguments')
-  }
-  if (dshHome !== undefined && !nonEmptyString(dshHome)) {
-    throw new TypeError('Invalid target.resolve arguments')
-  }
-  if (dshPackageRoot !== undefined && !nonEmptyString(dshPackageRoot)) {
-    throw new TypeError('Invalid target.resolve arguments')
-  }
-  if (
-    patches !== undefined
-    && (!Array.isArray(patches) || !patches.every(nonEmptyString))
-  ) {
-    throw new TypeError('Invalid target.resolve arguments')
-  }
-
-  return {
-    profile,
-    ...(dshHome === undefined ? {} : { dshHome }),
-    ...(dshPackageRoot === undefined ? {} : { dshPackageRoot }),
-    ...(patches === undefined ? {} : { patches: [...patches] }),
-  }
+export function parseTargetResolveToolArgs(args: unknown): TargetResolveRequest {
+  return parseTargetResolveRequest(args)
 }
 
 export function createTargetResolveToolDefinition(
@@ -109,12 +76,7 @@ export function createTargetResolveToolDefinition(
   return {
     name: TARGET_RESOLVE_TOOL_NAME,
     description: 'Resolve one exact installed DSH target as a Protocol v1 response without mutating the target profile.',
-    parameters: {
-      type: 'object',
-      additionalProperties: false,
-      properties: parameterProperties,
-      required: ['profile'],
-    },
+    parameters: TARGET_RESOLVE_PARAMETER_SCHEMA,
     output: {
       schema: {
         type: 'object',

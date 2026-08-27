@@ -145,6 +145,131 @@
         "snapshot": {"$ref": "#/$defs/targetSnapshot"}
       }
     },
+    "contractKind": {
+      "enum": ["service", "method", "event", "tool", "client-slot", "config", "package"]
+    },
+    "contractAvailability": {
+      "enum": ["available", "unavailable", "unknown"]
+    },
+    "contractFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "value", "evidenceIds"],
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "value": {"type": "string"},
+        "evidenceIds": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "contractReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "qualifiedName", "availability", "score", "evidenceIds"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "kind": {"$ref": "#/$defs/contractKind"},
+        "name": {"type": "string", "minLength": 1},
+        "qualifiedName": {"type": "string", "minLength": 1},
+        "availability": {"$ref": "#/$defs/contractAvailability"},
+        "score": {"type": "integer", "minimum": 0},
+        "summary": {"type": "string"},
+        "evidenceIds": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        }
+      }
+    },
+    "contractDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "qualifiedName", "availability", "facts", "evidenceIds"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "kind": {"$ref": "#/$defs/contractKind"},
+        "name": {"type": "string", "minLength": 1},
+        "qualifiedName": {"type": "string", "minLength": 1},
+        "availability": {"$ref": "#/$defs/contractAvailability"},
+        "summary": {"type": "string"},
+        "facts": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/contractFact"}
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        }
+      }
+    },
+    "contractSearchRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "query"],
+      "properties": {
+        "target": {"$ref": "#/$defs/targetResolveRequest"},
+        "query": {"type": "string", "minLength": 1, "pattern": "\\S"},
+        "kinds": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/contractKind"},
+          "uniqueItems": true
+        },
+        "limit": {"type": "integer", "minimum": 1, "maximum": 25}
+      }
+    },
+    "contractSearchResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractIndexFingerprint", "matches", "evidence"],
+      "properties": {
+        "contractIndexFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-contract-index-v1:[0-9a-f]{64}$"
+        },
+        "matches": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/contractReference"}
+        },
+        "evidence": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/evidence"}
+        }
+      }
+    },
+    "contractInspectRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "contractIndexFingerprint", "contractId"],
+      "properties": {
+        "target": {"$ref": "#/$defs/targetResolveRequest"},
+        "contractIndexFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-contract-index-v1:[0-9a-f]{64}$"
+        },
+        "contractId": {"type": "string", "minLength": 1}
+      }
+    },
+    "contractInspectResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractIndexFingerprint", "contract", "evidence"],
+      "properties": {
+        "contractIndexFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-contract-index-v1:[0-9a-f]{64}$"
+        },
+        "contract": {"$ref": "#/$defs/contractDefinition"},
+        "evidence": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/evidence"}
+        }
+      }
+    },
     "operation": {
       "type": "object",
       "additionalProperties": false,
@@ -240,6 +365,92 @@
       "oneOf": [
         {"$ref": "#/$defs/targetResolveSuccessResponse"},
         {"$ref": "#/$defs/targetResolveFailureResponse"}
+      ]
+    },
+    "contractSearchSuccessResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "data", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "snapshotFingerprint": {"type": "string", "pattern": "^dsh-target-v2:[0-9a-f]{64}$"},
+        "status": {"const": "ok"},
+        "data": {"$ref": "#/$defs/contractSearchResult"},
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "contractSearchFailureResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "status": {"const": "failed"},
+        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "contractSearchStaleResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "snapshotFingerprint": {"type": "string", "pattern": "^dsh-target-v2:[0-9a-f]{64}$"},
+        "status": {"const": "stale"},
+        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "contractSearchResponse": {
+      "oneOf": [
+        {"$ref": "#/$defs/contractSearchSuccessResponse"},
+        {"$ref": "#/$defs/contractSearchFailureResponse"},
+        {"$ref": "#/$defs/contractSearchStaleResponse"}
+      ]
+    },
+    "contractInspectSuccessResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "data", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "snapshotFingerprint": {"type": "string", "pattern": "^dsh-target-v2:[0-9a-f]{64}$"},
+        "status": {"const": "ok"},
+        "data": {"$ref": "#/$defs/contractInspectResult"},
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "contractInspectFailureResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "status": {"const": "failed"},
+        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "contractInspectStaleResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "snapshotFingerprint": {"type": "string", "pattern": "^dsh-target-v2:[0-9a-f]{64}$"},
+        "status": {"const": "stale"},
+        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "contractInspectResponse": {
+      "oneOf": [
+        {"$ref": "#/$defs/contractInspectSuccessResponse"},
+        {"$ref": "#/$defs/contractInspectFailureResponse"},
+        {"$ref": "#/$defs/contractInspectStaleResponse"}
       ]
     }
   },

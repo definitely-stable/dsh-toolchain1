@@ -1,0 +1,13 @@
+{
+  "protocolVersion": "1",
+  "requestId": "req-contract-search-2",
+  "status": "failed",
+  "diagnostics": [
+    {
+      "code": "TARGET_PROFILE_NOT_FOUND",
+      "severity": "error",
+      "domain": "target",
+      "summary": "DSH profile web-missing was not found."
+    }
+  ]
+}

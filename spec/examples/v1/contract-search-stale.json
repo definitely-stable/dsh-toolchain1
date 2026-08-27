@@ -1,0 +1,15 @@
+{
+  "protocolVersion": "1",
+  "requestId": "req-contract-search-3",
+  "snapshotFingerprint": "dsh-target-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "stale",
+  "diagnostics": [
+    {
+      "code": "CONTRACT_EVIDENCE_STALE",
+      "severity": "error",
+      "domain": "contract",
+      "summary": "Contract evidence changed after the target snapshot was captured.",
+      "evidenceIds": ["manifest:@deepseek-ai/dsh-tools"]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "protocolVersion": "1",
+  "requestId": "req-contract-inspect-2",
+  "status": "failed",
+  "diagnostics": [
+    {
+      "code": "CONTRACT_NOT_FOUND",
+      "severity": "error",
+      "domain": "contract",
+      "summary": "Contract package:@deepseek-ai/missing is not present in the current contract index."
+    }
+  ]
+}

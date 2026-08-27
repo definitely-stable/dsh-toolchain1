@@ -24,6 +24,18 @@ interface ProtocolSchema {
     }
     targetSnapshot?: unknown
     resolvedBundleIdentity?: unknown
+    contractFact?: unknown
+    contractSearchRequest?: unknown
+    contractSearchResult?: {
+      properties?: Record<string, unknown>
+    }
+    contractSearchResponse?: {
+      oneOf?: Array<{ $ref?: string }>
+    }
+    contractInspectRequest?: unknown
+    contractInspectResponse?: {
+      oneOf?: Array<{ $ref?: string }>
+    }
     [key: string]: unknown
   }
   $id: string
@@ -55,6 +67,22 @@ async function validators() {
   const request = ajv.getSchema(`${schema.$id}#/$defs/targetResolveRequest`)
   if (!response || !request) throw new Error('Target protocol validators are not resolvable')
   return { ajv, request, response }
+}
+
+async function contractValidators() {
+  const schema = await readProtocolSchema()
+  const ajv = new Ajv2020({ allErrors: true, strict: true })
+  addFormats(ajv)
+  ajv.addSchema(schema)
+  const fact = ajv.getSchema(`${schema.$id}#/$defs/contractFact`)
+  const searchRequest = ajv.getSchema(`${schema.$id}#/$defs/contractSearchRequest`)
+  const searchResponse = ajv.getSchema(`${schema.$id}#/$defs/contractSearchResponse`)
+  const inspectRequest = ajv.getSchema(`${schema.$id}#/$defs/contractInspectRequest`)
+  const inspectResponse = ajv.getSchema(`${schema.$id}#/$defs/contractInspectResponse`)
+  if (!fact || !searchRequest || !searchResponse || !inspectRequest || !inspectResponse) {
+    throw new Error('Contract protocol validators are not resolvable')
+  }
+  return { ajv, fact, searchRequest, searchResponse, inspectRequest, inspectResponse }
 }
 
 describe('Protocol v1 generated contract', () => {
@@ -145,5 +173,99 @@ describe('Protocol v1 generated contract', () => {
     expect(generated).toMatch(
       /export type TargetResolveFailureResponse =[\s\S]*readonly "diagnostics": \[Diagnostic, \.\.\.Array<Diagnostic>\]/,
     )
+  })
+
+  it('defines closed contract.search and contract.inspect operation contracts', async () => {
+    const schema = await readProtocolSchema()
+
+    expect(schema.$defs.contractSearchRequest).toBeDefined()
+    expect(schema.$defs.contractInspectRequest).toBeDefined()
+    expect(schema.$defs.contractSearchResponse?.oneOf).toEqual([
+      { $ref: '#/$defs/contractSearchSuccessResponse' },
+      { $ref: '#/$defs/contractSearchFailureResponse' },
+      { $ref: '#/$defs/contractSearchStaleResponse' },
+    ])
+    expect(schema.$defs.contractInspectResponse?.oneOf).toEqual([
+      { $ref: '#/$defs/contractInspectSuccessResponse' },
+      { $ref: '#/$defs/contractInspectFailureResponse' },
+      { $ref: '#/$defs/contractInspectStaleResponse' },
+    ])
+    expect(schema.$defs.contractSearchResult?.properties?.contractIndexFingerprint).toEqual({
+      type: 'string',
+      pattern: '^dsh-contract-index-v1:[0-9a-f]{64}$',
+    })
+  })
+
+  it('requires every normalized contract fact to reference supporting evidence', async () => {
+    const { ajv, fact } = await contractValidators()
+
+    expect(fact({
+      key: 'version',
+      value: '0.1.1-rc.2',
+      evidenceIds: ['manifest:dsh'],
+    }), ajv.errorsText(fact.errors)).toBe(true)
+    expect(fact({
+      key: 'unsupported',
+      value: 'claim',
+      evidenceIds: [],
+    }), ajv.errorsText(fact.errors)).toBe(false)
+  })
+
+  it('validates bounded search requests and exact-index inspect requests', async () => {
+    const { ajv, searchRequest, inspectRequest } = await contractValidators()
+    const target = { profile: 'web-dev_2' }
+
+    expect(searchRequest({ target, query: 'ToolDefinition' }), ajv.errorsText(searchRequest.errors)).toBe(true)
+    expect(searchRequest({ target, query: '', limit: 10 }), ajv.errorsText(searchRequest.errors)).toBe(false)
+    expect(searchRequest({ target, query: 'tool', limit: 0 }), ajv.errorsText(searchRequest.errors)).toBe(false)
+    expect(searchRequest({ target, query: 'tool', limit: 26 }), ajv.errorsText(searchRequest.errors)).toBe(false)
+    expect(searchRequest({ target, query: 'tool', kinds: ['type'] }), ajv.errorsText(searchRequest.errors)).toBe(false)
+
+    expect(inspectRequest({
+      target,
+      contractIndexFingerprint: `dsh-contract-index-v1:${'a'.repeat(64)}`,
+      contractId: 'package:@deepseek-ai/dsh-tools',
+    }), ajv.errorsText(inspectRequest.errors)).toBe(true)
+    expect(inspectRequest({ target, contractId: 'package:@deepseek-ai/dsh-tools' }), ajv.errorsText(inspectRequest.errors)).toBe(false)
+  })
+
+  it('validates canonical contract success, failure and stale examples', async () => {
+    const { ajv, searchResponse, inspectResponse } = await contractValidators()
+    const searchSuccess = await readExample('contract-search-resolved.json')
+    const searchFailure = await readExample('contract-search-failed.json')
+    const searchStale = await readExample('contract-search-stale.json')
+    const inspectSuccess = await readExample('contract-inspect-resolved.json')
+    const inspectFailure = await readExample('contract-inspect-failed.json')
+    const inspectStale = await readExample('contract-inspect-stale.json')
+
+    expect(searchResponse(searchSuccess), ajv.errorsText(searchResponse.errors)).toBe(true)
+    expect(searchResponse(searchFailure), ajv.errorsText(searchResponse.errors)).toBe(true)
+    expect(searchResponse(searchStale), ajv.errorsText(searchResponse.errors)).toBe(true)
+    expect(inspectResponse(inspectSuccess), ajv.errorsText(inspectResponse.errors)).toBe(true)
+    expect(inspectResponse(inspectFailure), ajv.errorsText(inspectResponse.errors)).toBe(true)
+    expect(inspectResponse(inspectStale), ajv.errorsText(inspectResponse.errors)).toBe(true)
+
+    expect(inspectResponse({
+      ...(inspectStale as Record<string, unknown>),
+      data: (inspectSuccess as Record<string, unknown>).data,
+    }), ajv.errorsText(inspectResponse.errors)).toBe(false)
+  })
+
+  it('generates Contract Intelligence TypeScript types from the schema', async () => {
+    const generated = await readGeneratedProtocol()
+
+    for (const typeName of [
+      'ContractFact',
+      'ContractReference',
+      'ContractDefinition',
+      'ContractSearchRequest',
+      'ContractSearchResult',
+      'ContractSearchResponse',
+      'ContractInspectRequest',
+      'ContractInspectResult',
+      'ContractInspectResponse',
+    ]) {
+      expect(generated).toContain(`export type ${typeName} =`)
+    }
   })
 })
