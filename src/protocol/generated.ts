@@ -83,7 +83,7 @@ export type ContractAvailability = "available" | "unavailable" | "unknown"
 export type ContractFact = {
   readonly "key": string
   readonly "value": string
-  readonly "evidenceIds": Array<string>
+  readonly "evidenceIds": [string, ...Array<string>]
 }
 
 export type ContractReference = {
