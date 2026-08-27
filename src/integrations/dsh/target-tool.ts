@@ -50,6 +50,59 @@ const parameterProperties = {
   },
 } satisfies Record<keyof TargetResolveRequest, Record<string, unknown>>
 
+const targetResolveKeys = new Set<keyof TargetResolveRequest>([
+  'profile',
+  'dshHome',
+  'dshPackageRoot',
+  'patches',
+])
+const profilePattern = /^(?!\.{1,2}$)(?!node_modules$)[^/\\]+$/
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+/**
+ * Raw DSH ToolDefinitions receive `unknown` arguments and therefore own their
+ * runtime validation. Keep this narrow mirror aligned with Protocol v1's
+ * targetResolveRequest constraints; semantic target validation remains in the
+ * shared acquisition/kernel path.
+ */
+function parseTargetResolveToolArgs(args: unknown): TargetResolveRequest {
+  if (!isRecord(args)) throw new TypeError('Invalid target.resolve arguments')
+  if (Object.keys(args).some(key => !targetResolveKeys.has(key as keyof TargetResolveRequest))) {
+    throw new TypeError('Invalid target.resolve arguments')
+  }
+
+  const { profile, dshHome, dshPackageRoot, patches } = args
+  if (!nonEmptyString(profile) || !profilePattern.test(profile)) {
+    throw new TypeError('Invalid target.resolve arguments')
+  }
+  if (dshHome !== undefined && !nonEmptyString(dshHome)) {
+    throw new TypeError('Invalid target.resolve arguments')
+  }
+  if (dshPackageRoot !== undefined && !nonEmptyString(dshPackageRoot)) {
+    throw new TypeError('Invalid target.resolve arguments')
+  }
+  if (
+    patches !== undefined
+    && (!Array.isArray(patches) || !patches.every(nonEmptyString))
+  ) {
+    throw new TypeError('Invalid target.resolve arguments')
+  }
+
+  return {
+    profile,
+    ...(dshHome === undefined ? {} : { dshHome }),
+    ...(dshPackageRoot === undefined ? {} : { dshPackageRoot }),
+    ...(patches === undefined ? {} : { patches: [...patches] }),
+  }
+}
+
 export function createTargetResolveToolDefinition(
   resolve: (request: TargetResolveRequest) => Promise<TargetResolveResponse>,
 ): DshToolDefinition {
@@ -72,7 +125,7 @@ export function createTargetResolveToolDefinition(
       },
     },
     execute(args: unknown): Promise<TargetResolveResponse> {
-      return resolve(args as TargetResolveRequest)
+      return resolve(parseTargetResolveToolArgs(args))
     },
   }
 }
