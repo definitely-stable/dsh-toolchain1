@@ -18,6 +18,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const TARGET_SMOKE_DSH_VERSIONS = Object.freeze([
+  '0.1.2-alpha.1',
   '0.1.1-rc.2',
   '0.1.0-rc.8',
 ])
