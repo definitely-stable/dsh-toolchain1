@@ -126,6 +126,34 @@ describe('native DSH Contract Intelligence tools', () => {
     expect(JSON.parse(inspect.output.render({}, inspectValue)[0]?.text ?? 'null')).toEqual(inspectValue)
   })
 
+  it('forwards the current DSH execution object per call instead of dropping Agent-scoped context', async () => {
+    const searchResolver = vi.fn(async () => searchResponse())
+    const inspectResolver = vi.fn(async () => inspectResponse())
+    const search = createContractSearchToolDefinition(searchResolver)
+    const inspect = createContractInspectToolDefinition(inspectResolver)
+    const controller = new AbortController()
+    const execution = Object.freeze({
+      agent: Object.freeze({ id: 'agent-live-inspect' }),
+      signal: controller.signal,
+    })
+
+    const searchRequest = {
+      target: { profile: 'web' },
+      query: 'ToolDefinition',
+      kinds: ['package'] as const,
+    }
+    await search.execute(searchRequest, execution)
+    expect(searchResolver).toHaveBeenCalledWith(searchRequest, execution)
+
+    const inspectRequest = {
+      target: { profile: 'web' },
+      contractIndexFingerprint,
+      contractId: 'package:@deepseek-ai/dsh-tools',
+    }
+    await inspect.execute(inspectRequest, execution)
+    expect(inspectResolver).toHaveBeenCalledWith(inspectRequest, execution)
+  })
+
   it.each([
     null,
     {},
