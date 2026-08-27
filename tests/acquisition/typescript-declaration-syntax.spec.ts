@@ -54,8 +54,8 @@ describe('TypeScript declaration syntax adapter', () => {
         kind: 'named',
         specifier: './public.js',
         bindings: [
-          { importedName: 'PublicShape', exportedName: 'Shape' },
           { importedName: 'PublicType', exportedName: 'PublicType' },
+          { importedName: 'PublicShape', exportedName: 'Shape' },
         ],
       },
       { kind: 'star', specifier: './star.js' },
