@@ -82,7 +82,7 @@ function createSlotsEnrichment(
     registry,
     execution: Object.freeze({ agent, signal: controller.signal }),
     digest,
-    limits,
+    ...(limits === undefined ? {} : { limits }),
   })
   if (enrichment === undefined) throw new Error('live enrichment unexpectedly unavailable')
   return { enrichment, query, agent, signal: controller.signal }
@@ -176,7 +176,7 @@ describe('DSH live Client Slot normalization', () => {
     const beta = { name: 'beta', kind: 'single', scope: 'root', children: [] }
     const left = createSlotsEnrichment({ trees: [alpha, beta], referencedTypes: [] }).enrichment
     const right = createSlotsEnrichment({
-      trees: [beta, { ...alpha, children: [...alpha.children].reverse() }],
+      trees: [beta, { ...alpha, children: alpha.children.toReversed() }],
       referencedTypes: [],
     }).enrichment
 
