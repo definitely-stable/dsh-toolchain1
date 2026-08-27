@@ -87,7 +87,7 @@ describe('target resolve CLI projection', () => {
     })
   })
 
-  it('requires --profile and reserves exit code 2 for CLI syntax errors', async () => {
+  it('rejects a missing profile through the shared Protocol validator with exit code 2', async () => {
     const streams = io()
     const resolveTarget = vi.fn(async () => result())
 
@@ -99,7 +99,7 @@ describe('target resolve CLI projection', () => {
 
     expect(code).toBe(2)
     expect(streams.stdout()).toBe('')
-    expect(streams.stderr()).toContain('--profile is required')
+    expect(streams.stderr()).toContain('--profile must be a valid profile for target resolve')
     expect(resolveTarget).not.toHaveBeenCalled()
   })
 
