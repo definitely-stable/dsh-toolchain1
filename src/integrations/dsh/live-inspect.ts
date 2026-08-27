@@ -29,11 +29,32 @@ export interface DshCordisInspectRegistryPort {
   ): Promise<unknown>
 }
 
+export interface DshLiveContractLimits {
+  readonly maxProviderEntries: number
+  readonly maxProviderResultBytes: number
+  readonly maxJsonDepth: number
+  readonly maxJsonNodes: number
+  readonly maxContracts: number
+  readonly maxFactsPerContract: number
+  readonly maxFactsTotal: number
+}
+
 export interface DshLiveContractEnrichmentOptions {
   readonly registry: DshCordisInspectRegistryPort
   readonly execution: DshContractToolExecutionContext
   readonly digest: Sha256Port
+  readonly limits?: Partial<DshLiveContractLimits>
 }
+
+const DEFAULT_LIVE_CONTRACT_LIMITS: DshLiveContractLimits = Object.freeze({
+  maxProviderEntries: 256,
+  maxProviderResultBytes: 4 * 1024 * 1024,
+  maxJsonDepth: 64,
+  maxJsonNodes: 100_000,
+  maxContracts: 4096,
+  maxFactsPerContract: 512,
+  maxFactsTotal: 32_768,
+})
 
 interface ServiceCatalogRow {
   readonly key: string
@@ -45,6 +66,93 @@ function objectValue(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined
+}
+
+function invalidLiveEvidence(message: string): ContractAcquisitionError {
+  return new ContractAcquisitionError('CONTRACT_LIVE_EVIDENCE_INVALID', message)
+}
+
+function liveLimitExceeded(message: string): ContractAcquisitionError {
+  return new ContractAcquisitionError('CONTRACT_LIVE_EVIDENCE_LIMIT_EXCEEDED', message)
+}
+
+function resolveLimits(overrides: Partial<DshLiveContractLimits> | undefined): DshLiveContractLimits {
+  const resolved = { ...DEFAULT_LIVE_CONTRACT_LIMITS, ...overrides }
+  for (const [name, value] of Object.entries(resolved)) {
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new Error(`DSH live Contract limit ${name} must be a positive safe integer.`)
+    }
+  }
+  return Object.freeze(resolved)
+}
+
+function validateJsonValue(
+  value: unknown,
+  limits: DshLiveContractLimits,
+): void {
+  let nodes = 0
+  const active = new WeakSet<object>()
+
+  function visit(current: unknown, depth: number): void {
+    nodes += 1
+    if (nodes > limits.maxJsonNodes) {
+      throw liveLimitExceeded(
+        `Cordis Inspect provider result exceeds ${limits.maxJsonNodes} JSON nodes.`,
+      )
+    }
+    if (depth > limits.maxJsonDepth) {
+      throw liveLimitExceeded(
+        `Cordis Inspect provider result exceeds JSON depth ${limits.maxJsonDepth}.`,
+      )
+    }
+
+    if (
+      current === null
+      || typeof current === 'string'
+      || typeof current === 'boolean'
+      || (typeof current === 'number' && Number.isFinite(current))
+    ) {
+      return
+    }
+    if (typeof current !== 'object') {
+      throw invalidLiveEvidence('Cordis Inspect provider result is not JSON-compatible.')
+    }
+    if (active.has(current)) {
+      throw invalidLiveEvidence('Cordis Inspect provider result contains a cyclic value.')
+    }
+
+    active.add(current)
+    try {
+      if (Array.isArray(current)) {
+        for (const child of current) visit(child, depth + 1)
+      } else {
+        for (const child of Object.values(current)) visit(child, depth + 1)
+      }
+    } finally {
+      active.delete(current)
+    }
+  }
+
+  visit(value, 1)
+
+  let serialized: string
+  try {
+    const encoded = JSON.stringify(value)
+    if (encoded === undefined) {
+      throw invalidLiveEvidence('Cordis Inspect provider result is not JSON-serializable.')
+    }
+    serialized = encoded
+  } catch (error) {
+    if (error instanceof ContractAcquisitionError) throw error
+    throw invalidLiveEvidence('Cordis Inspect provider result is not JSON-serializable.')
+  }
+
+  const bytes = new TextEncoder().encode(serialized).byteLength
+  if (bytes > limits.maxProviderResultBytes) {
+    throw liveLimitExceeded(
+      `Cordis Inspect provider result exceeds ${limits.maxProviderResultBytes} serialized bytes.`,
+    )
+  }
 }
 
 function providerView(value: unknown): InspectProviderView | undefined {
@@ -61,31 +169,44 @@ function providerView(value: unknown): InspectProviderView | undefined {
   return { platform: object.platform, id: object.id, methods }
 }
 
-function serviceCatalog(value: unknown): readonly ServiceCatalogRow[] {
+function serviceCatalog(
+  value: unknown,
+  limits: DshLiveContractLimits,
+): readonly ServiceCatalogRow[] {
   const root = objectValue(value)
   if (root?.mode !== 'catalog' || !Array.isArray(root.services)) {
-    throw new ContractAcquisitionError(
-      'CONTRACT_LIVE_EVIDENCE_INVALID',
-      'Host Service Inspect returned an invalid compact catalog.',
+    throw invalidLiveEvidence('Host Service Inspect returned an invalid compact catalog.')
+  }
+  if (root.services.length > limits.maxContracts) {
+    throw liveLimitExceeded(
+      `Host Service Inspect exceeds ${limits.maxContracts} normalized contracts.`,
     )
   }
+
+  let totalFacts = 0
   const rows = root.services.map((entry): ServiceCatalogRow => {
     const service = objectValue(entry)
     if (service === undefined || typeof service.key !== 'string' || !Array.isArray(service.methods)) {
-      throw new ContractAcquisitionError(
-        'CONTRACT_LIVE_EVIDENCE_INVALID',
-        'Host Service Inspect returned an invalid service row.',
+      throw invalidLiveEvidence('Host Service Inspect returned an invalid service row.')
+    }
+    if (service.methods.length > limits.maxFactsPerContract) {
+      throw liveLimitExceeded(
+        `Host Service ${service.key} exceeds ${limits.maxFactsPerContract} normalized facts.`,
       )
     }
+    totalFacts += service.methods.length
+    if (totalFacts > limits.maxFactsTotal) {
+      throw liveLimitExceeded(
+        `Host Service Inspect exceeds ${limits.maxFactsTotal} normalized facts in total.`,
+      )
+    }
+
     const signatures = service.methods.map(method => {
-      const value = objectValue(method)
-      if (value === undefined || typeof value.signature !== 'string') {
-        throw new ContractAcquisitionError(
-          'CONTRACT_LIVE_EVIDENCE_INVALID',
-          `Host Service Inspect returned an invalid method row for ${service.key}.`,
-        )
+      const methodRow = objectValue(method)
+      if (methodRow === undefined || typeof methodRow.signature !== 'string') {
+        throw invalidLiveEvidence(`Host Service Inspect returned an invalid method row for ${service.key}.`)
       }
-      return value.signature
+      return methodRow.signature
     }).toSorted()
     return {
       key: service.key,
@@ -103,8 +224,10 @@ function serviceQualifiedName(key: string): string {
 async function normalizeServices(
   value: unknown,
   digest: Sha256Port,
+  limits: DshLiveContractLimits,
 ): Promise<AcquiredContractFacts> {
-  const rows = serviceCatalog(value)
+  validateJsonValue(value, limits)
+  const rows = serviceCatalog(value, limits)
   const canonical = JSON.stringify(rows.map(row => ({
     key: row.key,
     ...(row.description === undefined ? {} : { description: row.description }),
@@ -154,14 +277,17 @@ export function createDshLiveContractEnrichment(
 ): ContractEnrichmentPort | undefined {
   const { agent, signal } = options.execution
   if (agent === undefined || signal === undefined) return undefined
+  const limits = resolveLimits(options.limits)
 
   return Object.freeze({
     async enrich(): Promise<AcquiredContractFacts> {
       const listed = options.registry.list()
       if (!Array.isArray(listed)) {
-        throw new ContractAcquisitionError(
-          'CONTRACT_LIVE_EVIDENCE_INVALID',
-          'Cordis Inspect provider directory is not an array.',
+        throw invalidLiveEvidence('Cordis Inspect provider directory is not an array.')
+      }
+      if (listed.length > limits.maxProviderEntries) {
+        throw liveLimitExceeded(
+          `Cordis Inspect provider directory exceeds ${limits.maxProviderEntries} entries.`,
         )
       }
       const providers = listed
@@ -179,7 +305,7 @@ export function createDshLiveContractEnrichment(
         agent,
         signal,
       )
-      return normalizeServices(value, options.digest)
+      return normalizeServices(value, options.digest, limits)
     },
   })
 }
