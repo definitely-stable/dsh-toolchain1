@@ -62,18 +62,54 @@ function acquisitionError(
   return new ContractAcquisitionError(code, message, locations, cause === undefined ? undefined : { cause })
 }
 
+function bundleManifestEvidenceIds(snapshot: TargetSnapshot): Map<string, string[]> {
+  const byName = new Map<string, Array<{ readonly index: number; readonly id: string }>>()
+  for (const evidence of snapshot.evidence) {
+    const match = /^manifest:bundle:(\d+):(.+)$/u.exec(evidence.id)
+    if (match === null) continue
+    const indexText = match[1]
+    const name = match[2]
+    if (indexText === undefined || name === undefined) continue
+    const index = Number(indexText)
+    const entries = byName.get(name) ?? []
+    entries.push({ index, id: evidence.id })
+    byName.set(name, entries)
+  }
+
+  return new Map(
+    [...byName.entries()].map(([name, entries]) => [
+      name,
+      entries.toSorted((left, right) => left.index - right.index).map(entry => entry.id),
+    ]),
+  )
+}
+
 function expectedPackages(snapshot: TargetSnapshot): readonly ExpectedPackage[] {
+  const bundleEvidenceIds = bundleManifestEvidenceIds(snapshot)
+  const bundles = snapshot.profile.bundles.map(bundle => {
+    const candidates = bundleEvidenceIds.get(bundle.name)
+    const manifestEvidenceId = candidates?.shift()
+    if (manifestEvidenceId === undefined) {
+      throw acquisitionError(
+        'CONTRACT_EVIDENCE_READ_FAILED',
+        `Target snapshot has no original bundle manifest evidence for ${bundle.name}`,
+        [],
+      )
+    }
+    return {
+      name: bundle.name,
+      version: bundle.version,
+      manifestEvidenceId,
+    }
+  })
+
   return [
     {
       name: snapshot.dsh.name,
       version: snapshot.dsh.version,
       manifestEvidenceId: 'manifest:dsh',
     },
-    ...snapshot.profile.bundles.map((bundle, index) => ({
-      name: bundle.name,
-      version: bundle.version,
-      manifestEvidenceId: `manifest:bundle:${index}:${bundle.name}`,
-    })),
+    ...bundles,
     ...snapshot.profile.dependencies.map(dependency => ({
       name: dependency.name,
       version: dependency.version,
