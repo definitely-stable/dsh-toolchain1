@@ -206,7 +206,11 @@ describe('M2.3 retrieval corpus validation', () => {
       : task)
     expectInvalid(noNoResult, /at least one no-result/i)
 
-    const noForbidden = validTasks().map(task => ({ ...task, forbiddenContractIds: undefined }))
+    const noForbidden = validTasks().map(task => {
+      const { forbiddenContractIds, ...withoutForbidden } = task
+      void forbiddenContractIds
+      return withoutForbidden
+    })
     expectInvalid(noForbidden, /at least one.*forbidden/i)
   })
 })
