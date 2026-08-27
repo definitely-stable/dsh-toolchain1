@@ -122,10 +122,12 @@ function createBinding(fixture: RuntimeFixture, overrides: {
   readonly home?: string
   readonly argv?: readonly string[]
   readonly nodeVersion?: string
+  readonly startupTargetFingerprint?: string | Promise<string | undefined>
 } = {}) {
   const binding = createDshRuntimeTargetBinding({
     baseUrl: pathToFileURL(fixture.profileDir).href + '/',
     dshHome: overrides.home ?? fixture.home,
+    startupTargetFingerprint: overrides.startupTargetFingerprint ?? fixture.snapshot.fingerprint,
     argv: overrides.argv ?? ['node', fixture.script, '--profile', 'web'],
     cwd: fixture.profileDir,
     nodeVersion: overrides.nodeVersion ?? '24.19.0',
@@ -153,6 +155,13 @@ describe('DSH runtime target binding', () => {
   it('binds only the exact profile/home/DSH/runtime identity', async () => {
     const fixture = await createFixture()
     await expect(createBinding(fixture).matches(fixture.snapshot)).resolves.toBe(true)
+  })
+
+  it('fails closed when no startup semantic baseline is available', async () => {
+    const fixture = await createFixture()
+    await expect(createBinding(fixture, {
+      startupTargetFingerprint: Promise.resolve(undefined),
+    }).matches(fixture.snapshot)).resolves.toBe(false)
   })
 
   it('rejects a different requested profile', async () => {
