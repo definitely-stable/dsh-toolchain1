@@ -48,7 +48,7 @@ describe('DSH package smoke policy', () => {
 `)).toThrow(/dsh-toolchain row/)
   })
 
-  it('requires an actual DSH boot probe that resolves through Service and native ToolRuntime', () => {
+  it('requires an actual DSH boot probe for target and contract ToolRuntime paths', () => {
     expect(smokeModule.DSH_BOOT_PROBE_PROFILE).toBe('toolchain-smoke')
     expect(typeof smokeModule.createBootProbePackage).toBe('function')
     expect(typeof smokeModule.assertBootProbeOutput).toBe('function')
@@ -59,13 +59,17 @@ describe('DSH package smoke policy', () => {
     expect(smokeSource).toContain('ctx.tools.schemas()')
     expect(smokeSource).toContain('ctx.tools.execute({')
     expect(smokeSource).toContain("name: 'toolchain_target_resolve'")
+    expect(smokeSource).toContain("name: 'toolchain_contract_search'")
+    expect(smokeSource).toContain("name: 'toolchain_contract_inspect'")
+    expect(smokeSource).toContain("contractId: 'package:@deepseek-ai/dsh'")
     expect(smokeSource).toContain("ctx.get('appExit')")
     expect(smokeSource).toContain("'exec', 'dsh', '--profile', DSH_BOOT_PROBE_PROFILE")
   })
 
-  it('accepts only a boot receipt proving Service/native-tool fingerprint parity', () => {
+  it('accepts only a boot receipt proving target parity and contract search-to-inspect continuity', () => {
     const assertBootProbeOutput = smokeModule.assertBootProbeOutput as (output: string) => void
     const fingerprint = `dsh-target-v2:${'a'.repeat(64)}`
+    const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
     const receipt = {
       descriptor: {
         product: 'dsh-toolchain',
@@ -83,6 +87,24 @@ describe('DSH package smoke policy', () => {
         snapshotFingerprint: fingerprint,
         renderedMatchesValue: true,
       },
+      contractSearch: {
+        visible: true,
+        isError: false,
+        status: 'ok',
+        snapshotFingerprint: fingerprint,
+        contractIndexFingerprint,
+        foundDshPackage: true,
+        renderedMatchesValue: true,
+      },
+      contractInspect: {
+        visible: true,
+        isError: false,
+        status: 'ok',
+        snapshotFingerprint: fingerprint,
+        contractIndexFingerprint,
+        contractId: 'package:@deepseek-ai/dsh',
+        renderedMatchesValue: true,
+      },
     }
 
     expect(() => assertBootProbeOutput(
@@ -94,5 +116,14 @@ describe('DSH package smoke policy', () => {
         nativeTool: { ...receipt.nativeTool, visible: false },
       })}\n`,
     )).toThrow(/native target tool/i)
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
+        ...receipt,
+        contractInspect: {
+          ...receipt.contractInspect,
+          contractIndexFingerprint: `dsh-contract-index-v1:${'c'.repeat(64)}`,
+        },
+      })}\n`,
+    )).toThrow(/contract inspect/i)
   })
 })
