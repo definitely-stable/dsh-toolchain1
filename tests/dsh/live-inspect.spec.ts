@@ -37,7 +37,7 @@ function serviceProvider(): unknown {
   }
 }
 
-function serviceCatalog(services: readonly unknown[] = []): unknown {
+function serviceCatalog(services: readonly unknown[] = []): Record<string, unknown> {
   return { mode: 'catalog', services }
 }
 
