@@ -146,7 +146,8 @@ describe('native DSH target tool', () => {
     })
     const definition = createTargetResolveToolDefinition(resolve)
 
-    await expect(definition.execute(args)).rejects.toThrow(/invalid target\.resolve arguments/i)
+    await expect(Promise.resolve().then(() => definition.execute(args)))
+      .rejects.toThrow(/invalid target\.resolve arguments/i)
     expect(resolve).not.toHaveBeenCalled()
   })
 })
