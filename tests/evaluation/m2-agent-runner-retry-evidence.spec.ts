@@ -5,10 +5,12 @@ import type { AgentRetryPolicy } from './m2-agent-eval-integrity.js'
 import {
   createInlineContentRef,
   createTraceReceipt,
-  validateRunnerAttemptSequence,
   type IsolationReceipt,
-  type RunnerAttemptEvidence,
 } from './m2-agent-execution-evidence.js'
+import {
+  validateRunnerAttemptSequence,
+  type RunnerAttemptEvidence,
+} from './m2-agent-runner-retry-evidence.js'
 
 const POLICY: AgentRetryPolicy = {
   maxInfrastructureRetries: 2,
