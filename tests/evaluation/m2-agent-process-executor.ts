@@ -37,9 +37,10 @@ export interface ProcessModelOutcome {
 
 export interface ProcessInfrastructureFailure {
   kind: 'infrastructure-failure'
-  reason: 'protocol' | 'timeout'
+  reason: 'protocol' | 'timeout' | 'exit'
   detail: string
   partialOutput?: string
+  stderr?: string
 }
 
 export type ProcessModelAttemptResult = ProcessModelOutcome | ProcessInfrastructureFailure
@@ -104,6 +105,7 @@ export async function executeProcessModelAttempt(
         reason,
         detail,
         ...(stdout.length === 0 ? {} : { partialOutput: stdout }),
+        ...(stderr.length === 0 ? {} : { stderr }),
       }
       child.stdin.end()
       if (child.exitCode === null && child.signalCode === null) child.kill()
@@ -172,7 +174,8 @@ export async function executeProcessModelAttempt(
           return
         }
         if (code !== 0) {
-          reject(new Error(`Process model executor exited with code ${String(code)}: ${stderr.trim()}`))
+          failInfrastructure('exit', `Process model executor exited with code ${String(code)}`)
+          resolve(failure!)
           return
         }
         if (terminal === undefined) {
