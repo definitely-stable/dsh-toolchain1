@@ -37,7 +37,7 @@ export interface ProcessModelOutcome {
 
 export interface ProcessInfrastructureFailure {
   kind: 'infrastructure-failure'
-  reason: 'protocol' | 'timeout' | 'exit' | 'spawn'
+  reason: 'protocol' | 'timeout' | 'exit' | 'spawn' | 'output-limit'
   detail: string
   partialOutput?: string
   stderr?: string
@@ -73,6 +73,20 @@ function errorDetail(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function appendBoundedUtf8(current: string, chunk: string, maxBytes: number): string {
+  let remaining = maxBytes - Buffer.byteLength(current, 'utf8')
+  if (remaining <= 0) return current
+
+  let prefix = ''
+  for (const symbol of chunk) {
+    const symbolBytes = Buffer.byteLength(symbol, 'utf8')
+    if (symbolBytes > remaining) break
+    prefix += symbol
+    remaining -= symbolBytes
+  }
+  return current + prefix
+}
+
 export async function executeProcessModelAttempt(
   input: ProcessModelAttemptInput,
 ): Promise<ProcessModelAttemptResult> {
@@ -83,20 +97,15 @@ export async function executeProcessModelAttempt(
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     child.stdout.setEncoding('utf8')
-    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })
+    child.stderr.setEncoding('utf8')
+
     let stdout = ''
     let stderr = ''
+    let stdoutBytes = 0
+    let stderrBytes = 0
     let terminal: ProcessModelOutcome | undefined
     let failure: ProcessInfrastructureFailure | undefined
     let processing = Promise.resolve()
-
-    child.stdout.on('data', chunk => {
-      stdout += chunk
-    })
-    child.stderr.setEncoding('utf8')
-    child.stderr.on('data', chunk => {
-      stderr += chunk
-    })
 
     function failInfrastructure(reason: ProcessInfrastructureFailure['reason'], detail: string): void {
       if (failure !== undefined) return
@@ -110,6 +119,31 @@ export async function executeProcessModelAttempt(
       child.stdin.end()
       if (child.exitCode === null && child.signalCode === null) child.kill()
     }
+
+    child.stdout.on('data', chunk => {
+      const text = String(chunk)
+      stdoutBytes += Buffer.byteLength(text, 'utf8')
+      stdout = appendBoundedUtf8(stdout, text, input.maxStdoutBytes)
+      if (stdoutBytes > input.maxStdoutBytes) {
+        failInfrastructure(
+          'output-limit',
+          `Process model executor stdout exceeded ${input.maxStdoutBytes} bytes`,
+        )
+      }
+    })
+    child.stderr.on('data', chunk => {
+      const text = String(chunk)
+      stderrBytes += Buffer.byteLength(text, 'utf8')
+      stderr = appendBoundedUtf8(stderr, text, input.maxStderrBytes)
+      if (stderrBytes > input.maxStderrBytes) {
+        failInfrastructure(
+          'output-limit',
+          `Process model executor stderr exceeded ${input.maxStderrBytes} bytes`,
+        )
+      }
+    })
+
+    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })
 
     function failProtocol(error: unknown): void {
       failInfrastructure('protocol', errorDetail(error))
