@@ -5,5 +5,5 @@ const input = readline.createInterface({ input: process.stdin, crlfDelay: Infini
 for await (const line of input) {
   const message = JSON.parse(line)
   if (message.type !== 'start') process.exit(2)
-  break
+  process.exit(0)
 }
