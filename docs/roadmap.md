@@ -44,7 +44,7 @@ CLI, installed `ctx.toolchain`, native `toolchain_target_resolve`, and MCP `targ
 
 **Goal:** let an agent discover exact DSH capabilities progressively against the exact M1 target, with evidence and a content-addressed Contract Index rather than model-memory guesses.
 
-Parent Issue #28 remains open until all three M2 slices meet their exit criteria.
+Parent Issue #28 remains open until all M2 slices meet their exit criteria, including controlled agent-level usefulness evidence.
 
 ### M2.1 — Offline target-bound Contract Index
 
@@ -61,7 +61,7 @@ Capabilities:
 
 ### M2.2 — Agent-scoped Host Inspect enrichment
 
-**Status:** implementation and corrective verification complete on PR #32; GitHub tracks review/merge state.
+**Status:** implemented and merged via PR #32 / Issue #31.
 
 Capabilities:
 - real native DSH ToolExecution is projected to a new immutable `{ agent, signal }` boundary; no complete ToolExecution, dummy/global Agent, or DSH runtime DTO enters model/kernel;
@@ -87,7 +87,7 @@ Verification:
 - exact packed `dsh@0.1.1-rc.2` Web smoke creates a real registered Agent and proves Host Tool live evidence, offline/live Contract Index divergence, and native search→inspect continuity;
 - a real missing-Inspect probe proves offline fallback;
 - published `0.1.0-rc.8` remains an older target-resolution compatibility train;
-- upstream source `cd5ef814...` declares source version `0.1.2-alpha.1` and new `profile.patchReload`, but npm does not publish that version; Issue #33 owns the target-identity compatibility decision before support claims change.
+- upstream GitHub prerelease/source `dsh-v0.1.2-alpha.1` introduces `profile.patchReload`, while the public npm `@deepseek-ai/dsh` package remains `0.1.1-rc.2` at the M2.3 governance check; Issue #33 owns the target-identity compatibility decision before support claims change.
 
 M2.2 exit criteria:
 - [x] narrow Agent/AbortSignal boundary and no dummy/global Agent;
@@ -98,22 +98,54 @@ M2.2 exit criteria:
 - [x] CLI/MCP/ordinary Service remain offline peers;
 - [x] exact packed real-Agent positive and missing-Inspect negative smokes on published current train;
 - [x] Node 22/24/26 plus Windows/macOS lanes green on corrective implementation HEADs;
-- [ ] PR #32 merged after exact final governance HEAD verification.
+- [x] PR #32 merged after exact final governance HEAD verification.
 
 ### M2.3 — Frozen retrieval evaluation / milestone exit
 
-**Status:** not yet implemented; required after M2.2 before parent M2 can close.
+**Status:** deterministic evaluation infrastructure and first rc.2 baseline implemented on PR #35; controlled H1 agent evidence remains pending, so M2 is **not complete**.
 
-Goal:
-- freeze a small corpus of real DSH development questions/tasks with expected contracts and known-invalid guesses;
-- compare progressive Toolchain search→inspect against static-doc/model-memory baselines;
-- record deterministic Recall@k/MRR/no-result correctness and product-level invalid-API-guess/first-correct-contract outcomes;
-- add embeddings or more complex retrieval only if the frozen evaluation proves lexical progressive retrieval insufficient.
+Implemented evaluation boundary:
+- artifact-grade frozen `@deepseek-ai/dsh@0.1.1-rc.2` Web target and complete normalized Contract Index are fixed before corpus/scoring;
+- R1 freezes 36 provenance-backed tasks across exact-symbol, package/API, natural-language, indirect, ambiguity/confusion and no-result/version-drift behavior;
+- all R1 tasks run only through production `searchContractIndex(..., limit=5)` and the real kernel `search -> inspect` loop is separately proven with target/index continuity and stale semantics;
+- evidence-sufficiency checks distinguish retrieval failures from acquisition gaps;
+- immutable first-run output records per-task ranking plus Success@1/3/5, MRR, no-result correctness, forbidden-hit rate and category/domain diagnostics;
+- A/B/C schema, exact rc.2 API oracle, public non-scoring P0 calibration set, retry/resource rules, canonical hashing, deterministic three-trial balanced scheduling and fail-closed H1 commitment gate are versioned and tested;
+- required CI stays offline/deterministic; no external model call is required to pass repository CI.
+
+Measured R1 baseline before any retrieval tuning:
+- Success@5: **56.25%**;
+- MRR: **54.6875%**;
+- exact-symbol: **100%**;
+- package/API: **100%**;
+- no-result: **100%**;
+- natural-language: **0%**;
+- indirect: **0%**;
+- forbidden-hit rate@5: **20%**.
+
+The acquisition/evidence fixture contains the required authoritative facts for the answerable R1 tasks, so the natural-language/indirect failures are measured **retrieval gaps**, not missing-contract excuses. PR #35 intentionally does not alter production ranking after observing this result.
+
+Agent-level exit protocol:
+- A = model memory reference;
+- B = conventional exact-target agent with ordinary file/search/docs access;
+- C = the same conventional exact-target agent plus Toolchain `contract.search` / `contract.inspect`; C is never forced to call Toolchain;
+- `VALID | INVALID | UNKNOWN` oracle semantics are frozen; UNKNOWN is never automatically INVALID;
+- P0 is public/non-scoring harness calibration;
+- H1 cannot run until P0 is complete, MCID and task-success non-inferiority margin are frozen, the hidden H1 task set is hash-committed and the exact experiment identities are content-addressed;
+- model-outcome retries are forbidden; bounded infrastructure retries and every attempt are recorded;
+- H1 result files are created only from an actual run, never synthesized to satisfy repository state.
 
 M2 exit criteria:
-- M2.1 and M2.2 are merged and their exact artifact/native boundaries remain green;
-- frozen M2.3 evaluation demonstrates materially fewer invalid DSH API guesses than the baseline;
-- the evaluation evidence, not architectural optimism, decides whether further retrieval machinery is justified.
+- [x] M2.1 and M2.2 are merged and their exact artifact/native boundaries remain green;
+- [x] frozen real-target retrieval corpus/index and deterministic production-scoring report exist;
+- [x] real production search→inspect continuity/evidence/stale behavior is proven;
+- [x] versioned controlled-agent protocol/oracle/integrity infrastructure exists and fails closed before H1 commitment;
+- [ ] P0 harness calibration is actually executed and its harness-only decisions are frozen;
+- [ ] H1 thresholds/task set/experiment definition are committed before any H1 outcome is observed;
+- [ ] controlled H1 evidence demonstrates the preregistered C-vs-B Invalid API Task Rate improvement while satisfying task-success non-inferiority;
+- [ ] parent #28 closes only after the evidence-based PASS rule is met. If it is not met, freeze `NEEDS-IMPROVEMENT`/`INCONCLUSIVE` and move retrieval changes to a separate reviewed slice.
+
+No embeddings, semantic reranker, vector database or other retrieval layer is justified merely by architecture preference. The measured baseline and later controlled H1 evidence decide the next retrieval slice.
 
 ### First usable alpha gate — Exact Target Plugin Check
 
