@@ -14,46 +14,70 @@ function validTasks(): M2RetrievalTask[] {
     {
       id: 'exact',
       category: 'exact-symbol',
+      domain: 'tools',
+      intentGroup: 'tool-definition-symbol',
+      sourceKind: 'declaration',
       query: 'ExactSymbol',
       expectedContractIds: ['A'],
+      referenceRoute: ['package:A', 'declaration-export:ExactSymbol'],
       provenance: 'fixture:exact',
     },
     {
       id: 'package',
       category: 'package-api',
+      domain: 'agent',
+      intentGroup: 'agent-package-api',
+      sourceKind: 'declaration',
       query: 'Package API',
       expectedContractIds: ['B'],
       forbiddenContractIds: ['X'],
+      referenceRoute: ['package:B', 'declaration-export:PackageApi'],
       provenance: 'fixture:package',
     },
     {
       id: 'natural',
       category: 'natural-language',
+      domain: 'session',
+      intentGroup: 'session-lifecycle',
+      sourceKind: 'declaration',
       query: 'natural language mechanism',
       expectedContractIds: ['C'],
+      referenceRoute: ['package:C', 'declaration-export:SessionLifecycle'],
       provenance: 'fixture:natural',
     },
     {
       id: 'indirect',
       category: 'indirect',
+      domain: 'prompt',
+      intentGroup: 'prompt-assembly',
+      sourceKind: 'declaration',
       query: 'indirect phrasing',
       expectedContractIds: ['D'],
+      referenceRoute: ['package:D', 'declaration-export:PromptAssembler'],
       provenance: 'fixture:indirect',
     },
     {
       id: 'ambiguous',
       category: 'ambiguous',
+      domain: 'scope',
+      intentGroup: 'scope-control',
+      sourceKind: 'declaration',
       query: 'ambiguous entry point',
       expectedContractIds: ['E', 'F'],
       forbiddenContractIds: ['Z'],
+      referenceRoute: ['package:E', 'declaration-export:ScopeControl'],
       provenance: 'fixture:ambiguous',
     },
     {
       id: 'none',
       category: 'no-result',
+      domain: 'obsolete-api',
+      intentGroup: 'nonexistent-obsolete-api',
+      sourceKind: 'negative-oracle',
       query: 'obsolete nonexistent api',
       expectedContractIds: [],
       expectNoResult: true,
+      referenceRoute: ['fixture:complete-contract-universe', 'oracle:no-useful-replacement'],
       provenance: 'fixture:none',
     },
   ]
@@ -140,7 +164,7 @@ describe('M2.3 retrieval corpus validation', () => {
     expectInvalid(forbidden, /duplicate forbidden contract/i)
   })
 
-  it('rejects empty query or provenance', () => {
+  it('rejects empty query, provenance, orthogonal metadata, or reference-route segments', () => {
     const query = validTasks()
     query[0] = { ...query[0]!, query: '   ' }
     expectInvalid(query, /query/i)
@@ -148,9 +172,41 @@ describe('M2.3 retrieval corpus validation', () => {
     const provenance = validTasks()
     provenance[0] = { ...provenance[0]!, provenance: '' }
     expectInvalid(provenance, /provenance/i)
+
+    for (const field of ['domain', 'intentGroup', 'sourceKind'] as const) {
+      const tasks = validTasks()
+      tasks[0] = { ...tasks[0]!, [field]: '   ' }
+      expectInvalid(tasks, new RegExp(field, 'i'))
+    }
+
+    const noRoute = validTasks()
+    noRoute[0] = { ...noRoute[0]!, referenceRoute: [] }
+    expectInvalid(noRoute, /reference route/i)
+
+    const blankRoute = validTasks()
+    blankRoute[0] = { ...blankRoute[0]!, referenceRoute: ['package:A', '   '] }
+    expectInvalid(blankRoute, /reference route/i)
   })
 
-  it('rejects expected or forbidden contract ids absent from the frozen index', () => {
+  it('bounds intent-group concentration to three tasks', () => {
+    const tasks = validTasks()
+    for (let index = 0; index < 4; index += 1) {
+      tasks[index] = { ...tasks[index]!, intentGroup: 'over-concentrated-intent' }
+    }
+    expectInvalid(tasks, /intent group.*more than 3/i)
+  })
+
+  it('rejects duplicate or blank risk tags', () => {
+    const duplicate = validTasks()
+    duplicate[0] = { ...duplicate[0]!, riskTags: ['version-drift', 'version-drift'] }
+    expectInvalid(duplicate, /duplicate risk tag/i)
+
+    const blank = validTasks()
+    blank[0] = { ...blank[0]!, riskTags: ['   '] }
+    expectInvalid(blank, /risk tag/i)
+  })
+
+  it('rejects expected, forbidden, or replacement contract ids absent from the frozen index', () => {
     const expected = validTasks()
     expected[0] = { ...expected[0]!, expectedContractIds: ['missing'] }
     expectInvalid(expected, /unknown expected contract/i)
@@ -158,6 +214,42 @@ describe('M2.3 retrieval corpus validation', () => {
     const forbidden = validTasks()
     forbidden[1] = { ...forbidden[1]!, forbiddenContractIds: ['missing'] }
     expectInvalid(forbidden, /unknown forbidden contract/i)
+
+    const replacement = validTasks()
+    replacement[0] = {
+      ...replacement[0]!,
+      expectedContractIds: ['A'],
+      replacementContractIds: ['missing'],
+      riskTags: ['version-drift'],
+    }
+    expectInvalid(replacement, /unknown replacement contract/i)
+  })
+
+  it('requires replacements to be acceptable version-drift answers', () => {
+    const validReplacement = validTasks()
+    validReplacement[0] = {
+      ...validReplacement[0]!,
+      expectedContractIds: ['A', 'B'],
+      replacementContractIds: ['B'],
+      riskTags: ['version-drift'],
+    }
+    expect(() => validateM2RetrievalCorpus(validReplacement, knownContractIds)).not.toThrow()
+
+    const notExpected = validTasks()
+    notExpected[0] = {
+      ...notExpected[0]!,
+      replacementContractIds: ['B'],
+      riskTags: ['version-drift'],
+    }
+    expectInvalid(notExpected, /replacement contract.*expected/i)
+
+    const missingRisk = validTasks()
+    missingRisk[0] = {
+      ...missingRisk[0]!,
+      expectedContractIds: ['A', 'B'],
+      replacementContractIds: ['B'],
+    }
+    expectInvalid(missingRisk, /replacement.*version-drift/i)
   })
 
   it('rejects overlap between acceptable and forbidden ids', () => {
@@ -174,6 +266,14 @@ describe('M2.3 retrieval corpus validation', () => {
       expectNoResult: true,
     }
     expectInvalid(contradictory, /no-result task.*expected/i)
+
+    const replacement = validTasks()
+    replacement[5] = {
+      ...replacement[5]!,
+      replacementContractIds: ['A'],
+      riskTags: ['version-drift'],
+    }
+    expectInvalid(replacement, /no-result task.*replacement/i)
 
     const answerable = validTasks()
     answerable[0] = { ...answerable[0]!, expectedContractIds: [] }
