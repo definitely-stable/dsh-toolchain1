@@ -86,11 +86,27 @@ function validDefinition(): JsonObject {
       primary: {
         name: 'invalid-api-task-rate',
         comparison: 'C-vs-B',
+        trialToTaskAggregation: 'mean-trial-invalid-indicator',
         mcidAbsoluteReduction: null,
+        uncertainty: {
+          method: 'paired-task-bootstrap',
+          confidenceLevel: 0.95,
+          resamples: 10000,
+          seed: 'm2-agent-primary-bootstrap-v1',
+          decisionRule: 'lower-bound-at-least-mcid',
+        },
       },
       guardrail: {
         name: 'task-success-noninferiority',
+        trialToTaskAggregation: 'mean-trial-success-indicator',
         margin: null,
+        uncertainty: {
+          method: 'paired-task-bootstrap',
+          confidenceLevel: 0.95,
+          resamples: 10000,
+          seed: 'm2-agent-guardrail-bootstrap-v1',
+          decisionRule: 'lower-bound-at-least-negative-margin',
+        },
       },
       secondary: ['valid-first-api-claim-rate', 'toolchain-use-rate', 'model-tokens', 'wall-time'],
     },
@@ -106,6 +122,59 @@ function validDefinition(): JsonObject {
       commitmentSha256: 'f'.repeat(64),
       hiddenUntilRunComplete: false,
     },
+  }
+}
+
+function frozenH1Definition(): JsonObject {
+  const h1 = structuredClone(validDefinition()) as JsonObject
+  h1.evaluationId = 'm2-agent-eval-h1-v1'
+  h1.phase = 'H1'
+  h1.dataset = {
+    id: 'H1',
+    taskCount: 24,
+    commitmentSha256: '1'.repeat(64),
+    hiddenUntilRunComplete: true,
+  }
+  const metrics = h1.metrics as JsonObject
+  ;(metrics.primary as JsonObject).mcidAbsoluteReduction = 0.1
+  ;(metrics.guardrail as JsonObject).margin = 0.05
+  return h1
+}
+
+function validResult(): JsonObject {
+  return {
+    ...frozenH1Definition(),
+    recordType: 'result',
+    status: 'PASS',
+    definitionSha256: '2'.repeat(64),
+    executedAt: '2026-08-28T05:30:00.000Z',
+    runs: [
+      {
+        taskId: 'h1-01',
+        arm: 'C',
+        trial: 1,
+        attempts: [
+          {
+            attempt: 1,
+            startedAt: '2026-08-28T05:29:00.000Z',
+            completedAt: '2026-08-28T05:29:15.000Z',
+            outcome: 'model-outcome',
+            rawAnswer: {
+              reference: 'evidence/h1/h1-01-C-1-answer.txt',
+              sha256: '3'.repeat(64),
+            },
+            parsedApiClaims: [
+              {
+                text: 'ctx.tools.register',
+                classification: 'VALID',
+                oracleEvidenceIds: ['types:@deepseek-ai/dsh-tools:lib/types/index.d.ts'],
+              },
+            ],
+            taskSuccess: 'SUCCESS',
+          },
+        ],
+      },
+    ],
   }
 }
 
@@ -183,43 +252,97 @@ describe('M2.3 agent evaluation v1 schema', () => {
     }), ajv.errorsText(validate.errors)).toBe(false)
   })
 
-  it('requires frozen MCID and noninferiority margin for H1 and a terminal result status for results', async () => {
+  it('requires frozen H1 thresholds and preregistered task-level aggregation plus uncertainty rules', async () => {
     const { ajv, validate } = await validator()
-    const definition = validDefinition()
-    const h1 = {
-      ...definition,
-      evaluationId: 'm2-agent-eval-h1-v1',
-      phase: 'H1',
-      dataset: {
-        id: 'H1',
-        taskCount: 24,
-        commitmentSha256: '1'.repeat(64),
-        hiddenUntilRunComplete: true,
-      },
-      metrics: {
-        ...(definition.metrics as JsonObject),
-        primary: {
-          name: 'invalid-api-task-rate',
-          comparison: 'C-vs-B',
-          mcidAbsoluteReduction: null,
-        },
-        guardrail: {
-          name: 'task-success-noninferiority',
-          margin: null,
-        },
-      },
-    }
+    const h1 = structuredClone(frozenH1Definition()) as JsonObject
+    const metrics = h1.metrics as JsonObject
+
+    ;(metrics.primary as JsonObject).mcidAbsoluteReduction = null
+    expect(validate(h1), ajv.errorsText(validate.errors)).toBe(false)
+    ;(metrics.primary as JsonObject).mcidAbsoluteReduction = 0.1
+    ;(metrics.guardrail as JsonObject).margin = null
     expect(validate(h1), ajv.errorsText(validate.errors)).toBe(false)
 
-    const frozenH1 = structuredClone(h1) as JsonObject
-    const metrics = frozenH1.metrics as JsonObject
-    ;(metrics.primary as JsonObject).mcidAbsoluteReduction = 0.1
-    ;(metrics.guardrail as JsonObject).margin = 0.05
-    expect(validate(frozenH1), ajv.errorsText(validate.errors)).toBe(true)
+    const frozen = frozenH1Definition()
+    expect(validate(frozen), ajv.errorsText(validate.errors)).toBe(true)
+    expect(validate(removePath(frozen, 'metrics', 'primary')), ajv.errorsText(validate.errors)).toBe(false)
 
-    expect(validate({ ...frozenH1, recordType: 'result', status: 'PREREGISTERED' }), ajv.errorsText(validate.errors)).toBe(false)
-    for (const status of ['PASS', 'NEEDS-IMPROVEMENT', 'INCONCLUSIVE']) {
-      expect(validate({ ...frozenH1, recordType: 'result', status }), ajv.errorsText(validate.errors)).toBe(true)
-    }
+    const withoutAggregation = structuredClone(frozen) as JsonObject
+    delete ((withoutAggregation.metrics as JsonObject).primary as JsonObject).trialToTaskAggregation
+    expect(validate(withoutAggregation), ajv.errorsText(validate.errors)).toBe(false)
+
+    const withoutUncertainty = structuredClone(frozen) as JsonObject
+    delete ((withoutUncertainty.metrics as JsonObject).primary as JsonObject).uncertainty
+    expect(validate(withoutUncertainty), ajv.errorsText(validate.errors)).toBe(false)
+  })
+
+  it('requires every result to be definition-bound and carry auditable raw outcomes, claims and task success', async () => {
+    const { ajv, validate } = await validator()
+    const result = validResult()
+
+    expect(validate(result), ajv.errorsText(validate.errors)).toBe(true)
+    expect(validate({ ...result, status: 'PREREGISTERED' }), ajv.errorsText(validate.errors)).toBe(false)
+    expect(validate(removePath(result, 'definitionSha256')), ajv.errorsText(validate.errors)).toBe(false)
+    expect(validate(removePath(result, 'executedAt')), ajv.errorsText(validate.errors)).toBe(false)
+    expect(validate(removePath(result, 'runs')), ajv.errorsText(validate.errors)).toBe(false)
+
+    const missingRaw = structuredClone(result) as JsonObject
+    const modelAttempt = (((missingRaw.runs as JsonObject[])[0]!.attempts as JsonObject[])[0]!)
+    delete modelAttempt.rawAnswer
+    expect(validate(missingRaw), ajv.errorsText(validate.errors)).toBe(false)
+
+    const missingClaims = structuredClone(result) as JsonObject
+    delete ((((missingClaims.runs as JsonObject[])[0]!.attempts as JsonObject[])[0]!) as JsonObject).parsedApiClaims
+    expect(validate(missingClaims), ajv.errorsText(validate.errors)).toBe(false)
+
+    const missingTaskSuccess = structuredClone(result) as JsonObject
+    delete ((((missingTaskSuccess.runs as JsonObject[])[0]!.attempts as JsonObject[])[0]!) as JsonObject).taskSuccess
+    expect(validate(missingTaskSuccess), ajv.errorsText(validate.errors)).toBe(false)
+
+    const unknown = structuredClone(result) as JsonObject
+    const claim = (((((unknown.runs as JsonObject[])[0]!.attempts as JsonObject[])[0]!).parsedApiClaims as JsonObject[])[0]!)
+    claim.classification = 'UNKNOWN'
+    claim.oracleEvidenceIds = []
+    expect(validate(unknown), ajv.errorsText(validate.errors)).toBe(true)
+
+    const unsupportedClassification = structuredClone(result) as JsonObject
+    const unsupportedClaim = (((((unsupportedClassification.runs as JsonObject[])[0]!.attempts as JsonObject[])[0]!).parsedApiClaims as JsonObject[])[0]!)
+    unsupportedClaim.classification = 'WRONG'
+    expect(validate(unsupportedClassification), ajv.errorsText(validate.errors)).toBe(false)
+  })
+
+  it('keeps infrastructure failures auditable without pretending they are model outcomes', async () => {
+    const { ajv, validate } = await validator()
+    const result = validResult()
+    const infraResult = structuredClone(result) as JsonObject
+    const run = (infraResult.runs as JsonObject[])[0]!
+    run.attempts = [
+      {
+        attempt: 1,
+        startedAt: '2026-08-28T05:29:00.000Z',
+        completedAt: '2026-08-28T05:29:01.000Z',
+        outcome: 'infrastructure-failure',
+        reason: 'provider-transport',
+        detail: 'connection reset before model outcome',
+      },
+      (((result.runs as JsonObject[])[0]!.attempts as JsonObject[])[0]!),
+    ]
+    ;(run.attempts as JsonObject[])[1]!.attempt = 2
+
+    expect(validate(infraResult), ajv.errorsText(validate.errors)).toBe(true)
+
+    const fakeModelEvidence = structuredClone(infraResult) as JsonObject
+    const infraAttempt = (((fakeModelEvidence.runs as JsonObject[])[0]!.attempts as JsonObject[])[0]!)
+    infraAttempt.rawAnswer = { reference: 'fake', sha256: '4'.repeat(64) }
+    expect(validate(fakeModelEvidence), ajv.errorsText(validate.errors)).toBe(false)
+  })
+
+  it('does not allow result-only evidence fields on preregistered definitions', async () => {
+    const { ajv, validate } = await validator()
+    const definition = frozenH1Definition()
+
+    expect(validate({ ...definition, definitionSha256: '2'.repeat(64) }), ajv.errorsText(validate.errors)).toBe(false)
+    expect(validate({ ...definition, executedAt: '2026-08-28T05:30:00.000Z' }), ajv.errorsText(validate.errors)).toBe(false)
+    expect(validate({ ...definition, runs: [] }), ajv.errorsText(validate.errors)).toBe(false)
   })
 })
