@@ -7,6 +7,7 @@ import type { ModelEnvelope, ModelVisibleTool } from './m2-agent-execution-evide
 
 const SUCCESS_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/success.mjs', import.meta.url))
 const TOOL_CALL_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/tool-call.mjs', import.meta.url))
+const MALFORMED_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/malformed.mjs', import.meta.url))
 
 function modelEnvelope(tools: readonly ModelVisibleTool[] = []): ModelEnvelope {
   return {
@@ -91,6 +92,21 @@ describe('M2.3 process model executor', () => {
         completionId: 'fixture-completion-tool-1',
         finishReason: 'stop',
       },
+    })
+  })
+
+  it('classifies malformed child protocol as infrastructure failure and retains partial output', async () => {
+    const result = await executeProcessModelAttempt({
+      ...processInput(MALFORMED_EXECUTOR, modelEnvelope()),
+      dispatchToolCall: async () => {
+        throw new Error('malformed fixture must not request tools')
+      },
+    })
+
+    expect(result).toMatchObject({
+      kind: 'infrastructure-failure',
+      reason: 'protocol',
+      partialOutput: '{not-json}\n',
     })
   })
 })
