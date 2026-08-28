@@ -160,7 +160,8 @@ describe('M2.3 process model executor', () => {
 
   it('classifies process spawn errors as infrastructure failure instead of rejecting the runner', async () => {
     const result = await executeProcessModelAttempt({
-      ...processInput('dsh-toolchain-intentionally-missing-executor-command', modelEnvelope()),
+      ...processInput(SUCCESS_EXECUTOR, modelEnvelope()),
+      command: 'dsh-toolchain-intentionally-missing-executor-command',
       args: [],
       environment: {},
       dispatchToolCall: async () => {
