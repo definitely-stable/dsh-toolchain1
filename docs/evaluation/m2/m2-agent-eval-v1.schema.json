@@ -27,7 +27,7 @@
     "evaluationId": { "type": "string", "minLength": 1 },
     "phase": { "enum": ["P0", "H1"] },
     "status": {
-      "enum": ["PREREGISTERED", "PASS", "NEEDS-IMPROVEMENT", "INCONCLUSIVE"]
+      "enum": ["PREREGISTERED", "CALIBRATED", "PASS", "NEEDS-IMPROVEMENT", "INCONCLUSIVE"]
     },
     "target": { "$ref": "#/$defs/target" },
     "model": { "$ref": "#/$defs/model" },
@@ -38,7 +38,14 @@
     "runOrder": { "$ref": "#/$defs/runOrder" },
     "metrics": { "$ref": "#/$defs/metrics" },
     "oracle": { "$ref": "#/$defs/oracle" },
-    "dataset": { "$ref": "#/$defs/dataset" }
+    "dataset": { "$ref": "#/$defs/dataset" },
+    "definitionSha256": { "$ref": "#/$defs/sha256" },
+    "executedAt": { "type": "string", "format": "date-time" },
+    "runs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/runRecord" }
+    }
   },
   "allOf": [
     {
@@ -47,12 +54,33 @@
         "required": ["recordType"]
       },
       "then": {
-        "properties": { "status": { "const": "PREREGISTERED" } }
+        "properties": { "status": { "const": "PREREGISTERED" } },
+        "not": {
+          "anyOf": [
+            { "required": ["definitionSha256"] },
+            { "required": ["executedAt"] },
+            { "required": ["runs"] }
+          ]
+        }
       },
       "else": {
-        "properties": {
-          "status": { "enum": ["PASS", "NEEDS-IMPROVEMENT", "INCONCLUSIVE"] }
-        }
+        "required": ["definitionSha256", "executedAt", "runs"],
+        "allOf": [
+          {
+            "if": {
+              "properties": { "phase": { "const": "P0" } },
+              "required": ["phase"]
+            },
+            "then": {
+              "properties": { "status": { "const": "CALIBRATED" } }
+            },
+            "else": {
+              "properties": {
+                "status": { "enum": ["PASS", "NEEDS-IMPROVEMENT", "INCONCLUSIVE"] }
+              }
+            }
+          }
+        ]
       }
     },
     {
@@ -290,31 +318,75 @@
         }
       }
     },
+    "uncertaintyBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "confidenceLevel", "resamples", "seed", "decisionRule"],
+      "properties": {
+        "method": { "const": "paired-task-bootstrap" },
+        "confidenceLevel": { "type": "number", "exclusiveMinimum": 0.5, "exclusiveMaximum": 1 },
+        "resamples": { "type": "integer", "minimum": 1000 },
+        "seed": { "type": "string", "minLength": 1 },
+        "decisionRule": { "type": "string", "minLength": 1 }
+      }
+    },
+    "primaryUncertainty": {
+      "allOf": [
+        { "$ref": "#/$defs/uncertaintyBase" },
+        {
+          "type": "object",
+          "properties": {
+            "decisionRule": { "const": "lower-bound-at-least-mcid" }
+          }
+        }
+      ]
+    },
+    "guardrailUncertainty": {
+      "allOf": [
+        { "$ref": "#/$defs/uncertaintyBase" },
+        {
+          "type": "object",
+          "properties": {
+            "decisionRule": { "const": "lower-bound-at-least-negative-margin" }
+          }
+        }
+      ]
+    },
     "primaryMetric": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "comparison", "mcidAbsoluteReduction"],
+      "required": [
+        "name",
+        "comparison",
+        "trialToTaskAggregation",
+        "mcidAbsoluteReduction",
+        "uncertainty"
+      ],
       "properties": {
         "name": { "const": "invalid-api-task-rate" },
         "comparison": { "const": "C-vs-B" },
+        "trialToTaskAggregation": { "const": "mean-trial-invalid-indicator" },
         "mcidAbsoluteReduction": {
           "type": ["number", "null"],
           "minimum": 0,
           "maximum": 1
-        }
+        },
+        "uncertainty": { "$ref": "#/$defs/primaryUncertainty" }
       }
     },
     "guardrailMetric": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "margin"],
+      "required": ["name", "trialToTaskAggregation", "margin", "uncertainty"],
       "properties": {
         "name": { "const": "task-success-noninferiority" },
+        "trialToTaskAggregation": { "const": "mean-trial-success-indicator" },
         "margin": {
           "type": ["number", "null"],
           "minimum": 0,
           "maximum": 1
-        }
+        },
+        "uncertainty": { "$ref": "#/$defs/guardrailUncertainty" }
       }
     },
     "metrics": {
@@ -352,6 +424,101 @@
         "taskCount": { "type": "integer", "minimum": 1 },
         "commitmentSha256": { "$ref": "#/$defs/sha256" },
         "hiddenUntilRunComplete": { "type": "boolean" }
+      }
+    },
+    "rawAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference", "sha256"],
+      "properties": {
+        "reference": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "apiClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "classification", "oracleEvidenceIds"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "classification": { "enum": ["VALID", "INVALID", "UNKNOWN"] },
+        "oracleEvidenceIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "classification": { "enum": ["VALID", "INVALID"] } },
+            "required": ["classification"]
+          },
+          "then": {
+            "properties": {
+              "oracleEvidenceIds": { "minItems": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "modelOutcomeAttempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt",
+        "startedAt",
+        "completedAt",
+        "outcome",
+        "rawAnswer",
+        "parsedApiClaims",
+        "taskSuccess"
+      ],
+      "properties": {
+        "attempt": { "type": "integer", "minimum": 1 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "outcome": { "const": "model-outcome" },
+        "rawAnswer": { "$ref": "#/$defs/rawAnswer" },
+        "parsedApiClaims": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/apiClaim" }
+        },
+        "taskSuccess": { "enum": ["SUCCESS", "FAILURE", "UNKNOWN"] }
+      }
+    },
+    "infrastructureFailureAttempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt", "startedAt", "completedAt", "outcome", "reason"],
+      "properties": {
+        "attempt": { "type": "integer", "minimum": 1 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "outcome": { "const": "infrastructure-failure" },
+        "reason": { "enum": ["provider-transport", "tool-transport", "runner-infrastructure"] },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
+    "attemptRecord": {
+      "oneOf": [
+        { "$ref": "#/$defs/modelOutcomeAttempt" },
+        { "$ref": "#/$defs/infrastructureFailureAttempt" }
+      ]
+    },
+    "runRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "arm", "trial", "attempts"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "arm": { "enum": ["A", "B", "C"] },
+        "trial": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "attempts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/attemptRecord" }
+        }
       }
     }
   }
