@@ -6,6 +6,7 @@ import {
   createBalancedAgentSchedule,
   hashEvaluationDefinition,
   validateAgentAttempts,
+  validateAgentResultAgainstDefinition,
   validateBalancedAgentSchedule,
   type AgentAttemptRecord,
 } from './m2-agent-eval-integrity.js'
@@ -37,7 +38,7 @@ function definitionFixture() {
     },
     retries: {
       maxInfrastructureRetries: 2,
-      modelOutcomeRetries: 0,
+      modelOutcomeRetries: 0 as const,
       retryableReasons: ['provider-transport', 'tool-transport', 'runner-infrastructure'],
     },
     runOrder: { seed: 'm2-h1-v1', trialsPerTaskArm: 3 },
@@ -209,5 +210,84 @@ describe('M2.3 agent evaluation integrity', () => {
       ...committed,
       prerequisites: { ...committed.prerequisites, mcidFrozen: false },
     })).toThrow(/prerequisite/i)
+  })
+
+  it('binds a recorded result to the exact preregistered definition and frozen schedule', async () => {
+    const sha256 = createNodeSha256Port()
+    const taskIds = ['h1-01', 'h1-02']
+    const schedule = await createBalancedAgentSchedule(taskIds, 'm2-h1-binding-v1', sha256)
+    const base = definitionFixture()
+    const definition = {
+      ...base,
+      recordType: 'definition',
+      status: 'PREREGISTERED',
+      dataset: { ...base.dataset, taskCount: taskIds.length },
+      runOrder: {
+        seed: 'm2-h1-binding-v1',
+        trialsPerTaskArm: 3,
+        schedule,
+      },
+    }
+    const definitionSha256 = await hashEvaluationDefinition(definition, sha256)
+    const runs = schedule.map(entry => ({
+      ...entry,
+      attempts: [{
+        attempt: 1,
+        outcome: 'model-outcome',
+        startedAt: '2026-08-28T05:00:00.000Z',
+        completedAt: '2026-08-28T05:00:10.000Z',
+      }],
+    }))
+    const result = {
+      ...definition,
+      recordType: 'result',
+      status: 'PASS',
+      definitionSha256,
+      executedAt: '2026-08-28T05:01:00.000Z',
+      runs,
+    }
+
+    await expect(validateAgentResultAgainstDefinition(definition, result, sha256)).resolves.toBeUndefined()
+    await expect(validateAgentResultAgainstDefinition(
+      definition,
+      { ...result, definitionSha256: '0'.repeat(64) },
+      sha256,
+    )).rejects.toThrow(/definition hash/i)
+    await expect(validateAgentResultAgainstDefinition(
+      definition,
+      { ...result, model: { ...result.model, snapshot: 'changed-after-unblinding' } },
+      sha256,
+    )).rejects.toThrow(/preregistration/i)
+    await expect(validateAgentResultAgainstDefinition(
+      definition,
+      { ...result, runs: result.runs.slice(1) },
+      sha256,
+    )).rejects.toThrow(/schedule/i)
+    await expect(validateAgentResultAgainstDefinition(
+      definition,
+      { ...result, runs: [result.runs[0]!, ...result.runs] },
+      sha256,
+    )).rejects.toThrow(/schedule/i)
+    await expect(validateAgentResultAgainstDefinition(
+      definition,
+      { ...result, runs: result.runs.toReversed() },
+      sha256,
+    )).rejects.toThrow(/schedule/i)
+
+    const retriedModelOutcome = structuredClone(result)
+    retriedModelOutcome.runs[0]!.attempts = [
+      ...retriedModelOutcome.runs[0]!.attempts,
+      {
+        attempt: 2,
+        outcome: 'model-outcome',
+        startedAt: '2026-08-28T05:00:11.000Z',
+        completedAt: '2026-08-28T05:00:20.000Z',
+      },
+    ]
+    await expect(validateAgentResultAgainstDefinition(
+      definition,
+      retriedModelOutcome,
+      sha256,
+    )).rejects.toThrow(/model outcome/i)
   })
 })
