@@ -86,7 +86,7 @@ export interface RunnerToolTraceEntry {
 export interface TraceReceipt {
   schema: 'dsh-toolchain-m2-trace-v1'
   runControlSha256: string
-  entries: RunnerToolTraceEntry[]
+  entries: readonly RunnerToolTraceEntry[]
   traceSha256: string
 }
 
