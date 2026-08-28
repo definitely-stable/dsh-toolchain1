@@ -1,0 +1,88 @@
+{
+  "dsh": {
+    "name": "@deepseek-ai/dsh",
+    "version": "0.1.1-rc.2"
+  },
+  "runtime": {
+    "nodeVersion": "24.19.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "profile": {
+    "name": "web",
+    "bundles": [
+      {
+        "name": "@deepseek-ai/dsh-base",
+        "version": "0.1.1-rc.2",
+        "patchHash": "9870a518274194c0e1ebd870cee2737fbc2ffc04ae36887871ffe6fcf74beac1"
+      },
+      {
+        "name": "@deepseek-ai/dsh-web-app",
+        "version": "0.1.1-rc.2",
+        "patchHash": "7889b655be3809dd21e3c59023f8510e6e8425f6f37616e4ba20389f2e938dda"
+      }
+    ],
+    "dependencies": [],
+    "profilePatchHash": "ef189a8c27db6d63930aa3046a3040482e952eafcb7487c644d508e8d461f027",
+    "homePatchHash": "97d3d1aad35771c39ceb85817ab23060f08c9f966a7d0f9be8222b4bd58cdce7",
+    "overlayPatchHashes": []
+  },
+  "evidence": [
+    {
+      "id": "manifest:dsh",
+      "kind": "manifest",
+      "strength": "authoritative",
+      "source": "@deepseek-ai/dsh",
+      "contentHash": "dc930c0b18158f49ae3753ceaf6b1b7ae71dc6c8f45c85a2d679b142024addf7"
+    },
+    {
+      "id": "manifest:profile",
+      "kind": "manifest",
+      "strength": "authoritative",
+      "source": "profile:web",
+      "contentHash": "210068ddb9ebc4cdf395ebb53020be6ccaaedb917e74dae16296d62394626398"
+    },
+    {
+      "id": "patch:profile",
+      "kind": "composed-config",
+      "strength": "authoritative",
+      "source": "profile:web:cordis.patch.yml",
+      "contentHash": "ef189a8c27db6d63930aa3046a3040482e952eafcb7487c644d508e8d461f027"
+    },
+    {
+      "id": "patch:home",
+      "kind": "composed-config",
+      "strength": "observed",
+      "source": "dsh-home:cordis.patch.yml",
+      "contentHash": "97d3d1aad35771c39ceb85817ab23060f08c9f966a7d0f9be8222b4bd58cdce7"
+    },
+    {
+      "id": "manifest:bundle:0:@deepseek-ai/dsh-base",
+      "kind": "manifest",
+      "strength": "authoritative",
+      "source": "@deepseek-ai/dsh-base",
+      "contentHash": "35d203246e9c2a8e623da058cd9b1527252b6c4b4bf2acc56f5233a70db676df"
+    },
+    {
+      "id": "patch:bundle:0:@deepseek-ai/dsh-base",
+      "kind": "composed-config",
+      "strength": "authoritative",
+      "source": "@deepseek-ai/dsh-base:dsh.bundle.patch",
+      "contentHash": "9870a518274194c0e1ebd870cee2737fbc2ffc04ae36887871ffe6fcf74beac1"
+    },
+    {
+      "id": "manifest:bundle:1:@deepseek-ai/dsh-web-app",
+      "kind": "manifest",
+      "strength": "authoritative",
+      "source": "@deepseek-ai/dsh-web-app",
+      "contentHash": "f1ab1f51022e56adae15889764001aed390da0d647db08313d07b571265a27f1"
+    },
+    {
+      "id": "patch:bundle:1:@deepseek-ai/dsh-web-app",
+      "kind": "composed-config",
+      "strength": "authoritative",
+      "source": "@deepseek-ai/dsh-web-app:dsh.bundle.patch",
+      "contentHash": "7889b655be3809dd21e3c59023f8510e6e8425f6f37616e4ba20389f2e938dda"
+    }
+  ]
+}
