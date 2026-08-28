@@ -45,6 +45,7 @@ type CanonicalJson = null | boolean | number | string | readonly CanonicalJson[]
 const AGENT_ARMS: readonly AgentArm[] = ['A', 'B', 'C']
 const TRIALS = [1, 2, 3] as const
 const SHA256_PATTERN = /^[0-9a-f]{64}$/
+const RESULT_ONLY_FIELDS = new Set(['definitionSha256', 'executedAt', 'runs'])
 
 function compareCodePoints(left: string, right: string): number {
   if (left < right) return -1
@@ -244,4 +245,162 @@ export function validateAgentAttempts(
       }
     }
   }
+}
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`)
+  }
+  return value as Record<string, unknown>
+}
+
+function requireArray(value: unknown, label: string): readonly unknown[] {
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array`)
+  return value
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} must be a non-empty string`)
+  return value
+}
+
+function requirePositiveInteger(value: unknown, label: string): number {
+  if (!Number.isInteger(value) || typeof value !== 'number' || value < 1) {
+    throw new Error(`${label} must be a positive integer`)
+  }
+  return value
+}
+
+function parseArm(value: unknown, label: string): AgentArm {
+  if (value !== 'A' && value !== 'B' && value !== 'C') throw new Error(`${label} must be A, B or C`)
+  return value
+}
+
+function parseTrial(value: unknown, label: string): 1 | 2 | 3 {
+  if (value !== 1 && value !== 2 && value !== 3) throw new Error(`${label} must be trial 1, 2 or 3`)
+  return value
+}
+
+function parseScheduleEntry(value: unknown, label: string): AgentScheduleEntry {
+  const record = requireRecord(value, label)
+  return {
+    taskId: requireString(record.taskId, `${label}.taskId`),
+    trial: parseTrial(record.trial, `${label}.trial`),
+    arm: parseArm(record.arm, `${label}.arm`),
+  }
+}
+
+function parseRetryPolicy(value: unknown): AgentRetryPolicy {
+  const record = requireRecord(value, 'Agent evaluation retries')
+  const maxInfrastructureRetries = record.maxInfrastructureRetries
+  if (!Number.isInteger(maxInfrastructureRetries) || typeof maxInfrastructureRetries !== 'number' || maxInfrastructureRetries < 0) {
+    throw new Error('maxInfrastructureRetries must be a non-negative integer')
+  }
+  if (record.modelOutcomeRetries !== 0) throw new Error('Model outcome retries must remain zero')
+  const retryableReasons = requireArray(record.retryableReasons, 'retryableReasons')
+    .map((reason, index) => requireString(reason, `retryableReasons[${index}]`))
+  return { maxInfrastructureRetries, modelOutcomeRetries: 0, retryableReasons }
+}
+
+function bindingProjection(record: Record<string, unknown>): Record<string, unknown> {
+  const projection: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(record)) {
+    if (key === 'recordType' || key === 'status' || RESULT_ONLY_FIELDS.has(key)) continue
+    projection[key] = value
+  }
+  return projection
+}
+
+function parseResultAttempts(
+  run: Record<string, unknown>,
+  taskId: string,
+  arm: AgentArm,
+  trial: 1 | 2 | 3,
+  runIndex: number,
+): readonly AgentAttemptRecord[] {
+  const rawAttempts = requireArray(run.attempts, `Agent result runs[${runIndex}].attempts`)
+  if (rawAttempts.length === 0) throw new Error(`Agent result runs[${runIndex}] must record at least one attempt`)
+  return rawAttempts.map((value, attemptIndex) => {
+    const attempt = requireRecord(value, `Agent result runs[${runIndex}].attempts[${attemptIndex}]`)
+    const attemptNumber = requirePositiveInteger(
+      attempt.attempt,
+      `Agent result runs[${runIndex}].attempts[${attemptIndex}].attempt`,
+    )
+    const outcome = attempt.outcome
+    if (outcome !== 'model-outcome' && outcome !== 'infrastructure-failure') {
+      throw new Error(`Agent result runs[${runIndex}].attempts[${attemptIndex}].outcome is invalid`)
+    }
+    const reason = attempt.reason === undefined
+      ? undefined
+      : requireString(attempt.reason, `Agent result runs[${runIndex}].attempts[${attemptIndex}].reason`)
+    return {
+      taskId,
+      arm,
+      trial,
+      attempt: attemptNumber,
+      kind: outcome,
+      ...(reason === undefined ? {} : { reason }),
+    }
+  })
+}
+
+export async function validateAgentResultAgainstDefinition(
+  definition: unknown,
+  result: unknown,
+  sha256: Sha256Port,
+): Promise<void> {
+  const definitionRecord = requireRecord(definition, 'Agent evaluation definition')
+  const resultRecord = requireRecord(result, 'Agent evaluation result')
+  if (definitionRecord.recordType !== 'definition') {
+    throw new Error('Agent evaluation definition recordType must be definition')
+  }
+  if (resultRecord.recordType !== 'result') {
+    throw new Error('Agent evaluation result recordType must be result')
+  }
+
+  const expectedHash = await hashEvaluationDefinition(definitionRecord, sha256)
+  if (resultRecord.definitionSha256 !== expectedHash) {
+    throw new Error(`Agent result definition hash mismatch: expected ${expectedHash}`)
+  }
+
+  if (
+    canonicalizeEvaluationJson(bindingProjection(resultRecord))
+    !== canonicalizeEvaluationJson(bindingProjection(definitionRecord))
+  ) {
+    throw new Error('Agent result preregistration fields do not match the frozen definition')
+  }
+
+  const runOrder = requireRecord(definitionRecord.runOrder, 'Agent evaluation definition runOrder')
+  const rawSchedule = requireArray(runOrder.schedule, 'Agent evaluation definition runOrder.schedule')
+  const schedule = rawSchedule.map((entry, index) => parseScheduleEntry(entry, `Agent schedule[${index}]`))
+  const taskIds = [...new Set(schedule.map(entry => entry.taskId))]
+  validateBalancedAgentSchedule(schedule, taskIds)
+
+  const dataset = requireRecord(definitionRecord.dataset, 'Agent evaluation definition dataset')
+  const taskCount = requirePositiveInteger(dataset.taskCount, 'Agent evaluation definition dataset.taskCount')
+  if (taskCount !== taskIds.length) {
+    throw new Error(`Agent schedule task count ${taskIds.length} does not match dataset.taskCount ${taskCount}`)
+  }
+
+  const rawRuns = requireArray(resultRecord.runs, 'Agent evaluation result runs')
+  if (rawRuns.length !== schedule.length) {
+    throw new Error(`Agent result schedule coverage ${rawRuns.length} does not match frozen schedule ${schedule.length}`)
+  }
+
+  const attempts: AgentAttemptRecord[] = []
+  for (let index = 0; index < schedule.length; index += 1) {
+    const expected = schedule[index]!
+    const run = requireRecord(rawRuns[index], `Agent result runs[${index}]`)
+    const taskId = requireString(run.taskId, `Agent result runs[${index}].taskId`)
+    const arm = parseArm(run.arm, `Agent result runs[${index}].arm`)
+    const trial = parseTrial(run.trial, `Agent result runs[${index}].trial`)
+    if (taskId !== expected.taskId || arm !== expected.arm || trial !== expected.trial) {
+      throw new Error(
+        `Agent result schedule mismatch at index ${index}: expected ${expected.taskId}/${expected.trial}/${expected.arm}, got ${taskId}/${trial}/${arm}`,
+      )
+    }
+    attempts.push(...parseResultAttempts(run, taskId, arm, trial, index))
+  }
+
+  validateAgentAttempts(attempts, parseRetryPolicy(definitionRecord.retries))
 }
