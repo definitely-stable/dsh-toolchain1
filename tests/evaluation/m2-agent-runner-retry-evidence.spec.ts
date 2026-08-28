@@ -128,11 +128,17 @@ describe('M2.3 runner retry evidence', () => {
   it('reuses the existing terminal-model-outcome and 1+N retry budget semantics', async () => {
     const first = await partialFailureAttempt()
     const second = await terminalAttempt()
+    const thirdControl = '7'.repeat(64)
 
     expect(() => validateRunnerAttemptSequence([
       first,
       second,
-      { ...second, attempt: 3 },
+      {
+        ...second,
+        attempt: 3,
+        trace: await createTraceReceipt(thirdControl, [], createNodeSha256Port()),
+        isolation: isolation(thirdControl, '5', '6'),
+      },
     ], POLICY)).toThrow(/model outcome|retried|terminal/i)
 
     const infra2 = {
