@@ -121,7 +121,8 @@ describe('M2.3 frozen rc.2 retrieval index', () => {
     expect(index.evidence.length).toBeGreaterThanOrEqual(index.contracts.length)
     for (const item of index.evidence) {
       expect(item.location).toBeUndefined()
-      expect(item.source.trim().length).toBeGreaterThan(0)
+      expect(item.source).toEqual(expect.any(String))
+      expect(item.source?.trim().length ?? 0).toBeGreaterThan(0)
       expect(item.contentHash).toMatch(/^[0-9a-f]{64}$/)
     }
     for (const contract of index.contracts) {
