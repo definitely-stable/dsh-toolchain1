@@ -61,28 +61,41 @@ export interface ProcessAttemptEvidenceInput {
   readonly now?: () => number
 }
 
-export interface ProcessAttemptEvidenceRecord {
+export interface ProcessAttemptExecutionEvidence {
+  readonly runControl: ContentRef
+  readonly modelEnvelope: ContentRef
+  readonly trace: ContentRef
+  readonly executorIdentity: ContentRef
+  readonly isolationReceipt: ContentRef
+  readonly resourceReceipt: ContentRef
+}
+
+export interface ProcessAttemptEvidenceBase {
   readonly attempt: number
   readonly startedAt: string
   readonly completedAt: string
-  readonly outcome: 'model-outcome' | 'infrastructure-failure'
-  readonly executionEvidence: {
-    readonly runControl: ContentRef
-    readonly modelEnvelope: ContentRef
-    readonly trace: ContentRef
-    readonly executorIdentity: ContentRef
-    readonly isolationReceipt: ContentRef
-    readonly resourceReceipt: ContentRef
-  }
-  readonly rawAnswer?: ContentRef
-  readonly providerMetadata?: ContentRef
-  readonly parsedApiClaims?: readonly unknown[]
-  readonly taskSuccess?: 'SUCCESS' | 'FAILURE' | 'UNKNOWN'
-  readonly reason?: 'runner-infrastructure'
-  readonly qualityIndependent?: true
-  readonly partialOutput?: ContentRef
-  readonly detail?: string
+  readonly executionEvidence: ProcessAttemptExecutionEvidence
 }
+
+export interface ProcessModelOutcomeEvidenceRecord extends ProcessAttemptEvidenceBase {
+  readonly outcome: 'model-outcome'
+  readonly rawAnswer: ContentRef
+  readonly providerMetadata: ContentRef
+  readonly parsedApiClaims: readonly unknown[]
+  readonly taskSuccess: 'SUCCESS' | 'FAILURE' | 'UNKNOWN'
+}
+
+export interface ProcessInfrastructureFailureEvidenceRecord extends ProcessAttemptEvidenceBase {
+  readonly outcome: 'infrastructure-failure'
+  readonly reason: 'runner-infrastructure'
+  readonly qualityIndependent: true
+  readonly partialOutput?: ContentRef
+  readonly detail: string
+}
+
+export type ProcessAttemptEvidenceRecord =
+  | ProcessModelOutcomeEvidenceRecord
+  | ProcessInfrastructureFailureEvidenceRecord
 
 export interface ProcessAttemptEvidenceResult {
   readonly attempt: ProcessAttemptEvidenceRecord
