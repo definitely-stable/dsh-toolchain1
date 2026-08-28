@@ -3,11 +3,12 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { executeProcessModelAttempt } from './m2-agent-process-executor.js'
-import type { ModelEnvelope } from './m2-agent-execution-evidence.js'
+import type { ModelEnvelope, ModelVisibleTool } from './m2-agent-execution-evidence.js'
 
 const SUCCESS_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/success.mjs', import.meta.url))
+const TOOL_CALL_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/tool-call.mjs', import.meta.url))
 
-function modelEnvelope(): ModelEnvelope {
+function modelEnvelope(tools: readonly ModelVisibleTool[] = []): ModelEnvelope {
   return {
     schema: 'dsh-toolchain-m2-model-envelope-v1',
     systemPrompt: 'Answer as a DSH plugin developer.',
@@ -16,23 +17,29 @@ function modelEnvelope(): ModelEnvelope {
       prompt: 'How do I request a required service?',
     },
     staticContext: [],
-    tools: [],
+    tools,
+  }
+}
+
+function processInput(executor: string, envelope: ModelEnvelope) {
+  return {
+    command: process.execPath,
+    args: [executor],
+    cwd: process.cwd(),
+    environment: {
+      PATH: process.env.PATH ?? '',
+    },
+    envelope,
+    timeoutMs: 2_000,
+    maxStdoutBytes: 16 * 1024,
+    maxStderrBytes: 16 * 1024,
   }
 }
 
 describe('M2.3 process model executor', () => {
   it('runs one isolated child attempt and returns only validated model outcome data', async () => {
     const result = await executeProcessModelAttempt({
-      command: process.execPath,
-      args: [SUCCESS_EXECUTOR],
-      cwd: process.cwd(),
-      environment: {
-        PATH: process.env.PATH ?? '',
-      },
-      envelope: modelEnvelope(),
-      timeoutMs: 2_000,
-      maxStdoutBytes: 16 * 1024,
-      maxStderrBytes: 16 * 1024,
+      ...processInput(SUCCESS_EXECUTOR, modelEnvelope()),
       dispatchToolCall: async () => {
         throw new Error('success fixture must not request tools')
       },
@@ -46,6 +53,43 @@ describe('M2.3 process model executor', () => {
         finishReason: 'stop',
         inputTokens: 11,
         outputTokens: 7,
+      },
+    })
+  })
+
+  it('round-trips an allowed tool request through the runner-owned dispatcher', async () => {
+    const tool: ModelVisibleTool = {
+      family: 'ordinary',
+      name: 'fixture_lookup',
+      description: 'Look up one frozen fixture value.',
+      inputSchema: {
+        type: 'object',
+        properties: { query: { type: 'string' } },
+        required: ['query'],
+        additionalProperties: false,
+      },
+    }
+    let dispatched: unknown
+
+    const result = await executeProcessModelAttempt({
+      ...processInput(TOOL_CALL_EXECUTOR, modelEnvelope([tool])),
+      dispatchToolCall: async request => {
+        dispatched = request
+        return { matches: ['contract:ctx.inject'] }
+      },
+    })
+
+    expect(dispatched).toEqual({
+      id: 'call-1',
+      name: 'fixture_lookup',
+      input: { query: 'ctx.inject' },
+    })
+    expect(result).toEqual({
+      kind: 'model-outcome',
+      finalAnswer: 'tool result: contract:ctx.inject',
+      providerMetadata: {
+        completionId: 'fixture-completion-tool-1',
+        finishReason: 'stop',
       },
     })
   })
