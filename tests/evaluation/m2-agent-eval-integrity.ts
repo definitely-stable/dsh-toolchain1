@@ -223,7 +223,6 @@ export function validateAgentAttempts(
 
   for (const group of groups.values()) {
     const ordered = group.toSorted((left, right) => left.attempt - right.attempt)
-    let infrastructureFailures = 0
     let modelOutcomes = 0
 
     for (let index = 0; index < ordered.length; index += 1) {
@@ -242,15 +241,16 @@ export function validateAgentAttempts(
         continue
       }
 
-      infrastructureFailures += 1
       if (attempt.reason === undefined || !policy.retryableReasons.includes(attempt.reason)) {
         throw new Error(`Infrastructure failure reason is not retryable: ${attempt.reason ?? '<missing>'}`)
       }
-      if (infrastructureFailures > policy.maxInfrastructureRetries) {
-        throw new Error(
-          `Infrastructure retry budget exceeded: ${infrastructureFailures} > ${policy.maxInfrastructureRetries}`,
-        )
-      }
+    }
+
+    const retriesUsed = Math.max(0, ordered.length - 1)
+    if (retriesUsed > policy.maxInfrastructureRetries) {
+      throw new Error(
+        `Infrastructure retry budget exceeded: ${retriesUsed} retries > ${policy.maxInfrastructureRetries}`,
+      )
     }
   }
 }
