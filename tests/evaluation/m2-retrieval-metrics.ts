@@ -12,10 +12,16 @@ export type M2RetrievalCategory = typeof M2_RETRIEVAL_CATEGORIES[number]
 export interface M2RetrievalTask {
   readonly id: string
   readonly category: M2RetrievalCategory
+  readonly domain: string
+  readonly intentGroup: string
+  readonly sourceKind: string
   readonly query: string
   readonly expectedContractIds: readonly string[]
   readonly forbiddenContractIds?: readonly string[]
+  readonly replacementContractIds?: readonly string[]
   readonly expectNoResult?: boolean
+  readonly referenceRoute: readonly string[]
+  readonly riskTags?: readonly string[]
   readonly provenance: string
 }
 
@@ -55,7 +61,7 @@ function nonEmpty(value: string, label: string, taskId: string): void {
 
 function assertUniqueContractIds(
   ids: readonly string[],
-  label: 'expected' | 'forbidden',
+  label: 'expected' | 'forbidden' | 'replacement',
   taskId: string,
 ): void {
   const seen = new Set<string>()
@@ -67,6 +73,22 @@ function assertUniqueContractIds(
   }
 }
 
+function assertRiskTags(tags: readonly string[], taskId: string): void {
+  const seen = new Set<string>()
+  for (const tag of tags) {
+    nonEmpty(tag, 'risk tag', taskId)
+    if (seen.has(tag)) throw new Error(`Duplicate risk tag ${tag} on M2.3 task ${taskId}.`)
+    seen.add(tag)
+  }
+}
+
+function assertReferenceRoute(route: readonly string[], taskId: string): void {
+  if (route.length === 0) {
+    throw new Error(`M2.3 task ${taskId} must declare a non-empty reference route.`)
+  }
+  for (const segment of route) nonEmpty(segment, 'reference route segment', taskId)
+}
+
 export function validateM2RetrievalCorpus(
   tasks: readonly M2RetrievalTask[],
   knownContractIds: ReadonlySet<string>,
@@ -75,6 +97,7 @@ export function validateM2RetrievalCorpus(
 
   const taskIds = new Set<string>()
   const categories = new Set<M2RetrievalCategory>()
+  const intentGroupCounts = new Map<string, number>()
   let noResultTasks = 0
   let forbiddenTasks = 0
 
@@ -84,12 +107,21 @@ export function validateM2RetrievalCorpus(
     taskIds.add(task.id)
     categories.add(task.category)
 
+    nonEmpty(task.domain, 'domain', task.id)
+    nonEmpty(task.intentGroup, 'intentGroup', task.id)
+    nonEmpty(task.sourceKind, 'sourceKind', task.id)
     nonEmpty(task.query, 'query', task.id)
     nonEmpty(task.provenance, 'provenance', task.id)
-    assertUniqueContractIds(task.expectedContractIds, 'expected', task.id)
+    assertReferenceRoute(task.referenceRoute, task.id)
+    assertRiskTags(task.riskTags ?? [], task.id)
 
+    intentGroupCounts.set(task.intentGroup, (intentGroupCounts.get(task.intentGroup) ?? 0) + 1)
+
+    assertUniqueContractIds(task.expectedContractIds, 'expected', task.id)
     const forbidden = task.forbiddenContractIds ?? []
+    const replacements = task.replacementContractIds ?? []
     assertUniqueContractIds(forbidden, 'forbidden', task.id)
+    assertUniqueContractIds(replacements, 'replacement', task.id)
     if (forbidden.length > 0) forbiddenTasks += 1
 
     for (const id of task.expectedContractIds) {
@@ -105,6 +137,19 @@ export function validateM2RetrievalCorpus(
         throw new Error(`Contract ${id} is both expected and forbidden on M2.3 task ${task.id}.`)
       }
     }
+    for (const id of replacements) {
+      if (!knownContractIds.has(id)) {
+        throw new Error(`Unknown replacement contract ${id} on M2.3 task ${task.id}.`)
+      }
+      if (!task.expectedContractIds.includes(id)) {
+        throw new Error(
+          `Replacement contract ${id} must also be an expected contract on M2.3 task ${task.id}.`,
+        )
+      }
+    }
+    if (replacements.length > 0 && !task.riskTags?.includes('version-drift')) {
+      throw new Error(`M2.3 task ${task.id} with a replacement must declare the version-drift risk tag.`)
+    }
 
     const expectNoResult = task.expectNoResult === true
     if ((task.category === 'no-result') !== expectNoResult) {
@@ -117,11 +162,19 @@ export function validateM2RetrievalCorpus(
       if (task.expectedContractIds.length > 0) {
         throw new Error(`No-result task ${task.id} must not declare expected contracts.`)
       }
+      if (replacements.length > 0) {
+        throw new Error(`No-result task ${task.id} must not declare a useful replacement contract.`)
+      }
     } else if (task.expectedContractIds.length === 0) {
       throw new Error(`Answerable task ${task.id} must declare at least one expected contract.`)
     }
   }
 
+  for (const [intentGroup, count] of intentGroupCounts) {
+    if (count > 3) {
+      throw new Error(`M2.3 intent group ${intentGroup} contains ${count} tasks; no intent group may contain more than 3.`)
+    }
+  }
   if (noResultTasks === 0) {
     throw new Error('M2.3 retrieval corpus requires at least one no-result task.')
   }
