@@ -160,6 +160,17 @@ async function acquireHome(modules, dshPackageRoot, dshHome) {
 }
 
 async function toolchainCommit() {
+  if (process.env.GITHUB_EVENT_NAME === 'pull_request') {
+    const eventPath = process.env.GITHUB_EVENT_PATH?.trim()
+    if (!eventPath) throw new Error('GITHUB_EVENT_PATH is required for pull_request fixture provenance')
+    const event = JSON.parse(await readFile(eventPath, 'utf8'))
+    const headSha = event?.pull_request?.head?.sha
+    if (typeof headSha !== 'string' || !/^[0-9a-f]{40}$/i.test(headSha)) {
+      throw new Error('pull_request.head.sha is missing or invalid in GITHUB_EVENT_PATH')
+    }
+    return headSha.toLowerCase()
+  }
+
   const fromEnvironment = process.env.GITHUB_SHA?.trim()
   if (fromEnvironment) return fromEnvironment
   return run('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, timeout: 30_000 })
