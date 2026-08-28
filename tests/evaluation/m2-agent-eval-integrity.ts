@@ -25,12 +25,26 @@ export interface AgentRetryPolicy {
   readonly retryableReasons: readonly string[]
 }
 
+export interface AgentHoldoutCommitmentState {
+  readonly status: string
+  readonly runAllowed: boolean
+  readonly commitmentSha256: string | null
+  readonly taskCount: number | null
+  readonly prerequisites: {
+    readonly p0Completed: boolean
+    readonly mcidFrozen: boolean
+    readonly noninferiorityMarginFrozen: boolean
+    readonly taskSetHashCommitted: boolean
+  }
+}
+
 type CanonicalJson = null | boolean | number | string | readonly CanonicalJson[] | {
   readonly [key: string]: CanonicalJson
 }
 
 const AGENT_ARMS: readonly AgentArm[] = ['A', 'B', 'C']
 const TRIALS = [1, 2, 3] as const
+const SHA256_PATTERN = /^[0-9a-f]{64}$/
 
 function compareCodePoints(left: string, right: string): number {
   if (left < right) return -1
@@ -73,6 +87,29 @@ export async function hashEvaluationDefinition(
   sha256: Sha256Port,
 ): Promise<string> {
   return sha256.sha256Utf8(canonicalizeEvaluationJson(definition))
+}
+
+export function assertAgentHoldoutCommitted(commitment: AgentHoldoutCommitmentState): void {
+  if (commitment.status !== 'COMMITTED') {
+    throw new Error(`H1 holdout is not committed: ${commitment.status}`)
+  }
+  if (commitment.runAllowed !== true) {
+    throw new Error('H1 holdout runAllowed must be true after commitment')
+  }
+  if (commitment.commitmentSha256 === null || !SHA256_PATTERN.test(commitment.commitmentSha256)) {
+    throw new Error('H1 holdout commitmentSha256 must be an exact lowercase SHA-256 digest')
+  }
+  if (commitment.taskCount === null || !Number.isInteger(commitment.taskCount) || commitment.taskCount < 1) {
+    throw new Error('H1 holdout taskCount must be a positive integer')
+  }
+  if (
+    !commitment.prerequisites.p0Completed
+    || !commitment.prerequisites.mcidFrozen
+    || !commitment.prerequisites.noninferiorityMarginFrozen
+    || !commitment.prerequisites.taskSetHashCommitted
+  ) {
+    throw new Error('H1 holdout prerequisite set is incomplete')
+  }
 }
 
 function assertTaskIds(taskIds: readonly string[]): void {
