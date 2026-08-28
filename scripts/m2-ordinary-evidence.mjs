@@ -63,14 +63,18 @@ function assertPackageIdentity(name, version) {
   }
 }
 
-function forbiddenPath(relativePath) {
+function universallyForbiddenPath(relativePath) {
   const normalized = `/${relativePath.replaceAll('\\', '/')}`.toLocaleLowerCase('en-US')
   const segments = normalized.split('/').filter(Boolean)
   const file = basename(normalized)
   if (segments.some(segment => VCS_SEGMENTS.has(segment))) return true
   if (file === '.env' || file.startsWith('.env.')) return true
-  if (file.includes('credential') || file.includes('secret')) return true
   return FORBIDDEN_FRAGMENTS.some(fragment => normalized.includes(fragment))
+}
+
+function sensitiveOptionalPath(relativePath) {
+  const file = basename(relativePath).toLocaleLowerCase('en-US')
+  return file.includes('credential') || file.includes('secret')
 }
 
 async function canonicalRelativePath(canonicalRoot, location) {
@@ -220,10 +224,11 @@ export async function captureConventionalPackageFiles(input) {
   const files = []
   for (const [location, policy] of candidates) {
     const { canonicalLocation, relativePath } = await canonicalRelativePath(canonicalRoot, location)
-    if (forbiddenPath(relativePath)) {
+    if (universallyForbiddenPath(relativePath)) {
       if (policy.required) throw new Error(`Required ordinary evidence path is forbidden: ${relativePath}`)
       continue
     }
+    if (!policy.required && sensitiveOptionalPath(relativePath)) continue
     const content = await readUtf8Candidate(canonicalLocation, policy.required)
     if (content === undefined) continue
     files.push({
