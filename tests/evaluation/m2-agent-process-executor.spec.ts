@@ -14,6 +14,9 @@ const NONZERO_EXIT_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor
 const OUTPUT_OVERFLOW_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/output-overflow.mjs', import.meta.url))
 const ENVIRONMENT_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/environment.mjs', import.meta.url))
 const DUPLICATE_FINAL_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/duplicate-final.mjs', import.meta.url))
+const PROVIDER_METADATA_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/provider-metadata.mjs', import.meta.url))
+const INFRASTRUCTURE_ERROR_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/infrastructure-error.mjs', import.meta.url))
+const MISSING_FINAL_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/missing-final.mjs', import.meta.url))
 
 function modelEnvelope(tools: readonly ModelVisibleTool[] = []): ModelEnvelope {
   return {
@@ -64,6 +67,26 @@ describe('M2.3 process model executor', () => {
     })
   })
 
+  it('accepts provider-native completion metadata as a separate closed protocol observation before final', async () => {
+    const result = await executeProcessModelAttempt({
+      ...processInput(PROVIDER_METADATA_EXECUTOR, modelEnvelope()),
+      dispatchToolCall: async () => {
+        throw new Error('provider-metadata fixture must not request tools')
+      },
+    })
+
+    expect(result).toEqual({
+      kind: 'model-outcome',
+      finalAnswer: 'metadata arrived before final',
+      providerMetadata: {
+        completionId: 'fixture-provider-metadata-1',
+        finishReason: 'stop',
+        inputTokens: 21,
+        outputTokens: 9,
+      },
+    })
+  })
+
   it('round-trips an allowed tool request through the runner-owned dispatcher', async () => {
     const tool: ModelVisibleTool = {
       family: 'ordinary',
@@ -101,6 +124,47 @@ describe('M2.3 process model executor', () => {
     })
   })
 
+  it('classifies a runner-owned tool dispatcher failure as tool transport rather than protocol failure', async () => {
+    const tool: ModelVisibleTool = {
+      family: 'ordinary',
+      name: 'fixture_lookup',
+      description: 'Look up one frozen fixture value.',
+      inputSchema: { type: 'object' },
+    }
+    const result = await executeProcessModelAttempt({
+      ...processInput(TOOL_CALL_EXECUTOR, modelEnvelope([tool])),
+      dispatchToolCall: async () => {
+        throw new Error('fixture tool transport unavailable')
+      },
+    })
+
+    expect(result).toMatchObject({
+      kind: 'infrastructure-failure',
+      reason: 'tool-transport',
+      detail: expect.stringMatching(/tool transport unavailable/i),
+    })
+  })
+
+  it('classifies child-observed provider transport failure without inferring anything from answer quality', async () => {
+    const result = await executeProcessModelAttempt({
+      ...processInput(INFRASTRUCTURE_ERROR_EXECUTOR, modelEnvelope()),
+      dispatchToolCall: async () => {
+        throw new Error('provider transport fixture must not request tools')
+      },
+    })
+
+    expect(result).toMatchObject({
+      kind: 'infrastructure-failure',
+      reason: 'provider-transport',
+      detail: 'fixture provider transport unavailable',
+      providerMetadata: {
+        completionId: 'fixture-provider-transport-1',
+        finishReason: 'transport-error',
+        inputTokens: 13,
+      },
+    })
+  })
+
   it('classifies malformed child protocol as infrastructure failure and retains partial output', async () => {
     const result = await executeProcessModelAttempt({
       ...processInput(MALFORMED_EXECUTOR, modelEnvelope()),
@@ -113,6 +177,21 @@ describe('M2.3 process model executor', () => {
       kind: 'infrastructure-failure',
       reason: 'protocol',
       partialOutput: '{not-json}\n',
+    })
+  })
+
+  it('classifies zero exit without a terminal final as deterministic protocol infrastructure failure', async () => {
+    const result = await executeProcessModelAttempt({
+      ...processInput(MISSING_FINAL_EXECUTOR, modelEnvelope()),
+      dispatchToolCall: async () => {
+        throw new Error('missing-final fixture must not request tools')
+      },
+    })
+
+    expect(result).toMatchObject({
+      kind: 'infrastructure-failure',
+      reason: 'protocol',
+      detail: expect.stringMatching(/terminal|final/i),
     })
   })
 
