@@ -1,6 +1,6 @@
 # M2.3 Contract Intelligence Evaluation — Design
 
-**Status:** accepted design for Issue #34 / PR #35.
+**Status:** accepted design for Issue #34 / PR #35, amended by Issue #36 / PR #37 for runner-owned agent execution evidence.
 
 ## Purpose
 
@@ -8,128 +8,129 @@ M2.3 is the exit evaluation for M2 Contract Intelligence. It must establish, wit
 
 ## Core principles
 
-1. **Artifact truth first.** The canonical baseline is the registry-installable `@deepseek-ai/dsh@0.1.1-rc.2` Web profile. Published package bytes, manifests and shipped declarations are primary truth. Upstream commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e` supplies documentation provenance and semantic explanation, not a fallback for missing package artifacts.
-2. **Exact identities are preserved.** The evaluation uses a real `dsh-target-v2:<sha256>` and a real `dsh-contract-index-v1:<sha256>`. Synthetic target/index fingerprints are forbidden after the current RED scaffold.
-3. **The full production contract universe is frozen before the corpus.** Corpus requirements never decide which contracts exist in the fixture.
-4. **Capability and regression evidence are distinct.** The first retrieval corpus is a historical capability baseline. Critical solved cases may later move into a compact regression suite, but the historical baseline is immutable.
-5. **Ranking and progressive semantics are evaluated separately.** `searchContractIndex()` is the only scorer for deterministic retrieval. A second conformance gate uses the real application kernel to prove `search -> inspect`, index continuity, evidence resolution and stale behavior.
-6. **Agent usefulness is a controlled experiment.** The M2 exit decision is based on a preregistered comparison against a competent conventional exact-target coding agent, not on eyeballing retrieval scores or an LLM judge.
-7. **CI stays deterministic and offline.** No model, npm registry, GitHub, reranker, embeddings or paid/network dependency runs in required CI.
+1. **Artifact truth first.** The canonical baseline is registry-installable `@deepseek-ai/dsh@0.1.1-rc.2` Web. Published package bytes, manifests and shipped declarations are primary truth.
+2. **Exact identities are preserved.** Evaluation uses real `dsh-target-v2:<sha256>` and `dsh-contract-index-v1:<sha256>` identities.
+3. **The full production contract universe is frozen before the corpus.** Corpus requirements never decide which contracts exist.
+4. **Capability and regression evidence are distinct.** Historical capability baselines are immutable; later regression suites may evolve conservatively.
+5. **Ranking and progressive semantics are evaluated separately.** `searchContractIndex()` is the deterministic scorer; a real-kernel conformance gate proves `search -> inspect`, evidence continuity and stale behavior.
+6. **Agent usefulness is a controlled experiment.** M2 exit is based on a preregistered comparison against a competent conventional exact-target coding agent, not eyeballed retrieval scores or an LLM judge.
+7. **Execution evidence is runner-owned.** The tested model cannot be authoritative for its own tool use, isolation, timing, retry classification or resource compliance.
+8. **CI stays deterministic and offline.** Required CI makes no model, registry, GitHub, reranker, embedding or paid-network calls.
 
 ## Canonical target and drift policy
 
-Canonical M2.3 v1 target:
+Canonical M2.3 target:
 
 - package: `@deepseek-ai/dsh@0.1.1-rc.2`;
-- upstream source/documentation commit: `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`;
+- documentation/source provenance: `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`;
 - profile: `web`;
 - fixture-generation runtime: Node `24.19.x`, pnpm `11.7.0`, Linux x64;
 - no user/home/overlay patches beyond the canonical installed profile.
 
-Upstream `dsh-v0.1.2-alpha.1` / commit `cd5ef8148158c3a752a658978873241fdf8e2bbc` is a **drift canary**, not a second M2.3 target. Its source/release changes may generate compatibility-watch evidence, but they do not alter the rc.2 baseline. Issue #33 owns any target-identity redesign required for `profile.patchReload` or later published trains.
+Upstream `dsh-v0.1.2-alpha.1` / `cd5ef8148158c3a752a658978873241fdf8e2bbc` is a drift canary, not a second M2.3 target. Issue #33 owns target-identity changes required by later lifecycle semantics.
 
 ## Frozen artifact fixture
 
-A one-time generator uses the same M1/M2.1 acquisition and canonicalization code used by production. It installs/resolves the canonical target in an isolated temporary root, acquires the complete target and contract closure, strips only non-semantic machine locations, and persists evaluation facts plus a provenance manifest.
+A one-time generator uses production M1/M2.1 acquisition/canonicalization. It resolves the canonical target in an isolated root, acquires the complete target/contract closure, strips only non-semantic machine locations and persists evaluation facts plus provenance.
 
-The manifest records at minimum:
-
-- fixture schema/version;
-- DSH package/version/profile and upstream documentation commit;
-- package-manager/runtime/platform used for generation;
-- resolved package inventory and registry/package integrity where available;
-- package manifest/declaration content hashes;
-- generator Toolchain commit;
-- target fingerprint and contract-index fingerprint;
-- generation and sanitization policy versions.
-
-Generation is verified in two different temporary roots. Equivalent package bytes must yield identical target/index identities after non-semantic locations are removed. Missing shipped declarations are acquisition defects; the generator must never silently fill them from GitHub source.
+The fixture records package/profile/runtime provenance, resolved inventory, package/declaration hashes, Toolchain generator commit, target fingerprint, ContractIndex fingerprint and generation/sanitization policy. Equivalent bytes generated in different roots must yield the same semantic identities. Missing shipped declarations are acquisition defects; GitHub source is never a fallback.
 
 ## Deterministic retrieval evaluation
 
-The metric model uses terminology that matches the actual mathematics:
+Metrics match their actual mathematics:
 
-- `Success@1`, `Success@3`, `Success@5`: fraction of answerable tasks whose top-k contains at least one acceptable contract;
-- `MRR`: reciprocal rank of the first acceptable contract;
-- `noResultCorrectness`: true no-result tasks returning an empty result;
-- `forbiddenHitRateAt5`: tasks whose top-5 contains an explicitly wrong but existing contract.
+- `Success@1`, `Success@3`, `Success@5`;
+- `MRR`;
+- `noResultCorrectness`;
+- `forbiddenHitRateAt5`.
 
-These are macro task metrics. Multiple expected IDs are acceptable alternatives, not a complete relevance set, so calling the metric Recall@k is prohibited.
-
-The initial R1 retrieval capability corpus targets about 36 tasks and must contain all existing linguistic categories plus orthogonal metadata: `domain`, `intentGroup`, `sourceKind`, and optional `riskTags` such as `version-drift`. Near-duplicate intent concentration is bounded; normally no more than three tasks share one `intentGroup`.
-
-Every positive task has a reference route from developer intent to exact rc.2 declaration/evidence. A true no-result task has no useful exact-target replacement. An obsolete API with a valid replacement is an answerable version-drift task, not a no-result task.
-
-R1 is committed before its first full production score is observed. Afterwards factual corrections are append-only errata backed by pinned provenance; score-driven edits are forbidden.
+R1 is a frozen public capability corpus with linguistic categories plus `domain`, `intentGroup`, `sourceKind` and optional risk tags. Positive tasks have exact artifact-backed reference routes. True no-result tasks have no useful exact-target replacement. R1 was frozen before its first production score and is immutable except explicit factual errata.
 
 ## Evidence sufficiency and progressive conformance
 
-Retrieval success alone is insufficient. For representative tasks, evaluation declares required normalized facts/evidence and verifies that `inspect` returns enough authoritative evidence to justify the intended API decision. This produces a separate evidence-sufficiency diagnostic rather than contaminating Success@k.
+Retrieval score alone is insufficient. Evaluation separately proves that required authoritative facts exist in the frozen index and that the real application kernel preserves target/index identity through `search -> inspect`; changed contract evidence must produce stale rather than silently inspect a different index.
 
-A frozen evaluation kernel supplies immutable target/contract acquisition ports but uses production `createApplicationKernel()`. It proves:
+## Agent datasets
 
-- search and inspect expose the expected target fingerprint;
-- the contract index fingerprint remains continuous across the loop;
-- inspecting a returned ID returns that exact contract with resolvable evidence;
-- changed contract evidence causes the existing stale response rather than silently inspecting a different index.
+- **R1:** public deterministic retrieval capability corpus.
+- **P0:** public, non-scoring execution/harness calibration corpus. It never contributes to M2 PASS/FAIL.
+- **H1:** hidden committed acceptance holdout. Before execution only its canonical commitment/distribution metadata are public; tasks are revealed after the run to verify commitment. A reserve/extension set may be used only through a preregistered `INCONCLUSIVE` path.
 
-## Agent evaluation protocol
+## Agent arms
 
-The agent experiment is split into three datasets:
+- **A — memory:** no ordinary exact-target evidence tools and no Toolchain.
+- **B — conventional exact-target:** exact rc.2 conventional evidence/tool capability manifest.
+- **C — B plus Toolchain:** exactly B plus production `toolchain_contract_search` and `toolchain_contract_inspect` definitions.
 
-- **R1 retrieval capability corpus**: public deterministic benchmark;
-- **P0 pilot (~8 tasks)**: harness/scorer/tool-description/budget debugging only; never contributes to M2 outcome;
-- **H1 acceptance holdout (~24 tasks)**: final M2 decision. Before execution only its canonical SHA-256 commitment and distribution metadata are committed; the tasks are published after the run so the commitment can be verified. An optional H1-R reserve may be committed the same way for a preregistered `INCONCLUSIVE` path.
+B is the primary comparator. B and C share exact model/snapshot/reasoning, prompts, ordinary evidence, runner, resource policy, retry policy and execution environment. C differs only by the two content-addressed Toolchain definitions and is not forced to call them.
 
-Arms:
+## Isolated runner-owned execution
 
-- **A — model memory:** task only, no DSH target/docs/Toolchain retrieval;
-- **B — conventional exact-target agent:** exact rc.2 workspace plus ordinary file/read/search tools and pinned rc.2 documentation;
-- **C — B plus DSH Toolchain:** identical to B, with `contract.search` and `contract.inspect` added. The agent is not forced to call them.
+Actual P0 and H1 execution use the same isolated evidence boundary.
 
-B is the primary comparator. C must demonstrate incremental value over an already competent exact-target coding workflow.
+### RunControl vs ModelEnvelope
 
-B and C share one resource envelope: model snapshot, reasoning configuration, maximum turns, wall time, model input/output budget, ordinary-tool policy, network policy, concurrency and retry policy. C may spend the same budget on Toolchain calls. Infrastructure failures may receive bounded retries; wrong/refused/model-generated outcomes do not receive retries.
+Runner-only `RunControl` contains evaluation id, phase, task/arm/trial/attempt, exact target/index, commitments and hashes of capability/resource/retry/executor/model-envelope configuration.
 
-Each task/arm runs three trials. Trial order is preregistered using a deterministic balanced/randomized schedule so provider or infrastructure drift does not align with one arm. Statistical analysis remains task-level; repeated trials measure stochastic consistency and are not treated as independent tasks.
+Model-visible `ModelEnvelope` is created by allowlist projection only and contains only prompt/task/static context/tool surface intended for the model. Control-plane evaluation metadata does not leak into it. Same task/arm has an identical envelope across trials and retries; B/C envelopes differ only in the two Toolchain definitions.
+
+### CapabilityManifest
+
+Each arm freezes exact ordinary tool names/schemas, backend/version, allowed roots, read-only/reset/search/truncation behavior, static evidence identity, network policy and model-visible Toolchain definitions when applicable. Validation proves C = B + exactly the production Toolchain search/inspect surface.
+
+### Runner-owned receipts
+
+The runner/brokers create:
+
+- `TraceReceipt` for actual tool calls/results and re-hashable request/response bytes;
+- `IsolationReceipt` proving fresh model session, no memory carry-over, workspace/tool reset and non-shared mutable state;
+- `ResourceReceipt` separating configured limits, observed usage, measurement source and compliance;
+- content-addressed executor identity and raw model output.
+
+The tested executor returns only final model output plus provider-native completion metadata that the runner cannot directly observe. It does not supply authoritative tool/isolation/resource evidence.
+
+Arm C uses the production `createContractSearchToolDefinition()` and `createContractInspectToolDefinition()` factories over frozen production-kernel resolvers, preserving the real request parsing, schemas, limits, response DTOs and stale semantics.
+
+## Retry and partial activity
+
+Each task/arm runs three trials on the preregistered balanced schedule. Analysis remains task-level.
+
+Model-outcome retries are forbidden. `maxInfrastructureRetries=N` means N retries after the initial attempt. Infrastructure classification must use preregistered reasons independently of answer quality. Partial output/tool activity remains attached to the failed attempt. Retry uses the same ModelEnvelope but a fresh model session and reset/fresh mutable environment. Exhaustion without a model outcome yields `INCONCLUSIVE`.
 
 ## Agent scoring
 
-Primary endpoint: **Invalid API Task Rate** — the fraction of tasks whose final answer contains at least one invalid DSH API claim.
+Primary endpoint is **Invalid API Task Rate**. Guardrail is task success under a preregistered non-inferiority margin. Three trials are aggregated within each task/arm; paired task effects are analyzed with preregistered paired-task bootstrap.
 
-Guardrail: task success for C must remain within a preregistered non-inferiority margin versus B, so the system cannot win by refusing to name useful APIs.
+The API oracle is built from shipped rc.2 evidence with `VALID | INVALID | UNKNOWN`; UNKNOWN is never silently coerced. LLM judges may assist qualitative analysis only, never the primary decision. Model output remains deployment-like prose/code; deterministic extraction/adjudication happens after the recorded model outcome.
 
-Secondary endpoints include consistency, valid-first-API-claim rate, tool/context usage, wall time, model tokens and cost.
+## Preregistration and result versioning
 
-An evaluation-only API oracle is generated primarily from shipped rc.2 declarations and enriched manually only for semantic aliases, obsolete/replacement mappings and task-specific interpretation. Claim classifications are `VALID`, `INVALID` or `UNKNOWN`; UNKNOWN is never automatically treated as invalid and requires adjudication. LLM judges may be used for qualitative clustering only, never for the primary PASS/FAIL decision.
+Before H1, the definition freezes/content-addresses target/index, H1 commitment, model/reasoning, runner/executor identities, prompts, exact capability manifests, static evidence, resource/retry policies, run schedule, oracle/scorer and all primary/guardrail/uncertainty parameters.
 
-The canonical agent response remains deployment-like normal developer prose/code. The model is not required to emit an eval-specific `apiClaims[]` schema. A deterministic extractor identifies DSH-shaped imports/types/members/method/event/service claims for oracle scoring; unresolved claims enter append-only adjudication records.
+`m2-agent-eval-v1` is immutable historical infrastructure from PR #35. **All newly executed canonical P0/H1 uses `m2-agent-eval-v2`.**
 
-## Preregistration and decision
+Each v2 model attempt retains re-hashable execution evidence bound to its exact RunControl:
 
-Before the first H1 model call, commit a content-addressed experiment definition containing hashes/identities for:
+- model envelope;
+- trace;
+- executor identity;
+- isolation receipt;
+- resource receipt;
+- raw answer;
+- partial output for applicable infrastructure failures.
 
-- target and ContractIndex;
-- H1 commitment;
-- model and reasoning configuration;
-- system/task prompts;
-- Toolchain tool names/descriptions/input schemas;
-- B static documentation/common workspace policy;
-- resource and retry envelope;
-- run-order seed/schedule;
-- oracle and scorer versions;
-- primary metric, minimum product-relevant effect (MCID), task-success guardrail and uncertainty procedure.
+The v2 result preserves the valuable v1 invariants: exact definition hash, unchanged preregistration, frozen schedule coverage/order, contiguous `1 + N` retry ledger, one terminal model outcome, `UNKNOWN/INCONCLUSIVE` semantics and task-level statistical configuration. A newly executed v1 record is insufficient because it cannot retain the runner-owned execution-evidence chain.
 
-The definition receives an evaluation-only identity such as `dsh-m2-agent-eval-v1:<sha256>`.
+## Decision
 
-Possible outcomes are `PASS`, `NEEDS-IMPROVEMENT`, or `INCONCLUSIVE`. PASS requires the preregistered C-vs-B improvement and guardrails. NEEDS-IMPROVEMENT freezes the evidence and moves ranking changes to a separate issue/PR. INCONCLUSIVE may use only a preregistered reserve/extension path; it never permits rerunning until a desired answer appears.
+Possible H1 outcomes are `PASS`, `NEEDS-IMPROVEMENT`, or `INCONCLUSIVE`. PASS requires the preregistered C-vs-B improvement and task-success guardrail. P0 ends only as `CALIBRATED` or `INCONCLUSIVE` and never contributes to the M2 endpoint.
+
+No repeated H1 run is allowed merely to obtain a preferred result. Issue #34 and parent #28 remain open until a valid committed H1 result qualifies under the frozen protocol.
 
 ## Persistence and CI
 
-Historical capability baselines and agent definitions/results are immutable machine-readable evidence with human-readable reports. Current regression checks assert semantic guarantees and critical top-k/no-result constraints rather than exact full ranked-list equality.
-
-Required CI verifies fixture/corpus/schema integrity, content hashes, target/index identity, metric arithmetic, deterministic production retrieval, evidence sufficiency, search/inspect/stale conformance, experiment-definition/result integrity and append-only adjudication consistency across supported Node lanes. Model/network execution remains outside required CI.
+Historical retrieval baselines and agent definitions/results are immutable machine-readable evidence. Required CI verifies fixture/corpus/schema integrity, hashes/identities, production retrieval, evidence sufficiency, search/inspect/stale semantics and v2 definition/result execution-chain integrity across supported Node lanes. Model execution remains outside required CI.
 
 ## Non-goals
 
-M2.3 does not add embeddings, vector storage, semantic reranking, a second production scorer, a hosted evaluation dependency, a Python evaluation stack, permanent secret benchmark infrastructure, full multi-version/multi-model matrices, or production APIs for evaluation-only concerns.
+M2.3 does not add embeddings, vector storage, semantic reranking, a second production scorer, hosted evaluation dependency, Python evaluation stack, provider-specific SDK in this infrastructure slice, generic agent orchestration framework, permanent secret benchmark service, broad multi-version/model matrices, retrieval tuning or production APIs for evaluation-only concerns.
