@@ -37,7 +37,7 @@ export interface ProcessModelOutcome {
 
 export interface ProcessInfrastructureFailure {
   kind: 'infrastructure-failure'
-  reason: 'protocol' | 'timeout' | 'exit' | 'spawn'
+  reason: 'protocol' | 'timeout' | 'exit'
   detail: string
   partialOutput?: string
   stderr?: string
@@ -165,9 +165,7 @@ export async function executeProcessModelAttempt(
       processing = processing.then(() => handleLine(line)).catch(failProtocol)
     })
 
-    child.once('error', error => {
-      failInfrastructure('spawn', errorDetail(error))
-    })
+    child.once('error', reject)
     child.once('close', code => {
       clearTimeout(timeout)
       void processing.then(() => {
