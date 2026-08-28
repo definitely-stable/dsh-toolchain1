@@ -1,0 +1,142 @@
+{
+  "schema": "dsh-toolchain-m2-agent-dataset-v1",
+  "datasetId": "P0",
+  "status": "FROZEN-NON-SCORING",
+  "purpose": "Public harness calibration only. P0 may validate runner behavior, prompt/tool wiring, logging, oracle parsing, retry handling and resource accounting. It must not decide M2 PASS/FAIL and must not be used to tune H1 after outcomes are observed.",
+  "target": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.1.1-rc.2",
+    "profile": "web",
+    "targetFingerprint": "dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe",
+    "contractIndexFingerprint": "dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2"
+  },
+  "taskCount": 8,
+  "tasks": [
+    {
+      "id": "p0-01",
+      "domain": "tools",
+      "intent": "define-tool",
+      "prompt": "On this exact installed DSH target, identify the public API you would use to define a typed tool with a declared parameter schema. Give the package and API name, then briefly explain the choice.",
+      "oracleHints": {
+        "validPackage": "@deepseek-ai/dsh-tools",
+        "validSymbols": ["defineTool", "DefineToolOptions", "ParameterSchemaSpec"],
+        "evidenceIds": ["types:@deepseek-ai/dsh-tools:lib/types/schema.d.ts"]
+      },
+      "successCriteria": [
+        "Names an API supported by the canonical rc.2 declarations.",
+        "Does not invent a replacement helper absent from rc.2.",
+        "Answer is specific enough for API-oracle classification."
+      ]
+    },
+    {
+      "id": "p0-02",
+      "domain": "approval",
+      "intent": "set-approval-policy",
+      "prompt": "On the exact installed DSH target, which public API controls the effective user-approval policy? Name the package and the API you would inspect or call before implementing policy changes.",
+      "oracleHints": {
+        "validPackage": "@deepseek-ai/dsh-user-approval",
+        "validSymbols": ["ApprovalService", "effectiveApprovalPolicy", "setApprovalPolicy"],
+        "evidenceIds": ["types:@deepseek-ai/dsh-user-approval:lib/types/index.d.ts"]
+      },
+      "successCriteria": [
+        "Uses the approval package rather than the user-question package.",
+        "Every concrete API claim is valid for rc.2."
+      ]
+    },
+    {
+      "id": "p0-03",
+      "domain": "scope",
+      "intent": "scope-parenting",
+      "prompt": "You need a child dependency scope associated with an existing parent scope. Which exact rc.2 public APIs are relevant? Name the package and concrete symbols.",
+      "oracleHints": {
+        "validPackage": "@deepseek-ai/dsh-scope",
+        "validSymbols": ["createScope", "bindScopeParent", "ScopeParentBinding"],
+        "evidenceIds": ["types:@deepseek-ai/dsh-scope:lib/types/index.d.ts"]
+      },
+      "successCriteria": [
+        "Uses only symbols present in the frozen scope declarations.",
+        "Does not replace scope parenting with an invented lifecycle API."
+      ]
+    },
+    {
+      "id": "p0-04",
+      "domain": "session-query",
+      "intent": "session-text-search",
+      "prompt": "For the exact rc.2 target, identify the public API that compiles a text filter for persisted session-event search. Name the package and symbol.",
+      "oracleHints": {
+        "validPackage": "@deepseek-ai/dsh-session-query",
+        "validSymbols": ["compileSessionTextFilter"],
+        "evidenceIds": ["types:@deepseek-ai/dsh-session-query:lib/types/filters.d.ts"]
+      },
+      "successCriteria": [
+        "Distinguishes the generic session-query API from the SQLite implementation package.",
+        "Every concrete API claim is valid for rc.2."
+      ]
+    },
+    {
+      "id": "p0-05",
+      "domain": "subagent",
+      "intent": "delegation-depth",
+      "prompt": "Which exact public API on this rc.2 target enforces the maximum nesting depth for delegated child agents? Give package and symbol.",
+      "oracleHints": {
+        "validPackage": "@deepseek-ai/dsh-subagent",
+        "validSymbols": ["assertSubagentMaxDepth"],
+        "evidenceIds": ["types:@deepseek-ai/dsh-subagent:lib/types/depth.d.ts"]
+      },
+      "successCriteria": [
+        "Uses the core subagent contract for the depth invariant.",
+        "Does not confuse it with an in-process driver/spawn implementation."
+      ]
+    },
+    {
+      "id": "p0-06",
+      "domain": "compaction",
+      "intent": "checkpoint-source",
+      "prompt": "On this exact target, which public API maps compaction state to a checkpoint source? Give package and symbol and avoid guessing newer APIs.",
+      "oracleHints": {
+        "validPackage": "@deepseek-ai/dsh-compaction",
+        "validSymbols": ["compactCheckpointSource", "CompactionCheckpointSource"],
+        "evidenceIds": ["types:@deepseek-ai/dsh-compaction:lib/types/checkpoint.d.ts"]
+      },
+      "successCriteria": [
+        "Uses the canonical compaction contract rather than the basic engine or tool-result-pruner implementation unless clearly distinguished.",
+        "Every concrete API claim is valid for rc.2."
+      ]
+    },
+    {
+      "id": "p0-07",
+      "domain": "profile-lifecycle",
+      "intent": "version-drift-negative",
+      "prompt": "Does this exact installed rc.2 DSH target expose a profile.patchReload API or configuration field? Answer only from target-valid evidence and explain whether it is safe to code against it.",
+      "oracleHints": {
+        "expectedAbsence": ["patchReload"],
+        "reference": "complete frozen rc2-web-v1 contract universe"
+      },
+      "successCriteria": [
+        "Does not import later-upstream patchReload knowledge into rc.2.",
+        "Treats absence on the exact target as a compatibility fact."
+      ]
+    },
+    {
+      "id": "p0-08",
+      "domain": "tools",
+      "intent": "hallucinated-api-negative",
+      "prompt": "A proposed plugin calls ToolAutopilot from the DSH tools package. Verify whether ToolAutopilot exists on this exact rc.2 target and state whether that implementation is valid.",
+      "oracleHints": {
+        "expectedAbsence": ["ToolAutopilot"],
+        "reference": "complete frozen rc2-web-v1 contract universe"
+      },
+      "successCriteria": [
+        "Rejects ToolAutopilot as absent from rc.2.",
+        "Does not substitute another API without clearly separating it from the invalid claim."
+      ]
+    }
+  ],
+  "policy": {
+    "scoringForM2Decision": false,
+    "mayCalibrateHarness": true,
+    "mayCalibrateOracleParsing": true,
+    "mayChooseH1MCIDAfterP0BeforeH1": true,
+    "mayRewriteH1AfterViewingH1Outcomes": false
+  }
+}
