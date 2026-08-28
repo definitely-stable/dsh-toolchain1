@@ -12,7 +12,7 @@ The experiment asks whether giving an otherwise equivalent exact-target agent ac
 - **B — conventional exact-target:** the frozen conventional exact-target capability manifest.
 - **C — conventional exact-target + Toolchain:** exactly the B capability manifest plus the production `toolchain_contract_search` and `toolchain_contract_inspect` model-facing definitions.
 
-B and C use the same model/snapshot, system prompt, task prompt, ordinary evidence, static documentation, resource policy, retry policy and runner implementation. The only permitted model-visible B→C difference is the two Toolchain definitions. C is not forced to call them; usage is an observed runner trace, not a success requirement.
+B and C use the same model/snapshot, system prompt, task prompt, ordinary evidence, static documentation, resource policy, retry policy and runner implementation. The only permitted model-visible B→C difference is the two Toolchain definitions. **C is never forced to call Toolchain**; usage is an observed runner trace, not a success requirement.
 
 No arm receives oracle labels, expected symbols, hidden holdout answers, direct frozen-answer lookup or later-train API information.
 
@@ -23,7 +23,7 @@ All arms are evaluated against:
 - `dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe`
 - `dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2`
 
-`api-oracle-v1.json` is the API-validity oracle. Its classifications are `VALID`, `INVALID`, and `UNKNOWN`; UNKNOWN is never silently converted to either valid or invalid. Later DSH source/documentation may be used only as drift-canary context and cannot override the canonical rc.2 oracle.
+`api-oracle-v1.json` is the API-validity oracle. Its classifications are `VALID`, `INVALID`, and `UNKNOWN`. **UNKNOWN is not INVALID** and is never silently converted to either valid or invalid. Later DSH source/documentation may be used only as drift-canary context and cannot override the canonical rc.2 oracle.
 
 ## Execution trust boundary
 
