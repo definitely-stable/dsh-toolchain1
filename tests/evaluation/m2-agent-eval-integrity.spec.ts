@@ -290,4 +290,78 @@ describe('M2.3 agent evaluation integrity', () => {
       sha256,
     )).rejects.toThrow(/model outcome/i)
   })
+
+  it('forces incomplete or unresolved B/C decision evidence to remain INCONCLUSIVE', async () => {
+    const sha256 = createNodeSha256Port()
+    const taskIds = ['h1-01']
+    const schedule = await createBalancedAgentSchedule(taskIds, 'm2-h1-decision-v1', sha256)
+    const base = definitionFixture()
+    const definition = {
+      ...base,
+      recordType: 'definition',
+      status: 'PREREGISTERED',
+      dataset: { ...base.dataset, taskCount: taskIds.length },
+      runOrder: {
+        seed: 'm2-h1-decision-v1',
+        trialsPerTaskArm: 3,
+        schedule,
+      },
+    }
+    const definitionSha256 = await hashEvaluationDefinition(definition, sha256)
+    const runs = schedule.map(entry => ({
+      ...entry,
+      attempts: [{
+        attempt: 1,
+        outcome: 'model-outcome',
+        startedAt: '2026-08-28T05:00:00.000Z',
+        completedAt: '2026-08-28T05:00:10.000Z',
+        parsedApiClaims: [] as { classification: 'VALID' | 'INVALID' | 'UNKNOWN' }[],
+        taskSuccess: 'SUCCESS' as 'SUCCESS' | 'FAILURE' | 'UNKNOWN',
+      }],
+    }))
+    const result = {
+      ...definition,
+      recordType: 'result',
+      status: 'PASS',
+      definitionSha256,
+      executedAt: '2026-08-28T05:01:00.000Z',
+      runs,
+    }
+
+    const incomplete = structuredClone(result)
+    incomplete.runs[0]!.attempts = [{
+      attempt: 1,
+      outcome: 'infrastructure-failure',
+      startedAt: '2026-08-28T05:00:00.000Z',
+      completedAt: '2026-08-28T05:00:01.000Z',
+      reason: 'provider-transport',
+      parsedApiClaims: [],
+      taskSuccess: 'SUCCESS',
+    }]
+    await expect(validateAgentResultAgainstDefinition(definition, incomplete, sha256))
+      .rejects.toThrow(/inconclusive|model outcome/i)
+    await expect(validateAgentResultAgainstDefinition(
+      definition,
+      { ...incomplete, status: 'INCONCLUSIVE' },
+      sha256,
+    )).resolves.toBeUndefined()
+
+    const bcIndex = result.runs.findIndex(run => run.arm === 'B' || run.arm === 'C')
+    expect(bcIndex).toBeGreaterThanOrEqual(0)
+
+    const unknownSuccess = structuredClone(result)
+    unknownSuccess.runs[bcIndex]!.attempts[0]!.taskSuccess = 'UNKNOWN'
+    await expect(validateAgentResultAgainstDefinition(definition, unknownSuccess, sha256))
+      .rejects.toThrow(/inconclusive|task success/i)
+
+    const unknownClaim = structuredClone(result)
+    unknownClaim.runs[bcIndex]!.attempts[0]!.parsedApiClaims = [{ classification: 'UNKNOWN' }]
+    await expect(validateAgentResultAgainstDefinition(definition, unknownClaim, sha256))
+      .rejects.toThrow(/inconclusive|api claim/i)
+    await expect(validateAgentResultAgainstDefinition(
+      definition,
+      { ...unknownClaim, status: 'INCONCLUSIVE' },
+      sha256,
+    )).resolves.toBeUndefined()
+  })
 })
