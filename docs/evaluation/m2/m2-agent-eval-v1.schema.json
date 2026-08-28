@@ -54,13 +54,11 @@
         "required": ["recordType"]
       },
       "then": {
-        "properties": { "status": { "const": "PREREGISTERED" } },
-        "not": {
-          "anyOf": [
-            { "required": ["definitionSha256"] },
-            { "required": ["executedAt"] },
-            { "required": ["runs"] }
-          ]
+        "properties": {
+          "status": { "const": "PREREGISTERED" },
+          "definitionSha256": false,
+          "executedAt": false,
+          "runs": false
         }
       },
       "else": {
