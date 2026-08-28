@@ -1,6 +1,6 @@
-# M2.3 P0 Agent-Executable Calibration Harness — Design
+# M2.3 Isolated Agent Execution Evidence — Design
 
-Status: **Design for Issue #36**
+Status: **Corrected design for Issue #36 / PR #37**
 
 Parent: #34 / M2 milestone #28  
 Base: `8f2bc74f952dc82fb6b79ff836959cca4b69433d` (PR #35 merged)  
@@ -8,429 +8,389 @@ Scope: evaluation/repository tooling only; no `src/**` or public Toolchain API c
 
 ## 1. Problem
 
-M2.3 already owns the frozen rc.2 target/index, R1 retrieval baseline, P0 dataset, H1 commitment barrier, JSON Schema, oracle, schedule semantics, retry rules and result-integrity validator. What is missing is an executable bridge between a scheduled task and an auditable model attempt.
+PR #35 froze deterministic M2.3 retrieval evidence and introduced the first agent-evaluation schema/integrity layer. What is still missing is a trustworthy execution boundary for P0/H1.
 
-A naive solution would add an OpenAI/Anthropic/provider SDK and build another agent framework. That is the wrong boundary for Toolchain. The experiment needs reproducible **execution evidence**, not ownership of model providers.
+The execution harness must prove how a model run was conducted. The tested executor cannot be trusted to self-report its own tool use, isolation, timestamps, retry classification or resource compliance. Those facts must be produced by the evaluation runner and the brokers it controls.
 
-There is also an important asymmetry between P0 and H1:
-
-- P0 is non-scoring harness calibration;
-- H1 is the acceptance experiment that may decide M2.
-
-An AI agent already working on this repository can do useful P0 work immediately. In particular, the current ChatGPT agent can consume a task packet, use allowed evidence/tools, produce a final answer and return structured evidence. But one long-lived conversational context cannot provide clean independent A/B/C measurements: facts seen in earlier turns can contaminate later arms, and an already informed agent cannot truthfully become a memory-only blank-slate arm A.
-
-Therefore the design deliberately supports **interactive agent execution for mechanics calibration** while making that mode structurally incapable of qualifying as canonical P0 completion or H1 evidence.
+The earlier draft also mixed runner-only experiment metadata with model-visible input. That creates evaluation-awareness and makes B/C comparability harder to audit. Finally, the historical `m2-agent-eval-v1` result cannot retain the richer execution evidence required by the new runner boundary.
 
 ## 2. Decision
 
-Introduce an evaluation-only execution harness with a narrow data seam:
+Use one isolated, runner-owned evidence path for both canonical P0 and H1:
 
 ```text
-frozen dataset + definition/schedule
-              |
-              v
-          RunPacket
-              |
-       +------+------+
-       |             |
-interactive agent   isolated executor
-(P0-I only)         (canonical P0/H1)
-       |             |
-       +------v------+
-          Submission
-              |
-              v
- policy + identity + retry + schema validation
-              |
-       +------+------+
-       |             |
-P0-I diagnostic    canonical result
-(non-comparative)  (existing eval schema)
+frozen dataset + preregistered definition
+                 |
+                 v
+            RunControl
+          (runner only)
+                 |
+      +----------+----------+
+      |                     |
+CapabilityManifest      ModelEnvelope
+      |                 (model visible)
+      +----------+----------+
+                 |
+          isolated executor
+                 |
+          final model output
+                 |
+                 v
+        trusted runner/brokers
+        |       |        |
+      Trace  Isolation  Resource
+      Receipt   Receipt   Receipt
+        \       |        /
+         +------v-------+
+        ExecutionEvidence
+                 |
+                 v
+       m2-agent-eval-v2 result
 ```
 
-The harness owns packet identity, schedule binding, arm capability policy, attempt accounting, tool-event normalization, raw final-answer hashing, result assembly and validation.
+The executor returns only the final model outcome plus provider-native completion metadata that the runner cannot observe directly. It does **not** provide authoritative tool events, isolation claims, attempt timestamps or resource-compliance claims.
 
-The executor owns only one operation: **given one packet and the capabilities the runner exposes, produce one final model outcome or one infrastructure failure**.
+No shared-context, conversational or interactive execution mode exists in the repository. Canonical P0 and H1 both require the same isolated runner/evidence boundary. P0 remains non-scoring; H1 remains the M2 acceptance experiment.
 
-No provider SDK is part of this slice.
+## 3. Trust boundary
 
-## 3. Two execution classes
+### Runner-owned authoritative evidence
 
-### 3.1 `interactive-agent` — P0-I mechanics calibration
+The runner is authoritative for:
 
-This class is designed specifically so a currently running AI agent such as ChatGPT can exercise the pipeline without an external model API.
+- run start/end and attempt identity;
+- tool calls and tool results routed through runner-owned brokers;
+- request/response bytes or bounded canonical representations;
+- retry classification and whether partial activity occurred;
+- resource envelope enforcement and observed counters available to the runner;
+- workspace/session/tool-state reset policy;
+- isolation receipts;
+- exact capability manifests exposed to the executor;
+- exact model-visible envelope delivered for an attempt.
 
-Properties:
+### Executor-owned output
 
-- may execute a selected P0 subset or the full P0 schedule;
-- may use the current conversation/session as the model context;
-- records executor/model/session descriptors as observed metadata;
-- cannot prove context isolation between arms or trials;
-- cannot prove the agent did not already know exact-target facts;
-- therefore produces **diagnostic calibration evidence only**;
-- MUST NOT produce the canonical P0 `CALIBRATED` result;
-- MUST NOT be used to choose MCID from arm performance, claim C>B, satisfy H1 prerequisites or create an H1 result.
+The executor may return:
 
-The intended first use is to let the current ChatGPT agent execute a real P0 subset and expose packet/tool/claim/retry/resource-accounting defects before adding automation.
+- final answer text;
+- provider-native completion identifier/finish reason;
+- provider-reported token/cost counters when the provider is the only source.
 
-### 3.2 `isolated-executor` — canonical P0/H1
+Provider-reported counters are observations, not proof of limits unless the configured policy explicitly treats that provider measurement as enforceable.
 
-This is the later automation seam. Each scheduled model outcome runs in an isolated model session/context owned by the executor adapter. The exact executor identity is frozen in the canonical experiment definition.
+The harness never requests or persists hidden chain-of-thought.
 
-The harness does not require a particular provider. A future adapter may drive a provider API, Codex/OpenCode process, or another agent runtime, provided it satisfies the same packet/submission contract and arm isolation rules.
+## 4. RunControl and ModelEnvelope are separate
 
-Canonical P0 completion and all H1 evidence require this class.
+### RunControl
 
-## 4. P0-I is not a second experiment
-
-P0-I is a **runner calibration artifact**, not a new statistical arm or dataset. It uses tasks from frozen `agent-pilot-p0.json` but its output is intentionally outside `m2-agent-eval-v1` terminal result semantics.
-
-This avoids two invalid states:
-
-1. marking P0 `CALIBRATED` when the executor context was contaminated;
-2. extending the public evaluation schema with a weak result status merely to accommodate an implementation convenience.
-
-A P0-I artifact can say:
-
-- packet generation works;
-- C broker actually reached production `contract.search -> contract.inspect`;
-- B/A tool-event policy is rejected when violated;
-- claim extraction/oracle parsing can consume a real agent answer;
-- timing/token/resource fields are present or reveal a gap;
-- attempt/retry ledgers validate;
-- the interactive path is not isolation-safe.
-
-It cannot say which arm is better.
-
-## 5. Repository boundary
-
-Implementation remains outside production `src/**`:
-
-```text
-scripts/
-  m2-agent-eval.mts                 # local prepare/record/finalize entry point
-
-tests/evaluation/
-  m2-agent-execution.ts             # pure packet/submission/policy logic
-  m2-agent-execution.spec.ts        # behavioral tests
-  m2-agent-tool-broker.ts           # test/evaluation broker using real kernel
-  m2-agent-tool-broker.spec.ts
-
-docs/evaluation/m2/
-  p0-interactive-calibration-v1.json  # created only from actual execution
-```
-
-Exact filenames may be adjusted during planning to fit existing script/build conventions, but the boundary is fixed: no new production layer, no public npm export and no runtime dependency.
-
-`package.json` may gain convenience scripts only if they invoke repository evaluation tooling and add no dependency.
-
-## 6. RunPacket
-
-A packet is the complete instruction unit for one scheduled attempt. It is generated deterministically from frozen inputs and is safe to hand to an executor.
-
-Conceptual shape:
+`RunControl` is runner-only and may contain:
 
 ```ts
-interface RunPacket {
-  schema: 'dsh-toolchain-m2-run-packet-v1'
-  packetSha256: string
+interface RunControl {
+  schema: 'dsh-toolchain-m2-run-control-v1'
   evaluationId: string
   phase: 'P0' | 'H1'
-  executionClass: 'interactive-agent' | 'isolated-executor'
-  schedule: {
-    taskId: string
-    arm: 'A' | 'B' | 'C'
-    trial: 1 | 2 | 3
-    attempt: number
-  }
-  target: {
-    targetFingerprint: string
-    contractIndexFingerprint: string
-  }
-  dataset: {
-    id: 'P0' | 'H1'
-    commitmentSha256: string
-  }
-  prompt: string
-  capabilities: CapabilityPolicy
-  resourceEnvelope: ResourceEnvelope
-  retryPolicy: RetryPolicy
+  taskId: string
+  arm: 'A' | 'B' | 'C'
+  trial: 1 | 2 | 3
+  attempt: number
+  targetFingerprint: string
+  contractIndexFingerprint: string
+  datasetCommitmentSha256: string
+  capabilityManifestSha256: string
+  resourcePolicySha256: string
+  retryPolicySha256: string
+  executorIdentitySha256: string
+  modelEnvelopeSha256: string
 }
 ```
 
-### Packet privacy rule
+`phase`, `arm`, `trial`, `attempt`, retry state, evaluation id and hidden commitments are never copied into model-visible input merely because they exist in control state.
 
-The packet MUST NOT contain:
+### ModelEnvelope
 
-- `oracleHints` from P0 dataset tasks;
-- expected valid/invalid symbols;
-- scoring labels;
-- H1 oracle answers;
-- R1 expected contract ids unless the task itself legitimately states them;
-- hidden chain-of-thought instructions.
-
-Tests compare generated packet JSON against the source dataset and fail if oracle-only keys or known answer fields leak into the executor payload.
-
-### Packet identity
-
-`packetSha256` covers the canonical packet projection excluding the hash field itself. It therefore binds:
-
-- exact target/index;
-- dataset commitment;
-- schedule entry and attempt number;
-- prompt;
-- capability policy;
-- resources/retries;
-- execution class.
-
-A submission for another packet cannot be replayed silently.
-
-## 7. Capability policy
-
-The policy is explicit rather than inferred from prompt prose.
-
-### Arm A
-
-```text
-ordinary exact-target tools: none
-toolchain: none
-```
-
-A submission with any tool event is invalid.
-
-For `interactive-agent`, passing this check proves only that the recorded execution did not submit tool events. It does **not** prove the current model context was free of prior DSH knowledge; that limitation is why P0-I is non-comparative.
-
-### Arm B
-
-```text
-ordinary exact-target read/search/docs: allowed
-toolchain contract.search/inspect: forbidden
-oracle/direct frozen-answer lookup: forbidden
-```
-
-The interactive path may use ordinary repository/exact-target evidence tools available to the agent, but every material evidence action is summarized in the submission.
-
-### Arm C
-
-```text
-ordinary exact-target read/search/docs: allowed
-toolchain contract.search: allowed
-toolchain contract.inspect: allowed
-all other Toolchain/model-facing contract tools: forbidden
-oracle/direct frozen-answer lookup: forbidden
-```
-
-For C, the repository provides an evaluation broker that invokes the **real production kernel search/inspect implementation** over the exact frozen rc.2 fixture. It MUST NOT contain an alternate ranker, direct expected-answer table or evaluator-specific search implementation.
-
-The broker is evaluation-only glue around the existing kernel, analogous to the real-kernel M2.3 search/inspect fixture already merged in PR #35.
-
-## 8. AgentSubmission
-
-The executor returns evidence, not reasoning traces.
-
-Conceptual shape:
+`ModelEnvelope` is constructed by allowlist projection only:
 
 ```ts
-interface AgentSubmission {
-  schema: 'dsh-toolchain-m2-agent-submission-v1'
-  packetSha256: string
-  executor: {
-    class: 'interactive-agent' | 'isolated-executor'
-    provider: string
-    model: string
-    snapshot: string
-    sessionIsolation: 'shared' | 'isolated'
-  }
-  startedAt: string
-  completedAt: string
-  outcome: 'model-outcome' | 'infrastructure-failure'
-  reason?: RetryableInfrastructureReason
-  finalAnswer?: string
-  finalAnswerSha256?: string
-  toolEvents: ToolEvent[]
-  usage: {
-    inputTokens?: number
-    outputTokens?: number
-    turns?: number
-  }
+interface ModelEnvelope {
+  schema: 'dsh-toolchain-m2-model-envelope-v1'
+  systemPrompt: string
+  taskPrompt: string
+  staticContext: readonly ContentRef[]
+  tools: readonly ModelVisibleTool[]
 }
 ```
 
-### No chain-of-thought persistence
+Task projection starts from exactly the model-visible fields, for example `{ id, prompt }`; it never spreads a dataset task and deletes oracle fields afterwards. Future dataset metadata therefore cannot leak automatically.
 
-The harness never requests or stores hidden/private reasoning. Persisted model evidence is limited to:
+Required invariants:
 
-- final answer;
-- content hash;
-- bounded tool/action events;
-- timestamps;
-- resource counters when available;
-- infrastructure failure reason.
+- the same task/arm has byte-identical `ModelEnvelope` across trials;
+- infrastructure retry has the same `ModelEnvelope` as the original attempt;
+- B and C share system prompt, task prompt, ordinary evidence and resource policy;
+- C differs from B only by the two frozen Toolchain model-facing tool definitions.
 
-If the executor exposes only approximate token accounting, the submission records that limitation explicitly in P0-I diagnostics rather than inventing precise values.
+## 5. CapabilityManifest
 
-## 9. Tool events
+Boolean `ordinaryTools: true` is insufficient for a causal comparison. Each arm receives a content-addressed `CapabilityManifest` that freezes the actual environment surface.
 
-Tool events are intentionally compact and auditable:
+It records at minimum:
+
+- ordinary tool names and exact model-visible schemas;
+- backend/adapter identity and version;
+- allowed filesystem roots and read-only/reset policy;
+- search behavior and result truncation policy;
+- static documentation/content identity;
+- network policy;
+- model-visible Toolchain definitions when present.
+
+Arm invariants:
+
+- A has no ordinary exact-target tools and no Toolchain tools;
+- B has the conventional exact-target manifest;
+- C must equal B plus exactly the production Toolchain search and inspect definitions;
+- no oracle/direct frozen-answer capability is exposed to any arm.
+
+The validator compares normalized manifests, not prose descriptions.
+
+## 6. Production-faithful Toolchain surface for C
+
+C must receive the same model-facing Toolchain surface a real DSH agent receives.
+
+The evaluation broker therefore builds C tools with the existing production factories:
+
+- `createContractSearchToolDefinition()`;
+- `createContractInspectToolDefinition()`.
+
+This preserves the production tool names, descriptions, input JSON Schema, request parsers, limits, response DTOs and inspect stale semantics. The broker supplies frozen-target production-kernel resolvers behind those definitions. It must not call a benchmark-specific scorer or expose a cleaner internal API.
+
+The runner records every broker request/result in the trace and includes target/index continuity evidence for Toolchain calls.
+
+## 7. Content-addressed execution ledger
+
+A hash is useful only when the referenced bytes remain auditable. The execution layer uses content references:
 
 ```ts
-interface ToolEvent {
+interface ContentRef {
+  sha256: string
+  mediaType: string
+  canonicalization: string
+  byteLength: number
+  path?: string
+  inline?: string
+}
+```
+
+Exactly one retrievable representation is required for canonical evidence: a repository-relative/path-backed artifact or a bounded inline value. Validators recalculate the hash from the referenced bytes.
+
+Tool trace entries contain content references for requests and responses rather than naked digests.
+
+## 8. Runner-owned TraceReceipt
+
+```ts
+interface ToolTraceEntry {
   sequence: number
   family: 'ordinary' | 'toolchain'
   name: string
-  requestSha256: string
-  responseSha256: string
+  startedAt: string
+  completedAt: string
   status: 'ok' | 'error'
+  request: ContentRef
+  response: ContentRef
+  targetFingerprint?: string
+  contractIndexFingerprint?: string
+}
+
+interface TraceReceipt {
+  schema: 'dsh-toolchain-m2-trace-v1'
+  runControlSha256: string
+  entries: readonly ToolTraceEntry[]
+  traceSha256: string
 }
 ```
 
-Raw local file contents or huge search responses need not be duplicated in the result when a stable content hash plus bounded summary is sufficient. For C Toolchain events, the broker additionally records target/index fingerprint continuity so the run cannot claim use of the frozen Toolchain while actually querying another index.
+Only the runner/broker can create authoritative trace entries. The executor has no field through which it can claim that a tool was or was not used.
 
-Arm policy validation happens against event names/families before a submission can enter a canonical attempt ledger.
+Arm policy validation is performed against this runner-owned trace.
 
-## 10. Interactive ChatGPT operating procedure
+## 9. IsolationReceipt
 
-For P0-I the current ChatGPT agent is treated as an explicit executor, not as an invisible test oracle.
+Isolation is an operational receipt, not a string supplied by the executor.
 
-The harness prepares one packet at a time. The agent receives only the packet-safe prompt and the allowed capability instructions. It then:
+```ts
+interface IsolationReceipt {
+  schema: 'dsh-toolchain-m2-isolation-v1'
+  runControlSha256: string
+  sessionIdSha256: string
+  freshModelSession: true
+  memoryCarryover: false
+  workspaceMode: 'fresh' | 'read-only-reset'
+  workspaceSnapshotSha256: string
+  toolStateReset: true
+  ordinaryEvidenceSha256: string
+  mutableEnvironmentIdSha256: string
+  parallelMutableStateShared: false
+  retrySessionPolicy: 'fresh-session-per-attempt'
+}
+```
 
-1. performs only the tools/actions appropriate for the packet arm as far as the host can enforce them;
-2. returns a concise final answer to the task;
-3. supplies a structured submission with the final answer and observable tool-event metadata;
-4. does not reveal or persist hidden reasoning;
-5. never interprets the resulting P0-I records as arm performance evidence.
+Canonical P0/H1 rejects an attempt if any required invariant cannot be proven by the runner.
 
-Because the current conversation already contains DSH project context, the executor descriptor MUST record `sessionIsolation: 'shared'`. Finalization of canonical P0/H1 rejects that value.
+Every task × arm × trial begins in a fresh model session. A retry also begins a fresh session and retains the failed attempt evidence.
 
-The first acceptance proof for Issue #36 is a small actual P0-I subset, chosen to exercise different mechanics rather than maximize score. Recommended subset:
+## 10. ResourceReceipt
 
-- one positive exact API task;
-- one negative/version-drift task;
-- at least one C run that actually calls search then inspect;
-- one deliberately malformed/disallowed submission generated by a test fixture, not by modifying the real run, to prove fail-closed policy.
+The definition separates the configured envelope from observed usage and enforcement:
 
-The subset does not need 72 model outcomes because its purpose is execution-path calibration. Full canonical P0 later uses the frozen three-trial schedule.
+```ts
+interface ResourceReceipt {
+  schema: 'dsh-toolchain-m2-resource-v1'
+  runControlSha256: string
+  configuredPolicySha256: string
+  observed: {
+    wallTimeMs: number
+    turns: number
+    attempts: number
+    inputTokens?: number
+    outputTokens?: number
+  }
+  measurement: {
+    wallTime: 'runner'
+    turns: 'runner'
+    tokens: 'provider-reported' | 'runner' | 'unavailable'
+  }
+  compliance: 'compliant' | 'non-compliant' | 'unverifiable'
+}
+```
 
-## 11. Finalization rules
+The runner always controls wall time, turns, attempts and concurrency. Token limits are enforceable only when the preregistered policy names a trustworthy measurement route. A required but unavailable measurement cannot silently become compliant.
 
-### P0-I finalization
+## 11. Retry and partial-activity semantics
 
-Produces `p0-interactive-calibration-v1.json` with:
+Existing `1 + N` infrastructure retry semantics remain.
 
-- exact target/index/dataset identities;
-- execution-class identity;
-- packet/submission hashes;
-- which mechanics were exercised;
-- validator outcomes;
-- explicit `comparativeEvidence: false`;
-- explicit `canonicalP0Complete: false`;
-- unresolved harness limitations.
+Additional rules:
 
-It MUST NOT contain PASS/NEEDS-IMPROVEMENT, MCID estimates or C-vs-B performance claims.
-
-### Canonical P0/H1 finalization
-
-Uses the existing `m2-agent-eval-v1` result schema and `validateAgentResultAgainstDefinition()` path from PR #35.
-
-Before canonical result assembly, the execution harness additionally requires:
-
-- every submission uses `isolated-executor`;
-- `sessionIsolation === 'isolated'`;
-- full frozen schedule coverage;
-- packet hashes match the exact definition/schedule;
-- arm tool policy validates;
-- attempt counts obey the frozen retry policy.
-
-No parallel acceptance implementation is introduced.
-
-## 12. Retry semantics
-
-The existing rule is preserved exactly:
-
-- `maxInfrastructureRetries = N` means N retries **after** the initial attempt;
-- maximum attempts per scheduled run = `1 + N`;
-- only preregistered infrastructure reasons are retryable;
+- retry eligibility is classified by the runner independently of answer quality;
+- a partial generation or partial tool trajectory never disappears;
+- the failed attempt keeps its complete trace/receipts;
 - model outcome is terminal and never retried;
-- every failed infrastructure attempt remains in the ledger;
-- exhaustion without a model outcome is `INCONCLUSIVE` for canonical evidence.
+- retry uses a fresh model session and reset/fresh mutable environment;
+- if the runner cannot distinguish an infrastructure failure from a model outcome without using answer quality, the evidence is not eligible for a favorable terminal decision.
 
-P0-I may deliberately exercise one synthetic infrastructure-failure fixture in tests, but real model outcomes are never rewritten to manufacture a retry case.
+## 12. `m2-agent-eval-v2`
 
-## 13. Oracle and claim extraction boundary
+`m2-agent-eval-v1` remains immutable historical infrastructure evidence from PR #35. It is not silently redefined.
 
-The executor never receives oracle labels. After a model outcome is recorded, the harness may apply the existing frozen oracle/claim parser to the final answer.
+All actual canonical P0/H1 execution after this correction uses `m2-agent-eval-v2`.
 
-P0-I uses this only to prove parsing mechanics against real agent text. Its classifications are diagnostic and cannot drive M2 acceptance.
+Each v2 model attempt carries an execution-evidence link:
 
-Canonical P0/H1 stores parsed claims and task-success classifications in the existing auditable result structure.
+```ts
+interface ExecutionEvidenceRef {
+  runControlSha256: string
+  modelEnvelopeSha256: string
+  traceSha256: string
+  executorIdentitySha256: string
+  isolationReceiptSha256: string
+  resourceReceiptSha256: string
+  rawAnswer: ContentRef
+}
+```
 
-## 14. Security and privacy
+The v2 result keeps the existing valuable v1 invariants:
 
-- no credentials are committed;
-- no `.env` or provider token handling is introduced in this slice;
-- no hidden reasoning is persisted;
-- tool payloads are bounded/content-addressed;
-- interactive execution is explicitly not a security or context-isolation boundary;
-- the evaluation broker is read-only over the frozen target/index fixture;
-- no candidate plugin is executed;
-- this work is separate from M4 verification worker security semantics.
+- exact definition hash;
+- preregistration fields unchanged after unblinding;
+- exact frozen schedule coverage/order;
+- contiguous retry ledger;
+- one terminal model outcome;
+- `UNKNOWN` / `INCONCLUSIVE` semantics;
+- task-level three-trial aggregation and paired bootstrap.
 
-## 15. Test strategy
+It adds the execution-evidence chain so a persisted canonical result remains self-auditing after pre-finalization state is gone.
 
-TDD covers the behavior before implementation.
+## 13. Executor identity
 
-Required focused tests:
+Executor identity is runner configuration, not model self-report. It is content-addressed and records provider/runtime adapter, exact model/snapshot, reasoning configuration and adapter version required by the experiment definition.
 
-1. deterministic packet generation for the same frozen inputs;
-2. packet hash sensitivity to target/index/task/arm/trial/attempt/policy changes;
-3. no oracle-hint/answer leakage into packets;
-4. arm A rejects any tool event;
-5. arm B rejects Toolchain events;
-6. arm C accepts only `contract.search`/`contract.inspect` Toolchain events;
-7. interactive/shared submissions cannot enter canonical P0/H1 finalization;
-8. isolated submissions can be lowered into the existing attempt/result validator;
-9. packet replay/mismatched hash is rejected;
-10. retry budget follows `1 + N` attempts and model outcomes remain terminal;
-11. tool broker search/inspect uses existing production kernel and preserves target/index continuity;
-12. P0-I diagnostic finalizer can record a real subset but cannot emit PASS/NEEDS-IMPROVEMENT/canonical-P0-complete state.
+The runner creates the identity before launching an attempt and binds it into `RunControl`.
 
-Repository-wide `pnpm check`, package/DSH smokes and platform matrix remain required before merge even though this slice does not change production runtime semantics.
+## 14. P0 and H1
 
-## 16. Implementation sequence
+P0 and H1 use the same isolation, capability, tracing, resource and result-evidence machinery.
 
-After design approval:
+- P0 is public and non-scoring; it calibrates harness mechanics and ends as `CALIBRATED`.
+- P0 may justify harness-only corrections before H1 commitment, with changes recorded and re-frozen.
+- P0 results never contribute to the M2 primary endpoint.
+- H1 remains hidden/committed and may start only after the existing holdout prerequisites are satisfied.
 
-1. write a detailed implementation plan under `docs/plans/`;
-2. create deterministic packet/policy RED tests;
-3. implement packet/submission core;
-4. add canonical-finalization isolation gate and prove interactive rejection;
-5. add the real-kernel C tool broker;
-6. add local prepare/record/finalize command surface;
-7. run an actual ChatGPT-driven P0-I subset and freeze the resulting diagnostic artifact;
-8. review the measured harness gaps without changing frozen R1 or claiming P0/H1 performance;
-9. full CI + corrective review + squash merge;
-10. keep #34/#28 open; canonical isolated P0/H1 remains the milestone exit work.
+There is no alternate weak calibration result format and no non-isolated execution route.
 
-## 17. Alternatives rejected
+## 15. Repository boundary
 
-### Provider-specific API runner first
+Implementation remains outside production `src/**` except that tests may import existing production tool-definition/kernel boundaries to prove fidelity.
 
-Rejected for this slice. It adds credentials, provider SDK/runtime behavior and a model-agent loop before we have proven the repository-side packet/evidence contract. It would also tie M2 methodology to one vendor unnecessarily.
+Planned evaluation files:
 
-### Treat the current ChatGPT conversation as valid A/B/C evidence
+```text
+docs/evaluation/m2/
+  m2-agent-eval-v2.schema.json
 
-Rejected. Context contamination cannot be undone or audited strongly enough for comparative evidence.
+tests/evaluation/
+  m2-agent-execution-evidence.ts
+  m2-agent-execution-evidence.spec.ts
+  m2-agent-eval-v2-integrity.ts
+  m2-agent-eval-v2-integrity.spec.ts
+  m2-agent-tool-broker.ts
+  m2-agent-tool-broker.spec.ts
+```
 
-### Skip P0 and run H1 directly with the interactive agent
+A later provider/process adapter may live under repository `scripts/` or another explicitly reviewed evaluation boundary. This PR does not add a provider SDK or execute H1.
 
-Rejected. It violates the preregistered isolation/evidence intent and would turn H1 into an unverifiable demonstration.
+## 16. Test strategy
 
-### Build a generic orchestration/plugin framework
+Required TDD coverage:
 
-Rejected. The experiment needs one narrow executor seam. Generalization waits for a real second production use case.
+1. model-task allowlist projection cannot leak new dataset/oracle keys;
+2. RunControl and ModelEnvelope are distinct and independently hashed;
+3. same task/arm across trials and retries yields identical ModelEnvelope;
+4. B/C envelope difference is exactly the two Toolchain definitions;
+5. CapabilityManifest proves C = B + exact Toolchain surface;
+6. tool events cannot be supplied by executor output;
+7. runner trace enforces A/B/C tool policy;
+8. content references are hash-verifiable and retrievable;
+9. IsolationReceipt rejects carry-over/shared mutable state/missing reset proof;
+10. ResourceReceipt separates configured, observed and compliance state;
+11. partial-activity infrastructure failure remains in the ledger before retry;
+12. retry is `1 + N`, model outcomes remain terminal and retry uses a fresh isolation receipt;
+13. C broker uses production DSH Toolchain definitions and real kernel resolvers;
+14. v2 result binds all execution-evidence hashes and exact definition/schedule;
+15. v1 remains accepted only as historical v1 data and is not treated as sufficient for newly executed canonical P0/H1;
+16. required repository CI remains deterministic/offline.
 
-## 18. Exit from Issue #36
+## 17. Implementation sequence
 
-Issue #36 is complete when the repository can prepare and validate agent-executable P0 packets, the current ChatGPT agent has exercised a real calibration subset through that path, the resulting artifact explicitly remains non-comparative/non-canonical, and all required CI is green.
+1. replace the rejected draft trust model with this design and synchronize #36/#37;
+2. commit a detailed TDD implementation plan;
+3. add RED tests for RunControl/ModelEnvelope/capability manifests;
+4. implement runner-owned trace/content/isolation/resource evidence;
+5. add and validate `m2-agent-eval-v2` schema/integrity;
+6. build the C broker from production Toolchain tool definitions;
+7. add retry/partial-activity and evidence-chain tests;
+8. update the frozen agent methodology to require v2 for actual P0/H1;
+9. run full CI and corrective review;
+10. merge only after exact-head CI is green; keep #34/#28 open because actual isolated P0/H1 execution remains exit evidence.
 
-This does **not** complete P0 in #34 and does not close M2. The next evidence step is an isolated executor adapter/full canonical P0 run, followed by frozen thresholds and H1 commitment.
+## 18. Non-goals
+
+- testing M2 from an existing conversational context;
+- any shared-context or interactive executor mode;
+- executor self-report as proof of tool use/isolation/resources;
+- provider-specific SDK integration in this slice;
+- a generic agent orchestration framework;
+- hidden reasoning persistence;
+- retrieval tuning or R1 changes;
+- H1 execution before its existing commitment barrier;
+- production `src/**` behavior changes.
