@@ -66,6 +66,7 @@
             "allOf": [
               { "$ref": "#/$defs/dataset" },
               {
+                "type": "object",
                 "properties": {
                   "id": { "const": "P0" },
                   "hiddenUntilRunComplete": { "const": false }
@@ -81,6 +82,7 @@
             "allOf": [
               { "$ref": "#/$defs/dataset" },
               {
+                "type": "object",
                 "properties": {
                   "id": { "const": "H1" },
                   "hiddenUntilRunComplete": { "const": true }
@@ -92,11 +94,13 @@
             "allOf": [
               { "$ref": "#/$defs/metrics" },
               {
+                "type": "object",
                 "properties": {
                   "primary": {
                     "allOf": [
                       { "$ref": "#/$defs/primaryMetric" },
                       {
+                        "type": "object",
                         "properties": {
                           "mcidAbsoluteReduction": {
                             "type": "number",
@@ -111,6 +115,7 @@
                     "allOf": [
                       { "$ref": "#/$defs/guardrailMetric" },
                       {
+                        "type": "object",
                         "properties": {
                           "margin": {
                             "type": "number",
