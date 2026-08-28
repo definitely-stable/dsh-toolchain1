@@ -1,401 +1,147 @@
-# M2.3 Contract Intelligence Retrieval Evaluation — Implementation Plan
+# M2.3 Contract Intelligence Evaluation — Implementation Plan
 
-> **For agentic workers:** execute this plan task-by-task with TDD. Every behavioral evaluator change starts with an observed RED. Do not change production retrieval/ranking in this PR to make the benchmark pass.
+> **For agentic workers:** REQUIRED SUB-SKILL: use TDD for every behavioral evaluator change. This PR measures production M2; it must not alter production retrieval/ranking to improve scores.
 
-**Goal:** freeze and measure the existing M2 `contract.search -> contract.inspect` retrieval loop against real DSH development tasks, then define a reproducible A/B/C agent experiment that decides whether M2 is useful enough to close.
+**Goal:** build a reproducible, artifact-grounded evaluation that measures production Contract Intelligence and preregisters a controlled agent comparison capable of deciding whether M2 is complete.
 
-**Architecture:** M2.3 is evaluation-only. Production `searchContractIndex()` remains the only scorer. Frozen rc.2-realistic Contract Index data, task corpus, validators, metric arithmetic and tests live under `tests/evaluation/`; durable methodology/results live under `docs/evaluation/`. CI performs deterministic retrieval evaluation with no network or model calls. Agent usefulness is recorded separately through a versioned A/B/C result schema.
+**Architecture:** M2.3 has four layers: registry-artifact fixture → deterministic retrieval/evidence evaluation → real-kernel `search -> inspect` conformance → preregistered agent usefulness experiment. Required CI stays deterministic/offline; model runs are recorded separately as versioned evidence.
 
-**Tech stack:** TypeScript 6, Vitest 4, existing `src/model/contract.ts`, JSON Schema + AJV for the recorded experiment format, existing Node 22.19+/pnpm 11.7 CI.
+**Tech Stack:** TypeScript 6, Vitest 4, existing M1/M2 model/kernel/acquisition code, JSON Schema + AJV, Node 22.19+/24/26 CI, pnpm 11.7.
 
-**Spec:** Issue #34, parent Issue #28, `docs/roadmap.md`, `docs/architecture.md`, ADR-0008, upstream published DSH `0.1.1-rc.2` commit `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`.
+**Spec:** `docs/plans/2026-08-28-m2-3-evaluation-design.md`; Issue #34; parent #28; ADR-0008; protocol/architecture/development docs.
 
 ## Global constraints
 
-- Base is M2.2 squash merge `d3162bd72bcd84ec8c422108be1e7c529a1a59f6`.
-- Evaluation baseline is published `@deepseek-ai/dsh@0.1.1-rc.2`, not mutable upstream `master` and not unpublished source version `0.1.2-alpha.1`.
-- First frozen corpus contains at least 30 tasks.
-- Corpus includes exact-symbol, package/API, natural-language mechanism, indirect/ambiguous, and no-result/obsolete-API categories.
-- The frozen index must mirror Toolchain normalization: M2.1 declaration names are facts on `package:<name>` contracts; do not invent `type:*` contracts. M2.2-only examples may use real normalized `service:host:*`, `event:host:*`, and `tool:host:*` shapes.
-- Package summaries must mirror production (`Installed package <name>@<version>`). Do not add documentation prose to package summaries because production M2.1 does not.
-- `searchContractIndex()` is imported from `src/model/contract.ts` and is the only ranking implementation used by evaluation.
-- No embeddings, semantic reranker, LLM judge, external model/network call, persistent search index, or benchmark-specific production branch in this slice.
-- Do not edit corpus expectations after observing metrics merely to improve the score. Corrections require provenance/error justification in the PR history.
-- If measured retrieval is weak, freeze/report the weakness and create a separate improvement Issue; do not change production ranking in this PR.
-- Parent #28 stays open until a controlled recorded A/B/C experiment demonstrates materially fewer invalid API guesses for Toolchain context.
-
-## File map
-
-- Create `tests/evaluation/m2-retrieval-metrics.ts` — evaluation-only types, validation and metric arithmetic. It consumes ranked contract IDs; it does not score contracts.
-- Create `tests/evaluation/m2-retrieval-metrics.spec.ts` — arithmetic and fail-closed validation tests.
-- Create `tests/evaluation/m2-retrieval-index.ts` — frozen rc.2-realistic `Evidence[]` / `ContractDefinition[]` and deterministic `createContractIndex()` builder.
-- Create `tests/evaluation/m2-retrieval-corpus.ts` — frozen >=30 task definitions with provenance.
-- Create `tests/evaluation/m2-retrieval.spec.ts` — calls production `searchContractIndex()` over the frozen corpus and asserts determinism/invariants while printing the observed baseline.
-- Create `docs/evaluation/m2-contract-retrieval.md` — corpus methodology, provenance, exact measured metrics and honest PASS/NEEDS-IMPROVEMENT interpretation.
-- Create `docs/evaluation/m2-agent-comparison-v1.schema.json` — versioned durable A/B/C experiment record schema.
-- Create `tests/evaluation/m2-agent-comparison-schema.spec.ts` — AJV validation tests for valid/invalid experiment records.
-- Create `docs/evaluation/m2-agent-comparison.md` — controlled experiment procedure; no fabricated result.
-- Modify `docs/roadmap.md` only after deterministic measurements are known, and only to reflect M2.3 status rather than declaring M2 complete without an A/B/C result.
+- Base production behavior is M2.2 squash `d3162bd72bcd84ec8c422108be1e7c529a1a59f6`.
+- Canonical target is registry-installable `@deepseek-ai/dsh@0.1.1-rc.2`, profile `web`, documentation/source provenance `b150a551b8d465e31e418e1b2eaf5e79bbb7d28e`.
+- `dsh-v0.1.2-alpha.1` / `cd5ef814...` is a drift canary only; Issue #33 owns target-identity redesign.
+- Production `searchContractIndex()` is the only ranking implementation used by evaluation.
+- No embeddings, reranker, vector DB, model/network call, external judge or persistent search service in required CI.
+- Frozen full contract facts precede corpus construction; corpus may never decide which contracts exist.
+- Historical baselines are immutable. Corrections require pinned factual provenance and explicit errata.
+- Parent #28 remains open until preregistered agent evidence qualifies.
 
 ---
 
-### Task 1: Freeze evaluator semantics with RED metric tests
+### Task 1: Correct metric semantics without changing arithmetic
 
 **Files:**
-- Create: `tests/evaluation/m2-retrieval-metrics.ts`
-- Create: `tests/evaluation/m2-retrieval-metrics.spec.ts`
+- Modify: `tests/evaluation/m2-retrieval-metrics.ts`
+- Modify: `tests/evaluation/m2-retrieval-metrics.spec.ts`
 
 **Interfaces:**
+- Rename `recallAt1/3/5` → `successAt1/3/5`.
+- Rename `wrongContractRate` → `forbiddenHitRateAt5`.
+- Keep MRR and no-result semantics unchanged.
 
-```ts
-export type M2RetrievalCategory =
-  | 'exact-symbol'
-  | 'package-api'
-  | 'natural-language'
-  | 'indirect'
-  | 'ambiguous'
-  | 'no-result'
+- [ ] Add RED assertions that the public metric shape exposes `successAt*` / `forbiddenHitRateAt5` and not misleading Recall names.
+- [ ] Confirm CI RED is caused only by the old names.
+- [ ] Rename the evaluator fields/helper naming minimally; do not change arithmetic.
+- [ ] Confirm focused/full CI GREEN.
 
-export interface M2RetrievalTask {
-  readonly id: string
-  readonly category: M2RetrievalCategory
-  readonly query: string
-  readonly expectedContractIds: readonly string[]
-  readonly forbiddenContractIds?: readonly string[]
-  readonly expectNoResult?: boolean
-  readonly provenance: string
-}
-
-export interface M2RankedTaskResult {
-  readonly task: M2RetrievalTask
-  readonly rankedContractIds: readonly string[]
-}
-
-export interface M2RetrievalMetrics {
-  readonly taskCount: number
-  readonly answerableTaskCount: number
-  readonly noResultTaskCount: number
-  readonly recallAt1: number
-  readonly recallAt3: number
-  readonly recallAt5: number
-  readonly meanReciprocalRank: number
-  readonly noResultCorrectness: number
-  readonly wrongContractRate: number
-  readonly byCategory: Readonly<Record<M2RetrievalCategory, M2CategoryMetrics>>
-}
-
-export function validateM2RetrievalCorpus(
-  tasks: readonly M2RetrievalTask[],
-  knownContractIds: ReadonlySet<string>,
-): void
-
-export function calculateM2RetrievalMetrics(
-  results: readonly M2RankedTaskResult[],
-): M2RetrievalMetrics
-```
-
-Metric definitions are frozen here:
-- `Recall@k`: macro fraction of answerable tasks whose top-k intersects `expectedContractIds`; multiple expected ids mean acceptable alternatives, not all-required dependencies.
-- `MRR`: macro mean of `1/rank` for the first acceptable expected contract, `0` when absent.
-- `noResultCorrectness`: fraction of `expectNoResult` tasks whose ranked result is empty; if there are no no-result tasks, validation fails rather than producing a misleading denominator.
-- `wrongContractRate`: among tasks declaring `forbiddenContractIds`, fraction whose top-5 contains at least one forbidden id; if no tasks declare forbidden ids, validation fails.
-- per-category metrics use the same hit/MRR semantics plus category task count; no category listed in the union may be absent from the frozen corpus.
-
-- [ ] **Step 1.1 — Write arithmetic RED tests.**
-
-Test a hand-authored set where expected values are calculable without production search:
-
-```ts
-expect(metrics.recallAt1).toBeCloseTo(1 / 3)
-expect(metrics.recallAt3).toBeCloseTo(2 / 3)
-expect(metrics.recallAt5).toBeCloseTo(1)
-expect(metrics.meanReciprocalRank).toBeCloseTo((1 + 1 / 2 + 1 / 5) / 3)
-```
-
-Also prove no-result correctness and forbidden top-5 accounting.
-
-- [ ] **Step 1.2 — Write validation RED tests.**
-
-Reject duplicate task ids, duplicate expected/forbidden ids, empty/whitespace query, missing expected contract, overlap between expected and forbidden, `expectNoResult` with expected ids, answerable task with zero expected ids, missing category coverage, zero no-result tasks, and zero forbidden-bearing tasks.
-
-- [ ] **Step 1.3 — Push RED only.**
-
-Expected CI behavior: all pre-existing tests pass; only the new evaluator tests fail because the metric module does not exist/implement the contract.
-
-- [ ] **Step 1.4 — Implement minimal pure evaluator.**
-
-No imports from acquisition, DSH integration, CLI or MCP. The helper consumes ranked ids and computes arithmetic only.
-
-- [ ] **Step 1.5 — Verify focused GREEN and full `pnpm check`.**
-
-- [ ] **Step 1.6 — Commit evaluator semantics.**
-
-Suggested commit: `test(m2.3): define frozen retrieval metrics`.
-
----
-
-### Task 2: Build one rc.2-realistic frozen Contract Index fixture
+### Task 2: Replace the synthetic rc.2 fixture contract with an artifact-grade frozen fixture boundary
 
 **Files:**
-- Create: `tests/evaluation/m2-retrieval-index.ts`
-- Test: `tests/evaluation/m2-retrieval.spec.ts`
+- Modify: `tests/evaluation/m2-retrieval-index.ts`
+- Modify/Create: `tests/evaluation/m2-retrieval.spec.ts`
+- Create: `tests/evaluation/fixtures/m2/rc2-web-v1/manifest.json`
+- Create: `tests/evaluation/fixtures/m2/rc2-web-v1/target-facts.json`
+- Create: `tests/evaluation/fixtures/m2/rc2-web-v1/contract-facts.json`
+- Create later generator support only if production acquisition can be reused without creating a second semantic implementation.
 
 **Interfaces:**
+- `M2_RETRIEVAL_TARGET` contains exact DSH version/profile/upstream provenance and real expected target/index fingerprints.
+- `createFrozenM2RetrievalIndex()` creates a `ContractIndex` from frozen production-shaped facts with production `createContractIndex()`.
 
-```ts
-export const M2_RETRIEVAL_TARGET = Object.freeze({
-  dshVersion: '0.1.1-rc.2',
-  upstreamCommit: 'b150a551b8d465e31e418e1b2eaf5e79bbb7d28e',
-})
+- [ ] Extend the current intentional RED with structural requirements: no synthetic target fingerprint, manifest/facts schema versioned, all evidence refs resolve, package summaries match production, no invented `type:*`, full fixture declares generator/provenance identities.
+- [ ] Populate only facts obtained from the canonical registry artifact/dependency closure. Never add a contract because a corpus task wants it.
+- [ ] Strip non-semantic machine locations only and prove index identity remains unchanged by equivalent input ordering/location removal.
+- [ ] Confirm CI GREEN and record the real fingerprints.
 
-export async function createFrozenM2RetrievalIndex(): Promise<ContractIndex>
-```
-
-The fixture models actual normalized output, not source DTOs. Initial package contracts should include real rc.2 package identities such as:
-- `package:@deepseek-ai/dsh-tools` with exports including `ToolDefinition`, `ToolExecution`, `ToolExecutionInput`, `PreToolDecision`, tool schema helpers and relevant registry/runtime public types;
-- `package:@deepseek-ai/dsh-agent` with its actual public Agent/registry/event-facing exports;
-- `package:@deepseek-ai/dsh-session` with session/event/store public exports;
-- additional rc.2 packages required by the corpus (approval/system-prompt/scope/subagent/compaction/etc.) only after their package identity/export provenance is checked against rc.2.
-
-Optional live-shaped contracts may be included only where their M2.2 normalized shape is real and stable, e.g. `event:host:tools/change` or representative Agent-visible Tool contracts. Do not invent service/event/tool names to make queries easy.
-
-Every package contract must match production M2.1 shape:
-
-```ts
-{
-  id: `package:${packageName}`,
-  kind: 'package',
-  name: packageName,
-  qualifiedName: `package:${packageName}`,
-  availability: 'unknown',
-  summary: `Installed package ${packageName}@0.1.1-rc.2`,
-  facts: [
-    { key: 'version', value: '0.1.1-rc.2', ... },
-    { key: 'declaration-entry', value: '<real entry>', ... },
-    { key: 'declaration-export', value: '<real public export>', ... },
-  ],
-}
-```
-
-- [ ] **Step 2.1 — Add RED structural tests for the fixture.**
-
-Assert the frozen index has only unique ids, package summaries use the production form, all evidence refs resolve, target version/provenance is pinned, and no `type:*` contract is invented.
-
-- [ ] **Step 2.2 — Populate verified rc.2 facts.**
-
-Use only public package manifests/declarations/docs at the pinned upstream commit. Record the source path in evidence `source`/test comments; do not import upstream source at runtime.
-
-- [ ] **Step 2.3 — Prove order invariance.**
-
-Create an equivalent index with reversed evidence/contracts/facts input where meaningful and assert `createContractIndex()` yields the same fingerprint.
-
-- [ ] **Step 2.4 — Full check and commit.**
-
-Suggested commit: `test(m2.3): freeze rc2 contract index fixture`.
-
----
-
-### Task 3: Freeze >=30 real developer-intent tasks before reading their scores
+### Task 3: Freeze the R1 retrieval capability corpus before observing scores
 
 **Files:**
 - Create: `tests/evaluation/m2-retrieval-corpus.ts`
+- Modify: `tests/evaluation/m2-retrieval-metrics.ts`
 - Modify: `tests/evaluation/m2-retrieval.spec.ts`
 
-**Corpus composition:** first accepted corpus must contain at least:
-- 5 `exact-symbol` tasks;
-- 5 `package-api` tasks;
-- 8 `natural-language` tasks;
-- 4 `indirect` tasks;
-- 3 `ambiguous` tasks;
-- 5 `no-result` / obsolete-invalid tasks.
+**Interfaces:**
+- Extend `M2RetrievalTask` with `domain`, `intentGroup`, `sourceKind`, optional `riskTags`, and `referenceRoute`/equivalent exact provenance.
+- Preserve existing linguistic categories.
 
-This is a minimum mix, not a target score. Queries should be derived from real rc.2 developer jobs documented in the upstream extension cookbook and package docs, for example registering a tool, intercepting pre-execute, wrapping dispatch for timeout/metrics, observing final results, reacting to tool registry changes, listening to session events, feeding an Agent, approval, restrictions/guards, compaction and subagent mechanisms.
+- [ ] Add RED corpus-validation tests for missing orthogonal metadata, duplicate/near-concentrated intent groups, invalid no-result/replacement semantics and missing reference routes.
+- [ ] Implement only evaluation validation needed by those tests.
+- [ ] Author about 36 rc.2 tasks with pinned provenance; normally no more than three tasks per intent group. Include version-drift cases where latest/upstream knowledge differs from rc.2.
+- [ ] Commit/freeze R1 before executing the full benchmark.
 
-Examples of task shape (expected IDs must be verified before commit):
-
-```ts
-{
-  id: 'tool-definition-export',
-  category: 'exact-symbol',
-  query: 'ToolDefinition',
-  expectedContractIds: ['package:@deepseek-ai/dsh-tools'],
-  provenance: 'deepseek-harness@b150a551 packages/core/tools/src/index.ts',
-}
-```
-
-```ts
-{
-  id: 'tool-timeout-wrapper-natural',
-  category: 'natural-language',
-  query: 'wrap tool execution timeout metrics',
-  expectedContractIds: ['package:@deepseek-ai/dsh-tools'],
-  provenance: 'deepseek-harness@b150a551 docs/cookbook/extension-cookbook.md',
-}
-```
-
-Natural-language failures are allowed and expected to be informative because production package summaries do not contain cookbook prose.
-
-- [ ] **Step 3.1 — Commit corpus and provenance before observing metrics.**
-
-This is the anti-overfitting checkpoint. Do not execute the full corpus benchmark until this commit exists.
-
-- [ ] **Step 3.2 — Run the benchmark unchanged.**
-
-For every task call:
-
-```ts
-const selection = searchContractIndex(index, task.query, undefined, 5)
-```
-
-Store only returned IDs in the evaluator. The benchmark must not call a second scorer.
-
-- [ ] **Step 3.3 — Assert determinism, not a desired score.**
-
-Tests assert metric bounds `[0,1]`, corpus validation, stable results under equivalent index order, and stable repeated execution. Do **not** add `expect(recallAt5).toBeGreaterThan(...)` until the baseline is observed and an exit threshold is justified separately.
-
-- [ ] **Step 3.4 — Capture exact observed baseline in the test output/PR evidence.**
-
-If natural-language retrieval is weak, preserve it. If an expectation is factually wrong, correct it only with pinned upstream provenance and document the correction.
-
-- [ ] **Step 3.5 — Commit observed baseline plumbing.**
-
-Suggested commit: `test(m2.3): freeze real DSH retrieval corpus`.
-
----
-
-### Task 4: Produce durable deterministic evaluation report
+### Task 4: Measure deterministic production retrieval and evidence sufficiency
 
 **Files:**
-- Create: `docs/evaluation/m2-contract-retrieval.md`
-- Modify: `tests/evaluation/m2-retrieval.spec.ts` only if a small exported formatter is needed; do not hard-code a passing threshold into production search.
+- Modify: `tests/evaluation/m2-retrieval.spec.ts`
+- Create: `tests/evaluation/m2-evidence-sufficiency.spec.ts`
+- Create: `docs/evaluation/m2/retrieval-baseline-v1.json`
+- Create: `docs/evaluation/m2/retrieval-report.md`
 
-- [ ] **Step 4.1 — Record identity and methodology.**
+- [ ] Run every R1 task only through production `searchContractIndex(index, query, undefined, 5)`.
+- [ ] Assert determinism/invariants, metric bounds and repeated-order equivalence; do not assert a desired capability score.
+- [ ] Add representative required-fact/evidence checks so a retrieval hit is distinguished from an acquisition/evidence gap.
+- [ ] Record immutable per-task ranked IDs plus aggregate Success@1/3/5, MRR, no-result correctness, forbiddenHitRateAt5 and category/domain diagnostics.
+- [ ] Keep capability baseline historical; do not convert the full exact ranking into a permanent regression contract.
 
-Document Toolchain commit, upstream rc.2 commit, frozen index/corpus version, task category counts, metric definitions and the fact that `searchContractIndex()` is production code.
-
-- [ ] **Step 4.2 — Record exact measured metrics.**
-
-Include Recall@1/@3/@5, MRR, no-result correctness, wrong-contract rate and per-category results. Include the most important failure classes with task IDs, not cherry-picked anecdotes.
-
-- [ ] **Step 4.3 — Classify deterministic outcome honestly.**
-
-Use:
-- `DETERMINISTIC-RETRIEVAL-ADEQUATE` only if exact/package/API retrieval is strong enough for progressive use and no-result/wrong-contract behavior is acceptable;
-- `NEEDS-RETRIEVAL-IMPROVEMENT` if the frozen tasks expose material retrieval gaps.
-
-This classification **does not close M2**; agent A/B/C evidence is still required.
-
-- [ ] **Step 4.4 — If improvement is needed, create a separate Issue before changing ranking.**
-
-The issue must reference the frozen task IDs/metrics. M2.3 benchmark PR remains an evaluation change.
-
-- [ ] **Step 4.5 — Commit report.**
-
-Suggested commit: `docs(m2.3): record frozen retrieval baseline`.
-
----
-
-### Task 5: Version the controlled A/B/C agent experiment
+### Task 5: Prove the real production `search -> inspect` loop
 
 **Files:**
-- Create: `docs/evaluation/m2-agent-comparison-v1.schema.json`
-- Create: `tests/evaluation/m2-agent-comparison-schema.spec.ts`
-- Create: `docs/evaluation/m2-agent-comparison.md`
+- Create: `tests/evaluation/m2-search-inspect.spec.ts`
 
-**Record schema required fields:**
+- [ ] Add RED evaluation ports returning frozen target/contract facts while invoking production `createApplicationKernel()`.
+- [ ] Prove search/inspect target fingerprint continuity, index fingerprint continuity, exact returned contract identity and evidence resolution.
+- [ ] Add one stale proof where contract evidence changes after search and inspect returns existing stale semantics.
+- [ ] Keep evaluation ports test-only; no new production abstraction.
 
-```text
-schema = dsh-toolchain-m2-agent-comparison-v1
-corpusVersion
-indexFingerprint
-targetFingerprint
-upstreamDshVersion
-upstreamCommit
-promptVersion
-model.provider
-model.name
-model.version
-runStartedAt
-conditions.A / B / C
-  taskResults[]
-    taskId
-    answerArtifact
-    parsedApiGuesses[]
-    invalidApiGuesses[]
-    success = pass | fail | indeterminate
-summary
-  taskCount
-  invalidGuessCount
-  invalidGuessRate
-  passCount
-```
-
-Condition definitions are frozen:
-- A: task + normal model instructions, no DSH contract/docs context;
-- B: task + one fixed static rc.2 documentation context pack, identical across tasks except the task itself;
-- C: task + only progressive Toolchain `contract.search -> contract.inspect` context selected under a fixed tool-use procedure.
-
-- [ ] **Step 5.1 — RED schema tests.**
-
-AJV accepts one complete minimal v1 record and rejects missing model version, corpus/index/target identity, condition, task id, raw artifact reference, invalid-guess list, or summary counts.
-
-- [ ] **Step 5.2 — Add schema and GREEN.**
-
-Schema uses `additionalProperties: false` at semantic record objects so experiment fields cannot silently drift.
-
-- [ ] **Step 5.3 — Document execution protocol.**
-
-Freeze prompt version, task order randomization rule, temperature/sampling settings where provider supports them, context budgets, answer capture, API-guess parsing rules, and success classification. One operator must not manually repair C answers after seeing expected contracts.
-
-- [ ] **Step 5.4 — Explicitly state that no result is recorded yet unless a genuinely controlled run is performed.**
-
-Do not create an invented A/B/C JSON just to satisfy the schema.
-
-- [ ] **Step 5.5 — Commit experiment protocol.**
-
-Suggested commit: `docs(m2.3): version agent comparison protocol`.
-
----
-
-### Task 6: Governance, corrective review and slice completion
+### Task 6: Version agent-evaluation schemas, oracle boundary and pilot/holdout protocol
 
 **Files:**
+- Create: `docs/evaluation/m2/m2-agent-eval-v1.schema.json`
+- Create: `tests/evaluation/m2-agent-eval-schema.spec.ts`
+- Create: `docs/evaluation/m2/agent-comparison.md`
+- Create: `docs/evaluation/m2/api-oracle-v1.json` (generated/normalized from shipped rc.2 declarations where possible)
+- Create: `docs/evaluation/m2/agent-pilot-p0.json`
+- Create: `docs/evaluation/m2/agent-holdout-h1.commitment.json`
+
+- [ ] RED schema tests require exact target/index identities, model/harness/tool/resource/retry configuration, run-order seed/schedule, primary/guardrail metrics and result status.
+- [ ] Define A=memory, B=conventional exact-target agent with ordinary file/search/docs access, C=B+Toolchain; C is not forced to call Toolchain.
+- [ ] Define P0 as non-scoring harness calibration and H1 as acceptance holdout whose tasks are hash-committed before execution and published afterwards.
+- [ ] Oracle classifications are `VALID|INVALID|UNKNOWN`; UNKNOWN requires adjudication and is never auto-invalid.
+- [ ] Primary metric is Invalid API Task Rate C vs B; task-success non-inferiority is a required guardrail. MCID is frozen after P0 but before H1.
+
+### Task 7: Add content-addressed experiment definition/result integrity
+
+**Files:**
+- Create: `tests/evaluation/m2-agent-eval-integrity.ts`
+- Create: `tests/evaluation/m2-agent-eval-integrity.spec.ts`
+- Create: `docs/evaluation/m2/agent-eval-v1.definition.json`
+- Result file is created only after an actual H1 run; never fabricate it.
+
+- [ ] RED tests canonicalize/hash the evaluation definition and reject missing/changed target/index/corpus/tool-schema/prompt/oracle/resource/retry identities.
+- [ ] Implement a pure evaluation-only canonical hash helper using the existing SHA-256 port/helper pattern; do not add production protocol identity.
+- [ ] Validate bounded infrastructure retries separately from model outcomes and require all attempts to be recorded.
+- [ ] Define three trials per task/arm and a deterministic balanced/randomized order; analysis unit remains the task, not each trial.
+
+### Task 8: Upstream drift canary and governance
+
+**Files:**
+- Create: `docs/evaluation/m2/upstream-drift.md`
 - Modify: `docs/roadmap.md`
-- Update GitHub Issue #34 and PR metadata; parent #28 only if exit evidence actually qualifies.
+- Update: Issue #33, Issue #34, PR #35 metadata/body.
 
-- [ ] **Step 6.1 — Run full CI on exact HEAD.**
+- [ ] Record that GitHub prerelease `dsh-v0.1.2-alpha.1` exists while canonical M2.3 remains rc.2 until registry/installability/support policy changes.
+- [ ] Document drift only; do not combine alpha.1 with rc.2 scores.
+- [ ] Update roadmap/PR state to reflect actual completed tasks and remaining H1 evidence.
+- [ ] Run final full CI and corrective review. Do not close #28 unless a recorded H1 result satisfies the preregistered decision rule.
 
-Required lanes remain Node 22.19 / 24.19 / 26, Windows 2025, macOS 15, exact pack/install and primary real DSH smoke. M2.3 must not add network/model work to CI.
+## Completion states
 
-- [ ] **Step 6.2 — Corrective review the exact HEAD.**
-
-Review especially:
-- corpus leakage/overfitting;
-- invented contract identities;
-- duplicate scoring logic;
-- denominator mistakes in metrics;
-- categories that make exact-name tasks dominate the aggregate;
-- no-result tasks that are actually supported APIs;
-- schema fields that permit anecdotal/unversioned A/B/C claims.
-
-Any behavioral correction receives its own RED before GREEN.
-
-- [ ] **Step 6.3 — Update roadmap status precisely.**
-
-If deterministic infra/report is merged but controlled A/B/C has not run, state that M2.3 evaluation infrastructure is complete while parent M2 exit remains blocked on the controlled comparison. Do not write `M2 DONE`.
-
-- [ ] **Step 6.4 — Merge the evaluation PR only on exact-head GREEN.**
-
-Close #34 only if its acceptance criteria are actually complete. If the PR intentionally delivers deterministic benchmark/protocol but the A/B/C run remains outstanding, keep #34 open or split the remaining controlled-run obligation into a specifically linked issue before closure.
-
-- [ ] **Step 6.5 — Parent #28 exit decision.**
-
-Close #28 only when a valid recorded A/B/C run shows a material reduction in invalid API guesses for C versus the chosen baseline and deterministic retrieval evidence is acceptable. Otherwise keep #28 open and link the measured retrieval-improvement work.
-
-## Plan self-review
-
-- Spec coverage: deterministic retrieval metrics, real rc.2 corpus, no-result/wrong-contract behavior, per-category visibility, production scorer reuse, durable report, controlled A/B/C schema/procedure and parent-M2 exit rule are all assigned to explicit tasks.
-- Boundary check: all new evaluation logic lives under `tests/` or `docs/`; no runtime-neutral kernel or production integration dependency is added.
-- Anti-overfitting check: corpus is committed before first full metric run and ranking changes are forbidden in the evaluation PR.
-- Identity check: package exports remain facts on `package:*`; live `service/event/tool` contracts are used only when matching actual M2.2 normalized shapes.
-- CI cost check: no model/network job or artifact/cache expansion is required; existing ordinary test lanes execute the deterministic benchmark.
+- `M2.3 evaluation infrastructure complete`: deterministic fixture/R1/search-inspect/schemas are green and immutable evidence exists.
+- `M2 PASS`: additionally, preregistered H1 demonstrates the required C-vs-B improvement without violating task-success guardrails.
+- `M2 NEEDS-IMPROVEMENT`: M2.3 evidence is frozen, parent #28 stays open, and retrieval/harness changes move to a separate issue/PR.
+- `M2 INCONCLUSIVE`: only a preregistered reserve/extension path may add evidence; rerunning until a desired answer is prohibited.
