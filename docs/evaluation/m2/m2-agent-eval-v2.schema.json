@@ -479,7 +479,7 @@
     "modelOutcomeAttempt": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["attempt", "startedAt", "completedAt", "outcome", "executionEvidence", "rawAnswer", "parsedApiClaims", "taskSuccess"],
+      "required": ["attempt", "startedAt", "completedAt", "outcome", "executionEvidence", "rawAnswer", "providerMetadata", "parsedApiClaims", "taskSuccess"],
       "properties": {
         "attempt": { "type": "integer", "minimum": 1 },
         "startedAt": { "type": "string", "format": "date-time" },
@@ -487,6 +487,7 @@
         "outcome": { "const": "model-outcome" },
         "executionEvidence": { "$ref": "#/$defs/executionEvidence" },
         "rawAnswer": { "$ref": "#/$defs/contentRef" },
+        "providerMetadata": { "$ref": "#/$defs/contentRef" },
         "parsedApiClaims": {
           "type": "array",
           "items": { "$ref": "#/$defs/claim" }
