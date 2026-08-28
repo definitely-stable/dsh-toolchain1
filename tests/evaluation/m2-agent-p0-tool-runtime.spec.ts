@@ -9,6 +9,7 @@ import {
   validateContentRef,
   validateTraceReceipt,
   type ResourcePolicy,
+  type TraceReceipt,
 } from './m2-agent-execution-evidence.js'
 import { createFrozenP0CapabilityManifests } from './m2-agent-ordinary-broker.js'
 import { createOrdinaryWorkspace } from './m2-agent-ordinary-workspace.js'
@@ -135,11 +136,7 @@ describe('M2.3 composite P0 tool runtime', () => {
     if (result.attempt.outcome !== 'model-outcome') throw new Error('expected model outcome')
     expect(result.attempt.rawAnswer.inline).toContain('Ordinary docs plus Toolchain verified')
 
-    const trace = JSON.parse(result.attempt.executionEvidence.trace.inline) as {
-      runControlSha256: string
-      entries: Array<{ sequence: number; family: string; name: string; status: string }>
-      traceSha256: string
-    }
+    const trace = JSON.parse(result.attempt.executionEvidence.trace.inline) as TraceReceipt
     expect(trace.entries.map(entry => [entry.sequence, entry.family, entry.name, entry.status])).toEqual([
       [1, 'ordinary', 'read_file', 'ok'],
       [2, 'toolchain', 'toolchain_contract_search', 'ok'],
