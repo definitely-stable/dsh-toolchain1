@@ -407,6 +407,7 @@ export async function validateAgentV2ResultAgainstDefinition(
 
       if (attempt.outcome === 'model-outcome') {
         await validateContentRef(contentRef(attempt.rawAnswer, 'Agent v2 raw answer'), sha256)
+        await validateContentRef(contentRef(attempt.providerMetadata, 'Agent v2 provider metadata'), sha256)
       } else if (attempt.outcome === 'infrastructure-failure') {
         if (attempt.qualityIndependent !== true) {
           throw new Error('Agent v2 infrastructure failure must be classified independently of answer quality')
