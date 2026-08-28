@@ -35,6 +35,15 @@ export interface ProcessModelOutcome {
   }
 }
 
+export interface ProcessInfrastructureFailure {
+  kind: 'infrastructure-failure'
+  reason: 'protocol'
+  detail: string
+  partialOutput?: string
+}
+
+export type ProcessModelAttemptResult = ProcessModelOutcome | ProcessInfrastructureFailure
+
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${label} must be an object`)
@@ -49,29 +58,43 @@ function requireString(value: unknown, label: string): string {
   return value
 }
 
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export async function executeProcessModelAttempt(
   input: ProcessModelAttemptInput,
-): Promise<ProcessModelOutcome> {
+): Promise<ProcessModelAttemptResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(input.command, [...input.args], {
       cwd: input.cwd,
       env: { ...input.environment },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    child.stdout.setEncoding('utf8')
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })
+    let stdout = ''
     let stderr = ''
     let terminal: ProcessModelOutcome | undefined
-    let failure: unknown
+    let failure: ProcessInfrastructureFailure | undefined
     let processing = Promise.resolve()
 
+    child.stdout.on('data', chunk => {
+      stdout += chunk
+    })
     child.stderr.setEncoding('utf8')
     child.stderr.on('data', chunk => {
       stderr += chunk
     })
 
-    function fail(error: unknown): void {
+    function failProtocol(error: unknown): void {
       if (failure !== undefined) return
-      failure = error
+      failure = {
+        kind: 'infrastructure-failure',
+        reason: 'protocol',
+        detail: errorDetail(error),
+        ...(stdout.length === 0 ? {} : { partialOutput: stdout }),
+      }
       child.stdin.end()
       if (child.exitCode === null && child.signalCode === null) child.kill()
     }
@@ -113,14 +136,14 @@ export async function executeProcessModelAttempt(
 
     lines.on('line', line => {
       if (line.length === 0 || failure !== undefined) return
-      processing = processing.then(() => handleLine(line)).catch(fail)
+      processing = processing.then(() => handleLine(line)).catch(failProtocol)
     })
 
-    child.once('error', fail)
+    child.once('error', reject)
     child.once('close', code => {
       void processing.then(() => {
         if (failure !== undefined) {
-          reject(failure)
+          resolve(failure)
           return
         }
         if (code !== 0) {
