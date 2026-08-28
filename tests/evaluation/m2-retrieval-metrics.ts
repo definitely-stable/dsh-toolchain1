@@ -26,24 +26,24 @@ export interface M2RankedTaskResult {
 
 export interface M2CategoryMetrics {
   readonly taskCount: number
-  readonly recallAt1: number | null
-  readonly recallAt3: number | null
-  readonly recallAt5: number | null
+  readonly successAt1: number | null
+  readonly successAt3: number | null
+  readonly successAt5: number | null
   readonly meanReciprocalRank: number | null
   readonly noResultCorrectness: number | null
-  readonly wrongContractRate: number | null
+  readonly forbiddenHitRateAt5: number | null
 }
 
 export interface M2RetrievalMetrics {
   readonly taskCount: number
   readonly answerableTaskCount: number
   readonly noResultTaskCount: number
-  readonly recallAt1: number
-  readonly recallAt3: number
-  readonly recallAt5: number
+  readonly successAt1: number
+  readonly successAt3: number
+  readonly successAt5: number
   readonly meanReciprocalRank: number
   readonly noResultCorrectness: number
-  readonly wrongContractRate: number
+  readonly forbiddenHitRateAt5: number
   readonly byCategory: Readonly<Record<M2RetrievalCategory, M2CategoryMetrics>>
 }
 
@@ -143,7 +143,7 @@ function firstExpectedRank(result: M2RankedTaskResult): number | undefined {
   return undefined
 }
 
-function recallAt(results: readonly M2RankedTaskResult[], limit: number): number {
+function successAt(results: readonly M2RankedTaskResult[], limit: number): number {
   let hits = 0
   for (const result of results) {
     const expected = new Set(result.task.expectedContractIds)
@@ -165,7 +165,7 @@ function noResultCorrectness(results: readonly M2RankedTaskResult[]): number {
   return results.filter(result => result.rankedContractIds.length === 0).length / results.length
 }
 
-function wrongContractRate(results: readonly M2RankedTaskResult[]): number {
+function forbiddenHitRateAt5(results: readonly M2RankedTaskResult[]): number {
   let wrong = 0
   for (const result of results) {
     const forbidden = new Set(result.task.forbiddenContractIds ?? [])
@@ -180,12 +180,12 @@ function categoryMetrics(results: readonly M2RankedTaskResult[]): M2CategoryMetr
   const forbidden = results.filter(result => (result.task.forbiddenContractIds?.length ?? 0) > 0)
   return Object.freeze({
     taskCount: results.length,
-    recallAt1: answerable.length === 0 ? null : recallAt(answerable, 1),
-    recallAt3: answerable.length === 0 ? null : recallAt(answerable, 3),
-    recallAt5: answerable.length === 0 ? null : recallAt(answerable, 5),
+    successAt1: answerable.length === 0 ? null : successAt(answerable, 1),
+    successAt3: answerable.length === 0 ? null : successAt(answerable, 3),
+    successAt5: answerable.length === 0 ? null : successAt(answerable, 5),
     meanReciprocalRank: answerable.length === 0 ? null : reciprocalRankMean(answerable),
     noResultCorrectness: noResult.length === 0 ? null : noResultCorrectness(noResult),
-    wrongContractRate: forbidden.length === 0 ? null : wrongContractRate(forbidden),
+    forbiddenHitRateAt5: forbidden.length === 0 ? null : forbiddenHitRateAt5(forbidden),
   })
 }
 
@@ -222,12 +222,12 @@ export function calculateM2RetrievalMetrics(
     taskCount: results.length,
     answerableTaskCount: answerable.length,
     noResultTaskCount: noResult.length,
-    recallAt1: recallAt(answerable, 1),
-    recallAt3: recallAt(answerable, 3),
-    recallAt5: recallAt(answerable, 5),
+    successAt1: successAt(answerable, 1),
+    successAt3: successAt(answerable, 3),
+    successAt5: successAt(answerable, 5),
     meanReciprocalRank: reciprocalRankMean(answerable),
     noResultCorrectness: noResultCorrectness(noResult),
-    wrongContractRate: wrongContractRate(forbidden),
+    forbiddenHitRateAt5: forbiddenHitRateAt5(forbidden),
     byCategory: Object.freeze(byCategory),
   })
 }
