@@ -8,6 +8,7 @@ import type { ModelEnvelope, ModelVisibleTool } from './m2-agent-execution-evide
 const SUCCESS_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/success.mjs', import.meta.url))
 const TOOL_CALL_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/tool-call.mjs', import.meta.url))
 const MALFORMED_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/malformed.mjs', import.meta.url))
+const FORBIDDEN_EVIDENCE_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/forbidden-evidence.mjs', import.meta.url))
 
 function modelEnvelope(tools: readonly ModelVisibleTool[] = []): ModelEnvelope {
   return {
@@ -107,6 +108,20 @@ describe('M2.3 process model executor', () => {
       kind: 'infrastructure-failure',
       reason: 'protocol',
       partialOutput: '{not-json}\n',
+    })
+  })
+
+  it('rejects executor attempts to smuggle runner-owned evidence through final', async () => {
+    const result = await executeProcessModelAttempt({
+      ...processInput(FORBIDDEN_EVIDENCE_EXECUTOR, modelEnvelope()),
+      dispatchToolCall: async () => {
+        throw new Error('forbidden-evidence fixture must not request tools')
+      },
+    })
+
+    expect(result).toMatchObject({
+      kind: 'infrastructure-failure',
+      reason: 'protocol',
     })
   })
 })
