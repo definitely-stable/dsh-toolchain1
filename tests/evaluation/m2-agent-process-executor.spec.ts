@@ -11,6 +11,7 @@ const MALFORMED_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/ma
 const FORBIDDEN_EVIDENCE_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/forbidden-evidence.mjs', import.meta.url))
 const TIMEOUT_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/timeout.mjs', import.meta.url))
 const NONZERO_EXIT_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/nonzero-exit.mjs', import.meta.url))
+const OUTPUT_OVERFLOW_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/output-overflow.mjs', import.meta.url))
 
 function modelEnvelope(tools: readonly ModelVisibleTool[] = []): ModelEnvelope {
   return {
@@ -174,5 +175,49 @@ describe('M2.3 process model executor', () => {
       reason: 'spawn',
       detail: expect.stringMatching(/ENOENT|not found/i),
     })
+  })
+
+  it('enforces maxStdoutBytes and retains no more stdout evidence than the configured cap', async () => {
+    const maxStdoutBytes = 64
+    const result = await executeProcessModelAttempt({
+      ...processInput(OUTPUT_OVERFLOW_EXECUTOR, modelEnvelope()),
+      maxStdoutBytes,
+      dispatchToolCall: async () => {
+        throw new Error('stdout-overflow fixture must not request tools')
+      },
+    })
+
+    expect(result).toMatchObject({
+      kind: 'infrastructure-failure',
+      reason: 'output-limit',
+      detail: expect.stringMatching(/stdout/i),
+    })
+    if (result.kind === 'infrastructure-failure' && result.partialOutput !== undefined) {
+      expect(Buffer.byteLength(result.partialOutput, 'utf8')).toBeLessThanOrEqual(maxStdoutBytes)
+    }
+  })
+
+  it('enforces maxStderrBytes and retains no more stderr evidence than the configured cap', async () => {
+    const maxStderrBytes = 48
+    const result = await executeProcessModelAttempt({
+      ...processInput(OUTPUT_OVERFLOW_EXECUTOR, modelEnvelope()),
+      environment: {
+        PATH: process.env.PATH ?? '',
+        DSH_OVERFLOW_CHANNEL: 'stderr',
+      },
+      maxStderrBytes,
+      dispatchToolCall: async () => {
+        throw new Error('stderr-overflow fixture must not request tools')
+      },
+    })
+
+    expect(result).toMatchObject({
+      kind: 'infrastructure-failure',
+      reason: 'output-limit',
+      detail: expect.stringMatching(/stderr/i),
+    })
+    if (result.kind === 'infrastructure-failure' && result.stderr !== undefined) {
+      expect(Buffer.byteLength(result.stderr, 'utf8')).toBeLessThanOrEqual(maxStderrBytes)
+    }
   })
 })
