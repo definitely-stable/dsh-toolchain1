@@ -129,16 +129,17 @@ describe('M2.3 runner retry evidence', () => {
     const first = await partialFailureAttempt()
     const second = await terminalAttempt()
     const thirdControl = '7'.repeat(64)
+    const terminalRetry = {
+      ...second,
+      attempt: 3,
+      trace: await createTraceReceipt(thirdControl, [], createNodeSha256Port()),
+      isolation: isolation(thirdControl, '5', '6'),
+    } satisfies RunnerAttemptEvidence
 
     expect(() => validateRunnerAttemptSequence([
       first,
       second,
-      {
-        ...second,
-        attempt: 3,
-        trace: await createTraceReceipt(thirdControl, [], createNodeSha256Port()),
-        isolation: isolation(thirdControl, '5', '6'),
-      },
+      terminalRetry,
     ], POLICY)).toThrow(/model outcome|retried|terminal/i)
 
     const infra2 = {
