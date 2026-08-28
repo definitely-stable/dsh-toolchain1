@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createNodeSha256Port } from '../../src/acquisition/node-sha256.js'
 import {
+  assertAgentHoldoutCommitted,
   createBalancedAgentSchedule,
   hashEvaluationDefinition,
   validateAgentAttempts,
@@ -169,5 +170,44 @@ describe('M2.3 agent evaluation integrity', () => {
         kind: 'infrastructure-failure', reason: 'provider-transport',
       },
     ], policy)).toThrow(/infrastructure retr/i)
+  })
+
+  it('fails closed until the H1 task set and every preregistration prerequisite are committed', () => {
+    const notCommitted = {
+      status: 'NOT_COMMITTED',
+      runAllowed: false,
+      commitmentSha256: null,
+      taskCount: null,
+      prerequisites: {
+        p0Completed: false,
+        mcidFrozen: false,
+        noninferiorityMarginFrozen: false,
+        taskSetHashCommitted: false,
+      },
+    } as const
+
+    expect(() => assertAgentHoldoutCommitted(notCommitted)).toThrow(/not committed/i)
+
+    const committed = {
+      status: 'COMMITTED',
+      runAllowed: true,
+      commitmentSha256: 'a'.repeat(64),
+      taskCount: 24,
+      prerequisites: {
+        p0Completed: true,
+        mcidFrozen: true,
+        noninferiorityMarginFrozen: true,
+        taskSetHashCommitted: true,
+      },
+    } as const
+
+    expect(() => assertAgentHoldoutCommitted(committed)).not.toThrow()
+    expect(() => assertAgentHoldoutCommitted({ ...committed, runAllowed: false })).toThrow(/runAllowed/i)
+    expect(() => assertAgentHoldoutCommitted({ ...committed, commitmentSha256: 'not-a-hash' })).toThrow(/commitment/i)
+    expect(() => assertAgentHoldoutCommitted({ ...committed, taskCount: 0 })).toThrow(/taskCount/i)
+    expect(() => assertAgentHoldoutCommitted({
+      ...committed,
+      prerequisites: { ...committed.prerequisites, mcidFrozen: false },
+    })).toThrow(/prerequisite/i)
   })
 })
