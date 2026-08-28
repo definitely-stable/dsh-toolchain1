@@ -50,4 +50,12 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
           M2_FIXTURE_GENERATED_AT: '2026-08-28T00:00:00.000Z'
-        run: node scripts/generate-m2-evaluation-fixture.mjs --stdout
+        run: node scripts/generate-m2-evaluation-fixture.mjs --output=.artifacts/m2-fixture
+
+      - name: Upload exact rc2 Web evaluation fixture
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: m2-rc2-web-fixture-${{ github.sha }}
+          path: .artifacts/m2-fixture/*.json
+          if-no-files-found: error
+          retention-days: 1
