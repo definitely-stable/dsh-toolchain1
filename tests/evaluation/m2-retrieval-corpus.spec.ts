@@ -96,7 +96,7 @@ describe('M2.3 frozen R1 retrieval corpus', () => {
       contract.id,
       contract.name,
       contract.qualifiedName,
-      contract.summary,
+      contract.summary ?? '',
       ...contract.facts.map(fact => fact.value),
     ]).map(value => value.toLocaleLowerCase('en-US'))
 
