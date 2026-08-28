@@ -37,7 +37,7 @@ export interface ProcessModelOutcome {
 
 export interface ProcessInfrastructureFailure {
   kind: 'infrastructure-failure'
-  reason: 'protocol'
+  reason: 'protocol' | 'timeout'
   detail: string
   partialOutput?: string
 }
@@ -97,17 +97,25 @@ export async function executeProcessModelAttempt(
       stderr += chunk
     })
 
-    function failProtocol(error: unknown): void {
+    function failInfrastructure(reason: ProcessInfrastructureFailure['reason'], detail: string): void {
       if (failure !== undefined) return
       failure = {
         kind: 'infrastructure-failure',
-        reason: 'protocol',
-        detail: errorDetail(error),
+        reason,
+        detail,
         ...(stdout.length === 0 ? {} : { partialOutput: stdout }),
       }
       child.stdin.end()
       if (child.exitCode === null && child.signalCode === null) child.kill()
     }
+
+    function failProtocol(error: unknown): void {
+      failInfrastructure('protocol', errorDetail(error))
+    }
+
+    const timeout = setTimeout(() => {
+      failInfrastructure('timeout', `Process model executor exceeded timeout of ${input.timeoutMs}ms`)
+    }, input.timeoutMs)
 
     async function handleLine(line: string): Promise<void> {
       if (terminal !== undefined) {
@@ -157,6 +165,7 @@ export async function executeProcessModelAttempt(
 
     child.once('error', reject)
     child.once('close', code => {
+      clearTimeout(timeout)
       void processing.then(() => {
         if (failure !== undefined) {
           resolve(failure)
