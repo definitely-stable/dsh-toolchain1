@@ -14,7 +14,8 @@ const DSH_PROFILE = 'web'
 const UPSTREAM_COMMIT = 'b150a551b8d465e31e418e1b2eaf5e79bbb7d28e'
 const FIXTURE_SCHEMA = 'dsh-toolchain-m2-fixture-v1'
 const FIXTURE_VERSION = 'rc2-web-v1'
-const CAPTURE_MARKER = 'M2_FIXTURE_CAPTURE '
+const CAPTURE_MARKER = 'M2_FIXTURE_CAPTURE'
+const CAPTURE_CHUNK_SIZE = 6_000
 const GENERATION_POLICY = 'registry-artifact-production-acquisition-v1'
 const SANITIZATION_POLICY = 'drop-evidence-location-v1'
 
@@ -106,78 +107,55 @@ async function loadProductionModules() {
   }
 }
 
-async function acquireOne(modules, label) {
-  const root = await mkdtemp(join(tmpdir(), `dsh-toolchain-m2-${label}-`))
-  const runner = join(root, 'runner')
-  const dshHome = join(root, 'dsh-home')
+async function acquireHome(modules, dshPackageRoot, dshHome) {
   const env = {
     ...process.env,
     CI: 'true',
     COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
     DSH_HOME: dshHome,
   }
+  const digest = modules.createNodeSha256Port()
+  const targetAcquisition = modules.createDshFilesystemTargetAcquisition({ digest, env })
+  const contractAcquisition = modules.createDshContractFilesystemAcquisition({ digest })
+  const kernel = modules.createApplicationKernel({
+    targetAcquisition,
+    contractAcquisition,
+    digest,
+    now: () => '1970-01-01T00:00:00.000Z',
+  })
+  const request = { profile: DSH_PROFILE, dshHome, dshPackageRoot }
+  const { snapshot } = await kernel.resolveTarget(request)
+  assert.equal(snapshot.dsh.name, DSH_PACKAGE)
+  assert.equal(snapshot.dsh.version, DSH_VERSION)
+  assert.equal(snapshot.profile.name, DSH_PROFILE)
 
-  try {
-    await mkdir(runner, { recursive: true })
-    await writeFile(join(runner, 'package.json'), '{"private":true}\n')
-    run('pnpm', ['add', '--save-exact', '--ignore-scripts', `${DSH_PACKAGE}@${DSH_VERSION}`], {
-      cwd: runner,
-      env,
-    })
-    run('pnpm', ['exec', 'dsh', '--profile', DSH_PROFILE, '--dump-config'], {
-      cwd: runner,
-      env,
-      timeout: 180_000,
-    })
+  const acquired = await contractAcquisition.acquire(snapshot)
+  const rawIndex = await modules.createContractIndex(
+    snapshot.fingerprint,
+    acquired.evidence,
+    acquired.contracts,
+    digest,
+  )
+  const targetFacts = sanitizeTargetFacts(snapshot)
+  const contractFacts = sanitizeContractFacts(acquired)
+  const sanitizedIndex = await modules.createContractIndex(
+    snapshot.fingerprint,
+    contractFacts.evidence,
+    contractFacts.contracts,
+    digest,
+  )
+  assert.equal(
+    sanitizedIndex.fingerprint,
+    rawIndex.fingerprint,
+    'Removing non-semantic evidence locations changed the Contract Index identity',
+  )
 
-    const dshPackageRoot = join(runner, 'node_modules', '@deepseek-ai', 'dsh')
-    const digest = modules.createNodeSha256Port()
-    const targetAcquisition = modules.createDshFilesystemTargetAcquisition({ digest, env })
-    const contractAcquisition = modules.createDshContractFilesystemAcquisition({ digest })
-    const kernel = modules.createApplicationKernel({
-      targetAcquisition,
-      contractAcquisition,
-      digest,
-      now: () => '1970-01-01T00:00:00.000Z',
-    })
-    const request = { profile: DSH_PROFILE, dshHome, dshPackageRoot }
-    const { snapshot } = await kernel.resolveTarget(request)
-    assert.equal(snapshot.dsh.name, DSH_PACKAGE)
-    assert.equal(snapshot.dsh.version, DSH_VERSION)
-    assert.equal(snapshot.profile.name, DSH_PROFILE)
-
-    const acquired = await contractAcquisition.acquire(snapshot)
-    const rawIndex = await modules.createContractIndex(
-      snapshot.fingerprint,
-      acquired.evidence,
-      acquired.contracts,
-      digest,
-    )
-    const targetFacts = sanitizeTargetFacts(snapshot)
-    const contractFacts = sanitizeContractFacts(acquired)
-    const sanitizedIndex = await modules.createContractIndex(
-      snapshot.fingerprint,
-      contractFacts.evidence,
-      contractFacts.contracts,
-      digest,
-    )
-    assert.equal(
-      sanitizedIndex.fingerprint,
-      rawIndex.fingerprint,
-      'Removing non-semantic evidence locations changed the Contract Index identity',
-    )
-
-    const lockfile = await readFile(join(runner, 'pnpm-lock.yaml'), 'utf8')
-    return {
-      targetFacts,
-      contractFacts,
-      targetFingerprint: snapshot.fingerprint,
-      contractIndexFingerprint: rawIndex.fingerprint,
-      lockfileSha256: sha256Utf8(lockfile),
-      packages: packageInventory(contractFacts.contracts),
-    }
-  } finally {
-    await rm(root, { recursive: true, force: true })
+  return {
+    targetFacts,
+    contractFacts,
+    targetFingerprint: snapshot.fingerprint,
+    contractIndexFingerprint: rawIndex.fingerprint,
+    packages: packageInventory(contractFacts.contracts),
   }
 }
 
@@ -189,47 +167,79 @@ async function toolchainCommit() {
 
 async function createFixture() {
   const modules = await loadProductionModules()
-  const first = await acquireOne(modules, 'a')
-  const second = await acquireOne(modules, 'b')
-
-  assert.equal(second.targetFingerprint, first.targetFingerprint, 'Equivalent Web targets produced different target fingerprints')
-  assert.equal(second.contractIndexFingerprint, first.contractIndexFingerprint, 'Equivalent Web targets produced different index fingerprints')
-  assert.deepEqual(second.targetFacts, first.targetFacts, 'Sanitized target facts depend on the temporary root')
-  assert.deepEqual(second.contractFacts, first.contractFacts, 'Sanitized contract facts depend on the temporary root')
-  assert.deepEqual(second.packages, first.packages, 'Resolved contract package inventory depends on the temporary root')
-
-  const generatedAt = process.env.M2_FIXTURE_GENERATED_AT?.trim() || new Date().toISOString()
-  const manifest = {
-    schema: FIXTURE_SCHEMA,
-    fixtureVersion: FIXTURE_VERSION,
-    generatedAt,
-    canonicalTarget: {
-      package: DSH_PACKAGE,
-      version: DSH_VERSION,
-      profile: DSH_PROFILE,
-      upstreamDocumentationCommit: UPSTREAM_COMMIT,
-    },
-    generator: {
-      toolchainCommit: await toolchainCommit(),
-      nodeVersion: process.versions.node,
-      platform: process.platform,
-      arch: process.arch,
-      pnpmVersion: run('pnpm', ['--version'], { cwd: repositoryRoot, timeout: 30_000 }),
-      generationPolicy: GENERATION_POLICY,
-      sanitizationPolicy: SANITIZATION_POLICY,
-    },
-    source: {
-      lockfileSha256: first.lockfileSha256,
-    },
-    expected: {
-      targetFingerprint: first.targetFingerprint,
-      contractIndexFingerprint: first.contractIndexFingerprint,
-      contractCount: first.contractFacts.contracts.length,
-      evidenceCount: first.contractFacts.evidence.length,
-    },
-    packages: first.packages,
+  const root = await mkdtemp(join(tmpdir(), 'dsh-toolchain-m2-fixture-'))
+  const runner = join(root, 'runner')
+  const firstHome = join(root, 'home-a')
+  const secondHome = join(root, 'home-b')
+  const installEnv = {
+    ...process.env,
+    CI: 'true',
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
+    DSH_HOME: firstHome,
   }
-  return { manifest, targetFacts: first.targetFacts, contractFacts: first.contractFacts }
+
+  try {
+    await mkdir(runner, { recursive: true })
+    await writeFile(join(runner, 'package.json'), '{"private":true}\n')
+    run('pnpm', ['add', '--save-exact', '--ignore-scripts', `${DSH_PACKAGE}@${DSH_VERSION}`], {
+      cwd: runner,
+      env: installEnv,
+    })
+
+    for (const dshHome of [firstHome, secondHome]) {
+      run('pnpm', ['exec', 'dsh', '--profile', DSH_PROFILE, '--dump-config'], {
+        cwd: runner,
+        env: { ...installEnv, DSH_HOME: dshHome },
+        timeout: 180_000,
+      })
+    }
+
+    const dshPackageRoot = join(runner, 'node_modules', '@deepseek-ai', 'dsh')
+    const first = await acquireHome(modules, dshPackageRoot, firstHome)
+    const second = await acquireHome(modules, dshPackageRoot, secondHome)
+
+    assert.equal(second.targetFingerprint, first.targetFingerprint, 'Equivalent Web homes produced different target fingerprints')
+    assert.equal(second.contractIndexFingerprint, first.contractIndexFingerprint, 'Equivalent Web homes produced different index fingerprints')
+    assert.deepEqual(second.targetFacts, first.targetFacts, 'Sanitized target facts depend on DSH_HOME')
+    assert.deepEqual(second.contractFacts, first.contractFacts, 'Sanitized contract facts depend on DSH_HOME')
+    assert.deepEqual(second.packages, first.packages, 'Resolved contract package inventory depends on DSH_HOME')
+
+    const lockfile = await readFile(join(runner, 'pnpm-lock.yaml'), 'utf8')
+    const generatedAt = process.env.M2_FIXTURE_GENERATED_AT?.trim() || new Date().toISOString()
+    const manifest = {
+      schema: FIXTURE_SCHEMA,
+      fixtureVersion: FIXTURE_VERSION,
+      generatedAt,
+      canonicalTarget: {
+        package: DSH_PACKAGE,
+        version: DSH_VERSION,
+        profile: DSH_PROFILE,
+        upstreamDocumentationCommit: UPSTREAM_COMMIT,
+      },
+      generator: {
+        toolchainCommit: await toolchainCommit(),
+        nodeVersion: process.versions.node,
+        platform: process.platform,
+        arch: process.arch,
+        pnpmVersion: run('pnpm', ['--version'], { cwd: repositoryRoot, timeout: 30_000 }),
+        generationPolicy: GENERATION_POLICY,
+        sanitizationPolicy: SANITIZATION_POLICY,
+      },
+      source: {
+        lockfileSha256: sha256Utf8(lockfile),
+      },
+      expected: {
+        targetFingerprint: first.targetFingerprint,
+        contractIndexFingerprint: first.contractIndexFingerprint,
+        contractCount: first.contractFacts.contracts.length,
+        evidenceCount: first.contractFacts.evidence.length,
+      },
+      packages: first.packages,
+    }
+    return { manifest, targetFacts: first.targetFacts, contractFacts: first.contractFacts }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 }
 
 async function writeFixture(outputDirectory, fixture) {
@@ -241,6 +251,17 @@ async function writeFixture(outputDirectory, fixture) {
   ])
 }
 
+function printCapture(fixture) {
+  const encoded = Buffer.from(JSON.stringify(fixture), 'utf8').toString('base64')
+  const count = Math.ceil(encoded.length / CAPTURE_CHUNK_SIZE)
+  for (let index = 0; index < count; index += 1) {
+    const sequence = String(index + 1).padStart(4, '0')
+    const total = String(count).padStart(4, '0')
+    const chunk = encoded.slice(index * CAPTURE_CHUNK_SIZE, (index + 1) * CAPTURE_CHUNK_SIZE)
+    process.stdout.write(`${CAPTURE_MARKER} ${sequence}/${total} ${chunk}\n`)
+  }
+}
+
 async function main() {
   const stdout = process.argv.includes('--stdout')
   const outputArgument = process.argv.find(argument => argument.startsWith('--output='))
@@ -249,7 +270,7 @@ async function main() {
     : resolve(repositoryRoot, outputArgument.slice('--output='.length))
   const fixture = await createFixture()
   if (stdout) {
-    process.stdout.write(`${CAPTURE_MARKER}${Buffer.from(JSON.stringify(fixture), 'utf8').toString('base64')}\n`)
+    printCapture(fixture)
     return
   }
   await writeFixture(outputDirectory, fixture)
