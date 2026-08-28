@@ -214,6 +214,7 @@ async function buildFixture() {
     )
     const resourceRef = await jsonRef(resourceReceipt)
     const rawAnswer = await createInlineContentRef('Use the frozen exact-target API.', 'text/plain', 'utf8-bytes-v1', sha256)
+    const providerMetadata = await jsonRef({ completionId: `completion-${index}`, finishReason: 'stop', inputTokens: 100, outputTokens: 50 })
 
     runs.push({
       taskId: entry.taskId,
@@ -233,6 +234,7 @@ async function buildFixture() {
           resourceReceipt: resourceRef,
         },
         rawAnswer,
+        providerMetadata,
         parsedApiClaims: [],
         taskSuccess: 'SUCCESS',
       }],
@@ -278,6 +280,13 @@ describe('M2.3 agent evaluation v2 integrity', () => {
     const fresh = await buildFixture()
     ;(firstAttempt(fresh.result).executionEvidence as JsonObject).trace = 'f'.repeat(64)
     await expect(validateAgentV2ResultAgainstDefinition(fresh.definition, fresh.result, sha256)).rejects.toThrow(/content|evidence|object/i)
+  })
+
+  it('rejects tampered retained provider-native completion metadata', async () => {
+    const { definition, result } = await buildFixture()
+    const providerMetadata = firstAttempt(result).providerMetadata as JsonObject
+    providerMetadata.inline = `${providerMetadata.inline as string} `
+    await expect(validateAgentV2ResultAgainstDefinition(definition, result, sha256)).rejects.toThrow(/provider|metadata|hash|byte|content/i)
   })
 
   it('rejects a re-hashable trace or receipt that is bound to another RunControl', async () => {
