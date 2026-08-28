@@ -9,6 +9,7 @@ const SUCCESS_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/succ
 const TOOL_CALL_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/tool-call.mjs', import.meta.url))
 const MALFORMED_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/malformed.mjs', import.meta.url))
 const FORBIDDEN_EVIDENCE_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/forbidden-evidence.mjs', import.meta.url))
+const TIMEOUT_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/timeout.mjs', import.meta.url))
 
 function modelEnvelope(tools: readonly ModelVisibleTool[] = []): ModelEnvelope {
   return {
@@ -122,6 +123,21 @@ describe('M2.3 process model executor', () => {
     expect(result).toMatchObject({
       kind: 'infrastructure-failure',
       reason: 'protocol',
+    })
+  })
+
+  it('terminates a late child by the runner-owned timeout before accepting its answer', async () => {
+    const result = await executeProcessModelAttempt({
+      ...processInput(TIMEOUT_EXECUTOR, modelEnvelope()),
+      timeoutMs: 25,
+      dispatchToolCall: async () => {
+        throw new Error('timeout fixture must not request tools')
+      },
+    })
+
+    expect(result).toMatchObject({
+      kind: 'infrastructure-failure',
+      reason: 'timeout',
     })
   })
 })
