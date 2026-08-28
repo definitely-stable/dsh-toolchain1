@@ -87,7 +87,7 @@ export interface ProcessModelOutcomeEvidenceRecord extends ProcessAttemptEvidenc
 
 export interface ProcessInfrastructureFailureEvidenceRecord extends ProcessAttemptEvidenceBase {
   readonly outcome: 'infrastructure-failure'
-  readonly reason: 'runner-infrastructure'
+  readonly reason: 'provider-transport' | 'tool-transport' | 'runner-infrastructure'
   readonly qualityIndependent: true
   readonly partialOutput?: ContentRef
   readonly detail: string
@@ -282,12 +282,22 @@ export async function executeProcessAttemptWithEvidence(
     }
   }
 
-  const retainedOutput = processResult.partialOutput === undefined && processResult.stderr === undefined
+  const retainedOutput = (
+    processResult.partialOutput === undefined
+    && processResult.stderr === undefined
+    && processResult.providerMetadata === undefined
+  )
     ? undefined
     : await jsonRef({
       stdout: processResult.partialOutput ?? '',
       stderr: processResult.stderr ?? '',
+      ...(processResult.providerMetadata === undefined
+        ? {}
+        : { providerMetadata: processResult.providerMetadata }),
     }, input.sha256)
+  const retryReason = processResult.reason === 'provider-transport' || processResult.reason === 'tool-transport'
+    ? processResult.reason
+    : 'runner-infrastructure'
   return {
     frozen,
     attempt: {
@@ -295,7 +305,7 @@ export async function executeProcessAttemptWithEvidence(
       ...timestamps,
       outcome: 'infrastructure-failure',
       executionEvidence,
-      reason: 'runner-infrastructure',
+      reason: retryReason,
       qualityIndependent: true,
       ...(retainedOutput === undefined ? {} : { partialOutput: retainedOutput }),
       detail: processFailureDetail(processResult),
