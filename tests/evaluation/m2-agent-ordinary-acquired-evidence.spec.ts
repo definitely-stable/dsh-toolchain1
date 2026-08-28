@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createNodeSha256Port } from '../../src/acquisition/node-sha256.js'
+import { captureOrdinaryWorkspaceFromAcquiredEvidence } from '../../scripts/m2-ordinary-acquired-evidence.mjs'
 import { validateOrdinaryWorkspace } from './m2-agent-ordinary-workspace.js'
-import { captureOrdinaryWorkspaceFromAcquiredEvidence } from '../../scripts/m2-ordinary-evidence.mjs'
 
 const roots: string[] = []
 
