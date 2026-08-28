@@ -37,7 +37,7 @@ jobs:
       - name: Build production acquisition
         run: pnpm build
 
-      - name: Regenerate exact rc2 fixture
+      - name: Regenerate exact rc2 fixture after policy correction
         run: node scripts/generate-m2-evaluation-fixture.mjs
 
       - name: Commit generated fixture
