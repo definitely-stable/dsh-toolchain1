@@ -12,6 +12,8 @@ const FORBIDDEN_EVIDENCE_EXECUTOR = fileURLToPath(new URL('./fixtures/process-ex
 const TIMEOUT_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/timeout.mjs', import.meta.url))
 const NONZERO_EXIT_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/nonzero-exit.mjs', import.meta.url))
 const OUTPUT_OVERFLOW_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/output-overflow.mjs', import.meta.url))
+const ENVIRONMENT_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/environment.mjs', import.meta.url))
+const DUPLICATE_FINAL_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/duplicate-final.mjs', import.meta.url))
 
 function modelEnvelope(tools: readonly ModelVisibleTool[] = []): ModelEnvelope {
   return {
@@ -219,5 +221,45 @@ describe('M2.3 process model executor', () => {
     if (result.kind === 'infrastructure-failure' && result.stderr !== undefined) {
       expect(Buffer.byteLength(result.stderr, 'utf8')).toBeLessThanOrEqual(maxStderrBytes)
     }
+  })
+
+  it('passes only the runner allowlist environment and does not inherit parent secrets', async () => {
+    const previous = process.env.DSH_PARENT_SECRET
+    process.env.DSH_PARENT_SECRET = 'must-not-leak'
+    try {
+      const result = await executeProcessModelAttempt({
+        ...processInput(ENVIRONMENT_EXECUTOR, modelEnvelope()),
+        environment: {
+          PATH: process.env.PATH ?? '',
+          DSH_VISIBLE: 'runner-visible',
+        },
+        dispatchToolCall: async () => {
+          throw new Error('environment fixture must not request tools')
+        },
+      })
+
+      expect(result).toMatchObject({
+        kind: 'model-outcome',
+        finalAnswer: 'runner-visible|absent',
+      })
+    } finally {
+      if (previous === undefined) delete process.env.DSH_PARENT_SECRET
+      else process.env.DSH_PARENT_SECRET = previous
+    }
+  })
+
+  it('rejects a second terminal final instead of accepting the first answer', async () => {
+    const result = await executeProcessModelAttempt({
+      ...processInput(DUPLICATE_FINAL_EXECUTOR, modelEnvelope()),
+      dispatchToolCall: async () => {
+        throw new Error('duplicate-final fixture must not request tools')
+      },
+    })
+
+    expect(result).toMatchObject({
+      kind: 'infrastructure-failure',
+      reason: 'protocol',
+      detail: expect.stringMatching(/after terminal final/i),
+    })
   })
 })
