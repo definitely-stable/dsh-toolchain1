@@ -102,7 +102,7 @@ M2.2 exit criteria:
 
 ### M2.3 — Frozen retrieval evaluation / milestone exit
 
-**Status:** deterministic evaluation infrastructure and first rc.2 baseline implemented on PR #35; controlled H1 agent evidence remains pending, so M2 is **not complete**.
+**Status:** deterministic evaluation infrastructure and first rc.2 baseline implemented; controlled H1 agent evidence remains pending, so M2 is **not complete**.
 
 Implemented evaluation boundary:
 - artifact-grade frozen `@deepseek-ai/dsh@0.1.1-rc.2` Web target and complete normalized Contract Index are fixed before corpus/scoring;
@@ -123,7 +123,7 @@ Measured R1 baseline before any retrieval tuning:
 - indirect: **0%**;
 - forbidden-hit rate@5: **20%**.
 
-The acquisition/evidence fixture contains the required authoritative facts for the answerable R1 tasks, so the natural-language/indirect failures are measured **retrieval gaps**, not missing-contract excuses. PR #35 intentionally does not alter production ranking after observing this result.
+The acquisition/evidence fixture contains the required authoritative facts for the answerable R1 tasks, so the natural-language/indirect failures are measured **retrieval gaps**, not missing-contract excuses. The frozen evaluation intentionally does not alter production ranking after observing this result.
 
 Agent-level exit protocol:
 - A = model memory reference;
@@ -132,7 +132,7 @@ Agent-level exit protocol:
 - `VALID | INVALID | UNKNOWN` oracle semantics are frozen; UNKNOWN is never automatically INVALID;
 - P0 is public/non-scoring harness calibration;
 - H1 cannot run until P0 is complete, MCID and task-success non-inferiority margin are frozen, the hidden H1 task set is hash-committed and the exact experiment identities are content-addressed;
-- model-outcome retries are forbidden; bounded infrastructure retries and every attempt are recorded;
+- model-outcome retries are forbidden; `maxInfrastructureRetries = N` permits N retries after the initial attempt (at most `1 + N` attempts total), every attempt is retained, and an exhausted infrastructure-only run remains `INCONCLUSIVE`;
 - H1 result files are created only from an actual run, never synthesized to satisfy repository state.
 
 M2 exit criteria:
