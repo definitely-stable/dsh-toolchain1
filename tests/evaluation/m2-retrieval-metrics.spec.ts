@@ -76,18 +76,18 @@ function expectInvalid(tasks: readonly M2RetrievalTask[], pattern: RegExp): void
 }
 
 describe('M2.3 retrieval metric arithmetic', () => {
-  it('computes macro top-k recall, MRR, no-result correctness, and explicit wrong-contract rate', () => {
+  it('computes macro top-k success, MRR, no-result correctness, and explicit forbidden-hit rate', () => {
     const metrics = calculateM2RetrievalMetrics(rankedResults())
 
     expect(metrics.taskCount).toBe(6)
     expect(metrics.answerableTaskCount).toBe(5)
     expect(metrics.noResultTaskCount).toBe(1)
-    expect(metrics.recallAt1).toBeCloseTo(2 / 5)
-    expect(metrics.recallAt3).toBeCloseTo(3 / 5)
-    expect(metrics.recallAt5).toBeCloseTo(4 / 5)
+    expect(metrics.successAt1).toBeCloseTo(2 / 5)
+    expect(metrics.successAt3).toBeCloseTo(3 / 5)
+    expect(metrics.successAt5).toBeCloseTo(4 / 5)
     expect(metrics.meanReciprocalRank).toBeCloseTo((1 + 1 / 2 + 1 / 5 + 0 + 1) / 5)
     expect(metrics.noResultCorrectness).toBe(1)
-    expect(metrics.wrongContractRate).toBeCloseTo(1 / 2)
+    expect(metrics.forbiddenHitRateAt5).toBeCloseTo(1 / 2)
   })
 
   it('keeps category failures visible instead of letting exact-symbol tasks hide them', () => {
@@ -95,24 +95,24 @@ describe('M2.3 retrieval metric arithmetic', () => {
 
     expect(metrics.byCategory['exact-symbol']).toMatchObject({
       taskCount: 1,
-      recallAt1: 1,
+      successAt1: 1,
       meanReciprocalRank: 1,
     })
     expect(metrics.byCategory['natural-language']).toMatchObject({
       taskCount: 1,
-      recallAt1: 0,
-      recallAt3: 0,
-      recallAt5: 1,
+      successAt1: 0,
+      successAt3: 0,
+      successAt5: 1,
       meanReciprocalRank: 1 / 5,
     })
     expect(metrics.byCategory.indirect).toMatchObject({
       taskCount: 1,
-      recallAt5: 0,
+      successAt5: 0,
       meanReciprocalRank: 0,
     })
     expect(metrics.byCategory['no-result']).toMatchObject({
       taskCount: 1,
-      recallAt1: null,
+      successAt1: null,
       meanReciprocalRank: null,
       noResultCorrectness: 1,
     })
