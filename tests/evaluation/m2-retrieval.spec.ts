@@ -7,16 +7,24 @@ import {
   calculateM2RetrievalMetrics,
   type M2RankedTaskResult,
   type M2RetrievalMetrics,
+  type M2RetrievalTask,
 } from './m2-retrieval-metrics.js'
 
-function score(index: Awaited<ReturnType<typeof createFrozenM2RetrievalIndex>>): M2RankedTaskResult[] {
-  return M2_RETRIEVAL_R1.map(task => {
+function score(
+  index: Awaited<ReturnType<typeof createFrozenM2RetrievalIndex>>,
+  tasks: readonly M2RetrievalTask[] = M2_RETRIEVAL_R1,
+): M2RankedTaskResult[] {
+  return tasks.map(task => {
     const selection = searchContractIndex(index, task.query, undefined, 5)
     return Object.freeze({
       task,
       rankedContractIds: Object.freeze(selection.matches.map(match => match.id)),
     })
   })
+}
+
+function rankedByTask(results: readonly M2RankedTaskResult[]): ReadonlyMap<string, readonly string[]> {
+  return new Map(results.map(result => [result.task.id, result.rankedContractIds]))
 }
 
 function metricValues(metrics: M2RetrievalMetrics): number[] {
@@ -41,12 +49,16 @@ function metricValues(metrics: M2RetrievalMetrics): number[] {
 describe('M2.3 frozen R1 production retrieval', () => {
   it('runs only the production scorer deterministically with limit five', async () => {
     const index = await createFrozenM2RetrievalIndex()
+    expect(index.targetFingerprint).toBe(M2_RETRIEVAL_TARGET.targetFingerprint)
+    expect(index.fingerprint).toBe(M2_RETRIEVAL_TARGET.contractIndexFingerprint)
+
     const first = score(index)
     const second = score(index)
+    expect(rankedByTask(second)).toEqual(rankedByTask(first))
 
-    expect(second.map(result => result.rankedContractIds)).toEqual(
-      first.map(result => result.rankedContractIds),
-    )
+    const reversed = score(index, [...M2_RETRIEVAL_R1].reverse())
+    expect(rankedByTask(reversed)).toEqual(rankedByTask(first))
+
     for (const result of first) {
       expect(result.rankedContractIds.length).toBeLessThanOrEqual(5)
       expect(new Set(result.rankedContractIds).size).toBe(result.rankedContractIds.length)
@@ -58,15 +70,5 @@ describe('M2.3 frozen R1 production retrieval', () => {
       expect(value).toBeGreaterThanOrEqual(0)
       expect(value).toBeLessThanOrEqual(1)
     }
-
-    throw new Error(`M2_RETRIEVAL_CAPTURE_V1=${JSON.stringify({
-      targetFingerprint: M2_RETRIEVAL_TARGET.targetFingerprint,
-      contractIndexFingerprint: index.fingerprint,
-      results: first.map(result => ({
-        taskId: result.task.id,
-        rankedContractIds: result.rankedContractIds,
-      })),
-      metrics,
-    })}`)
   })
 })
