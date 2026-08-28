@@ -139,13 +139,14 @@ Files:
 Files:
 - `tests/evaluation/m2-agent-eval-integrity.ts`
 - `tests/evaluation/m2-agent-eval-integrity.spec.ts`
+- `tests/evaluation/m2-agent-eval-retry-semantics.spec.ts`
 - `docs/evaluation/m2/agent-eval-v1.definition.json` — **create only after H1 commitment is valid**.
 - result file — **create only after an actual H1 run; never fabricate it**.
 
 - [x] RED tests require canonical, order-independent hashing and sensitivity to target/index/corpus/tool-schema/prompt/oracle/resource/retry/run-order identities.
 - [x] Pure evaluation-only canonical hashing uses the existing SHA-256 port pattern; no production protocol identity was added.
 - [x] Deterministic balanced scheduling provides exactly three trials for every task/arm; the task remains the analysis unit.
-- [x] Bounded infrastructure retries are separated from model outcomes; model-outcome retry is forbidden and attempts are contiguous/retained.
+- [x] Bounded infrastructure retries are separated from model outcomes; `maxInfrastructureRetries = N` permits N retries after the initial attempt (at most `1 + N` attempts total), model-outcome retry is forbidden, and every attempt is contiguous/retained.
 - [x] Fail-closed commitment validator requires `COMMITTED`, `runAllowed=true`, valid task-set SHA-256, positive task count and every preregistration prerequisite.
 - [x] Recorded results are cryptographically bound to the exact definition hash and reject post-unblinding changes to preregistered fields.
 - [x] Result run coverage must match the frozen schedule one-for-one and in order; missing, extra, duplicate/reordered task-arm-trial entries and task-count drift are rejected.
@@ -157,7 +158,7 @@ Files:
 
 ## Task 8 — Upstream drift canary and governance
 
-**Status:** documentation/metadata synchronization implemented; final review/merge verification pending.
+**Status:** implementation and governance metadata are synchronized; exact-head review/CI and merge state live in PR #35 rather than being self-attested by this pre-merge plan.
 
 Files/metadata:
 - `docs/evaluation/m2/upstream-drift.md`
@@ -170,8 +171,7 @@ Files/metadata:
 - [x] Keep alpha.1 lifecycle evidence separate from rc.2 scores and route `patchReload` target identity to Issue #33.
 - [x] Update roadmap from stale M2.2/M2.3 state to measured deterministic infrastructure plus pending H1 evidence.
 - [x] Update Issue #33, Issue #34 and PR #35 to current semantics/status.
-- [ ] Run final full CI on the exact governance HEAD and perform corrective PR review.
-- [ ] Merge PR #35 only if final review/CI are clean; merging infrastructure must not close #34/#28.
+- Exact merge eligibility is determined from the immutable PR head plus its required CI/review evidence. This historical plan intentionally does not mark its own future merge complete.
 
 ## Completion states
 
