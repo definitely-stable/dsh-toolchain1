@@ -75,41 +75,6 @@ jobs:
       - name: Resolve read-only targets across DSH trains
         run: node scripts/smoke-target-resolve.mjs
 
-  m2-fixture-capture:
-    name: m2.3 one-time rc2 Web fixture capture
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-
-      - name: Install pnpm
-        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
-        with:
-          install: false
-
-      - name: Set up Node
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
-        with:
-          node-version: '24.19.0'
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-          package-manager-cache: false
-
-      - name: Install frozen dependency graph
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Build production acquisition modules
-        run: pnpm build
-
-      - name: Capture exact rc2 Web evaluation fixture
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
-          M2_FIXTURE_GENERATED_AT: '2026-08-28T00:00:00.000Z'
-        run: node scripts/generate-m2-evaluation-fixture.mjs --stdout
-
   node-compat:
     name: node compatibility / ${{ matrix.node }}
     runs-on: ubuntu-24.04
