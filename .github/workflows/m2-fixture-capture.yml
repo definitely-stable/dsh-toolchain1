@@ -53,9 +53,86 @@ jobs:
         run: node scripts/generate-m2-evaluation-fixture.mjs --output=.artifacts/m2-fixture
 
       - name: Upload exact rc2 Web evaluation fixture
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: m2-rc2-web-fixture-${{ github.sha }}
           path: .artifacts/m2-fixture/*.json
           if-no-files-found: error
           retention-days: 1
+
+  freeze:
+    name: freeze verified rc2 Web fixture
+    needs: capture
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+
+      - name: Download captured fixture
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: m2-rc2-web-fixture-${{ github.sha }}
+          path: .artifacts/m2-fixture
+
+      - name: Verify frozen fixture hard gates
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { createHash } from 'node:crypto'
+          import { readFile, readdir } from 'node:fs/promises'
+
+          const root = '.artifacts/m2-fixture'
+          const files = (await readdir(root)).sort()
+          assert.deepEqual(files, ['contract-facts.json', 'manifest.json', 'target-facts.json'])
+
+          const bytes = async name => readFile(`${root}/${name}`)
+          const json = async name => JSON.parse((await bytes(name)).toString('utf8'))
+          const sha256 = value => createHash('sha256').update(value).digest('hex')
+
+          const manifest = await json('manifest.json')
+          assert.equal(manifest.schema, 'dsh-toolchain-m2-fixture-v1')
+          assert.equal(manifest.fixtureVersion, 'rc2-web-v1')
+          assert.equal(manifest.canonicalTarget.package, '@deepseek-ai/dsh')
+          assert.equal(manifest.canonicalTarget.version, '0.1.1-rc.2')
+          assert.equal(manifest.canonicalTarget.profile, 'web')
+          assert.equal(manifest.generator.toolchainCommit, process.env.EXPECTED_HEAD_SHA)
+          assert.equal(manifest.expected.targetFingerprint, 'dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe')
+          assert.equal(manifest.expected.contractIndexFingerprint, 'dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2')
+          assert.equal(manifest.expected.contractCount, 184)
+          assert.equal(manifest.expected.evidenceCount, 993)
+          assert.equal(manifest.packages.length, 184)
+          assert.equal(sha256(await bytes('target-facts.json')), 'ab28341a81a40d7d544a55cd749ff134d30525faa2a17c3257a05f3fd9362722')
+          assert.equal(sha256(await bytes('contract-facts.json')), '664590ac578fe4034f3d90fd49880a74e5149785f72162636dc62cbd1dc61a6f')
+          NODE
+
+      - name: Commit only the verified frozen receipt
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          test ! -e tests/evaluation/fixtures/m2/rc2-web-v1
+          mkdir -p tests/evaluation/fixtures/m2/rc2-web-v1
+          cp .artifacts/m2-fixture/manifest.json tests/evaluation/fixtures/m2/rc2-web-v1/manifest.json
+          cp .artifacts/m2-fixture/target-facts.json tests/evaluation/fixtures/m2/rc2-web-v1/target-facts.json
+          cp .artifacts/m2-fixture/contract-facts.json tests/evaluation/fixtures/m2/rc2-web-v1/contract-facts.json
+          git add -- tests/evaluation/fixtures/m2/rc2-web-v1/manifest.json tests/evaluation/fixtures/m2/rc2-web-v1/target-facts.json tests/evaluation/fixtures/m2/rc2-web-v1/contract-facts.json
+          test "$(git diff --cached --name-only | wc -l)" -eq 3
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'test(m2.3): freeze rc2 Web production fixture'
+          git push origin "HEAD:refs/heads/${HEAD_REF}"
