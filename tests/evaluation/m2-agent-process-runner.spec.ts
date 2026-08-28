@@ -147,6 +147,9 @@ describe('M2.3 process attempt runner integration', () => {
     })
 
     expect(result.attempt.outcome).toBe('model-outcome')
+    if (result.attempt.outcome !== 'model-outcome') {
+      throw new Error(`expected model outcome, got ${result.attempt.outcome}`)
+    }
     expect(result.attempt.taskSuccess).toBe('UNKNOWN')
     expect(result.attempt.parsedApiClaims).toEqual([])
     expect(result.attempt.rawAnswer.inline).toContain('package:@deepseek-ai/dsh-tools')
