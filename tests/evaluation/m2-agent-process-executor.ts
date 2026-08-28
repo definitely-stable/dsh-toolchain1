@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 
+import { canonicalizeEvaluationJson } from './m2-agent-eval-integrity.js'
 import {
   validateExecutorModelOutcome,
   type ModelEnvelope,
@@ -287,6 +288,6 @@ export async function executeProcessModelAttempt(
       }).catch(reject)
     })
 
-    child.stdin.write(`${JSON.stringify({ type: 'start', envelope: input.envelope })}\n`)
+    child.stdin.write(`${canonicalizeEvaluationJson({ type: 'start', envelope: input.envelope })}\n`)
   })
 }
