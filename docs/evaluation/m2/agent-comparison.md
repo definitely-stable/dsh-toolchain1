@@ -54,7 +54,7 @@ After that boundary, H1 tasks, thresholds, oracle rules, arm semantics, trial ag
 
 Every task/arm uses the same global resource envelope. Each task/arm is executed exactly **three trials** using the deterministic balanced schedule derived from the preregistered seed. The **analysis unit is the task**. Trials measure stochastic consistency and are aggregated within each task/arm; they are not treated as independent task samples.
 
-Model-outcome retries are forbidden. Only bounded infrastructure retries are allowed, only for preregistered infrastructure classes such as provider transport, tool transport or runner infrastructure. Every attempt, including failed infrastructure attempts, must be retained. A retry never erases the original attempt.
+Model-outcome retries are forbidden. Only bounded infrastructure retries are allowed, only for preregistered infrastructure classes such as provider transport, tool transport or runner infrastructure. `maxInfrastructureRetries = N` means **N retries after the initial attempt**, so a run may contain at most `1 + N` attempts total. Every attempt, including failed infrastructure attempts, must be retained. A retry never erases the original attempt.
 
 A terminal `CALIBRATED`, `PASS`, or `NEEDS-IMPROVEMENT` result requires every frozen schedule entry to end in exactly one model outcome. If any scheduled run exhausts the allowed infrastructure path without a model outcome, the experiment evidence is **INCONCLUSIVE**. Infrastructure failure is never converted into a favorable model score.
 
