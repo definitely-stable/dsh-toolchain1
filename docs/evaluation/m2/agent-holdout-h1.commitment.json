@@ -1,0 +1,21 @@
+{
+  "schema": "dsh-toolchain-m2-agent-holdout-commitment-v1",
+  "datasetId": "H1",
+  "status": "NOT_COMMITTED",
+  "target": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.1.1-rc.2",
+    "profile": "web",
+    "targetFingerprint": "dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe",
+    "contractIndexFingerprint": "dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2"
+  },
+  "commitmentSha256": null,
+  "taskCount": null,
+  "runAllowed": false,
+  "prerequisites": {
+    "p0Completed": false,
+    "mcidFrozen": false,
+    "noninferiorityMarginFrozen": false,
+    "taskSetHashCommitted": false
+  }
+}
