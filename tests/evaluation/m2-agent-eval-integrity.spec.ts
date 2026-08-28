@@ -236,6 +236,8 @@ describe('M2.3 agent evaluation integrity', () => {
         outcome: 'model-outcome',
         startedAt: '2026-08-28T05:00:00.000Z',
         completedAt: '2026-08-28T05:00:10.000Z',
+        parsedApiClaims: [] as { classification: 'VALID' | 'INVALID' | 'UNKNOWN' }[],
+        taskSuccess: 'SUCCESS' as 'SUCCESS' | 'FAILURE' | 'UNKNOWN',
       }],
     }))
     const result = {
@@ -282,6 +284,8 @@ describe('M2.3 agent evaluation integrity', () => {
         outcome: 'model-outcome',
         startedAt: '2026-08-28T05:00:11.000Z',
         completedAt: '2026-08-28T05:00:20.000Z',
+        parsedApiClaims: [],
+        taskSuccess: 'SUCCESS',
       },
     ]
     await expect(validateAgentResultAgainstDefinition(
