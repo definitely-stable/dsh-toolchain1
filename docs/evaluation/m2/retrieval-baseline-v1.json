@@ -1,0 +1,118 @@
+{
+  "schema": "dsh-toolchain-m2-retrieval-baseline-v1",
+  "baselineId": "m2-retrieval-rc2-web-r1-v1",
+  "status": "historical-capability-evidence",
+  "capturedAt": "2026-08-28",
+  "productionBaseCommit": "d3162bd72bcd84ec8c422108be1e7c529a1a59f6",
+  "corpusFreezeCommit": "a5b9aef62b232654d46ea95a6e76e25fb518cb44",
+  "corpusVerificationCommit": "24d809bc313cde7f3c62133667d9892d2711def4",
+  "captureCommit": "841c0d3a2b5af1423150a5647fbd2fadace9b942",
+  "sourceRun": {
+    "workflow": "CI",
+    "runId": 33142745775,
+    "jobId": 98756971751,
+    "node": "24.19.0"
+  },
+  "target": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.1.1-rc.2",
+    "profile": "web",
+    "fingerprint": "dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe"
+  },
+  "contractIndex": {
+    "fingerprint": "dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2",
+    "contractCount": 184,
+    "evidenceCount": 993
+  },
+  "scorer": {
+    "function": "searchContractIndex",
+    "limit": 5,
+    "kinds": null,
+    "productionRankingChangedForEvaluation": false
+  },
+  "corpus": {
+    "id": "M2_RETRIEVAL_R1",
+    "taskCount": 36,
+    "categoryCounts": {
+      "exact-symbol": 8,
+      "package-api": 6,
+      "natural-language": 7,
+      "indirect": 6,
+      "ambiguous": 5,
+      "no-result": 4
+    }
+  },
+  "results": [
+    { "taskId": "exact-tools-runtime-scheduler", "rankedContractIds": ["package:@deepseek-ai/dsh-tools"] },
+    { "taskId": "exact-system-prompt", "rankedContractIds": ["package:@deepseek-ai/dsh-system-prompt"] },
+    { "taskId": "exact-approval-service", "rankedContractIds": ["package:@deepseek-ai/dsh-user-approval"] },
+    { "taskId": "exact-scope-parent-binding", "rankedContractIds": ["package:@deepseek-ai/dsh-scope"] },
+    { "taskId": "exact-subagent-runtime", "rankedContractIds": ["package:@deepseek-ai/dsh-subagent"] },
+    { "taskId": "exact-compaction-engine", "rankedContractIds": ["package:@deepseek-ai/dsh-compaction", "package:@deepseek-ai/dsh-compaction-basic"] },
+    { "taskId": "exact-session-query-engine", "rankedContractIds": ["package:@deepseek-ai/dsh-session-query", "package:@deepseek-ai/dsh-session-query-sqlite"] },
+    { "taskId": "exact-user-question-service", "rankedContractIds": ["package:@deepseek-ai/dsh-user-questions"] },
+    { "taskId": "package-tools-define-tool", "rankedContractIds": ["package:@deepseek-ai/dsh-tools"] },
+    { "taskId": "package-system-prompt-render", "rankedContractIds": ["package:@deepseek-ai/dsh-system-prompt"] },
+    { "taskId": "package-approval-set-policy", "rankedContractIds": ["package:@deepseek-ai/dsh-user-approval"] },
+    { "taskId": "package-scope-create", "rankedContractIds": ["package:@deepseek-ai/dsh-scope"] },
+    { "taskId": "package-subagent-depth", "rankedContractIds": ["package:@deepseek-ai/dsh-subagent"] },
+    { "taskId": "package-session-query-filter", "rankedContractIds": ["package:@deepseek-ai/dsh-session-query"] },
+    { "taskId": "natural-prompt-assemble-sections", "rankedContractIds": [] },
+    { "taskId": "natural-user-structured-question", "rankedContractIds": [] },
+    { "taskId": "natural-approval-risky-operation", "rankedContractIds": [] },
+    { "taskId": "natural-scope-child-parent", "rankedContractIds": [] },
+    { "taskId": "natural-subagent-max-depth", "rankedContractIds": [] },
+    { "taskId": "natural-compaction-checkpoint", "rankedContractIds": [] },
+    { "taskId": "natural-session-search-text", "rankedContractIds": [] },
+    { "taskId": "indirect-tools-validate-arguments", "rankedContractIds": [] },
+    { "taskId": "indirect-scope-chain", "rankedContractIds": [] },
+    { "taskId": "indirect-subagent-final-output", "rankedContractIds": [] },
+    { "taskId": "indirect-compaction-tool-pairing", "rankedContractIds": [] },
+    { "taskId": "indirect-session-search-documents", "rankedContractIds": [] },
+    { "taskId": "indirect-user-question-request", "rankedContractIds": [] },
+    { "taskId": "ambiguous-user-approval-service", "rankedContractIds": [] },
+    { "taskId": "ambiguous-session-query-sqlite", "rankedContractIds": ["package:@deepseek-ai/dsh-session-query-sqlite"] },
+    { "taskId": "ambiguous-subagent-in-process-run", "rankedContractIds": ["package:@deepseek-ai/dsh-subagent", "package:@deepseek-ai/dsh-subagent-in-process-driver"] },
+    { "taskId": "ambiguous-basic-compaction-engine", "rankedContractIds": ["package:@deepseek-ai/dsh-compaction-basic"] },
+    { "taskId": "ambiguous-tool-result-pruner", "rankedContractIds": ["package:@deepseek-ai/dsh-compaction-tool-result-pruner"] },
+    { "taskId": "no-result-profile-patch-reload", "rankedContractIds": [] },
+    { "taskId": "no-result-session-teleport", "rankedContractIds": [] },
+    { "taskId": "no-result-agent-transaction-rollback", "rankedContractIds": [] },
+    { "taskId": "no-result-tool-autopilot", "rankedContractIds": [] }
+  ],
+  "metrics": {
+    "taskCount": 36,
+    "answerableTaskCount": 32,
+    "noResultTaskCount": 4,
+    "successAt1": 0.53125,
+    "successAt3": 0.5625,
+    "successAt5": 0.5625,
+    "meanReciprocalRank": 0.546875,
+    "noResultCorrectness": 1,
+    "forbiddenHitRateAt5": 0.2,
+    "byCategory": {
+      "exact-symbol": { "taskCount": 8, "successAt1": 1, "successAt3": 1, "successAt5": 1, "meanReciprocalRank": 1, "noResultCorrectness": null, "forbiddenHitRateAt5": null },
+      "package-api": { "taskCount": 6, "successAt1": 1, "successAt3": 1, "successAt5": 1, "meanReciprocalRank": 1, "noResultCorrectness": null, "forbiddenHitRateAt5": null },
+      "natural-language": { "taskCount": 7, "successAt1": 0, "successAt3": 0, "successAt5": 0, "meanReciprocalRank": 0, "noResultCorrectness": null, "forbiddenHitRateAt5": null },
+      "indirect": { "taskCount": 6, "successAt1": 0, "successAt3": 0, "successAt5": 0, "meanReciprocalRank": 0, "noResultCorrectness": null, "forbiddenHitRateAt5": null },
+      "ambiguous": { "taskCount": 5, "successAt1": 0.6, "successAt3": 0.8, "successAt5": 0.8, "meanReciprocalRank": 0.7, "noResultCorrectness": null, "forbiddenHitRateAt5": 0.2 },
+      "no-result": { "taskCount": 4, "successAt1": null, "successAt3": null, "successAt5": null, "meanReciprocalRank": null, "noResultCorrectness": 1, "forbiddenHitRateAt5": null }
+    },
+    "byDomain": {
+      "tools": { "taskCount": 4, "answerableTaskCount": 3, "noResultTaskCount": 1, "successAt1": 0.6666666666666666, "successAt3": 0.6666666666666666, "successAt5": 0.6666666666666666, "meanReciprocalRank": 0.6666666666666666, "noResultCorrectness": 1, "forbiddenHitRateAt5": null },
+      "system-prompt": { "taskCount": 3, "answerableTaskCount": 3, "noResultTaskCount": 0, "successAt1": 0.6666666666666666, "successAt3": 0.6666666666666666, "successAt5": 0.6666666666666666, "meanReciprocalRank": 0.6666666666666666, "noResultCorrectness": null, "forbiddenHitRateAt5": null },
+      "approval": { "taskCount": 4, "answerableTaskCount": 4, "noResultTaskCount": 0, "successAt1": 0.5, "successAt3": 0.5, "successAt5": 0.5, "meanReciprocalRank": 0.5, "noResultCorrectness": null, "forbiddenHitRateAt5": 0 },
+      "scope": { "taskCount": 4, "answerableTaskCount": 4, "noResultTaskCount": 0, "successAt1": 0.5, "successAt3": 0.5, "successAt5": 0.5, "meanReciprocalRank": 0.5, "noResultCorrectness": null, "forbiddenHitRateAt5": null },
+      "subagent": { "taskCount": 6, "answerableTaskCount": 5, "noResultTaskCount": 1, "successAt1": 0.4, "successAt3": 0.6, "successAt5": 0.6, "meanReciprocalRank": 0.5, "noResultCorrectness": 1, "forbiddenHitRateAt5": 1 },
+      "compaction": { "taskCount": 5, "answerableTaskCount": 5, "noResultTaskCount": 0, "successAt1": 0.6, "successAt3": 0.6, "successAt5": 0.6, "meanReciprocalRank": 0.6, "noResultCorrectness": null, "forbiddenHitRateAt5": 0 },
+      "session-query": { "taskCount": 6, "answerableTaskCount": 5, "noResultTaskCount": 1, "successAt1": 0.6, "successAt3": 0.6, "successAt5": 0.6, "meanReciprocalRank": 0.6, "noResultCorrectness": 1, "forbiddenHitRateAt5": 0 },
+      "user-questions": { "taskCount": 3, "answerableTaskCount": 3, "noResultTaskCount": 0, "successAt1": 0.3333333333333333, "successAt3": 0.3333333333333333, "successAt5": 0.3333333333333333, "meanReciprocalRank": 0.3333333333333333, "noResultCorrectness": null, "forbiddenHitRateAt5": null },
+      "profile-lifecycle": { "taskCount": 1, "answerableTaskCount": 0, "noResultTaskCount": 1, "successAt1": null, "successAt3": null, "successAt5": null, "meanReciprocalRank": null, "noResultCorrectness": 1, "forbiddenHitRateAt5": null }
+    }
+  },
+  "policy": {
+    "immutableHistoricalEvidence": true,
+    "exactRankingIsRegressionContract": false,
+    "benchmarkDrivenRankingChangesAllowedInThisPr": false
+  }
+}
