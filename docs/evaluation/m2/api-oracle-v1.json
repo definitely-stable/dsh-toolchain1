@@ -1,0 +1,65 @@
+{
+  "schema": "dsh-toolchain-m2-api-oracle-v1",
+  "version": "api-oracle-v1",
+  "status": "FROZEN",
+  "target": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.1.1-rc.2",
+    "profile": "web",
+    "targetFingerprint": "dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe",
+    "contractIndexFingerprint": "dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2"
+  },
+  "authoritativeUniverse": {
+    "fixture": "tests/evaluation/fixtures/m2/rc2-web-v1",
+    "contractCount": 184,
+    "evidenceCount": 993,
+    "allowedEvidenceKinds": ["manifest", "type-declaration"],
+    "requiredStrengthForDeclarationClaims": "authoritative",
+    "derivation": "Use the complete frozen ContractIndex and its declaration-export facts. Do not add APIs from memory, latest upstream source, model output, or benchmark expectations."
+  },
+  "classifications": ["VALID", "INVALID", "UNKNOWN"],
+  "rules": {
+    "VALID": [
+      "A specific package/API claim is VALID when the named package contract exists in the frozen index and the claimed public symbol is present as a declaration-export fact backed by authoritative type-declaration evidence.",
+      "A package-presence/version claim is VALID when the package contract and matching version fact exist in the frozen index with authoritative manifest evidence.",
+      "A no-such-API statement is VALID only when its exact, specific symbol is absent from the complete frozen searchable contract universe."
+    ],
+    "INVALID": [
+      "A specific package/API claim is INVALID when it asserts that a package or public symbol exists on the canonical target but that exact package/symbol is absent from the complete frozen authoritative universe.",
+      "A specific API claim is INVALID when it assigns a public symbol to the wrong package and the frozen declarations identify a different package as its owner.",
+      "Knowledge from a later DSH train is INVALID for this rc.2 experiment when that API is absent from the canonical rc.2 artifact universe."
+    ],
+    "UNKNOWN": [
+      "Claims too vague to map to a specific package or public API symbol are UNKNOWN.",
+      "Behavioral/runtime claims not established by captured manifest/declaration evidence are UNKNOWN unless a separately pinned authoritative adjudication exists.",
+      "Conflicting or incomplete evidence is UNKNOWN rather than INVALID."
+    ]
+  },
+  "unknownAutoInvalid": false,
+  "adjudication": {
+    "policy": "append-only",
+    "beforeOutcomeUnblinding": true,
+    "entries": [],
+    "requiredFields": ["claim", "classification", "reason", "evidenceIds", "adjudicator", "recordedAt"]
+  },
+  "driftCanaries": [
+    {
+      "claim": "profile.patchReload",
+      "classification": "INVALID",
+      "reason": "Absent from the complete canonical rc.2 frozen universe; later upstream source must not leak into rc.2 evaluation.",
+      "risk": "version-drift"
+    },
+    {
+      "claim": "ToolAutopilot",
+      "classification": "INVALID",
+      "reason": "Absent from the complete canonical rc.2 frozen universe.",
+      "risk": "hallucinated-api"
+    }
+  ],
+  "policy": {
+    "externalModelJudgeAllowed": false,
+    "latestDocumentationMayOverrideFrozenTarget": false,
+    "unknownCountsAsInvalidAutomatically": false,
+    "postOutcomeOracleEditsAllowed": false
+  }
+}

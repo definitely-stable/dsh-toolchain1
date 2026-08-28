@@ -1,0 +1,523 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://definitely-stable.github.io/dsh-toolchain/evaluation/m2/m2-agent-eval-v1.schema.json",
+  "title": "DSH Toolchain M2 Agent Evaluation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "recordType",
+    "evaluationId",
+    "phase",
+    "status",
+    "target",
+    "model",
+    "harness",
+    "arms",
+    "resources",
+    "retries",
+    "runOrder",
+    "metrics",
+    "oracle",
+    "dataset"
+  ],
+  "properties": {
+    "schema": { "const": "dsh-toolchain-m2-agent-eval-v1" },
+    "recordType": { "enum": ["definition", "result"] },
+    "evaluationId": { "type": "string", "minLength": 1 },
+    "phase": { "enum": ["P0", "H1"] },
+    "status": {
+      "enum": ["PREREGISTERED", "CALIBRATED", "PASS", "NEEDS-IMPROVEMENT", "INCONCLUSIVE"]
+    },
+    "target": { "$ref": "#/$defs/target" },
+    "model": { "$ref": "#/$defs/model" },
+    "harness": { "$ref": "#/$defs/harness" },
+    "arms": { "$ref": "#/$defs/arms" },
+    "resources": { "$ref": "#/$defs/resources" },
+    "retries": { "$ref": "#/$defs/retries" },
+    "runOrder": { "$ref": "#/$defs/runOrder" },
+    "metrics": { "$ref": "#/$defs/metrics" },
+    "oracle": { "$ref": "#/$defs/oracle" },
+    "dataset": { "$ref": "#/$defs/dataset" },
+    "definitionSha256": { "$ref": "#/$defs/sha256" },
+    "executedAt": { "type": "string", "format": "date-time" },
+    "runs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/runRecord" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "recordType": { "const": "definition" } },
+        "required": ["recordType"]
+      },
+      "then": {
+        "properties": {
+          "status": { "const": "PREREGISTERED" },
+          "definitionSha256": false,
+          "executedAt": false,
+          "runs": false
+        }
+      },
+      "else": {
+        "required": ["definitionSha256", "executedAt", "runs"],
+        "allOf": [
+          {
+            "if": {
+              "properties": { "phase": { "const": "P0" } },
+              "required": ["phase"]
+            },
+            "then": {
+              "properties": { "status": { "const": "CALIBRATED" } }
+            },
+            "else": {
+              "properties": {
+                "status": { "enum": ["PASS", "NEEDS-IMPROVEMENT", "INCONCLUSIVE"] }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": { "phase": { "const": "P0" } },
+        "required": ["phase"]
+      },
+      "then": {
+        "properties": {
+          "dataset": {
+            "allOf": [
+              { "$ref": "#/$defs/dataset" },
+              {
+                "type": "object",
+                "properties": {
+                  "id": { "const": "P0" },
+                  "hiddenUntilRunComplete": { "const": false }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "dataset": {
+            "allOf": [
+              { "$ref": "#/$defs/dataset" },
+              {
+                "type": "object",
+                "properties": {
+                  "id": { "const": "H1" },
+                  "hiddenUntilRunComplete": { "const": true }
+                }
+              }
+            ]
+          },
+          "metrics": {
+            "allOf": [
+              { "$ref": "#/$defs/metrics" },
+              {
+                "type": "object",
+                "properties": {
+                  "primary": {
+                    "allOf": [
+                      { "$ref": "#/$defs/primaryMetric" },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mcidAbsoluteReduction": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "guardrail": {
+                    "allOf": [
+                      { "$ref": "#/$defs/guardrailMetric" },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "margin": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "version",
+        "profile",
+        "targetFingerprint",
+        "contractIndexFingerprint"
+      ],
+      "properties": {
+        "package": { "const": "@deepseek-ai/dsh" },
+        "version": { "const": "0.1.1-rc.2" },
+        "profile": { "const": "web" },
+        "targetFingerprint": {
+          "const": "dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe"
+        },
+        "contractIndexFingerprint": {
+          "const": "dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2"
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "snapshot", "reasoning"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "snapshot": { "type": "string", "minLength": 1 },
+        "reasoning": { "type": "string", "minLength": 1 }
+      }
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runner",
+        "version",
+        "systemPromptSha256",
+        "taskPromptSha256",
+        "toolSchemaSha256",
+        "staticDocsSha256",
+        "networkPolicy"
+      ],
+      "properties": {
+        "runner": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "systemPromptSha256": { "$ref": "#/$defs/sha256" },
+        "taskPromptSha256": { "$ref": "#/$defs/sha256" },
+        "toolSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "staticDocsSha256": { "$ref": "#/$defs/sha256" },
+        "networkPolicy": { "enum": ["provider-only", "offline"] }
+      }
+    },
+    "armA": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "ordinaryTools", "toolchain"],
+      "properties": {
+        "mode": { "const": "memory" },
+        "ordinaryTools": { "const": false },
+        "toolchain": { "const": false }
+      }
+    },
+    "armB": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "ordinaryTools", "toolchain"],
+      "properties": {
+        "mode": { "const": "conventional-exact-target" },
+        "ordinaryTools": { "const": true },
+        "toolchain": { "const": false }
+      }
+    },
+    "armC": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "ordinaryTools", "toolchain", "toolNames"],
+      "properties": {
+        "mode": { "const": "conventional-exact-target-plus-toolchain" },
+        "ordinaryTools": { "const": true },
+        "toolchain": { "const": true },
+        "toolNames": {
+          "const": ["contract.search", "contract.inspect"]
+        }
+      }
+    },
+    "arms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["A", "B", "C"],
+      "properties": {
+        "A": { "$ref": "#/$defs/armA" },
+        "B": { "$ref": "#/$defs/armB" },
+        "C": { "$ref": "#/$defs/armC" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxTurns", "maxInputTokens", "maxOutputTokens", "wallTimeMs", "concurrency"],
+      "properties": {
+        "maxTurns": { "type": "integer", "minimum": 1 },
+        "maxInputTokens": { "type": "integer", "minimum": 1 },
+        "maxOutputTokens": { "type": "integer", "minimum": 1 },
+        "wallTimeMs": { "type": "integer", "minimum": 1 },
+        "concurrency": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "retries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxInfrastructureRetries", "modelOutcomeRetries", "retryableReasons"],
+      "properties": {
+        "maxInfrastructureRetries": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "modelOutcomeRetries": { "const": 0 },
+        "retryableReasons": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["provider-transport", "tool-transport", "runner-infrastructure"]
+          }
+        }
+      }
+    },
+    "scheduleEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "trial", "arm"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "trial": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "arm": { "enum": ["A", "B", "C"] }
+      }
+    },
+    "runOrder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seed", "trialsPerTaskArm", "schedule"],
+      "properties": {
+        "seed": { "type": "string", "minLength": 1 },
+        "trialsPerTaskArm": { "const": 3 },
+        "schedule": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/scheduleEntry" }
+        }
+      }
+    },
+    "uncertaintyBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "confidenceLevel", "resamples", "seed", "decisionRule"],
+      "properties": {
+        "method": { "const": "paired-task-bootstrap" },
+        "confidenceLevel": { "type": "number", "exclusiveMinimum": 0.5, "exclusiveMaximum": 1 },
+        "resamples": { "type": "integer", "minimum": 1000 },
+        "seed": { "type": "string", "minLength": 1 },
+        "decisionRule": { "type": "string", "minLength": 1 }
+      }
+    },
+    "primaryUncertainty": {
+      "allOf": [
+        { "$ref": "#/$defs/uncertaintyBase" },
+        {
+          "type": "object",
+          "properties": {
+            "decisionRule": { "const": "lower-bound-at-least-mcid" }
+          }
+        }
+      ]
+    },
+    "guardrailUncertainty": {
+      "allOf": [
+        { "$ref": "#/$defs/uncertaintyBase" },
+        {
+          "type": "object",
+          "properties": {
+            "decisionRule": { "const": "lower-bound-at-least-negative-margin" }
+          }
+        }
+      ]
+    },
+    "primaryMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "comparison",
+        "trialToTaskAggregation",
+        "mcidAbsoluteReduction",
+        "uncertainty"
+      ],
+      "properties": {
+        "name": { "const": "invalid-api-task-rate" },
+        "comparison": { "const": "C-vs-B" },
+        "trialToTaskAggregation": { "const": "mean-trial-invalid-indicator" },
+        "mcidAbsoluteReduction": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "uncertainty": { "$ref": "#/$defs/primaryUncertainty" }
+      }
+    },
+    "guardrailMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "trialToTaskAggregation", "margin", "uncertainty"],
+      "properties": {
+        "name": { "const": "task-success-noninferiority" },
+        "trialToTaskAggregation": { "const": "mean-trial-success-indicator" },
+        "margin": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "uncertainty": { "$ref": "#/$defs/guardrailUncertainty" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary", "guardrail", "secondary"],
+      "properties": {
+        "primary": { "$ref": "#/$defs/primaryMetric" },
+        "guardrail": { "$ref": "#/$defs/guardrailMetric" },
+        "secondary": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "sha256", "classifications", "unknownAutoInvalid"],
+      "properties": {
+        "version": { "const": "api-oracle-v1" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "classifications": { "const": ["VALID", "INVALID", "UNKNOWN"] },
+        "unknownAutoInvalid": { "const": false }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "taskCount", "commitmentSha256", "hiddenUntilRunComplete"],
+      "properties": {
+        "id": { "enum": ["P0", "H1"] },
+        "taskCount": { "type": "integer", "minimum": 1 },
+        "commitmentSha256": { "$ref": "#/$defs/sha256" },
+        "hiddenUntilRunComplete": { "type": "boolean" }
+      }
+    },
+    "rawAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference", "sha256"],
+      "properties": {
+        "reference": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "apiClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "classification", "oracleEvidenceIds"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "classification": { "enum": ["VALID", "INVALID", "UNKNOWN"] },
+        "oracleEvidenceIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "classification": { "enum": ["VALID", "INVALID"] } },
+            "required": ["classification"]
+          },
+          "then": {
+            "properties": {
+              "oracleEvidenceIds": { "type": "array", "minItems": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "modelOutcomeAttempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt",
+        "startedAt",
+        "completedAt",
+        "outcome",
+        "rawAnswer",
+        "parsedApiClaims",
+        "taskSuccess"
+      ],
+      "properties": {
+        "attempt": { "type": "integer", "minimum": 1 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "outcome": { "const": "model-outcome" },
+        "rawAnswer": { "$ref": "#/$defs/rawAnswer" },
+        "parsedApiClaims": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/apiClaim" }
+        },
+        "taskSuccess": { "enum": ["SUCCESS", "FAILURE", "UNKNOWN"] }
+      }
+    },
+    "infrastructureFailureAttempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt", "startedAt", "completedAt", "outcome", "reason"],
+      "properties": {
+        "attempt": { "type": "integer", "minimum": 1 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "outcome": { "const": "infrastructure-failure" },
+        "reason": { "enum": ["provider-transport", "tool-transport", "runner-infrastructure"] },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
+    "attemptRecord": {
+      "oneOf": [
+        { "$ref": "#/$defs/modelOutcomeAttempt" },
+        { "$ref": "#/$defs/infrastructureFailureAttempt" }
+      ]
+    },
+    "runRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "arm", "trial", "attempts"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "arm": { "enum": ["A", "B", "C"] },
+        "trial": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "attempts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/attemptRecord" }
+        }
+      }
+    }
+  }
+}
