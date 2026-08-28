@@ -170,6 +170,10 @@ describe('M2.3 agent evaluation integrity', () => {
         taskId: 'h1-03', arm: 'C', trial: 3, attempt: 3,
         kind: 'infrastructure-failure', reason: 'provider-transport',
       },
+      {
+        taskId: 'h1-03', arm: 'C', trial: 3, attempt: 4,
+        kind: 'infrastructure-failure', reason: 'provider-transport',
+      },
     ], policy)).toThrow(/infrastructure retr/i)
   })
 
