@@ -58,6 +58,16 @@ function requireString(value: unknown, label: string): string {
   return value
 }
 
+function assertClosedFields(
+  record: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+  label: string,
+): void {
+  for (const key of Object.keys(record)) {
+    if (!allowed.has(key)) throw new Error(`${label} contains forbidden field: ${key}`)
+  }
+}
+
 function errorDetail(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -106,6 +116,7 @@ export async function executeProcessModelAttempt(
 
       const message = requireRecord(JSON.parse(line), 'Process model executor message')
       if (message.type === 'tool_call') {
+        assertClosedFields(message, new Set(['type', 'id', 'name', 'input']), 'Process model executor tool_call')
         const id = requireString(message.id, 'Process model executor tool call id')
         const name = requireString(message.name, 'Process model executor tool call name')
         if (!input.envelope.tools.some(tool => tool.name === name)) {
@@ -119,6 +130,11 @@ export async function executeProcessModelAttempt(
       if (message.type !== 'final') {
         throw new Error(`Unsupported process model executor message: ${String(message.type)}`)
       }
+      assertClosedFields(
+        message,
+        new Set(['type', 'finalAnswer', 'providerMetadata']),
+        'Process model executor final',
+      )
 
       const outcome = {
         outcome: 'model-outcome',
