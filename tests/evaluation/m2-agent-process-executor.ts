@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { createInterface } from 'node:readline'
 
 import {
   validateExecutorModelOutcome,
@@ -41,6 +42,13 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${label} must be a non-empty string`)
+  }
+  return value
+}
+
 export async function executeProcessModelAttempt(
   input: ProcessModelAttemptInput,
 ): Promise<ProcessModelOutcome> {
@@ -50,49 +58,83 @@ export async function executeProcessModelAttempt(
       env: { ...input.environment },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
-    let stdout = ''
+    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })
     let stderr = ''
+    let terminal: ProcessModelOutcome | undefined
+    let failure: unknown
+    let processing = Promise.resolve()
 
-    child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
-    child.stdout.on('data', chunk => {
-      stdout += chunk
-    })
     child.stderr.on('data', chunk => {
       stderr += chunk
     })
-    child.once('error', reject)
-    child.once('close', code => {
-      if (code !== 0) {
-        reject(new Error(`Process model executor exited with code ${String(code)}: ${stderr.trim()}`))
-        return
+
+    function fail(error: unknown): void {
+      if (failure !== undefined) return
+      failure = error
+      child.stdin.end()
+      if (child.exitCode === null && child.signalCode === null) child.kill()
+    }
+
+    async function handleLine(line: string): Promise<void> {
+      if (terminal !== undefined) {
+        throw new Error('Process model executor emitted a message after terminal final')
       }
 
-      const lines = stdout.split(/\r?\n/u).filter(line => line.length > 0)
-      if (lines.length !== 1) {
-        reject(new Error(`Process model executor must emit exactly one terminal message; received ${lines.length}`))
-        return
-      }
-
-      try {
-        const message = requireRecord(JSON.parse(lines[0]!), 'Process model executor message')
-        if (message.type !== 'final') throw new Error('Process model executor must terminate with final')
-        const outcome = {
-          outcome: 'model-outcome',
-          finalAnswer: message.finalAnswer,
-          providerMetadata: message.providerMetadata,
+      const message = requireRecord(JSON.parse(line), 'Process model executor message')
+      if (message.type === 'tool_call') {
+        const id = requireString(message.id, 'Process model executor tool call id')
+        const name = requireString(message.name, 'Process model executor tool call name')
+        if (!input.envelope.tools.some(tool => tool.name === name)) {
+          throw new Error(`Process model executor requested unavailable tool: ${name}`)
         }
-        validateExecutorModelOutcome(outcome)
-        resolve({
-          kind: 'model-outcome',
-          finalAnswer: outcome.finalAnswer as string,
-          providerMetadata: outcome.providerMetadata as ProcessModelOutcome['providerMetadata'],
-        })
-      } catch (error) {
-        reject(error)
+        const result = await input.dispatchToolCall({ id, name, input: message.input })
+        child.stdin.write(`${JSON.stringify({ type: 'tool_result', id, result })}\n`)
+        return
       }
+
+      if (message.type !== 'final') {
+        throw new Error(`Unsupported process model executor message: ${String(message.type)}`)
+      }
+
+      const outcome = {
+        outcome: 'model-outcome',
+        finalAnswer: message.finalAnswer,
+        providerMetadata: message.providerMetadata,
+      }
+      validateExecutorModelOutcome(outcome)
+      terminal = {
+        kind: 'model-outcome',
+        finalAnswer: outcome.finalAnswer as string,
+        providerMetadata: outcome.providerMetadata as ProcessModelOutcome['providerMetadata'],
+      }
+      child.stdin.end()
+    }
+
+    lines.on('line', line => {
+      if (line.length === 0 || failure !== undefined) return
+      processing = processing.then(() => handleLine(line)).catch(fail)
     })
 
-    child.stdin.end(`${JSON.stringify({ type: 'start', envelope: input.envelope })}\n`)
+    child.once('error', fail)
+    child.once('close', code => {
+      void processing.then(() => {
+        if (failure !== undefined) {
+          reject(failure)
+          return
+        }
+        if (code !== 0) {
+          reject(new Error(`Process model executor exited with code ${String(code)}: ${stderr.trim()}`))
+          return
+        }
+        if (terminal === undefined) {
+          reject(new Error('Process model executor exited without a terminal final message'))
+          return
+        }
+        resolve(terminal)
+      }).catch(reject)
+    })
+
+    child.stdin.write(`${JSON.stringify({ type: 'start', envelope: input.envelope })}\n`)
   })
 }
