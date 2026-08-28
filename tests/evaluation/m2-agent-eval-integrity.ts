@@ -42,10 +42,18 @@ type CanonicalJson = null | boolean | number | string | readonly CanonicalJson[]
   readonly [key: string]: CanonicalJson
 }
 
+type AgentResultStatus = 'CALIBRATED' | 'PASS' | 'NEEDS-IMPROVEMENT' | 'INCONCLUSIVE'
+
 const AGENT_ARMS: readonly AgentArm[] = ['A', 'B', 'C']
 const TRIALS = [1, 2, 3] as const
 const SHA256_PATTERN = /^[0-9a-f]{64}$/
 const RESULT_ONLY_FIELDS = new Set(['definitionSha256', 'executedAt', 'runs'])
+const AGENT_RESULT_STATUSES: readonly AgentResultStatus[] = [
+  'CALIBRATED',
+  'PASS',
+  'NEEDS-IMPROVEMENT',
+  'INCONCLUSIVE',
+]
 
 function compareCodePoints(left: string, right: string): number {
   if (left < right) return -1
@@ -281,6 +289,13 @@ function parseTrial(value: unknown, label: string): 1 | 2 | 3 {
   return value
 }
 
+function parseResultStatus(value: unknown): AgentResultStatus {
+  if (typeof value !== 'string' || !AGENT_RESULT_STATUSES.includes(value as AgentResultStatus)) {
+    throw new Error('Agent evaluation result status must be a terminal result status')
+  }
+  return value as AgentResultStatus
+}
+
 function parseScheduleEntry(value: unknown, label: string): AgentScheduleEntry {
   const record = requireRecord(value, label)
   return {
@@ -344,6 +359,48 @@ function parseResultAttempts(
   })
 }
 
+function assertResolvedDecisionRun(
+  run: Record<string, unknown>,
+  arm: AgentArm,
+  runIndex: number,
+  status: AgentResultStatus,
+): void {
+  if (status === 'INCONCLUSIVE') return
+
+  const rawAttempts = requireArray(run.attempts, `Agent result runs[${runIndex}].attempts`)
+  const modelOutcomes = rawAttempts
+    .map((attempt, attemptIndex) => requireRecord(
+      attempt,
+      `Agent result runs[${runIndex}].attempts[${attemptIndex}]`,
+    ))
+    .filter(attempt => attempt.outcome === 'model-outcome')
+  if (modelOutcomes.length !== 1) {
+    throw new Error(
+      `Agent result status ${status} requires exactly one model outcome for every scheduled run; use INCONCLUSIVE when execution evidence is incomplete`,
+    )
+  }
+
+  if (arm === 'A') return
+  const outcome = modelOutcomes[0]!
+  if (outcome.taskSuccess !== 'SUCCESS' && outcome.taskSuccess !== 'FAILURE') {
+    throw new Error(
+      `Agent result status ${status} requires resolved B/C task success; UNKNOWN requires INCONCLUSIVE`,
+    )
+  }
+  const claims = requireArray(outcome.parsedApiClaims, `Agent result runs[${runIndex}] B/C parsed API claims`)
+  for (let claimIndex = 0; claimIndex < claims.length; claimIndex += 1) {
+    const claim = requireRecord(claims[claimIndex], `Agent result runs[${runIndex}] API claim[${claimIndex}]`)
+    if (claim.classification === 'UNKNOWN') {
+      throw new Error(
+        `Agent result status ${status} cannot contain unresolved B/C API claims; UNKNOWN requires INCONCLUSIVE`,
+      )
+    }
+    if (claim.classification !== 'VALID' && claim.classification !== 'INVALID') {
+      throw new Error(`Agent result runs[${runIndex}] API claim[${claimIndex}] has invalid classification`)
+    }
+  }
+}
+
 export async function validateAgentResultAgainstDefinition(
   definition: unknown,
   result: unknown,
@@ -357,6 +414,7 @@ export async function validateAgentResultAgainstDefinition(
   if (resultRecord.recordType !== 'result') {
     throw new Error('Agent evaluation result recordType must be result')
   }
+  const resultStatus = parseResultStatus(resultRecord.status)
 
   const expectedHash = await hashEvaluationDefinition(definitionRecord, sha256)
   if (resultRecord.definitionSha256 !== expectedHash) {
@@ -399,6 +457,7 @@ export async function validateAgentResultAgainstDefinition(
         `Agent result schedule mismatch at index ${index}: expected ${expected.taskId}/${expected.trial}/${expected.arm}, got ${taskId}/${trial}/${arm}`,
       )
     }
+    assertResolvedDecisionRun(run, arm, index, resultStatus)
     attempts.push(...parseResultAttempts(run, taskId, arm, trial, index))
   }
 
