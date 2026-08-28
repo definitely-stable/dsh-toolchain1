@@ -24,23 +24,33 @@ export interface ProcessModelAttemptInput {
   dispatchToolCall(request: ProcessToolCallRequest): Promise<unknown>
 }
 
+export interface ProcessProviderMetadata {
+  completionId: string
+  finishReason: string
+  inputTokens?: number
+  outputTokens?: number
+}
+
 export interface ProcessModelOutcome {
   kind: 'model-outcome'
   finalAnswer: string
-  providerMetadata: {
-    completionId: string
-    finishReason: string
-    inputTokens?: number
-    outputTokens?: number
-  }
+  providerMetadata: ProcessProviderMetadata
 }
 
 export interface ProcessInfrastructureFailure {
   kind: 'infrastructure-failure'
-  reason: 'protocol' | 'timeout' | 'exit' | 'spawn' | 'output-limit'
+  reason:
+    | 'protocol'
+    | 'provider-transport'
+    | 'tool-transport'
+    | 'timeout'
+    | 'exit'
+    | 'spawn'
+    | 'output-limit'
   detail: string
   partialOutput?: string
   stderr?: string
+  providerMetadata?: ProcessProviderMetadata
 }
 
 export type ProcessModelAttemptResult = ProcessModelOutcome | ProcessInfrastructureFailure
@@ -87,6 +97,16 @@ function appendBoundedUtf8(current: string, chunk: string, maxBytes: number): st
   return current + prefix
 }
 
+function parseProviderMetadata(value: unknown): ProcessProviderMetadata {
+  const candidate = {
+    outcome: 'model-outcome',
+    finalAnswer: '',
+    providerMetadata: value,
+  }
+  validateExecutorModelOutcome(candidate)
+  return structuredClone(candidate.providerMetadata as ProcessProviderMetadata)
+}
+
 export async function executeProcessModelAttempt(
   input: ProcessModelAttemptInput,
 ): Promise<ProcessModelAttemptResult> {
@@ -105,6 +125,7 @@ export async function executeProcessModelAttempt(
     let stderrBytes = 0
     let terminal: ProcessModelOutcome | undefined
     let failure: ProcessInfrastructureFailure | undefined
+    let providerMetadata: ProcessProviderMetadata | undefined
     let processing = Promise.resolve()
 
     function failInfrastructure(reason: ProcessInfrastructureFailure['reason'], detail: string): void {
@@ -115,6 +136,7 @@ export async function executeProcessModelAttempt(
         detail,
         ...(stdout.length === 0 ? {} : { partialOutput: stdout }),
         ...(stderr.length === 0 ? {} : { stderr }),
+        ...(providerMetadata === undefined ? {} : { providerMetadata: structuredClone(providerMetadata) }),
       }
       child.stdin.end()
       if (child.exitCode === null && child.signalCode === null) child.kill()
@@ -159,6 +181,20 @@ export async function executeProcessModelAttempt(
       }
 
       const message = requireRecord(JSON.parse(line), 'Process model executor message')
+
+      if (message.type === 'provider_metadata') {
+        assertClosedFields(
+          message,
+          new Set(['type', 'providerMetadata']),
+          'Process model executor provider_metadata',
+        )
+        if (providerMetadata !== undefined) {
+          throw new Error('Process model executor emitted duplicate provider_metadata')
+        }
+        providerMetadata = parseProviderMetadata(message.providerMetadata)
+        return
+      }
+
       if (message.type === 'tool_call') {
         assertClosedFields(message, new Set(['type', 'id', 'name', 'input']), 'Process model executor tool_call')
         const id = requireString(message.id, 'Process model executor tool call id')
@@ -166,8 +202,30 @@ export async function executeProcessModelAttempt(
         if (!input.envelope.tools.some(tool => tool.name === name)) {
           throw new Error(`Process model executor requested unavailable tool: ${name}`)
         }
-        const result = await input.dispatchToolCall({ id, name, input: message.input })
+        let result: unknown
+        try {
+          result = await input.dispatchToolCall({ id, name, input: message.input })
+        } catch (error) {
+          failInfrastructure('tool-transport', errorDetail(error))
+          return
+        }
         child.stdin.write(`${JSON.stringify({ type: 'tool_result', id, result })}\n`)
+        return
+      }
+
+      if (message.type === 'infrastructure_error') {
+        assertClosedFields(
+          message,
+          new Set(['type', 'reason', 'detail']),
+          'Process model executor infrastructure_error',
+        )
+        if (message.reason !== 'provider-transport') {
+          throw new Error(`Unsupported child infrastructure reason: ${String(message.reason)}`)
+        }
+        failInfrastructure(
+          'provider-transport',
+          requireString(message.detail, 'Process model executor infrastructure error detail'),
+        )
         return
       }
 
@@ -180,16 +238,22 @@ export async function executeProcessModelAttempt(
         'Process model executor final',
       )
 
+      if (providerMetadata !== undefined && message.providerMetadata !== undefined) {
+        throw new Error('Process model executor final duplicates previously emitted provider_metadata')
+      }
+      const finalProviderMetadata = message.providerMetadata === undefined
+        ? providerMetadata
+        : parseProviderMetadata(message.providerMetadata)
       const outcome = {
         outcome: 'model-outcome',
         finalAnswer: message.finalAnswer,
-        providerMetadata: message.providerMetadata,
+        providerMetadata: finalProviderMetadata,
       }
       validateExecutorModelOutcome(outcome)
       terminal = {
         kind: 'model-outcome',
         finalAnswer: outcome.finalAnswer as string,
-        providerMetadata: outcome.providerMetadata as ProcessModelOutcome['providerMetadata'],
+        providerMetadata: structuredClone(outcome.providerMetadata as ProcessProviderMetadata),
       }
       child.stdin.end()
     }
@@ -215,7 +279,8 @@ export async function executeProcessModelAttempt(
           return
         }
         if (terminal === undefined) {
-          reject(new Error('Process model executor exited without a terminal final message'))
+          failInfrastructure('protocol', 'Process model executor exited without a terminal final message')
+          resolve(failure!)
           return
         }
         resolve(terminal)
