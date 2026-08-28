@@ -315,6 +315,7 @@ describe('M2.3 agent evaluation integrity', () => {
         outcome: 'model-outcome',
         startedAt: '2026-08-28T05:00:00.000Z',
         completedAt: '2026-08-28T05:00:10.000Z',
+        reason: undefined as string | undefined,
         parsedApiClaims: [] as { classification: 'VALID' | 'INVALID' | 'UNKNOWN' }[],
         taskSuccess: 'SUCCESS' as 'SUCCESS' | 'FAILURE' | 'UNKNOWN',
       }],
