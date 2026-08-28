@@ -31,9 +31,9 @@ Later DSH source or documentation may be used only as drift-canary context and c
 
 `agent-pilot-p0.json` is public and non-scoring. It exists only to calibrate the experiment machinery: runner behavior, prompt/tool wiring, transcript capture, oracle parsing, bounded infrastructure retry classification and resource accounting.
 
-P0 may reveal defects in the evaluation harness. It must not be counted toward M2 PASS/FAIL. The holdout task set may not be rewritten in response to H1 outcomes.
+P0 may reveal defects in the evaluation harness. It must not be counted toward M2 PASS/FAIL. A completed P0 result uses the distinct terminal status `CALIBRATED`; it is never relabeled PASS or NEEDS-IMPROVEMENT.
 
-The **MCID** for Invalid API Task Rate and the task-success **non-inferiority** margin are frozen only after P0 calibration is complete and before H1 is committed or executed.
+The **MCID** for Invalid API Task Rate and the task-success **non-inferiority** margin are frozen only after P0 calibration is complete and before H1 is committed or executed. The holdout task set may not be rewritten in response to H1 outcomes.
 
 ## H1 commitment barrier
 
@@ -45,33 +45,69 @@ Before H1 can become runnable, all of the following must be true in one immutabl
 2. The primary MCID is numeric and frozen.
 3. The task-success non-inferiority margin is numeric and frozen.
 4. The final hidden H1 task set is serialized canonically and its SHA-256 commitment is published.
-5. The exact model, model snapshot, reasoning mode, runner/harness version, prompts, tool schemas, static-doc identity, oracle identity, resources, retry policy and deterministic run-order definition are content-addressed.
+5. The exact model, model snapshot, reasoning mode, runner/harness version, prompts, tool schemas, static-doc identity, oracle identity, resources, retry policy, deterministic run-order definition and statistical analysis configuration are content-addressed.
 6. No H1 model output has been observed.
 
-After that boundary, H1 tasks, thresholds, oracle rules, arm semantics and analysis rules cannot be changed in response to outcomes. Corrections require an explicit erratum and invalidate the affected run unless the preregistered reserve/extension rule permits otherwise.
+After that boundary, H1 tasks, thresholds, oracle rules, arm semantics, trial aggregation, bootstrap configuration and decision rules cannot be changed in response to outcomes. Corrections require an explicit erratum and invalidate the affected run unless the preregistered reserve/extension rule permits otherwise.
 
 ## Execution and retries
 
-Every task/arm uses the same global resource envelope. The planned analysis uses three trials per task/arm with a deterministic balanced/randomized schedule derived from the preregistered seed. The **analysis unit is the task**, not each trial as an independent sample.
+Every task/arm uses the same global resource envelope. Each task/arm is executed exactly **three trials** using the deterministic balanced schedule derived from the preregistered seed. The **analysis unit is the task**. Trials measure stochastic consistency and are aggregated within each task/arm; they are not treated as independent task samples.
 
-Model-outcome retries are forbidden. Only bounded infrastructure retries are allowed, only for preregistered infrastructure classes such as provider transport, tool transport or runner infrastructure. Every attempt, including failed infrastructure attempts, must be recorded. A retry never erases the original attempt.
+Model-outcome retries are forbidden. Only bounded infrastructure retries are allowed, only for preregistered infrastructure classes such as provider transport, tool transport or runner infrastructure. Every attempt, including failed infrastructure attempts, must be retained. A retry never erases the original attempt.
 
-## Primary endpoint
+A terminal `CALIBRATED`, `PASS`, or `NEEDS-IMPROVEMENT` result requires every frozen schedule entry to end in exactly one model outcome. If any scheduled run exhausts the allowed infrastructure path without a model outcome, the experiment evidence is **INCONCLUSIVE**. Infrastructure failure is never converted into a favorable model score.
 
-For each task, concrete API claims are extracted and classified against `api-oracle-v1`. The primary endpoint is **Invalid API Task Rate**: the proportion of scored tasks on which an arm produces at least one concrete `INVALID` API claim.
+## Primary endpoint and trial-to-task aggregation
 
-Acceptance requires C to improve over B by at least the frozen absolute-reduction MCID. UNKNOWN claims do not count as INVALID; they are reported separately.
+For each model outcome, concrete DSH API claims are deterministically extracted and classified against `api-oracle-v1`.
 
-## Guardrail
+For each trial, define the **invalid API indicator**:
 
-Task success is evaluated separately from API validity. C must satisfy the preregistered task-success **non-inferiority** margin relative to B. A reduction in invalid API claims cannot qualify as M2 PASS if it is achieved by refusing useful work, omitting required answers or otherwise violating the task-success guardrail.
+- `1` if the final answer contains at least one concrete API claim classified `INVALID`;
+- `0` if it contains no `INVALID` claim and every extracted claim needed for the B/C decision is resolved;
+- unresolved `UNKNOWN` claims are never converted to `0` or `1` for a terminal B/C decision.
 
-Secondary diagnostics may include Toolchain invocation rate, search/inspect continuity, invalid-claim categories, UNKNOWN rate, token use, turns and latency, but none may replace the frozen primary endpoint or guardrail after H1 commitment.
+For each task and arm, the task-level invalid score is the arithmetic mean of its three trial invalid indicators. The primary paired task effect is:
+
+`B task invalid score - C task invalid score`
+
+so a positive value favors Toolchain. The aggregate primary estimand is the mean of those paired task effects across H1 tasks.
+
+Uncertainty is preregistered in the exact experiment definition as **paired-task bootstrap**. Its confidence level, resample count and deterministic seed are frozen before the first H1 outcome. The H1 primary decision rule is `lower-bound-at-least-mcid`: the configured confidence lower bound for the C-vs-B absolute reduction must be at least the frozen MCID.
+
+If a B or C result still contains an API claim classified `UNKNOWN` after the preregistered adjudication boundary, H1 cannot be reported as PASS or NEEDS-IMPROVEMENT from that evidence; the result remains **INCONCLUSIVE**. UNKNOWN is therefore neither silently penalized nor silently rewarded.
+
+## Task-success guardrail
+
+Task success is evaluated independently from API validity. For each trial, define the task-success indicator:
+
+- `1` for `SUCCESS`;
+- `0` for `FAILURE`;
+- `UNKNOWN` is unresolved evidence and is not coerced to either value.
+
+For each task and arm, the task-level success score is the arithmetic mean of the three trial success indicators. The paired guardrail effect is:
+
+`C task success score - B task success score`.
+
+The guardrail uses the same preregistered paired-task bootstrap family, with its own frozen seed/configuration in the definition. Its decision rule is `lower-bound-at-least-negative-margin`: the configured confidence lower bound must be at least the negative frozen non-inferiority margin.
+
+A B/C `taskSuccess: UNKNOWN` prevents a terminal PASS or NEEDS-IMPROVEMENT classification and forces **INCONCLUSIVE** until a preregistered valid adjudication path resolves it. A reduction in invalid API claims therefore cannot qualify as M2 PASS by refusing useful work, omitting required answers or dropping uncertain outcomes.
+
+Secondary diagnostics may include Toolchain invocation rate, search/inspect continuity, invalid-claim categories, UNKNOWN rate, token use, turns and latency, but none may replace or redefine the frozen primary endpoint or guardrail after H1 commitment.
+
+## Definition/result integrity
+
+The exact experiment definition is canonicalized and SHA-256 content-addressed before H1 execution. The recorded result must carry that exact `definitionSha256` and preserve every preregistered field unchanged.
+
+The result run ledger must match the frozen schedule **one-for-one and in the frozen order**: no missing run, extra run, duplicate run or reordered task/arm/trial entry is accepted. `dataset.taskCount` must agree with the unique tasks represented by the schedule. Every attempt remains visible, and the retry ledger is validated against the frozen retry policy.
+
+Raw model answers are content-addressed; parsed API claims and task-success classifications are retained as auditable result evidence. A metadata-only PASS without run evidence is invalid.
 
 ## Outcome states
 
-- **PASS:** C meets or exceeds the frozen C-vs-B MCID and satisfies task-success non-inferiority.
-- **NEEDS-IMPROVEMENT:** the experiment is valid but the primary improvement or guardrail fails.
-- **INCONCLUSIVE:** preregistered validity criteria prevent a PASS/FAIL interpretation; only a preregistered reserve/extension path may add evidence.
+- **PASS:** all required decision evidence is resolved; C meets or exceeds the frozen C-vs-B MCID under the preregistered paired-task uncertainty rule and satisfies task-success non-inferiority.
+- **NEEDS-IMPROVEMENT:** all required decision evidence is resolved and the experiment is valid, but the primary improvement or guardrail fails.
+- **INCONCLUSIVE:** preregistered validity criteria prevent a PASS/FAIL interpretation, including incomplete scheduled execution or unresolved B/C API/task-success evidence; only a preregistered reserve/extension path may add evidence.
 
 No repeated H1 execution is allowed merely to obtain a preferred outcome. Parent Issue #28 remains open until a valid committed H1 result qualifies under this rule.
