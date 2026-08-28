@@ -1,0 +1,54 @@
+name: M2 fixture regeneration
+
+on:
+  push:
+    branches:
+      - feat/m2-3-p0-ordinary-evidence
+    paths:
+      - .github/workflows/m2-fixture-regenerate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+
+      - name: Install pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        with:
+          install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build production acquisition
+        run: pnpm build
+
+      - name: Regenerate exact rc2 fixture
+        run: node scripts/generate-m2-evaluation-fixture.mjs
+
+      - name: Commit generated fixture
+        shell: bash
+        run: |
+          git add tests/evaluation/fixtures/m2/rc2-web-v1
+          if git diff --cached --quiet; then
+            echo "Generator produced no fixture changes"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "test(m2.3): freeze ordinary rc2 workspace"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
