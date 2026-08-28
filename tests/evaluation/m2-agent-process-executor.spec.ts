@@ -157,4 +157,21 @@ describe('M2.3 process model executor', () => {
       stderr: 'provider adapter crashed\n',
     })
   })
+
+  it('classifies process spawn errors as infrastructure failure instead of rejecting the runner', async () => {
+    const result = await executeProcessModelAttempt({
+      ...processInput('dsh-toolchain-intentionally-missing-executor-command', modelEnvelope()),
+      args: [],
+      environment: {},
+      dispatchToolCall: async () => {
+        throw new Error('missing executable cannot request tools')
+      },
+    })
+
+    expect(result).toMatchObject({
+      kind: 'infrastructure-failure',
+      reason: 'spawn',
+      detail: expect.stringMatching(/ENOENT|not found/i),
+    })
+  })
 })
