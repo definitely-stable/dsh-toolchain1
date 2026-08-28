@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { createNodeSha256Port } from '../../src/acquisition/node-sha256.js'
 import { captureOrdinaryWorkspaceFromAcquiredEvidence } from '../../scripts/m2-ordinary-acquired-evidence.mjs'
-import { validateOrdinaryWorkspace } from './m2-agent-ordinary-workspace.js'
+import {
+  validateOrdinaryWorkspace,
+  type OrdinaryWorkspace,
+} from './m2-agent-ordinary-workspace.js'
 
 const roots: string[] = []
 
@@ -52,7 +55,7 @@ describe('M2.3 ordinary capture from production acquisition evidence', () => {
           { id: 'types:tools:index', kind: 'type-declaration', location: publicDeclaration },
         ],
       },
-    })
+    }) as OrdinaryWorkspace
 
     await expect(validateOrdinaryWorkspace(workspace, createNodeSha256Port())).resolves.toBeUndefined()
     expect(workspace.packages).toEqual([{ name: '@deepseek-ai/dsh-tools', version: '0.1.1-rc.2' }])
