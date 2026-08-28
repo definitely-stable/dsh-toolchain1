@@ -120,11 +120,13 @@ Files:
 - `docs/evaluation/m2/agent-holdout-h1.commitment.json`
 
 - [x] JSON Schema requires exact target/index, model/harness/tool/resource/retry identities, run-order controls and decision metrics.
+- [x] Result records require definition binding, execution time and auditable per-run attempts instead of accepting metadata-only PASS records.
 - [x] A=memory, B=conventional exact-target ordinary tools, C=B+Toolchain; C is not forced to call Toolchain.
-- [x] P0 is public/non-scoring calibration; H1 is the acceptance holdout.
+- [x] P0 is public/non-scoring calibration with terminal status `CALIBRATED`; H1 is the acceptance holdout.
 - [x] Oracle classifications are `VALID|INVALID|UNKNOWN`; UNKNOWN is never auto-invalid.
 - [x] Positive and negative P0 oracle hints are proven against the complete frozen declaration universe.
 - [x] Primary metric is Invalid API Task Rate C vs B; task-success non-inferiority is a required guardrail.
+- [x] Three-trial task-level aggregation and paired-task bootstrap uncertainty/decision-rule fields are preregistered in schema rather than chosen after H1.
 - [x] H1 file fails closed as `NOT_COMMITTED` / `runAllowed: false` until P0, thresholds and task-set hash are genuinely frozen.
 - [ ] Actual P0 model/harness calibration has been executed.
 - [ ] MCID/non-inferiority thresholds have been frozen from calibration before H1.
@@ -145,6 +147,10 @@ Files:
 - [x] Deterministic balanced scheduling provides exactly three trials for every task/arm; the task remains the analysis unit.
 - [x] Bounded infrastructure retries are separated from model outcomes; model-outcome retry is forbidden and attempts are contiguous/retained.
 - [x] Fail-closed commitment validator requires `COMMITTED`, `runAllowed=true`, valid task-set SHA-256, positive task count and every preregistration prerequisite.
+- [x] Recorded results are cryptographically bound to the exact definition hash and reject post-unblinding changes to preregistered fields.
+- [x] Result run coverage must match the frozen schedule one-for-one and in order; missing, extra, duplicate/reordered task-arm-trial entries and task-count drift are rejected.
+- [x] Terminal `CALIBRATED`/`PASS`/`NEEDS-IMPROVEMENT` evidence requires a completed model outcome for every scheduled run; infrastructure-only exhaustion forces `INCONCLUSIVE`.
+- [x] Unresolved B/C `taskSuccess` or API-claim `UNKNOWN` evidence cannot be silently coerced into a terminal decision and forces `INCONCLUSIVE`.
 - [x] While `agent-holdout-h1.commitment.json` is `NOT_COMMITTED`, no H1 definition/result is created merely to satisfy repository shape.
 - [ ] After actual P0 and hidden H1 commitment, create and hash the exact experiment definition before the first H1 model outcome.
 - [ ] After actual H1, record attempts/transcripts/classifications/result without retroactive definition changes.
