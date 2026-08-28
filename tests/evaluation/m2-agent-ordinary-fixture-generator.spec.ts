@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { captureConventionalPackageFiles } from '../../scripts/generate-m2-evaluation-fixture.mjs'
+import { captureConventionalPackageFiles } from '../../scripts/m2-ordinary-evidence.mjs'
 
 const roots: string[] = []
 
