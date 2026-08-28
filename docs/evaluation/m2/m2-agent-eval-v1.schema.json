@@ -454,7 +454,7 @@
           },
           "then": {
             "properties": {
-              "oracleEvidenceIds": { "minItems": 1 }
+              "oracleEvidenceIds": { "type": "array", "minItems": 1 }
             }
           }
         }
