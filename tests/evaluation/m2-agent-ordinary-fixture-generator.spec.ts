@@ -29,6 +29,7 @@ async function syntheticPackage(root: string): Promise<{ root: string; declarati
   }, undefined, 2) + '\n')
   const entry = await put(root, 'types/index.d.ts', "export * from './public.js'\n")
   const publicDeclaration = await put(root, 'types/public.d.ts', 'export interface PublicApi { ok: true }\n')
+  const credentialsDeclaration = await put(root, 'types/credentials.d.ts', 'export interface CredentialProvider { kind: string }\n')
   await put(root, 'types/private.d.ts', 'export interface PrivateApi { secret: true }\n')
   await put(root, 'index.js', 'export const runtime = true\n')
   await put(root, 'index.js.map', '{}\n')
@@ -38,9 +39,11 @@ async function syntheticPackage(root: string): Promise<{ root: string; declarati
   await put(root, 'CHANGELOG.md', '# Changes\n')
   await put(root, 'docs/guide.md', '# Guide\n')
   await put(root, 'docs/nested/example.txt', 'plain text\n')
+  await put(root, 'docs/credentials.json', '{"token":"secret"}\n')
+  await put(root, 'docs/secret-notes.md', 'must not be retained\n')
   await put(root, 'docs/evaluation/m2/api-oracle-v1.json', '{"leak":true}\n')
   await put(root, 'docs/image.bin', new Uint8Array([0xff, 0xfe, 0x00, 0x01]))
-  return { root, declarations: [entry, publicDeclaration] }
+  return { root, declarations: [entry, publicDeclaration, credentialsDeclaration] }
 }
 
 afterEach(async () => {
@@ -48,7 +51,7 @@ afterEach(async () => {
 })
 
 describe('M2.3 conventional rc.2 fixture capture policy', () => {
-  it('captures only manifest, production-approved declarations, and safe conventional docs', async () => {
+  it('captures production-approved declarations even when their API name mentions credentials', async () => {
     const packageRoot = await tempRoot('dsh-m2-ordinary-package-')
     const fixture = await syntheticPackage(packageRoot)
 
@@ -65,12 +68,13 @@ describe('M2.3 conventional rc.2 fixture capture policy', () => {
       '/exact-target/node_modules/@deepseek-ai/example/docs/guide.md',
       '/exact-target/node_modules/@deepseek-ai/example/docs/nested/example.txt',
       '/exact-target/node_modules/@deepseek-ai/example/package.json',
+      '/exact-target/node_modules/@deepseek-ai/example/types/credentials.d.ts',
       '/exact-target/node_modules/@deepseek-ai/example/types/index.d.ts',
       '/exact-target/node_modules/@deepseek-ai/example/types/public.d.ts',
     ])
     expect(files.some(file => file.path.endsWith('private.d.ts'))).toBe(false)
     expect(files.some(file => /index\.js(?:\.map)?$/u.test(file.path))).toBe(false)
-    expect(files.some(file => /\.env|credentials|api-oracle|image\.bin/u.test(file.path))).toBe(false)
+    expect(files.some(file => /docs\/(?:credentials\.json|secret-notes\.md)|\.env|api-oracle|image\.bin/u.test(file.path))).toBe(false)
     expect(files.find(file => file.path.endsWith('package.json'))?.mediaType).toBe('application/json')
     expect(files.filter(file => file.path.endsWith('.d.ts')).every(file => file.mediaType === 'text/typescript')).toBe(true)
   })
