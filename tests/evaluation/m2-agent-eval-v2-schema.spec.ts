@@ -189,6 +189,10 @@ function result(phase: 'P0' | 'H1' = 'H1'): JsonObject {
           byteLength: 6,
           inline: 'answer',
         },
+        providerMetadata: {
+          ...contentRef('6'),
+          inline: '{}',
+        },
         parsedApiClaims: [],
         taskSuccess: 'SUCCESS',
       }],
@@ -201,6 +205,14 @@ describe('M2.3 agent evaluation v2 schema', () => {
     const { ajv, validate } = await validator()
     expect(validate(definition()), ajv.errorsText(validate.errors)).toBe(true)
     expect(validate(result()), ajv.errorsText(validate.errors)).toBe(true)
+  })
+
+  it('requires retained provider-native completion metadata for every model outcome', async () => {
+    const { ajv, validate } = await validator()
+    const candidate = structuredClone(result()) as JsonObject
+    const attempt = ((((candidate.runs as JsonObject[])[0]!).attempts as JsonObject[])[0]!)
+    delete attempt.providerMetadata
+    expect(validate(candidate), ajv.errorsText(validate.errors)).toBe(false)
   })
 
   it('rejects naked hashes or missing execution evidence in canonical attempts', async () => {
