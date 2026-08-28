@@ -89,8 +89,7 @@ describe('M2.3 ordinary exact-target workspace', () => {
   })
 
   it('rejects duplicate paths and paths outside the canonical virtual root', async () => {
-    const duplicate = await workspace([...files(), files()[0]!])
-    await expect(validateOrdinaryWorkspace(duplicate, sha256)).rejects.toThrow(/duplicate|path/i)
+    await expect(workspace([...files(), files()[0]!])).rejects.toThrow(/duplicate|path/i)
 
     await expect(workspace([{ path: '../package.json', mediaType: 'application/json', content: '{}\n' }]))
       .rejects.toThrow(/path|root|exact-target/i)
