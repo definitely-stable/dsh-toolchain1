@@ -10,6 +10,7 @@ const TOOL_CALL_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/to
 const MALFORMED_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/malformed.mjs', import.meta.url))
 const FORBIDDEN_EVIDENCE_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/forbidden-evidence.mjs', import.meta.url))
 const TIMEOUT_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/timeout.mjs', import.meta.url))
+const NONZERO_EXIT_EXECUTOR = fileURLToPath(new URL('./fixtures/process-executor/nonzero-exit.mjs', import.meta.url))
 
 function modelEnvelope(tools: readonly ModelVisibleTool[] = []): ModelEnvelope {
   return {
@@ -138,6 +139,22 @@ describe('M2.3 process model executor', () => {
     expect(result).toMatchObject({
       kind: 'infrastructure-failure',
       reason: 'timeout',
+    })
+  })
+
+  it('classifies nonzero child exit as infrastructure failure and retains stderr evidence', async () => {
+    const result = await executeProcessModelAttempt({
+      ...processInput(NONZERO_EXIT_EXECUTOR, modelEnvelope()),
+      dispatchToolCall: async () => {
+        throw new Error('nonzero-exit fixture must not request tools')
+      },
+    })
+
+    expect(result).toMatchObject({
+      kind: 'infrastructure-failure',
+      reason: 'exit',
+      detail: expect.stringMatching(/code 7/i),
+      stderr: 'provider adapter crashed\n',
     })
   })
 })
