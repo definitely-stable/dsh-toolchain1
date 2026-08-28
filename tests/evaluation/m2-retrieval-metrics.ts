@@ -124,6 +124,24 @@ export function validateM2RetrievalCorpus(
     assertUniqueContractIds(replacements, 'replacement', task.id)
     if (forbidden.length > 0) forbiddenTasks += 1
 
+    const expectNoResult = task.expectNoResult === true
+    if ((task.category === 'no-result') !== expectNoResult) {
+      throw new Error(
+        `M2.3 task ${task.id} must use the no-result category exactly when expectNoResult is true.`,
+      )
+    }
+    if (expectNoResult) {
+      noResultTasks += 1
+      if (task.expectedContractIds.length > 0) {
+        throw new Error(`No-result task ${task.id} must not declare expected contracts.`)
+      }
+      if (replacements.length > 0) {
+        throw new Error(`No-result task ${task.id} must not declare a useful replacement contract.`)
+      }
+    } else if (task.expectedContractIds.length === 0) {
+      throw new Error(`Answerable task ${task.id} must declare at least one expected contract.`)
+    }
+
     for (const id of task.expectedContractIds) {
       if (!knownContractIds.has(id)) {
         throw new Error(`Unknown expected contract ${id} on M2.3 task ${task.id}.`)
@@ -149,24 +167,6 @@ export function validateM2RetrievalCorpus(
     }
     if (replacements.length > 0 && !task.riskTags?.includes('version-drift')) {
       throw new Error(`M2.3 task ${task.id} with a replacement must declare the version-drift risk tag.`)
-    }
-
-    const expectNoResult = task.expectNoResult === true
-    if ((task.category === 'no-result') !== expectNoResult) {
-      throw new Error(
-        `M2.3 task ${task.id} must use the no-result category exactly when expectNoResult is true.`,
-      )
-    }
-    if (expectNoResult) {
-      noResultTasks += 1
-      if (task.expectedContractIds.length > 0) {
-        throw new Error(`No-result task ${task.id} must not declare expected contracts.`)
-      }
-      if (replacements.length > 0) {
-        throw new Error(`No-result task ${task.id} must not declare a useful replacement contract.`)
-      }
-    } else if (task.expectedContractIds.length === 0) {
-      throw new Error(`Answerable task ${task.id} must declare at least one expected contract.`)
     }
   }
 
