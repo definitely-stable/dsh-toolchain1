@@ -83,7 +83,7 @@ function initialMessages() {
   ]
 }
 
-function requestBody(messages, toolChoice) {
+function requestBody(messages) {
   return {
     model: REQUEST_MODEL,
     messages,
@@ -91,7 +91,6 @@ function requestBody(messages, toolChoice) {
     reasoning_effort: REASONING_EFFORT,
     max_tokens: MAX_OUTPUT_TOKENS,
     tools: providerTools(),
-    tool_choice: toolChoice,
   }
 }
 
@@ -163,7 +162,7 @@ async function boundedProviderErrorDetails(response, apiKey) {
     .join(' ')
 }
 
-async function requestCompletion(configuration, messages, toolChoice) {
+async function requestCompletion(configuration, messages) {
   let response
   try {
     response = await fetch(configuration.endpoint, {
@@ -172,7 +171,7 @@ async function requestCompletion(configuration, messages, toolChoice) {
         authorization: `Bearer ${configuration.apiKey}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify(requestBody(messages, toolChoice)),
+      body: JSON.stringify(requestBody(messages)),
       signal: AbortSignal.timeout(120_000),
     })
   } catch {
@@ -253,14 +252,14 @@ export async function probeOpenCodeGoIdentity(environment = process.env, options
   }
 
   const messages = initialMessages()
-  const first = await requestCompletion(configuration, messages, 'required')
+  const first = await requestCompletion(configuration, messages)
   if (first.finishReason !== 'tool_calls') throw new Error('OpenCode Go probe did not finish the first response with tool_calls')
   const call = parseProbeToolCall(first.message)
   const firstReasoning = optionalString(first.message.reasoning_content, 'OpenCode Go probe reasoning_content')
 
   messages.push(assistantToolMessage(first.message))
   messages.push({ role: 'tool', tool_call_id: call.id, content: '{"value":"ok"}' })
-  const second = await requestCompletion(configuration, messages, 'auto')
+  const second = await requestCompletion(configuration, messages)
   if (Array.isArray(second.message.tool_calls) && second.message.tool_calls.length > 0) {
     throw new Error('OpenCode Go probe continuation unexpectedly requested another tool')
   }
