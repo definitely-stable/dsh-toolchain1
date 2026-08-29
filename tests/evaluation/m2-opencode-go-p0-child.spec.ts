@@ -77,12 +77,12 @@ function childEnvironment(baseUrl: string, overrides: Readonly<Record<string, st
     PATH: process.env.PATH ?? '',
     OPENCODE_API_KEY: SECRET,
     OPENCODE_GO_BASE_URL: baseUrl,
-    OPENCODE_GO_REQUEST_MODEL: 'deepseek-v4-pro',
-    OPENCODE_GO_EXPECTED_RESPONSE_MODEL: 'deepseek-v4-pro',
+    OPENCODE_GO_REQUEST_MODEL: 'deepseek-v4-flash',
+    OPENCODE_GO_EXPECTED_RESPONSE_MODEL: 'deepseek-v4-flash',
     OPENCODE_GO_EXPECTED_SYSTEM_FINGERPRINT: SYSTEM_FINGERPRINT,
     OPENCODE_GO_THINKING: 'enabled',
     OPENCODE_GO_REASONING_EFFORT: 'high',
-    OPENCODE_GO_MAX_OUTPUT_TOKENS: '6000',
+    OPENCODE_GO_MAX_OUTPUT_TOKENS: '12000',
     ...overrides,
   }
 }
@@ -118,7 +118,7 @@ describe('M2.3 OpenCode Go P0 process child', () => {
         responseJson(response, 200, {
           id: 'chatcmpl-opencode-tool-1',
           object: 'chat.completion',
-          model: 'deepseek-v4-pro',
+          model: 'deepseek-v4-flash',
           system_fingerprint: SYSTEM_FINGERPRINT,
           choices: [{
             index: 0,
@@ -141,7 +141,7 @@ describe('M2.3 OpenCode Go P0 process child', () => {
       responseJson(response, 200, {
         id: 'chatcmpl-opencode-final-1',
         object: 'chat.completion',
-        model: 'deepseek-v4-pro',
+        model: 'deepseek-v4-flash',
         system_fingerprint: SYSTEM_FINGERPRINT,
         choices: [{
           index: 0,
@@ -162,7 +162,7 @@ describe('M2.3 OpenCode Go P0 process child', () => {
       providerMetadata: {
         completionId: 'chatcmpl-opencode-final-1',
         finishReason: 'stop',
-        responseModel: 'deepseek-v4-pro',
+        responseModel: 'deepseek-v4-flash',
         systemFingerprint: SYSTEM_FINGERPRINT,
         inputTokens: 240,
         outputTokens: 50,
@@ -174,10 +174,10 @@ describe('M2.3 OpenCode Go P0 process child', () => {
 
     const first = requests[0]!.body
     expect(first).toMatchObject({
-      model: 'deepseek-v4-pro',
+      model: 'deepseek-v4-flash',
       thinking: { type: 'enabled' },
       reasoning_effort: 'high',
-      max_tokens: 6000,
+      max_tokens: 12000,
     })
     expect(first).not.toHaveProperty('tool_choice')
     expect(requests[1]!.body).not.toHaveProperty('tool_choice')
@@ -202,7 +202,7 @@ describe('M2.3 OpenCode Go P0 process child', () => {
       responseJson(response, 200, {
         id: 'chatcmpl-opencode-drift-1',
         object: 'chat.completion',
-        model: 'deepseek-v4-pro-next',
+        model: 'deepseek-v4-flash-next',
         system_fingerprint: 'fp_unexpected',
         choices: [{
           index: 0,
@@ -225,7 +225,7 @@ describe('M2.3 OpenCode Go P0 process child', () => {
       responseJson(response, 200, {
         id: 'chatcmpl-opencode-no-fingerprint',
         object: 'chat.completion',
-        model: 'deepseek-v4-pro',
+        model: 'deepseek-v4-flash',
         choices: [{
           index: 0,
           finish_reason: 'stop',
@@ -241,7 +241,7 @@ describe('M2.3 OpenCode Go P0 process child', () => {
     expect(result.kind).toBe('model-outcome')
     if (result.kind !== 'model-outcome') throw new Error('expected model outcome')
     expect(result.providerMetadata).toMatchObject({
-      responseModel: 'deepseek-v4-pro',
+      responseModel: 'deepseek-v4-flash',
       inputTokens: 10,
       outputTokens: 3,
     })
