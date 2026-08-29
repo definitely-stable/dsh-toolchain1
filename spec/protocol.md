@@ -116,6 +116,8 @@ Evidence records have:
 - source identity/details safe to expose;
 - optional content hash or location.
 
+An Evidence `id` is a provenance identifier only. It MUST NOT be passed as `contract.inspect.contractId` and MUST NOT be treated as an alias for an inspectable contract identifier.
+
 Allowed baseline `kind` values:
 `runtime`, `generated-catalog`, `composed-config`, `package`, `manifest`, `type-declaration`, `source`, `heuristic`.
 
@@ -173,7 +175,7 @@ Search MUST be progressive: it returns compact `ContractReference` rows and MUST
 
 The initial ranker is deterministic and local. It MAY rank exact/prefix/token/name matches above fact/summary matches, but equal semantic inputs MUST produce equal ordering independent of acquisition order. Embeddings or model ranking MUST NOT be required for M2.1.
 
-A successful response has `status: "ok"`, the M1 `snapshotFingerprint`, `ContractSearchResult`, the Contract Index fingerprint, compact matches, and the evidence subset referenced by those matches.
+A successful response has `status: "ok"`, the M1 `snapshotFingerprint`, `ContractSearchResult`, the Contract Index fingerprint, compact matches, and the evidence subset referenced by those matches. Each `data.matches[].id` is the inspectable contract identifier for a subsequent `contract.inspect` call. `data.matches[].evidenceIds` and `data.evidence[].id` are provenance references only and MUST NOT be substituted for that inspectable identifier.
 
 If target acquisition cannot produce a snapshot, expected `TARGET_*` conditions return `status: "failed"` without a `snapshotFingerprint`. If evidence captured by the resolved target changes before contract acquisition can consume one coherent epoch, the response MUST be `status: "stale"` with `CONTRACT_EVIDENCE_STALE`, MUST identify the starting `snapshotFingerprint`, and MUST NOT contain successful `data`.
 
@@ -183,11 +185,11 @@ If target acquisition cannot produce a snapshot, expected `TARGET_*` conditions 
 
 - `target`;
 - the caller's exact `contractIndexFingerprint`;
-- one non-empty `contractId` selected from search.
+- one non-empty `contractId` copied exactly from `contract.search.data.matches[].id`. Callers MUST NOT pass `data.matches[].evidenceIds` or `data.evidence[].id` as `contractId`.
 
 Inspection MUST reacquire/rebuild the current target-bound index rather than silently trusting caller-supplied cached facts. If the current fingerprint differs from the requested fingerprint, the response MUST be `status: "stale"` with `CONTRACT_INDEX_STALE`, MUST identify the current operation's target snapshot, and MUST NOT return a contract payload.
 
-If the fingerprint is current but `contractId` is absent, the response is `status: "failed"` with `CONTRACT_NOT_FOUND`. This is distinct from stale index state.
+If the fingerprint is current but `contractId` is absent, the response is `status: "failed"` with `CONTRACT_NOT_FOUND`. This is distinct from stale index state. When the supplied `contractId` is actually an Evidence `id` in the current index, Toolchain SHOULD return deterministic repair metadata directing the caller to use `contract.search.data.matches[].id` and MAY include a bounded set of matching inspectable contract ids. Toolchain MUST NOT silently treat the Evidence `id` as an alias for a contract id.
 
 A successful inspection returns exactly one normalized `ContractDefinition`, its `contractIndexFingerprint`, and the evidence needed to support that contract. Facts carry their own `evidenceIds`; callers MUST NOT infer stronger provenance than those references establish.
 
