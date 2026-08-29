@@ -226,7 +226,8 @@ async function readjudicatedRuns(
       throw new Error(`Retained P0 ${taskId}/${arm}/${trial} must contain at most one terminal model outcome`)
     }
 
-    const modelOutcome = modelOutcomes[0]
+    const [modelOutcome] = modelOutcomes
+    if (modelOutcome === undefined) continue
     const adjudicated = adjudicateP0ModelOutcomeV2(taskId, modelOutcome.rawAnswer.inline, truth)
     result.push(Object.freeze({
       taskId,
