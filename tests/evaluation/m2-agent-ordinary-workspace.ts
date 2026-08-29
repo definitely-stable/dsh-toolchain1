@@ -165,7 +165,12 @@ export function ordinaryWorkspaceProjection(workspace: OrdinaryWorkspace): unkno
   return {
     schema: workspace.schema,
     fixtureVersion: workspace.fixtureVersion,
-    target: workspace.target,
+    target: {
+      package: workspace.target.package,
+      version: workspace.target.version,
+      profile: workspace.target.profile,
+      targetFingerprint: workspace.target.targetFingerprint,
+    },
     inclusionPolicy: workspace.inclusionPolicy,
     packages: workspace.packages,
     files: workspace.files.map(fileProjection),
