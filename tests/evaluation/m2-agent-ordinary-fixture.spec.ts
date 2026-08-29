@@ -58,8 +58,11 @@ describe('M2.3 frozen ordinary rc.2 workspace', () => {
     expect(packageManifest).toBeDefined()
     if (packageManifest === undefined) throw new Error('frozen DSH package manifest is missing')
     await expect(readTool.execute({ path: packageManifest.path })).resolves.toMatchObject({ path: packageManifest.path })
-    const searchResult = await searchTool.execute({ query: '@deepseek-ai/dsh', maxResults: 5 })
-    expect(searchResult.matches.length).toBeGreaterThan(0)
+    await expect(searchTool.execute({ query: '@deepseek-ai/dsh', limit: 5 })).resolves.toMatchObject({
+      matches: expect.arrayContaining([
+        expect.objectContaining({ path: expect.stringContaining('/exact-target/node_modules/') }),
+      ]),
+    })
 
     const manifests = createFrozenP0CapabilityManifests(workspace, {
       searchTool: {
