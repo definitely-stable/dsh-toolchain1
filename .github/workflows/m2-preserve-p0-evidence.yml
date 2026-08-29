@@ -1,0 +1,163 @@
+name: M2 Preserve P0 Evidence
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: m2-preserve-p0-33264398212
+  cancel-in-progress: false
+
+jobs:
+  preserve:
+    if: >-
+      github.event.issue.number == 64 &&
+      github.event.comment.body == '/preserve-m2-p0-33264398212' &&
+      github.event.comment.user.login == 'MrFr3di' &&
+      github.event.issue.pull_request == null
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Download retained P0 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/m2-p0-retained"
+          curl --fail --silent --show-error --location \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --output "$RUNNER_TEMP/m2-p0-retained/artifact.zip" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9719182193/zip"
+          unzip -q "$RUNNER_TEMP/m2-p0-retained/artifact.zip" -d "$RUNNER_TEMP/m2-p0-retained/files"
+
+      - name: Validate immutable retained evidence
+        env:
+          EVIDENCE_ROOT: ${{ runner.temp }}/m2-p0-retained/files
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto'
+          import { readFile } from 'node:fs/promises'
+          import { join } from 'node:path'
+
+          const root = process.env.EVIDENCE_ROOT
+          const probePath = join(root, 'probe.json')
+          const resultPath = join(root, 'result.json')
+          const [probeBytes, resultBytes] = await Promise.all([readFile(probePath), readFile(resultPath)])
+          const probe = JSON.parse(probeBytes.toString('utf8'))
+          const result = JSON.parse(resultBytes.toString('utf8'))
+
+          if (probe.schema !== 'dsh-toolchain-m2-opencode-go-probe-v1') throw new Error('unexpected retained probe schema')
+          if (result.status !== 'INCONCLUSIVE') throw new Error(`unexpected retained status: ${String(result.status)}`)
+          if (result.definitionSha256 !== '240d1e9ff32c976a55c6a312e16f2046833047c512d33f711bb0eef60c8be2c6') {
+            throw new Error('retained P0 definition hash mismatch')
+          }
+          if (!Array.isArray(result.runs) || result.runs.length !== 72) throw new Error('retained P0 must contain exactly 72 scheduled runs')
+
+          const modelOutcomes = result.runs.reduce((count, run) => count + (Array.isArray(run.attempts)
+            ? run.attempts.filter(attempt => attempt?.outcome === 'model-outcome').length
+            : 0), 0)
+          if (modelOutcomes !== 69) throw new Error(`unexpected retained model-outcome count: ${modelOutcomes}`)
+
+          const forbiddenKey = /^(?:authorization|api[_-]?key|apikey|client[_-]?secret|access[_-]?token|credential|credentials|secret)$/iu
+          const bearer = /Bearer\s+[A-Za-z0-9._~+\/-]{20,}/u
+          const secretLike = /(?:^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}/u
+
+          function scan(value, path = '$') {
+            if (Array.isArray(value)) {
+              value.forEach((item, index) => scan(item, `${path}[${index}]`))
+              return
+            }
+            if (value !== null && typeof value === 'object') {
+              for (const [key, child] of Object.entries(value)) {
+                if (forbiddenKey.test(key)) throw new Error(`credential-like retained field at ${path}.${key}`)
+                scan(child, `${path}.${key}`)
+              }
+              return
+            }
+            if (typeof value === 'string' && (bearer.test(value) || secretLike.test(value))) {
+              throw new Error(`credential-like retained string at ${path}`)
+            }
+          }
+          scan(probe)
+          scan(result)
+
+          const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
+          console.log(`probeSha256=${sha256(probeBytes)}`)
+          console.log(`resultSha256=${sha256(resultBytes)}`)
+          console.log(`resultBytes=${resultBytes.byteLength}`)
+          console.log(`runs=${result.runs.length} modelOutcomes=${modelOutcomes}`)
+          NODE
+
+      - name: Commit retained evidence on dedicated branch
+        env:
+          EVIDENCE_ROOT: ${{ runner.temp }}/m2-p0-retained/files
+        run: |
+          set -euo pipefail
+          branch='evidence/m2-p0-33264398212'
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "Evidence branch already exists; refusing to overwrite immutable evidence." >&2
+            exit 1
+          fi
+
+          git switch --create "$branch"
+          target='tests/evaluation/fixtures/m2/p0-live-33264398212'
+          mkdir -p "$target"
+          cp "$EVIDENCE_ROOT/probe.json" "$target/probe.json"
+          cp "$EVIDENCE_ROOT/result.json" "$target/result.json"
+
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto'
+          import { readFile, writeFile } from 'node:fs/promises'
+          import { join } from 'node:path'
+
+          const target = 'tests/evaluation/fixtures/m2/p0-live-33264398212'
+          const fileInfo = async name => {
+            const bytes = await readFile(join(target, name))
+            return {
+              path: name,
+              sha256: createHash('sha256').update(bytes).digest('hex'),
+              byteLength: bytes.byteLength,
+            }
+          }
+          const manifest = {
+            schema: 'dsh-toolchain-m2-retained-p0-evidence-v1',
+            github: {
+              runId: 33264398212,
+              artifactId: 9719182193,
+              artifactName: 'm2-p0-live-33264398212-1',
+              artifactDigest: 'sha256:f9601b8e139519d05d72e5fab528c921b49f9240cb4cdff4bf76c4d1edb19a6f',
+            },
+            source: {
+              headSha: 'fee95e4613ffa32210f0800b7e5a9cbd929f0f6d',
+              definitionSha256: '240d1e9ff32c976a55c6a312e16f2046833047c512d33f711bb0eef60c8be2c6',
+              historicalStatus: 'INCONCLUSIVE',
+              scheduledRuns: 72,
+              modelOutcomes: 69,
+            },
+            files: {
+              probe: await fileInfo('probe.json'),
+              result: await fileInfo('result.json'),
+            },
+            immutable: true,
+          }
+          await writeFile(join(target, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+          NODE
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$target"
+          git commit -m 'test(m2.3): retain canonical P0 live evidence'
+          git push origin "$branch"
