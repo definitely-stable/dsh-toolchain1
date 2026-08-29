@@ -87,6 +87,11 @@ function requireString(value: unknown, label: string): string {
   return value
 }
 
+function requireText(value: unknown, label: string): string {
+  if (typeof value !== 'string') throw new Error(`${label} must be a string`)
+  return value
+}
+
 function requireInteger(value: unknown, label: string, minimum = 0): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < minimum) {
     throw new Error(`${label} must be an integer >= ${minimum}`)
@@ -133,7 +138,7 @@ function modelOutcomeAttempt(value: unknown, label: string): RetainedModelOutcom
   if (record.outcome !== 'model-outcome') return undefined
   const attempt = requireInteger(record.attempt, `${label}.attempt`, 1)
   const rawAnswer = requireRecord(record.rawAnswer, `${label}.rawAnswer`)
-  const inline = requireString(rawAnswer.inline, `${label}.rawAnswer.inline`)
+  const inline = requireText(rawAnswer.inline, `${label}.rawAnswer.inline`)
   return Object.freeze({
     outcome: 'model-outcome',
     attempt,
