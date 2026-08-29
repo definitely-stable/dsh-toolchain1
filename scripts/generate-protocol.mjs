@@ -18,6 +18,7 @@ const supportedKeywords = new Set([
   '$ref',
   '$defs',
   'title',
+  'description',
   'type',
   'const',
   'enum',
