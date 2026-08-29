@@ -10,6 +10,7 @@ import { readjudicateRetainedP0V2 } from './m2-retained-p0-readjudication-v2.js'
 const sha256 = createNodeSha256Port()
 const retainedRoot = new URL('./fixtures/m2/p0-live-33264398212/', import.meta.url)
 const ordinaryWorkspaceUrl = new URL('./fixtures/m2/rc2-web-v1/ordinary-workspace.json', import.meta.url)
+const derivedSummaryUrl = new URL('../../docs/evaluation/m2/p0-readjudication-v2.json', import.meta.url)
 
 interface RetainedManifest {
   readonly source: {
@@ -24,19 +25,34 @@ interface RetainedManifest {
   }
 }
 
+interface CommittedDerivedSummary {
+  readonly schema: string
+  readonly derived: boolean
+  readonly replacesHistoricalResult: boolean
+  readonly source: Record<string, unknown>
+  readonly adjudicator: string
+  readonly truthFingerprint: string
+  readonly reportSha256: string
+  readonly byArm: unknown
+  readonly limitations: readonly string[]
+}
+
 let manifest: RetainedManifest
 let retainedResult: unknown
 let truth: ApiTruthUniverseV2
+let committedSummary: CommittedDerivedSummary
 
 beforeAll(async () => {
-  const [manifestText, resultText, workspaceText] = await Promise.all([
+  const [manifestText, resultText, workspaceText, summaryText] = await Promise.all([
     readFile(new URL('manifest.json', retainedRoot), 'utf8'),
     readFile(new URL('result.json', retainedRoot), 'utf8'),
     readFile(ordinaryWorkspaceUrl, 'utf8'),
+    readFile(derivedSummaryUrl, 'utf8'),
   ])
   manifest = JSON.parse(manifestText) as RetainedManifest
   retainedResult = JSON.parse(resultText) as unknown
   truth = await buildApiTruthUniverseV2(JSON.parse(workspaceText) as OrdinaryWorkspace, sha256)
+  committedSummary = JSON.parse(summaryText) as CommittedDerivedSummary
 })
 
 async function report() {
@@ -55,7 +71,7 @@ async function report() {
 }
 
 describe('retained M2.3 P0 re-adjudication v2', () => {
-  it('derives a compact content-addressed analysis without rewriting historical status', async () => {
+  it('derives the frozen compact analysis without rewriting historical status', async () => {
     const derived = await report()
 
     expect(derived).toMatchObject({
@@ -65,24 +81,58 @@ describe('retained M2.3 P0 re-adjudication v2', () => {
         runId: 33264398212,
         headSha: 'fee95e4613ffa32210f0800b7e5a9cbd929f0f6d',
         definitionSha256: '240d1e9ff32c976a55c6a312e16f2046833047c512d33f711bb0eef60c8be2c6',
-        resultSha256: manifest.files.result.sha256,
+        resultSha256: 'f22f2e4016ba12fe585971d6bf70106745f0d9b5393ec1bdc1b506ec32ae1d8e',
         historicalStatus: 'INCONCLUSIVE',
         scheduledRuns: 72,
         modelOutcomes: 69,
       },
       adjudicator: 'dsh-toolchain-m2-p0-adjudication-v2',
-      truthFingerprint: truth.fingerprint,
+      truthFingerprint: 'dsh-api-truth-v2:14ab2c32fa1307de300d09715b30a147a9ffe7884335ee0f19ebc5cb018871bb',
+      reportSha256: 'aaba6e82c2506d0af0b440cb0bf34c1ebf68efc9293f32ca8eeeadeb294bdd69',
     })
     expect(derived.runs).toHaveLength(69)
     expect(derived.runs.filter(run => run.arm === 'B' || run.arm === 'C')).toHaveLength(48)
-    expect(Object.values(derived.byArm).reduce((total, arm) => total + arm.modelOutcomes, 0)).toBe(69)
-    expect(derived.reportSha256).toMatch(/^[0-9a-f]{64}$/u)
+    expect(derived.byArm).toEqual({
+      A: {
+        modelOutcomes: 21,
+        success: 0,
+        failure: 0,
+        unknown: 21,
+        validClaims: 0,
+        invalidClaims: 2,
+        unknownClaims: 11,
+      },
+      B: {
+        modelOutcomes: 24,
+        success: 15,
+        failure: 0,
+        unknown: 9,
+        validClaims: 23,
+        invalidClaims: 0,
+        unknownClaims: 6,
+      },
+      C: {
+        modelOutcomes: 24,
+        success: 22,
+        failure: 0,
+        unknown: 2,
+        validClaims: 57,
+        invalidClaims: 0,
+        unknownClaims: 7,
+      },
+    })
 
-    process.stdout.write(`M2_P0_READJUDICATION_V2_SUMMARY ${JSON.stringify({
-      byArm: derived.byArm,
+    expect(committedSummary).toMatchObject({
+      schema: 'dsh-toolchain-m2-p0-readjudication-v2-summary',
+      derived: true,
+      replacesHistoricalResult: false,
+      source: derived.source,
+      adjudicator: derived.adjudicator,
       truthFingerprint: derived.truthFingerprint,
       reportSha256: derived.reportSha256,
-    })}\n`)
+      byArm: derived.byArm,
+    })
+    expect(committedSummary.limitations.length).toBeGreaterThan(0)
 
     const serialized = JSON.stringify(derived)
     expect(serialized).not.toContain('"rawAnswer"')
