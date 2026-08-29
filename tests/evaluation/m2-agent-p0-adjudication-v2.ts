@@ -46,9 +46,14 @@ interface PositiveTaskRuleV2 {
   readonly symbols: ReadonlySet<string>
 }
 
+type NegativeProofScopeV2 =
+  | { readonly kind: 'target' }
+  | { readonly kind: 'package'; readonly package: string }
+
 interface NegativeTaskRuleV2 {
   readonly kind: 'negative'
   readonly symbols: ReadonlySet<string>
+  readonly proofScope: NegativeProofScopeV2
 }
 
 type P0TaskRuleV2 = PositiveTaskRuleV2 | NegativeTaskRuleV2
@@ -93,10 +98,12 @@ const P0_TASK_RULES_V2: Readonly<Record<string, P0TaskRuleV2>> = Object.freeze({
   'p0-07': Object.freeze({
     kind: 'negative',
     symbols: new Set(['patchReload', 'profile.patchReload']),
+    proofScope: Object.freeze({ kind: 'target' }),
   }),
   'p0-08': Object.freeze({
     kind: 'negative',
     symbols: new Set(['ToolAutopilot']),
+    proofScope: Object.freeze({ kind: 'package', package: '@deepseek-ai/dsh-tools' }),
   }),
 })
 
@@ -513,19 +520,67 @@ function adjudicatePositiveTask(
   return 'UNKNOWN'
 }
 
+function scopedEntries(
+  rule: NegativeTaskRuleV2,
+  truth: ApiTruthUniverseV2,
+): readonly ApiTruthEntryV2[] {
+  return rule.proofScope.kind === 'package'
+    ? entriesInPackage(truth, rule.proofScope.package)
+    : truth.entries
+}
+
+function scopedSurfaceComplete(rule: NegativeTaskRuleV2, truth: ApiTruthUniverseV2): boolean {
+  return rule.proofScope.kind === 'package'
+    ? packageComplete(truth, rule.proofScope.package) === true
+    : universeComplete(truth)
+}
+
+function scopedAbsenceProven(
+  rule: NegativeTaskRuleV2,
+  claim: ClassifiedP0ApiClaimV2,
+  truth: ApiTruthUniverseV2,
+): boolean {
+  if (
+    claim.assertion !== 'absent'
+    || claim.classification !== 'UNKNOWN'
+    || claim.resolution !== 'incomplete-universe'
+    || !scopedSurfaceComplete(rule, truth)
+  ) {
+    return false
+  }
+
+  const entries = scopedEntries(rule, truth)
+  if (exactEntries(entries, claim.symbol).length > 0) return false
+  if (leafEntries(entries, claim.leaf).length > 0) return false
+  return true
+}
+
 function adjudicateNegativeTask(
   rule: NegativeTaskRuleV2,
   claims: readonly ClassifiedP0ApiClaimV2[],
+  truth?: ApiTruthUniverseV2,
 ): P0TaskSuccessV2 {
   const relevant = claims.filter(claim => negativeRelevant(rule, claim))
   const assertions = new Set(relevant.map(claim => claim.assertion))
   if (assertions.size > 1) return 'UNKNOWN'
-  if (relevant.some(claim => claim.classification === 'UNKNOWN')) return 'UNKNOWN'
+
+  const unresolvedUnknown = relevant.some(claim => (
+    claim.classification === 'UNKNOWN'
+    && (truth === undefined || !scopedAbsenceProven(rule, claim, truth))
+  ))
+  if (unresolvedUnknown) return 'UNKNOWN'
+
   if (relevant.some(claim => claim.assertion === 'exists')) return 'FAILURE'
   if (relevant.some(claim => claim.assertion === 'absent' && claim.classification === 'INVALID')) {
     return 'FAILURE'
   }
-  if (relevant.some(claim => claim.assertion === 'absent' && claim.classification === 'VALID')) {
+  if (relevant.some(claim => (
+    claim.assertion === 'absent'
+    && (
+      claim.classification === 'VALID'
+      || (claim.classification === 'UNKNOWN' && truth !== undefined && scopedAbsenceProven(rule, claim, truth))
+    )
+  ))) {
     return 'SUCCESS'
   }
   return 'UNKNOWN'
@@ -534,11 +589,12 @@ function adjudicateNegativeTask(
 export function adjudicateP0TaskSuccessV2(
   taskId: string,
   claims: readonly ClassifiedP0ApiClaimV2[],
+  truth?: ApiTruthUniverseV2,
 ): P0TaskSuccessV2 {
   const rule = taskRule(taskId)
   return rule.kind === 'positive'
     ? adjudicatePositiveTask(rule, claims)
-    : adjudicateNegativeTask(rule, claims)
+    : adjudicateNegativeTask(rule, claims, truth)
 }
 
 export function adjudicateP0ModelOutcomeV2(
@@ -553,6 +609,6 @@ export function adjudicateP0ModelOutcomeV2(
   const parsedApiClaims = classifyP0ApiClaimsV2(parseP0ApiClaimsV2(rawAnswer), truth)
   return Object.freeze({
     parsedApiClaims,
-    taskSuccess: adjudicateP0TaskSuccessV2(taskId, parsedApiClaims),
+    taskSuccess: adjudicateP0TaskSuccessV2(taskId, parsedApiClaims, truth),
   })
 }
