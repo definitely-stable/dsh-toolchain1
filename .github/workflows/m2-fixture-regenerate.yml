@@ -6,6 +6,7 @@ on:
       - feat/m2-3-p0-ordinary-evidence
     paths:
       - .github/workflows/m2-fixture-regenerate.yml
+      - scripts/m2-ordinary-evidence.mjs
 
 permissions:
   contents: write
