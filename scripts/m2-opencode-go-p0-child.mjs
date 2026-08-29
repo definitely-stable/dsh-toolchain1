@@ -135,7 +135,7 @@ function providerRequestBody(configuration, messages, tools) {
     thinking: { type: configuration.thinking },
     reasoning_effort: configuration.reasoningEffort,
     max_tokens: configuration.maxOutputTokens,
-    ...(tools.length === 0 ? {} : { tools, tool_choice: 'auto' }),
+    ...(tools.length === 0 ? {} : { tools }),
   }
 }
 
