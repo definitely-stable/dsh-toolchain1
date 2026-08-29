@@ -45,6 +45,8 @@ export interface FrozenP0ProviderIdentity {
   provider: 'deepseek'
   requestModel: string
   reviewedSnapshot: string
+  expectedResponseModel: string
+  expectedSystemFingerprint: string
   thinking: 'enabled' | 'disabled'
   reasoningEffort: 'low' | 'high' | 'max'
   baseUrl: string
@@ -128,6 +130,8 @@ function assertProvider(provider: FrozenP0ProviderIdentity): void {
   if (provider.provider !== 'deepseek') throw new Error('P0 provider must be deepseek')
   requireNonEmptyString(provider.requestModel, 'P0 request model')
   requireNonEmptyString(provider.reviewedSnapshot, 'P0 reviewed snapshot')
+  requireNonEmptyString(provider.expectedResponseModel, 'P0 expected response model')
+  requireNonEmptyString(provider.expectedSystemFingerprint, 'P0 expected system fingerprint')
   requireNonEmptyString(provider.baseUrl, 'P0 provider baseUrl')
   if (provider.adapterVersion !== 'deepseek-chat-v1') throw new Error('Unsupported P0 provider adapter version')
   if (provider.thinking !== 'enabled' && provider.thinking !== 'disabled') throw new Error('Unsupported P0 thinking mode')
@@ -315,6 +319,8 @@ export async function createFrozenP0Inputs(
     provider: provider.provider,
     requestModel: provider.requestModel,
     reviewedSnapshot: provider.reviewedSnapshot,
+    expectedResponseModel: provider.expectedResponseModel,
+    expectedSystemFingerprint: provider.expectedSystemFingerprint,
     thinking: provider.thinking,
     reasoningEffort: provider.reasoningEffort,
     baseUrl: provider.baseUrl,
