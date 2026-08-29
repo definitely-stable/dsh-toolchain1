@@ -88,6 +88,26 @@ describe('M2.3 ordinary exact-target workspace', () => {
     expect(changed.workspaceSnapshotSha256).not.toBe(first.workspaceSnapshotSha256)
   })
 
+  it('keeps conventional workspace identity independent from Toolchain ContractIndex identity', async () => {
+    const first = await workspace()
+    const changedIndex = await createOrdinaryWorkspace({
+      fixtureVersion: 'rc2-web-v1',
+      target: {
+        ...TARGET,
+        contractIndexFingerprint: `dsh-contract-index-v1:${'3'.repeat(64)}`,
+      },
+      packages: [
+        { name: '@deepseek-ai/dsh-tools', version: '0.1.1-rc.2' },
+        { name: '@deepseek-ai/dsh', version: '0.1.1-rc.2' },
+      ],
+      files: files(),
+    }, sha256)
+
+    expect(changedIndex.target.contractIndexFingerprint).not.toBe(first.target.contractIndexFingerprint)
+    expect(changedIndex.workspaceSnapshotSha256).toBe(first.workspaceSnapshotSha256)
+    expect(ordinaryWorkspaceProjection(changedIndex)).toEqual(ordinaryWorkspaceProjection(first))
+  })
+
   it('rejects duplicate paths and paths outside the canonical virtual root', async () => {
     await expect(workspace([...files(), files()[0]!])).rejects.toThrow(/duplicate|path/i)
 
