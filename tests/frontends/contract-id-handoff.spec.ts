@@ -86,7 +86,7 @@ function searchResponse(): ContractSearchResponse {
         score: 200,
         evidenceIds: [evidenceId],
       }],
-      evidence: contractFacts.evidence,
+      evidence: [...contractFacts.evidence],
     },
     diagnostics: [],
   }
@@ -101,7 +101,7 @@ function inspectResponse(): ContractInspectResponse {
     data: {
       contractIndexFingerprint,
       contract: contractFacts.contracts[0]!,
-      evidence: contractFacts.evidence,
+      evidence: [...contractFacts.evidence],
     },
     diagnostics: [],
   }
