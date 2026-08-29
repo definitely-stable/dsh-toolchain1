@@ -113,6 +113,27 @@ describe('Contract Intelligence MCP projection', () => {
     })
   })
 
+  it('makes the search-to-inspect identity handoff explicit in MCP descriptions and Protocol schema', () => {
+    const kernel = mockKernel()
+    const search = createContractSearchMcpTool(kernel)
+    const inspect = createContractInspectMcpTool(kernel)
+    const server = buildMcpServer({ kernel, requestId: () => 'mcp-contract-id-guidance' })
+    const inspectSchema = server.toolInputSchemaJson('contract.inspect') as {
+      $defs?: Record<string, { properties?: Record<string, { description?: string }> }>
+    }
+
+    expect(search.config.description).toContain('data.matches[].id')
+    expect(search.config.description).toContain('provenance')
+    expect(inspect.config.description).toContain('data.matches[].id')
+    expect(inspect.config.description).toContain('evidence')
+    expect(inspectSchema.$defs?.contractInspectRequest?.properties?.contractId?.description)
+      .toContain('data.matches[].id')
+    expect(inspectSchema.$defs?.contractReference?.properties?.id?.description)
+      .toContain('Inspectable contract identifier')
+    expect(inspectSchema.$defs?.evidence?.properties?.id?.description)
+      .toContain('Provenance evidence identifier')
+  })
+
   it('defines contract.search as read-only/idempotent and delegates canonical requests', async () => {
     const kernel = mockKernel()
     const tool = createContractSearchMcpTool(kernel, () => 'mcp-search')
