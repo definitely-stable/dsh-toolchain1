@@ -192,6 +192,20 @@ function isStaleContractError(error: ContractOperationError): boolean {
   return error.code === 'CONTRACT_EVIDENCE_STALE' || error.code === 'CONTRACT_INDEX_STALE'
 }
 
+function owningContractIdsForEvidence(index: ContractIndex, evidenceId: string): readonly string[] {
+  if (!index.evidence.some(item => item.id === evidenceId)) return Object.freeze([])
+
+  return Object.freeze(
+    index.contracts
+      .filter(contract =>
+        contract.evidenceIds.includes(evidenceId)
+        || contract.facts.some(fact => fact.evidenceIds.includes(evidenceId)),
+      )
+      .map(contract => contract.id)
+      .toSorted(),
+  )
+}
+
 export async function resolveTargetResponse(
   kernel: ApplicationKernel,
   request: TargetResolveRequest,
@@ -392,9 +406,13 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
       }
       const selection = inspectContractIndex(index, request.contractId)
       if (selection === undefined) {
+        const owningContractIds = owningContractIdsForEvidence(index, request.contractId)
+        const message = owningContractIds.length === 0
+          ? `Contract ${request.contractId} is not present in the current contract index.`
+          : `Evidence id ${request.contractId} is provenance, not a contract id. Use contract.search data.matches[].id for contract.inspect; owning contract id(s): ${owningContractIds.join(', ')}.`
         throw new ContractOperationError(
           'CONTRACT_NOT_FOUND',
-          `Contract ${request.contractId} is not present in the current contract index.`,
+          message,
           snapshot.fingerprint,
         )
       }
