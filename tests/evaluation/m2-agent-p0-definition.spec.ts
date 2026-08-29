@@ -115,9 +115,9 @@ describe('M2.3 frozen P0 execution definition', () => {
 
     const resources = record(definition.resources, 'P0 resources')
     expect(resources).toEqual({
-      maxTurns: 12,
-      maxInputTokens: 30_000,
-      maxOutputTokens: 6_000,
+      maxTurns: 24,
+      maxInputTokens: 150_000,
+      maxOutputTokens: 12_000,
       wallTimeMs: 300_000,
       concurrency: 1,
     })
