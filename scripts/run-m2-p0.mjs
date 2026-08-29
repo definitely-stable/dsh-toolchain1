@@ -274,6 +274,8 @@ async function importRuntime(runtimeRoot) {
   }
 }
 
+export { compileEvaluationRuntime, importRuntime }
+
 function safeSummary(provider, output) {
   return [
     'M2.3 P0 calibration',
