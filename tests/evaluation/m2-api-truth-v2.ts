@@ -92,10 +92,6 @@ function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
   return ts.getModifiers(node)?.some(modifier => modifier.kind === kind) ?? false
 }
 
-function isExported(node: ts.Node): boolean {
-  return hasModifier(node, ts.SyntaxKind.ExportKeyword)
-}
-
 function isPublicMember(node: ts.Node): boolean {
   return !hasModifier(node, ts.SyntaxKind.PrivateKeyword)
     && !hasModifier(node, ts.SyntaxKind.ProtectedKeyword)
