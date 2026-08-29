@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { Buffer } from 'node:buffer'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +11,8 @@ const REQUEST_MODEL = 'deepseek-v4-pro'
 const THINKING = 'enabled'
 const REASONING_EFFORT = 'high'
 const MAX_OUTPUT_TOKENS = 256
+const MAX_PROVIDER_ERROR_BYTES = 4_096
+const MAX_PROVIDER_ERROR_FIELD_CHARACTERS = 240
 
 function requireEnvironment(environment, name) {
   const value = environment[name]
@@ -92,6 +95,70 @@ function requestBody(messages, toolChoice) {
   }
 }
 
+function safeProviderErrorField(value, apiKey) {
+  let text
+  if (typeof value === 'string') text = value
+  else if (Number.isInteger(value)) text = String(value)
+  else return undefined
+
+  const redacted = apiKey.length === 0 ? text : text.replaceAll(apiKey, '[redacted]')
+  const normalized = redacted.replace(/[\u0000-\u001f\u007f]+/gu, ' ').replace(/\s+/gu, ' ').trim()
+  if (normalized.length === 0) return undefined
+  return normalized.slice(0, MAX_PROVIDER_ERROR_FIELD_CHARACTERS)
+}
+
+async function readBoundedProviderErrorBody(response) {
+  if (response.body === null) return undefined
+  const reader = response.body.getReader()
+  const chunks = []
+  let bytes = 0
+  try {
+    while (true) {
+      const next = await reader.read()
+      if (next.done) break
+      bytes += next.value.byteLength
+      if (bytes > MAX_PROVIDER_ERROR_BYTES) {
+        await reader.cancel().catch(() => undefined)
+        return undefined
+      }
+      chunks.push(Buffer.from(next.value))
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+async function boundedProviderErrorDetails(response, apiKey) {
+  let text
+  try {
+    text = await readBoundedProviderErrorBody(response)
+  } catch {
+    return ''
+  }
+  if (text === undefined || text.trim() === '') return ''
+
+  let value
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return ''
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return ''
+  const error = value.error
+  if (error === null || typeof error !== 'object' || Array.isArray(error)) return ''
+
+  const fields = [
+    ['type', safeProviderErrorField(error.type, apiKey)],
+    ['code', safeProviderErrorField(error.code, apiKey)],
+    ['message', safeProviderErrorField(error.message, apiKey)],
+  ]
+  return fields
+    .filter(([, fieldValue]) => fieldValue !== undefined)
+    .map(([name, fieldValue]) => `${name}=${fieldValue}`)
+    .join(' ')
+}
+
 async function requestCompletion(configuration, messages, toolChoice) {
   let response
   try {
@@ -108,8 +175,8 @@ async function requestCompletion(configuration, messages, toolChoice) {
     throw new Error('OpenCode Go probe request failed')
   }
   if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined)
-    throw new Error(`OpenCode Go probe provider HTTP ${response.status}`)
+    const details = await boundedProviderErrorDetails(response, configuration.apiKey)
+    throw new Error(`OpenCode Go probe provider HTTP ${response.status}${details === '' ? '' : ` ${details}`}`)
   }
 
   let value
