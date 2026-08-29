@@ -28,6 +28,8 @@ export interface ProcessModelAttemptInput {
 export interface ProcessProviderMetadata {
   completionId: string
   finishReason: string
+  responseModel?: string
+  systemFingerprint?: string
   inputTokens?: number
   outputTokens?: number
 }
