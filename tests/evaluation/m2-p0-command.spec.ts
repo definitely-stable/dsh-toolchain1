@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const temporaryRoots: string[] = []
 const SCRIPT = fileURLToPath(new URL('../../scripts/run-m2-p0.mjs', import.meta.url))
+const REPOSITORY_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 
 async function temporaryRoot(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'dsh-toolchain-p0-command-'))
@@ -86,11 +87,8 @@ describe('M2.3 explicit P0 calibration command boundary', () => {
     await expect(validateOutputTarget(srcOutput, { root, overwriteInconclusive: false })).rejects.toThrow(/src|distribution/u)
     await expect(validateOutputTarget(libOutput, { root, overwriteInconclusive: false })).rejects.toThrow(/lib|distribution/u)
 
-    await writeFile(resultOutput, JSON.stringify({ status: 'CALIBRATED' }), { encoding: 'utf8', recursive: false } as never).catch(async () => {
-      const { mkdir } = await import('node:fs/promises')
-      await mkdir(path.dirname(resultOutput), { recursive: true })
-      await writeFile(resultOutput, JSON.stringify({ status: 'CALIBRATED' }), 'utf8')
-    })
+    await mkdir(path.dirname(resultOutput), { recursive: true })
+    await writeFile(resultOutput, JSON.stringify({ status: 'CALIBRATED' }), 'utf8')
     await expect(validateOutputTarget(resultOutput, { root, overwriteInconclusive: false })).rejects.toThrow(/exists/u)
     await expect(validateOutputTarget(resultOutput, { root, overwriteInconclusive: true })).rejects.toThrow(/CALIBRATED|INCONCLUSIVE/u)
 
@@ -108,6 +106,22 @@ describe('M2.3 explicit P0 calibration command boundary', () => {
     expect(receipt.sha256).toMatch(/^[0-9a-f]{64}$/u)
     expect(await readFile(output, 'utf8')).toBe('{"a":1,"z":2}\n')
   })
+
+  it('compiles and loads the real evaluation-only P0 runtime without adding a runtime dependency', async () => {
+    const command = await loadCommandModule()
+    const compileEvaluationRuntime = command.compileEvaluationRuntime as (root: string) => Promise<string>
+    const importRuntime = command.importRuntime as (runtimeRoot: string) => Promise<Record<string, unknown>>
+
+    const runtimeRoot = await compileEvaluationRuntime(REPOSITORY_ROOT)
+    try {
+      const runtime = await importRuntime(runtimeRoot)
+      expect(runtime.createFrozenP0Inputs).toBeTypeOf('function')
+      expect(runtime.executeFrozenP0).toBeTypeOf('function')
+      expect(runtime.validateAgentV2ResultAgainstDefinition).toBeTypeOf('function')
+    } finally {
+      await rm(runtimeRoot, { recursive: true, force: true })
+    }
+  }, 60_000)
 
   it('exists as an explicit manual node entry point and never embeds a provider credential', async () => {
     const source = await readFile(SCRIPT, 'utf8')
