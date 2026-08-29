@@ -61,8 +61,8 @@ describe('M2.3 live P0 workflow policy', () => {
 
     expect(upload).toContain('actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02')
     expect(upload).toContain('retention-days: 1')
-    expect(upload).toContain('$RUNNER_TEMP/m2-p0-live/probe.json')
-    expect(upload).toContain('$RUNNER_TEMP/m2-p0-live/result.json')
+    expect(upload).toContain('${{ runner.temp }}/m2-p0-live/probe.json')
+    expect(upload).toContain('${{ runner.temp }}/m2-p0-live/result.json')
     for (const forbidden of ['node_modules', '.artifacts', 'dsh-toolchain.tgz', 'dsh-home', 'lib/']) {
       expect(upload).not.toContain(forbidden)
     }
