@@ -62,7 +62,7 @@ export function createContractSearchToolDefinition(
 ): DshToolDefinition {
   return {
     name: CONTRACT_SEARCH_TOOL_NAME,
-    description: 'Search deterministic evidence-backed contracts for one exact installed DSH target.',
+    description: 'Search deterministic evidence-backed contracts for one exact installed DSH target. Use data.matches[].id with contract.inspect; evidenceIds and data.evidence[].id are provenance only.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -92,7 +92,7 @@ export function createContractInspectToolDefinition(
 ): DshToolDefinition {
   return {
     name: CONTRACT_INSPECT_TOOL_NAME,
-    description: 'Inspect one evidence-backed contract against an exact contract-index fingerprint.',
+    description: 'Inspect one evidence-backed contract against an exact contract-index fingerprint. contractId must come from contract.search data.matches[].id, not an evidence id.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -102,7 +102,11 @@ export function createContractInspectToolDefinition(
           type: 'string',
           pattern: '^dsh-contract-index-v1:[0-9a-f]{64}$',
         },
-        contractId: { type: 'string', minLength: 1 },
+        contractId: {
+          type: 'string',
+          minLength: 1,
+          description: 'Contract identifier from contract.search data.matches[].id. Do not pass matches[].evidenceIds or data.evidence[].id.',
+        },
       },
       required: ['target', 'contractIndexFingerprint', 'contractId'],
     },
