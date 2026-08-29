@@ -184,6 +184,8 @@ async function requestCompletion(configuration, messages, tools) {
   return {
     id,
     finishReason,
+    responseModel,
+    systemFingerprint,
     message,
     inputTokens,
     outputTokens,
@@ -243,6 +245,16 @@ async function nextNdjson(iterator, label) {
   return requireRecord(value, label)
 }
 
+function retainedProviderMetadata(completion, totalInputTokens, totalOutputTokens, tokenMeasurementComplete) {
+  return {
+    completionId: completion.id,
+    finishReason: completion.finishReason,
+    responseModel: completion.responseModel,
+    systemFingerprint: completion.systemFingerprint,
+    ...(tokenMeasurementComplete ? { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } : {}),
+  }
+}
+
 async function execute() {
   const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
   const iterator = input[Symbol.asyncIterator]()
@@ -295,11 +307,12 @@ async function execute() {
         emit({
           type: 'final',
           finalAnswer: optionalString(completion.message.content, 'provider assistant content') ?? '',
-          providerMetadata: {
-            completionId: completion.id,
-            finishReason: 'tool_call_limit',
-            ...(tokenMeasurementComplete ? { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } : {}),
-          },
+          providerMetadata: retainedProviderMetadata(
+            { ...completion, finishReason: 'tool_call_limit' },
+            totalInputTokens,
+            totalOutputTokens,
+            tokenMeasurementComplete,
+          ),
         })
         return
       }
@@ -316,11 +329,12 @@ async function execute() {
         emit({
           type: 'final',
           finalAnswer: optionalString(completion.message.content, 'provider assistant content') ?? '',
-          providerMetadata: {
-            completionId: completion.id,
-            finishReason: 'invalid_tool_arguments',
-            ...(tokenMeasurementComplete ? { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } : {}),
-          },
+          providerMetadata: retainedProviderMetadata(
+            { ...completion, finishReason: 'invalid_tool_arguments' },
+            totalInputTokens,
+            totalOutputTokens,
+            tokenMeasurementComplete,
+          ),
         })
         return
       }
@@ -359,11 +373,12 @@ async function execute() {
     emit({
       type: 'final',
       finalAnswer,
-      providerMetadata: {
-        completionId: completion.id,
-        finishReason: completion.finishReason,
-        ...(tokenMeasurementComplete ? { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } : {}),
-      },
+      providerMetadata: retainedProviderMetadata(
+        completion,
+        totalInputTokens,
+        totalOutputTokens,
+        tokenMeasurementComplete,
+      ),
     })
     return
   }
