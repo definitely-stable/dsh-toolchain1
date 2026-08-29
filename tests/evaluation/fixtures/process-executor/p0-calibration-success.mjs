@@ -50,6 +50,20 @@ for await (const line of input) {
     }
 
     const toolNames = new Set((message.envelope.tools ?? []).map(tool => tool.name))
+    const ordinaryOnly = toolNames.has('search_text') && !toolNames.has('toolchain_contract_search')
+    if (
+      process.env.M2_FIXTURE_FAIL_ORDINARY_P0_01 === '1'
+      && taskId === 'p0-01'
+      && ordinaryOnly
+    ) {
+      process.stdout.write(`${JSON.stringify({
+        type: 'infrastructure_error',
+        reason: 'provider-transport',
+        detail: 'fixture provider transport failure for ordinary p0-01',
+      })}\n`)
+      break
+    }
+
     if (toolNames.has('toolchain_contract_search')) {
       mode = 'toolchain'
       toolCallId = 'fixture-toolchain-search'
