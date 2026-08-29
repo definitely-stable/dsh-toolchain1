@@ -78,6 +78,12 @@ describe('retained M2.3 P0 re-adjudication v2', () => {
     expect(Object.values(derived.byArm).reduce((total, arm) => total + arm.modelOutcomes, 0)).toBe(69)
     expect(derived.reportSha256).toMatch(/^[0-9a-f]{64}$/u)
 
+    process.stdout.write(`M2_P0_READJUDICATION_V2_SUMMARY ${JSON.stringify({
+      byArm: derived.byArm,
+      truthFingerprint: derived.truthFingerprint,
+      reportSha256: derived.reportSha256,
+    })}\n`)
+
     const serialized = JSON.stringify(derived)
     expect(serialized).not.toContain('"rawAnswer"')
     expect(serialized).not.toContain('"providerMetadata"')
