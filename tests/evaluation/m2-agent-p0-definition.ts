@@ -234,8 +234,8 @@ function jsonContentRef(value: unknown, sha256 = createNodeSha256Port()): Promis
 
 function p0Resources() {
   return Object.freeze({
-    maxTurns: 24,
-    maxInputTokens: 150_000,
+    maxTurns: 32,
+    maxInputTokens: 180_000,
     maxOutputTokens: 12_000,
     wallTimeMs: 300_000,
     concurrency: 1,
@@ -245,10 +245,10 @@ function p0Resources() {
 function p0ResourcePolicy() {
   return Object.freeze({
     maxWallTimeMs: 300_000,
-    maxTurns: 24,
+    maxTurns: 32,
     maxAttempts: 2,
     concurrency: 1,
-    maxInputTokens: 150_000,
+    maxInputTokens: 180_000,
     maxOutputTokens: 12_000,
     tokenMeasurementRequired: true,
   })
