@@ -21,10 +21,60 @@ export interface ClassifiedP0ApiClaim extends ParsedP0ApiClaim {
   readonly evidenceIds: readonly string[]
 }
 
+export type P0TaskSuccess = 'SUCCESS' | 'FAILURE' | 'UNKNOWN'
+
 interface SymbolOwner {
   readonly package: string
   readonly evidenceIds: readonly string[]
 }
+
+interface PositiveTaskRule {
+  readonly kind: 'positive'
+  readonly package: string
+  readonly symbols: ReadonlySet<string>
+}
+
+interface NegativeTaskRule {
+  readonly kind: 'negative'
+  readonly symbol: string
+}
+
+type P0TaskRule = PositiveTaskRule | NegativeTaskRule
+
+const P0_TASK_RULES: Readonly<Record<string, P0TaskRule>> = Object.freeze({
+  'p0-01': Object.freeze({
+    kind: 'positive',
+    package: '@deepseek-ai/dsh-tools',
+    symbols: new Set(['defineTool', 'DefineToolOptions', 'ParameterSchemaSpec']),
+  }),
+  'p0-02': Object.freeze({
+    kind: 'positive',
+    package: '@deepseek-ai/dsh-user-approval',
+    symbols: new Set(['ApprovalService', 'effectiveApprovalPolicy', 'setApprovalPolicy']),
+  }),
+  'p0-03': Object.freeze({
+    kind: 'positive',
+    package: '@deepseek-ai/dsh-scope',
+    symbols: new Set(['createScope', 'bindScopeParent', 'ScopeParentBinding']),
+  }),
+  'p0-04': Object.freeze({
+    kind: 'positive',
+    package: '@deepseek-ai/dsh-session-query',
+    symbols: new Set(['compileSessionTextFilter']),
+  }),
+  'p0-05': Object.freeze({
+    kind: 'positive',
+    package: '@deepseek-ai/dsh-subagent',
+    symbols: new Set(['assertSubagentMaxDepth']),
+  }),
+  'p0-06': Object.freeze({
+    kind: 'positive',
+    package: '@deepseek-ai/dsh-compaction',
+    symbols: new Set(['compactCheckpointSource', 'CompactionCheckpointSource']),
+  }),
+  'p0-07': Object.freeze({ kind: 'negative', symbol: 'patchReload' }),
+  'p0-08': Object.freeze({ kind: 'negative', symbol: 'ToolAutopilot' }),
+})
 
 function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength
@@ -235,4 +285,76 @@ export async function classifyP0ApiClaims(
       `${claim.symbol} is absent from ${claim.package} in the complete frozen authoritative rc.2 declaration universe.`,
     )
   }))
+}
+
+function taskRule(taskId: string): P0TaskRule {
+  const rule = P0_TASK_RULES[taskId]
+  if (rule === undefined) throw new Error(`unknown P0 task: ${taskId}`)
+  return rule
+}
+
+function hasContradiction(claims: readonly ClassifiedP0ApiClaim[]): boolean {
+  const assertions = new Map<string, Set<ParsedP0ApiClaim['assertion']>>()
+  for (const claim of claims) {
+    const current = assertions.get(claim.symbol) ?? new Set<ParsedP0ApiClaim['assertion']>()
+    current.add(claim.assertion)
+    assertions.set(claim.symbol, current)
+    if (current.size > 1) return true
+  }
+  return false
+}
+
+function adjudicatePositiveTask(
+  rule: PositiveTaskRule,
+  claims: readonly ClassifiedP0ApiClaim[],
+): P0TaskSuccess {
+  if (hasContradiction(claims)) return 'UNKNOWN'
+  if (claims.some(claim => claim.classification === 'INVALID')) return 'FAILURE'
+
+  const required = claims.filter(claim => (
+    claim.package === rule.package
+    && rule.symbols.has(claim.symbol)
+    && claim.assertion === 'exists'
+  ))
+  if (required.some(claim => claim.classification === 'UNKNOWN')) return 'UNKNOWN'
+  if (required.some(claim => claim.classification === 'VALID')) return 'SUCCESS'
+  return 'UNKNOWN'
+}
+
+function adjudicateNegativeTask(
+  rule: NegativeTaskRule,
+  claims: readonly ClassifiedP0ApiClaim[],
+): P0TaskSuccess {
+  const relevant = claims.filter(claim => claim.symbol === rule.symbol)
+  if (hasContradiction(relevant)) return 'UNKNOWN'
+  if (relevant.some(claim => claim.assertion === 'exists')) return 'FAILURE'
+  if (claims.some(claim => claim.classification === 'INVALID')) return 'FAILURE'
+  if (relevant.some(claim => claim.classification === 'UNKNOWN')) return 'UNKNOWN'
+  if (relevant.some(claim => claim.assertion === 'absent' && claim.classification === 'VALID')) return 'SUCCESS'
+  return 'UNKNOWN'
+}
+
+export function adjudicateP0TaskSuccess(
+  taskId: string,
+  claims: readonly ClassifiedP0ApiClaim[],
+): P0TaskSuccess {
+  const rule = taskRule(taskId)
+  return rule.kind === 'positive'
+    ? adjudicatePositiveTask(rule, claims)
+    : adjudicateNegativeTask(rule, claims)
+}
+
+export async function adjudicateP0ModelOutcome(
+  taskId: string,
+  rawAnswer: string,
+): Promise<{
+  readonly parsedApiClaims: readonly ClassifiedP0ApiClaim[]
+  readonly taskSuccess: P0TaskSuccess
+}> {
+  taskRule(taskId)
+  const parsedApiClaims = await classifyP0ApiClaims(parseP0ApiClaims(rawAnswer))
+  return Object.freeze({
+    parsedApiClaims,
+    taskSuccess: adjudicateP0TaskSuccess(taskId, parsedApiClaims),
+  })
 }
