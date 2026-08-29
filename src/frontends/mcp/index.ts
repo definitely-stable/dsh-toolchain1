@@ -151,7 +151,7 @@ export function createContractSearchMcpTool(
   return {
     name: 'contract.search',
     config: {
-      description: 'Search deterministic contract evidence for one exact installed DSH target.',
+      description: 'Search deterministic contract evidence for one exact installed DSH target. Use data.matches[].id as contract.inspect contractId; evidence ids are provenance only.',
       inputSchema,
       outputSchema,
       annotations: readOnlyIdempotent,
@@ -176,7 +176,7 @@ export function createContractInspectMcpTool(
   return {
     name: 'contract.inspect',
     config: {
-      description: 'Inspect one contract against an exact deterministic contract-index fingerprint.',
+      description: 'Inspect one exact DSH contract. Copy contractId exactly from contract.search data.matches[].id; do not pass evidence ids.',
       inputSchema,
       outputSchema,
       annotations: readOnlyIdempotent,

@@ -80,23 +80,31 @@ type ContractOperationErrorCode =
   | 'CONTRACT_INDEX_STALE'
   | 'CONTRACT_NOT_FOUND'
 
+interface ContractOperationErrorOptions extends ErrorOptions {
+  readonly repair?: Readonly<Record<string, unknown>>
+}
+
 class ContractOperationError extends Error {
   readonly code: ContractOperationErrorCode
   readonly snapshotFingerprint: string
   readonly locations: readonly string[]
+  readonly repair?: Readonly<Record<string, unknown>>
 
   constructor(
     code: ContractOperationErrorCode,
     message: string,
     snapshotFingerprint: string,
     locations: readonly string[] = [],
-    options?: ErrorOptions,
+    options?: ContractOperationErrorOptions,
   ) {
     super(message, options)
     this.name = 'ContractOperationError'
     this.code = code
     this.snapshotFingerprint = snapshotFingerprint
     this.locations = Object.freeze([...locations])
+    if (options?.repair !== undefined) {
+      this.repair = Object.freeze({ ...options.repair })
+    }
   }
 }
 
@@ -105,6 +113,8 @@ const descriptor: KernelDescriptor = Object.freeze({
   version: TOOLCHAIN_VERSION,
   protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
 })
+
+const MAX_CONTRACT_REPAIR_IDS = 10
 
 function freezeBundleIdentity(identity: ResolvedBundleIdentity): ResolvedBundleIdentity {
   return Object.freeze({
@@ -172,6 +182,7 @@ function contractDiagnostic(error: ContractOperationError): Diagnostic {
     domain: 'contract',
     summary: error.message,
     ...(error.locations.length === 0 ? {} : { locations: [...error.locations] }),
+    ...(error.repair === undefined ? {} : { repair: { ...error.repair } }),
   }
 }
 
@@ -192,18 +203,16 @@ function isStaleContractError(error: ContractOperationError): boolean {
   return error.code === 'CONTRACT_EVIDENCE_STALE' || error.code === 'CONTRACT_INDEX_STALE'
 }
 
-function owningContractIdsForEvidence(index: ContractIndex, evidenceId: string): readonly string[] {
-  if (!index.evidence.some(item => item.id === evidenceId)) return Object.freeze([])
+function contractIdsForEvidence(index: ContractIndex, evidenceId: string): readonly string[] {
+  const isEvidenceId = index.evidence.some(item => item.id === evidenceId)
+  if (!isEvidenceId) return []
 
-  return Object.freeze(
-    index.contracts
-      .filter(contract =>
-        contract.evidenceIds.includes(evidenceId)
-        || contract.facts.some(fact => fact.evidenceIds.includes(evidenceId)),
-      )
-      .map(contract => contract.id)
-      .toSorted(),
-  )
+  return Object.freeze(index.contracts
+    .filter(contract => contract.evidenceIds.includes(evidenceId)
+      || contract.facts.some(fact => fact.evidenceIds.includes(evidenceId)))
+    .map(contract => contract.id)
+    .toSorted()
+    .slice(0, MAX_CONTRACT_REPAIR_IDS))
 }
 
 export async function resolveTargetResponse(
@@ -406,13 +415,24 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
       }
       const selection = inspectContractIndex(index, request.contractId)
       if (selection === undefined) {
-        const owningContractIds = owningContractIdsForEvidence(index, request.contractId)
-        const message = owningContractIds.length === 0
-          ? `Contract ${request.contractId} is not present in the current contract index.`
-          : `Evidence id ${request.contractId} is provenance, not a contract id. Use contract.search data.matches[].id for contract.inspect; owning contract id(s): ${owningContractIds.join(', ')}.`
+        const contractIds = contractIdsForEvidence(index, request.contractId)
+        if (index.evidence.some(item => item.id === request.contractId)) {
+          throw new ContractOperationError(
+            'CONTRACT_NOT_FOUND',
+            `The supplied contractId ${request.contractId} is an evidence id, not an inspectable contract id. Copy contractId from contract.search data.matches[].id.`,
+            snapshot.fingerprint,
+            [],
+            {
+              repair: Object.freeze({
+                action: 'use-contract-search-match-id',
+                ...(contractIds.length === 0 ? {} : { contractIds }),
+              }),
+            },
+          )
+        }
         throw new ContractOperationError(
           'CONTRACT_NOT_FOUND',
-          message,
+          `Contract ${request.contractId} is not present in the current contract index.`,
           snapshot.fingerprint,
         )
       }
