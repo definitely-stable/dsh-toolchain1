@@ -1,6 +1,8 @@
 import readline from 'node:readline'
 
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
+const RESPONSE_MODEL = 'deepseek-v4-pro'
+const SYSTEM_FINGERPRINT = 'fp_p0_fixture'
 
 const claims = Object.freeze({
   'p0-01': 'API_CLAIM package=@deepseek-ai/dsh-tools symbol=defineTool assertion=exists',
@@ -20,6 +22,8 @@ function finish(taskId, claim, mode) {
     providerMetadata: {
       completionId: `fixture-p0-${taskId}-${mode}`,
       finishReason: 'stop',
+      responseModel: RESPONSE_MODEL,
+      systemFingerprint: SYSTEM_FINGERPRINT,
       inputTokens: 100,
       outputTokens: 20,
     },
