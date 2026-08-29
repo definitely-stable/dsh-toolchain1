@@ -16,6 +16,21 @@ B and C use the same model/snapshot, system prompt, task prompt, ordinary eviden
 
 No arm receives oracle labels, expected symbols, hidden holdout answers, direct frozen-answer lookup or later-train API information.
 
+### Frozen conventional exact-target substrate
+
+The B/C ordinary evidence surface is frozen from the published `@deepseek-ai/dsh@0.1.1-rc.2` Web target/dependency closure under inclusion policy `published-package-conventional-evidence-v1`.
+
+- virtual root: `/exact-target/node_modules/`;
+- conventional workspace: `ce2cd6608f7ef9095470d231f0562adf9bbd5a73f8ea7daeda2e40bb9da8e413`;
+- static documentation subset: `9325818edcb90fd4ea8d870c6dad3c438cdbc9b72c744d4807b76c2aacc1cacf`;
+- committed file count: `1526`;
+- model-facing ordinary tools: deterministic read-only `read_file` and case-insensitive literal `search_text` over the committed workspace only;
+- ordinary tools have no filesystem fallback, network access, evaluator-aware lookup, normalized ContractIndex access or oracle/holdout access.
+
+The workspace identity is a SHA-256 over the exact target identity, closed inclusion policy, canonical package inventory and canonical conventional file metadata/content hashes. `contractIndexFingerprint` is retained in fixture target provenance so the capture can be cross-checked against the frozen M2 Contract Index, but it is deliberately **excluded from the conventional workspace semantic projection**. Changing Toolchain normalization/ContractIndex identity without changing the exact target or conventional published bytes therefore cannot rename B's ordinary evidence substrate.
+
+B and C receive byte-identical ordinary workspace/static-documentation identities and identical ordinary tool schemas. C's only additional model-visible capabilities are the two production Toolchain Contract Intelligence tools. A receives neither the ordinary workspace nor those tools.
+
 ## Exact target and oracle boundary
 
 All arms are evaluated against:

@@ -8,6 +8,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { captureOrdinaryWorkspaceFromAcquiredEvidence } from './m2-ordinary-acquired-evidence.mjs'
+
 const DSH_PACKAGE = '@deepseek-ai/dsh'
 const DSH_VERSION = '0.1.1-rc.2'
 const DSH_PROFILE = 'web'
@@ -18,6 +20,7 @@ const CAPTURE_MARKER = 'M2_FIXTURE_CAPTURE'
 const CAPTURE_CHUNK_SIZE = 6_000
 const GENERATION_POLICY = 'registry-artifact-production-acquisition-v1'
 const SANITIZATION_POLICY = 'drop-evidence-location-v1'
+const ORDINARY_INCLUSION_POLICY = 'published-package-conventional-evidence-v1'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = resolve(scriptDirectory, '..')
@@ -136,6 +139,17 @@ async function acquireHome(modules, dshPackageRoot, dshHome) {
     acquired.contracts,
     digest,
   )
+  const ordinaryWorkspace = await captureOrdinaryWorkspaceFromAcquiredEvidence({
+    fixtureVersion: FIXTURE_VERSION,
+    target: {
+      package: DSH_PACKAGE,
+      version: DSH_VERSION,
+      profile: DSH_PROFILE,
+      targetFingerprint: snapshot.fingerprint,
+      contractIndexFingerprint: rawIndex.fingerprint,
+    },
+    acquired,
+  })
   const targetFacts = sanitizeTargetFacts(snapshot)
   const contractFacts = sanitizeContractFacts(acquired)
   const sanitizedIndex = await modules.createContractIndex(
@@ -149,13 +163,16 @@ async function acquireHome(modules, dshPackageRoot, dshHome) {
     rawIndex.fingerprint,
     'Removing non-semantic evidence locations changed the Contract Index identity',
   )
+  const packages = packageInventory(contractFacts.contracts)
+  assert.deepEqual(ordinaryWorkspace.packages, packages, 'Ordinary workspace package inventory differs from Contract acquisition')
 
   return {
     targetFacts,
     contractFacts,
+    ordinaryWorkspace,
     targetFingerprint: snapshot.fingerprint,
     contractIndexFingerprint: rawIndex.fingerprint,
-    packages: packageInventory(contractFacts.contracts),
+    packages,
   }
 }
 
@@ -214,6 +231,7 @@ async function createFixture() {
     assert.deepEqual(second.targetFacts, first.targetFacts, 'Sanitized target facts depend on DSH_HOME')
     assert.deepEqual(second.contractFacts, first.contractFacts, 'Sanitized contract facts depend on DSH_HOME')
     assert.deepEqual(second.packages, first.packages, 'Resolved contract package inventory depends on DSH_HOME')
+    assert.deepEqual(second.ordinaryWorkspace, first.ordinaryWorkspace, 'Ordinary workspace depends on DSH_HOME')
 
     const lockfile = await readFile(join(runner, 'pnpm-lock.yaml'), 'utf8')
     const generatedAt = process.env.M2_FIXTURE_GENERATED_AT?.trim() || new Date().toISOString()
@@ -235,6 +253,7 @@ async function createFixture() {
         pnpmVersion: run('pnpm', ['--version'], { cwd: repositoryRoot, timeout: 30_000 }),
         generationPolicy: GENERATION_POLICY,
         sanitizationPolicy: SANITIZATION_POLICY,
+        ordinaryInclusionPolicy: ORDINARY_INCLUSION_POLICY,
       },
       source: {
         lockfileSha256: sha256Utf8(lockfile),
@@ -244,10 +263,18 @@ async function createFixture() {
         contractIndexFingerprint: first.contractIndexFingerprint,
         contractCount: first.contractFacts.contracts.length,
         evidenceCount: first.contractFacts.evidence.length,
+        ordinaryWorkspaceSnapshotSha256: first.ordinaryWorkspace.workspaceSnapshotSha256,
+        ordinaryDocumentationSha256: first.ordinaryWorkspace.documentationSha256,
+        ordinaryFileCount: first.ordinaryWorkspace.files.length,
       },
       packages: first.packages,
     }
-    return { manifest, targetFacts: first.targetFacts, contractFacts: first.contractFacts }
+    return {
+      manifest,
+      targetFacts: first.targetFacts,
+      contractFacts: first.contractFacts,
+      ordinaryWorkspace: first.ordinaryWorkspace,
+    }
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -259,6 +286,7 @@ async function writeFixture(outputDirectory, fixture) {
     writeFile(join(outputDirectory, 'manifest.json'), `${JSON.stringify(fixture.manifest, undefined, 2)}\n`),
     writeFile(join(outputDirectory, 'target-facts.json'), `${JSON.stringify(fixture.targetFacts, undefined, 2)}\n`),
     writeFile(join(outputDirectory, 'contract-facts.json'), `${JSON.stringify(fixture.contractFacts, undefined, 2)}\n`),
+    writeFile(join(outputDirectory, 'ordinary-workspace.json'), `${JSON.stringify(fixture.ordinaryWorkspace, undefined, 2)}\n`),
   ])
 }
 
@@ -286,7 +314,7 @@ async function main() {
   }
   await writeFixture(outputDirectory, fixture)
   process.stdout.write(
-    `M2 fixture ${fixture.manifest.fixtureVersion}: ${fixture.manifest.expected.targetFingerprint} / ${fixture.manifest.expected.contractIndexFingerprint} / ${fixture.manifest.expected.contractCount} contracts\n`,
+    `M2 fixture ${fixture.manifest.fixtureVersion}: ${fixture.manifest.expected.targetFingerprint} / ${fixture.manifest.expected.contractIndexFingerprint} / ${fixture.manifest.expected.contractCount} contracts / ${fixture.manifest.expected.ordinaryFileCount} ordinary files\n`,
   )
 }
 

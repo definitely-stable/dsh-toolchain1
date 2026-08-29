@@ -9,22 +9,26 @@
     "upstreamDocumentationCommit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e"
   },
   "generator": {
-    "toolchainCommit": "637b649779de5097ecdb8b45ed71ffb89f63ab0a",
+    "toolchainCommit": "73de910ac05f9669938911bc06588848e8d56d05",
     "nodeVersion": "24.19.0",
     "platform": "linux",
     "arch": "x64",
     "pnpmVersion": "11.7.0",
     "generationPolicy": "registry-artifact-production-acquisition-v1",
-    "sanitizationPolicy": "drop-evidence-location-v1"
+    "sanitizationPolicy": "drop-evidence-location-v1",
+    "ordinaryInclusionPolicy": "published-package-conventional-evidence-v1"
   },
   "source": {
-    "lockfileSha256": "d2e06350c731443286c624fd696211030f85e3d25f36c7bb4ea6d484052edcda"
+    "lockfileSha256": "3b47fd5e2da148b4ce742c028c988c21152d1000b9133eb05a0248ecd1f0ab35"
   },
   "expected": {
     "targetFingerprint": "dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe",
     "contractIndexFingerprint": "dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2",
     "contractCount": 184,
-    "evidenceCount": 993
+    "evidenceCount": 993,
+    "ordinaryWorkspaceSnapshotSha256": "ce2cd6608f7ef9095470d231f0562adf9bbd5a73f8ea7daeda2e40bb9da8e413",
+    "ordinaryDocumentationSha256": "9325818edcb90fd4ea8d870c6dad3c438cdbc9b72c744d4807b76c2aacc1cacf",
+    "ordinaryFileCount": 1526
   },
   "packages": [
     {
