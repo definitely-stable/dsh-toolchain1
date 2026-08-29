@@ -175,6 +175,8 @@ The initial ranker is deterministic and local. It MAY rank exact/prefix/token/na
 
 A successful response has `status: "ok"`, the M1 `snapshotFingerprint`, `ContractSearchResult`, the Contract Index fingerprint, compact matches, and the evidence subset referenced by those matches.
 
+For progressive inspection, the inspectable contract identifier is `data.matches[].id`. Values in `matches[].evidenceIds` and `data.evidence[].id` are provenance identifiers only and MUST NOT be supplied as `contract.inspect.contractId`.
+
 If target acquisition cannot produce a snapshot, expected `TARGET_*` conditions return `status: "failed"` without a `snapshotFingerprint`. If evidence captured by the resolved target changes before contract acquisition can consume one coherent epoch, the response MUST be `status: "stale"` with `CONTRACT_EVIDENCE_STALE`, MUST identify the starting `snapshotFingerprint`, and MUST NOT contain successful `data`.
 
 ### `contract.inspect`
@@ -183,7 +185,9 @@ If target acquisition cannot produce a snapshot, expected `TARGET_*` conditions 
 
 - `target`;
 - the caller's exact `contractIndexFingerprint`;
-- one non-empty `contractId` selected from search.
+- one non-empty `contractId` selected from `contract.search` `data.matches[].id`.
+
+Evidence identifiers remain distinct from contract identifiers even when an evidence item is the exact declaration that caused a search match. An implementation MUST NOT silently reinterpret an evidence id as a contract id.
 
 Inspection MUST reacquire/rebuild the current target-bound index rather than silently trusting caller-supplied cached facts. If the current fingerprint differs from the requested fingerprint, the response MUST be `status: "stale"` with `CONTRACT_INDEX_STALE`, MUST identify the current operation's target snapshot, and MUST NOT return a contract payload.
 
