@@ -167,6 +167,7 @@ describe('M2.3 DeepSeek P0 process child', () => {
         outputTokens: 50,
       },
     })
+    expect(JSON.stringify(result)).not.toContain(SECRET)
     expect(requests).toHaveLength(2)
     expect(requests.every(item => item.authorization === `Bearer ${SECRET}`)).toBe(true)
 
@@ -195,7 +196,6 @@ describe('M2.3 DeepSeek P0 process child', () => {
     })
     expect(secondMessages.at(-1)).toMatchObject({ role: 'tool', tool_call_id: 'call-1' })
     expect(String(secondMessages.at(-1)?.content)).toContain('defineTool')
-    expect(JSON.stringify(requests)).not.toContain(SECRET)
   })
 
   it('fails closed on response-model or backend-fingerprint drift', async () => {
