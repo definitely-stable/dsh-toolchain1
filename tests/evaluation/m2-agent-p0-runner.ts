@@ -4,7 +4,6 @@ import { createRequire } from 'node:module'
 import { createNodeSha256Port } from '../../src/acquisition/node-sha256.js'
 import type { Sha256Port } from '../../src/model/digest.js'
 import {
-  canonicalizeEvaluationJson,
   hashEvaluationDefinition,
   type AgentRetryPolicy,
 } from './m2-agent-eval-integrity.js'
