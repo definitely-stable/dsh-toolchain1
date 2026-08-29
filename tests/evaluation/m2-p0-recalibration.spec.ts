@@ -160,8 +160,8 @@ describe('M2.3 P0 live calibration corrections', () => {
     const inputs = await createFrozenP0Inputs(DEEPSEEK_PROVIDER)
     const definition = record(inputs.definition, 'P0 definition')
     expect(definition.resources).toEqual({
-      maxTurns: 24,
-      maxInputTokens: 150000,
+      maxTurns: 32,
+      maxInputTokens: 180000,
       maxOutputTokens: 12000,
       wallTimeMs: 300000,
       concurrency: 1,
@@ -169,10 +169,10 @@ describe('M2.3 P0 live calibration corrections', () => {
     const execution = record(definition.execution, 'P0 execution')
     expect(JSON.parse(contentRef(execution.resourcePolicy, 'resource policy').inline)).toEqual({
       maxWallTimeMs: 300000,
-      maxTurns: 24,
+      maxTurns: 32,
       maxAttempts: 2,
       concurrency: 1,
-      maxInputTokens: 150000,
+      maxInputTokens: 180000,
       maxOutputTokens: 12000,
       tokenMeasurementRequired: true,
     })
