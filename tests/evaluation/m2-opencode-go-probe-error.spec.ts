@@ -11,8 +11,8 @@ function responseJson(response: ServerResponse, status: number, value: unknown):
 }
 
 async function drainRequest(request: IncomingMessage): Promise<void> {
-  for await (const _chunk of request) {
-    // The fixture only needs to consume the request before responding.
+  for await (const chunk of request) {
+    void chunk
   }
 }
 
