@@ -17,6 +17,8 @@ const PROVIDER: FrozenP0ProviderIdentity = Object.freeze({
   provider: 'deepseek',
   requestModel: 'deepseek-v4-pro',
   reviewedSnapshot: 'DeepSeek-V4-Pro-0813',
+  expectedResponseModel: 'deepseek-v4-pro',
+  expectedSystemFingerprint: 'fp_p0_v4_0813_fixture',
   thinking: 'enabled',
   reasoningEffort: 'high',
   baseUrl: 'https://api.deepseek.com',
@@ -100,7 +102,14 @@ describe('M2.3 frozen P0 execution definition', () => {
       expect(JSON.parse(ref.inline)).toEqual(inputs.capabilityManifests[arm])
     }
     await validateContentRef(contentRef(execution.runnerIdentity, 'P0 runner identity'), sha256)
-    await validateContentRef(contentRef(execution.executorIdentity, 'P0 executor identity'), sha256)
+    const executorIdentity = contentRef(execution.executorIdentity, 'P0 executor identity')
+    await validateContentRef(executorIdentity, sha256)
+    expect(JSON.parse(executorIdentity.inline)).toMatchObject({
+      requestModel: PROVIDER.requestModel,
+      reviewedSnapshot: PROVIDER.reviewedSnapshot,
+      expectedResponseModel: PROVIDER.expectedResponseModel,
+      expectedSystemFingerprint: PROVIDER.expectedSystemFingerprint,
+    })
     await validateContentRef(contentRef(execution.resourcePolicy, 'P0 resource policy'), sha256)
     await validateContentRef(contentRef(execution.retryPolicy, 'P0 retry policy'), sha256)
 
@@ -125,6 +134,7 @@ describe('M2.3 frozen P0 execution definition', () => {
 
     expect(encoded).toContain('deepseek-v4-pro')
     expect(encoded).toContain('DeepSeek-V4-Pro-0813')
+    expect(encoded).toContain('fp_p0_v4_0813_fixture')
     expect(encoded).not.toContain('DEEPSEEK_API_KEY')
     expect(encoded).not.toContain('sk-test-secret')
   })
