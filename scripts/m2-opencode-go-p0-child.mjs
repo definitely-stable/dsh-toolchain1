@@ -1,6 +1,6 @@
 import readline from 'node:readline'
 
-const MAX_TOOL_ROUNDS = 23
+const MAX_TOOL_ROUNDS = 31
 const MAX_TOOL_RESULT_BYTES = 512 * 1024
 
 function emit(value) {
@@ -149,7 +149,7 @@ async function requestCompletion(configuration, messages, tools) {
         'content-type': 'application/json',
       },
       body: JSON.stringify(providerRequestBody(configuration, messages, tools)),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(180_000),
     })
   } catch {
     throw new Error('provider request failed')
