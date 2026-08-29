@@ -72,6 +72,24 @@ function parseJsonRef(ref: ContentRef, label: string): Record<string, unknown> {
   }
 }
 
+function assertProviderBackendBinding(executorIdentityRef: ContentRef, providerMetadataRef: ContentRef): void {
+  const executorIdentity = parseJsonRef(executorIdentityRef, 'Agent v2 executor identity')
+  const providerMetadata = parseJsonRef(providerMetadataRef, 'Agent v2 provider metadata')
+  const bindings = [
+    ['expectedResponseModel', 'responseModel', 'response model'],
+    ['expectedSystemFingerprint', 'systemFingerprint', 'system fingerprint'],
+  ] as const
+
+  for (const [expectedField, observedField, label] of bindings) {
+    if (executorIdentity[expectedField] === undefined) continue
+    const expected = requireString(executorIdentity[expectedField], `Agent v2 expected provider ${label}`)
+    const observed = requireString(providerMetadata[observedField], `Agent v2 observed provider ${label}`)
+    if (observed !== expected) {
+      throw new Error(`Agent v2 provider backend ${label} does not match the frozen executor identity`)
+    }
+  }
+}
+
 function bindingProjection(record: Record<string, unknown>): Record<string, unknown> {
   const projection: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(record)) {
@@ -407,7 +425,9 @@ export async function validateAgentV2ResultAgainstDefinition(
 
       if (attempt.outcome === 'model-outcome') {
         await validateContentRef(contentRef(attempt.rawAnswer, 'Agent v2 raw answer'), sha256)
-        await validateContentRef(contentRef(attempt.providerMetadata, 'Agent v2 provider metadata'), sha256)
+        const providerMetadataRef = contentRef(attempt.providerMetadata, 'Agent v2 provider metadata')
+        await validateContentRef(providerMetadataRef, sha256)
+        assertProviderBackendBinding(frozen.executorIdentity, providerMetadataRef)
       } else if (attempt.outcome === 'infrastructure-failure') {
         if (attempt.qualityIndependent !== true) {
           throw new Error('Agent v2 infrastructure failure must be classified independently of answer quality')
