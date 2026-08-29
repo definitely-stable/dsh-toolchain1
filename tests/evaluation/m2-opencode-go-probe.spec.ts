@@ -107,8 +107,15 @@ describe('M2.3 OpenCode Go identity probe', () => {
       model: 'deepseek-v4-pro',
       thinking: { type: 'enabled' },
       reasoning_effort: 'high',
-      tool_choice: 'required',
     })
+    expect(requests[0]!.body).not.toHaveProperty('tool_choice')
+    expect(requests[1]!.body).not.toHaveProperty('tool_choice')
+    expect(requests[0]!.body.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'function',
+        function: expect.objectContaining({ name: 'identity_probe' }),
+      }),
+    ]))
     const followUpMessages = requests[1]!.body.messages as Array<Record<string, unknown>>
     expect(followUpMessages.at(-2)).toMatchObject({
       role: 'assistant',
