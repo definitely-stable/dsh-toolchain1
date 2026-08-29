@@ -63,7 +63,7 @@ describe('M2.3 OpenCode Go identity probe', () => {
         responseJson(response, 200, {
           id: 'chatcmpl-opencode-probe-tool',
           object: 'chat.completion',
-          model: 'deepseek-v4-pro',
+          model: 'deepseek-v4-flash',
           system_fingerprint: 'fp_opencode_probe_fixture',
           choices: [{
             index: 0,
@@ -86,7 +86,7 @@ describe('M2.3 OpenCode Go identity probe', () => {
       responseJson(response, 200, {
         id: 'chatcmpl-opencode-probe-final',
         object: 'chat.completion',
-        model: 'deepseek-v4-pro',
+        model: 'deepseek-v4-flash',
         system_fingerprint: 'fp_opencode_probe_fixture',
         choices: [{
           index: 0,
@@ -104,7 +104,7 @@ describe('M2.3 OpenCode Go identity probe', () => {
     expect(requests).toHaveLength(2)
     expect(requests.every(request => request.authorization === `Bearer ${SECRET}`)).toBe(true)
     expect(requests[0]!.body).toMatchObject({
-      model: 'deepseek-v4-pro',
+      model: 'deepseek-v4-flash',
       thinking: { type: 'enabled' },
       reasoning_effort: 'high',
     })
@@ -130,8 +130,8 @@ describe('M2.3 OpenCode Go identity probe', () => {
     expect(receipt).toMatchObject({
       schema: 'dsh-toolchain-m2-opencode-go-probe-v1',
       provider: 'opencode-go',
-      requestModel: 'deepseek-v4-pro',
-      responseModel: 'deepseek-v4-pro',
+      requestModel: 'deepseek-v4-flash',
+      responseModel: 'deepseek-v4-flash',
       systemFingerprint: 'fp_opencode_probe_fixture',
       thinking: 'enabled',
       reasoningEffort: 'high',
@@ -157,7 +157,7 @@ describe('M2.3 OpenCode Go identity probe', () => {
         responseJson(response, 200, {
           id: 'chatcmpl-opencode-probe-2-tool',
           object: 'chat.completion',
-          model: 'deepseek-v4-pro',
+          model: 'deepseek-v4-flash',
           choices: [{
             index: 0,
             finish_reason: 'tool_calls',
@@ -178,7 +178,7 @@ describe('M2.3 OpenCode Go identity probe', () => {
       responseJson(response, 200, {
         id: 'chatcmpl-opencode-probe-2-final',
         object: 'chat.completion',
-        model: 'deepseek-v4-pro',
+        model: 'deepseek-v4-flash',
         choices: [{
           index: 0,
           finish_reason: 'stop',
@@ -188,7 +188,7 @@ describe('M2.3 OpenCode Go identity probe', () => {
       })
     }, baseUrl => probeOpenCodeGoIdentity({ OPENCODE_API_KEY: SECRET } as NodeJS.ProcessEnv, { baseUrl }))
 
-    expect(receipt.responseModel).toBe('deepseek-v4-pro')
+    expect(receipt.responseModel).toBe('deepseek-v4-flash')
     expect(receipt).not.toHaveProperty('systemFingerprint')
     expect(receipt).toMatchObject({
       backendIdentityStrength: 'response-model-only',
@@ -210,8 +210,8 @@ describe('M2.3 OpenCode Go identity probe', () => {
       schema: 'dsh-toolchain-m2-opencode-go-probe-v1',
       provider: 'opencode-go',
       baseUrl: 'https://opencode.ai/zen/go/v1',
-      requestModel: 'deepseek-v4-pro',
-      responseModel: 'deepseek-v4-pro',
+      requestModel: 'deepseek-v4-flash',
+      responseModel: 'deepseek-v4-flash',
       systemFingerprint: 'fp_opencode_probe_fixture',
       thinking: 'enabled',
       reasoningEffort: 'high',
@@ -231,9 +231,9 @@ describe('M2.3 OpenCode Go identity probe', () => {
     )
     expect(provider).toEqual({
       provider: 'opencode-go',
-      requestModel: 'deepseek-v4-pro',
+      requestModel: 'deepseek-v4-flash',
       reviewedSnapshot: `opencode-go-probe:${probeSha256}`,
-      expectedResponseModel: 'deepseek-v4-pro',
+      expectedResponseModel: 'deepseek-v4-flash',
       expectedSystemFingerprint: 'fp_opencode_probe_fixture',
       thinking: 'enabled',
       reasoningEffort: 'high',

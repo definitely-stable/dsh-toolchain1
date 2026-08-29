@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const DEFAULT_BASE_URL = 'https://opencode.ai/zen/go/v1'
-const REQUEST_MODEL = 'deepseek-v4-pro'
+const REQUEST_MODEL = 'deepseek-v4-flash'
 const THINKING = 'enabled'
 const REASONING_EFFORT = 'high'
 const MAX_OUTPUT_TOKENS = 256

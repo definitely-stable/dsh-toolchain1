@@ -11,9 +11,9 @@ const PROVIDER_PROBE_SHA256 = 'a'.repeat(64)
 
 const OPENCODE_GO_PROVIDER: FrozenP0ProviderIdentity = Object.freeze({
   provider: 'opencode-go',
-  requestModel: 'deepseek-v4-pro',
+  requestModel: 'deepseek-v4-flash',
   reviewedSnapshot: `opencode-go-probe:${PROVIDER_PROBE_SHA256}`,
-  expectedResponseModel: 'deepseek-v4-pro',
+  expectedResponseModel: 'deepseek-v4-flash',
   expectedSystemFingerprint: 'fp_opencode_go_fixture',
   thinking: 'enabled',
   reasoningEffort: 'high',
@@ -42,9 +42,9 @@ describe('M2.3 OpenCode Go P0 provider identity', () => {
 
     expect(JSON.parse(executorIdentity.inline)).toEqual({
       provider: 'opencode-go',
-      requestModel: 'deepseek-v4-pro',
+      requestModel: 'deepseek-v4-flash',
       reviewedSnapshot: `opencode-go-probe:${PROVIDER_PROBE_SHA256}`,
-      expectedResponseModel: 'deepseek-v4-pro',
+      expectedResponseModel: 'deepseek-v4-flash',
       expectedSystemFingerprint: 'fp_opencode_go_fixture',
       thinking: 'enabled',
       reasoningEffort: 'high',
@@ -61,9 +61,9 @@ describe('M2.3 OpenCode Go P0 provider identity', () => {
   it('permits response-model-only probe binding when the gateway omits system_fingerprint', async () => {
     const provider: FrozenP0ProviderIdentity = Object.freeze({
       provider: 'opencode-go',
-      requestModel: 'deepseek-v4-pro',
+      requestModel: 'deepseek-v4-flash',
       reviewedSnapshot: `opencode-go-probe:${PROVIDER_PROBE_SHA256}`,
-      expectedResponseModel: 'deepseek-v4-pro',
+      expectedResponseModel: 'deepseek-v4-flash',
       thinking: 'enabled',
       reasoningEffort: 'high',
       baseUrl: 'https://opencode.ai/zen/go/v1',
@@ -75,7 +75,7 @@ describe('M2.3 OpenCode Go P0 provider identity', () => {
     const execution = record(inputs.definition.execution, 'P0 execution')
     const executorIdentity = JSON.parse(contentRef(execution.executorIdentity, 'P0 executor identity').inline) as Record<string, unknown>
 
-    expect(executorIdentity.expectedResponseModel).toBe('deepseek-v4-pro')
+    expect(executorIdentity.expectedResponseModel).toBe('deepseek-v4-flash')
     expect(executorIdentity).not.toHaveProperty('expectedSystemFingerprint')
     expect(executorIdentity.providerProbeSha256).toBe(PROVIDER_PROBE_SHA256)
   })

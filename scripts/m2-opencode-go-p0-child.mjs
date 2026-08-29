@@ -1,6 +1,6 @@
 import readline from 'node:readline'
 
-const MAX_TOOL_ROUNDS = 11
+const MAX_TOOL_ROUNDS = 23
 const MAX_TOOL_RESULT_BYTES = 512 * 1024
 
 function emit(value) {
@@ -42,8 +42,8 @@ function providerConfiguration() {
     'OPENCODE_GO_MAX_OUTPUT_TOKENS',
   )
 
-  if (requestModel !== 'deepseek-v4-pro' || expectedResponseModel !== 'deepseek-v4-pro') {
-    throw new Error('OpenCode Go P0 is frozen to deepseek-v4-pro')
+  if (requestModel !== 'deepseek-v4-flash' || expectedResponseModel !== 'deepseek-v4-flash') {
+    throw new Error('OpenCode Go P0 is frozen to deepseek-v4-flash')
   }
   if (thinking !== 'enabled' && thinking !== 'disabled') {
     throw new Error('OPENCODE_GO_THINKING must be enabled or disabled')

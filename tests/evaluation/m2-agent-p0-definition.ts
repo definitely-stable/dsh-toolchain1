@@ -153,8 +153,8 @@ function assertProvider(provider: FrozenP0ProviderIdentity): void {
     if (provider.adapterVersion !== 'opencode-go-deepseek-chat-v1') {
       throw new Error('Unsupported OpenCode Go P0 provider adapter version')
     }
-    if (provider.requestModel !== 'deepseek-v4-pro' || provider.expectedResponseModel !== 'deepseek-v4-pro') {
-      throw new Error('OpenCode Go P0 is frozen to deepseek-v4-pro')
+    if (provider.requestModel !== 'deepseek-v4-flash' || provider.expectedResponseModel !== 'deepseek-v4-flash') {
+      throw new Error('OpenCode Go P0 is frozen to deepseek-v4-flash')
     }
     if (!/^[0-9a-f]{64}$/u.test(provider.providerProbeSha256)) {
       throw new Error('OpenCode Go P0 provider probe sha256 must be 64 lowercase hex characters')
@@ -234,9 +234,9 @@ function jsonContentRef(value: unknown, sha256 = createNodeSha256Port()): Promis
 
 function p0Resources() {
   return Object.freeze({
-    maxTurns: 12,
-    maxInputTokens: 30_000,
-    maxOutputTokens: 6_000,
+    maxTurns: 24,
+    maxInputTokens: 150_000,
+    maxOutputTokens: 12_000,
     wallTimeMs: 300_000,
     concurrency: 1,
   })
@@ -245,11 +245,11 @@ function p0Resources() {
 function p0ResourcePolicy() {
   return Object.freeze({
     maxWallTimeMs: 300_000,
-    maxTurns: 12,
+    maxTurns: 24,
     maxAttempts: 2,
     concurrency: 1,
-    maxInputTokens: 30_000,
-    maxOutputTokens: 6_000,
+    maxInputTokens: 150_000,
+    maxOutputTokens: 12_000,
     tokenMeasurementRequired: true,
   })
 }

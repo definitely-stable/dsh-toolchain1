@@ -15,8 +15,8 @@ import {
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const REPOSITORY_ROOT = fileURLToPath(new URL('../', import.meta.url))
 const OPENCODE_GO_BASE_URL = 'https://opencode.ai/zen/go/v1'
-const OPENCODE_GO_REQUEST_MODEL = 'deepseek-v4-pro'
-const P0_MAX_OUTPUT_TOKENS = '6000'
+const OPENCODE_GO_REQUEST_MODEL = 'deepseek-v4-flash'
+const P0_MAX_OUTPUT_TOKENS = '12000'
 
 function requireNonEmpty(environment, name) {
   const value = environment[name]
@@ -52,7 +52,7 @@ export function readOpenCodeGoProviderConfiguration(environment, probeValue, pro
   if (probe.provider !== 'opencode-go') throw new Error('OpenCode Go provider probe provenance is invalid')
   if (probe.baseUrl !== OPENCODE_GO_BASE_URL) throw new Error('OpenCode Go provider probe baseUrl is not the frozen Go endpoint')
   if (probe.requestModel !== OPENCODE_GO_REQUEST_MODEL || probe.responseModel !== OPENCODE_GO_REQUEST_MODEL) {
-    throw new Error('OpenCode Go provider probe model is not deepseek-v4-pro')
+    throw new Error('OpenCode Go provider probe model is not deepseek-v4-flash')
   }
   if (probe.thinking !== 'enabled' || probe.reasoningEffort !== 'high') {
     throw new Error('OpenCode Go provider probe reasoning mode is not the frozen P0 mode')
