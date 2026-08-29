@@ -148,6 +148,8 @@ const EXECUTOR_OUTCOME_FIELDS = new Set(['outcome', 'finalAnswer', 'providerMeta
 const PROVIDER_METADATA_FIELDS = new Set([
   'completionId',
   'finishReason',
+  'responseModel',
+  'systemFingerprint',
   'inputTokens',
   'outputTokens',
 ])
@@ -337,6 +339,12 @@ export function validateExecutorModelOutcome(value: unknown): void {
   }
   if (typeof metadata.finishReason !== 'string' || metadata.finishReason.length === 0) {
     throw new Error('Executor providerMetadata.finishReason must be non-empty')
+  }
+  for (const field of ['responseModel', 'systemFingerprint'] as const) {
+    const identity = metadata[field]
+    if (identity !== undefined && (typeof identity !== 'string' || identity.length === 0)) {
+      throw new Error(`Executor providerMetadata.${field} must be non-empty when present`)
+    }
   }
   for (const field of ['inputTokens', 'outputTokens'] as const) {
     const count = metadata[field]
