@@ -102,7 +102,11 @@ function safeProviderErrorField(value, apiKey) {
   else return undefined
 
   const redacted = apiKey.length === 0 ? text : text.replaceAll(apiKey, '[redacted]')
-  const normalized = redacted.replace(/[\u0000-\u001f\u007f]+/gu, ' ').replace(/\s+/gu, ' ').trim()
+  const withoutControls = Array.from(redacted, character => {
+    const codePoint = character.codePointAt(0)
+    return codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f) ? ' ' : character
+  }).join('')
+  const normalized = withoutControls.replace(/\s+/gu, ' ').trim()
   if (normalized.length === 0) return undefined
   return normalized.slice(0, MAX_PROVIDER_ERROR_FIELD_CHARACTERS)
 }
