@@ -1,0 +1,77 @@
+name: M2 P0 Live
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-p0-live
+  cancel-in-progress: false
+
+jobs:
+  live-p0:
+    if: >-
+      github.event.issue.number == 43 &&
+      github.event.comment.body == '/run-m2-p0-opencode-go' &&
+      github.event.comment.user.login == 'MrFr3di' &&
+      github.event.issue.pull_request == null
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout exact live-evaluation revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
+        with:
+          install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.19.0'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          package-manager-cache: false
+
+      - name: Verify pnpm
+        run: pnpm --version
+
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Prepare ephemeral evidence directory
+        run: mkdir -p "$RUNNER_TEMP/m2-p0-live"
+
+      - name: Probe OpenCode Go backend identity
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: node scripts/probe-m2-opencode-go.mjs --output "$RUNNER_TEMP/m2-p0-live/probe.json"
+
+      - name: Execute live P0 calibration
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: >-
+          node scripts/run-m2-p0-opencode-go.mjs
+          --probe "$RUNNER_TEMP/m2-p0-live/probe.json"
+          --output "$RUNNER_TEMP/m2-p0-live/result.json"
+
+      - name: Upload canonical P0 evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: m2-p0-live-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/m2-p0-live/probe.json
+            ${{ runner.temp }}/m2-p0-live/result.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
+          overwrite: false
+          include-hidden-files: false
