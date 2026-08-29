@@ -38,7 +38,7 @@ jobs:
         run: pnpm build
 
       - name: Regenerate exact rc2 fixture after policy correction
-        run: node scripts/generate-m2-evaluation-fixture.mjs
+        run: M2_FIXTURE_GENERATED_AT=2026-08-28T00:00:00.000Z node scripts/generate-m2-evaluation-fixture.mjs
 
       - name: Commit generated fixture
         shell: bash
@@ -50,5 +50,5 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "test(m2.3): freeze ordinary rc2 workspace"
+          git commit -m "test(m2.3): freeze corrected ordinary rc2 workspace"
           git push origin "HEAD:${GITHUB_REF_NAME}"
