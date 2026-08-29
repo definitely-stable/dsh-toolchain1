@@ -1,9 +1,12 @@
+import { readFile } from 'node:fs/promises'
+
 import { describe, expect, it } from 'vitest'
 
 import { createNodeSha256Port } from '../../src/acquisition/node-sha256.js'
 import { buildApiTruthUniverseV2 } from './m2-api-truth-v2.js'
 import {
   createOrdinaryWorkspace,
+  type OrdinaryWorkspace,
   type OrdinaryWorkspaceFileInput,
 } from './m2-agent-ordinary-workspace.js'
 
@@ -148,5 +151,30 @@ describe('M2.3 independent API Truth v2', () => {
     expect(first.fingerprint).toMatch(/^dsh-api-truth-v2:[0-9a-f]{64}$/u)
     expect(reordered.fingerprint).toBe(first.fingerprint)
     expect(changed.fingerprint).not.toBe(first.fingerprint)
+  })
+
+  it('derives the observed rc.2 public APIs from frozen package bytes without P0-specific overrides', async () => {
+    const fixture = new URL('./fixtures/m2/rc2-web-v1/ordinary-workspace.json', import.meta.url)
+    const input = JSON.parse(await readFile(fixture, 'utf8')) as OrdinaryWorkspace
+    const truth = await buildApiTruthUniverseV2(input, sha256)
+
+    expect(truth.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        package: '@deepseek-ai/dsh-user-approval',
+        qualifiedSymbol: 'ApprovalService.setPolicy',
+      }),
+      expect.objectContaining({
+        package: '@deepseek-ai/dsh-user-approval',
+        qualifiedSymbol: 'ApprovalService.overrideOf',
+      }),
+      expect.objectContaining({
+        package: '@deepseek-ai/dsh-subagent',
+        qualifiedSymbol: 'resolveChildDepth',
+      }),
+      expect.objectContaining({
+        package: '@deepseek-ai/dsh-subagent',
+        qualifiedSymbol: 'assertSubagentMaxDepth',
+      }),
+    ]))
   })
 })
