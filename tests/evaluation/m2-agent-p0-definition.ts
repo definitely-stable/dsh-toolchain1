@@ -41,17 +41,29 @@ export const FROZEN_P0_SYSTEM_PROMPT = `You are evaluating public APIs on one ex
 API_CLAIM package=<package-or-*> symbol=<symbol> assertion=<exists|absent>
 Use package=* only for a target-wide absence claim. Do not emit an API_CLAIM for vague behavioral statements. Then give a brief plain-language explanation.`
 
-export interface FrozenP0ProviderIdentity {
-  provider: 'deepseek'
+interface FrozenP0ProviderIdentityBase {
   requestModel: string
   reviewedSnapshot: string
   expectedResponseModel: string
-  expectedSystemFingerprint: string
+  expectedSystemFingerprint?: string
   thinking: 'enabled' | 'disabled'
   reasoningEffort: 'low' | 'high' | 'max'
   baseUrl: string
+}
+
+export interface FrozenP0DeepSeekProviderIdentity extends FrozenP0ProviderIdentityBase {
+  provider: 'deepseek'
+  expectedSystemFingerprint: string
   adapterVersion: 'deepseek-chat-v1'
 }
+
+export interface FrozenP0OpenCodeGoProviderIdentity extends FrozenP0ProviderIdentityBase {
+  provider: 'opencode-go'
+  adapterVersion: 'opencode-go-deepseek-chat-v1'
+  providerProbeSha256: string
+}
+
+export type FrozenP0ProviderIdentity = FrozenP0DeepSeekProviderIdentity | FrozenP0OpenCodeGoProviderIdentity
 
 export interface P0Task {
   readonly id: string
@@ -127,15 +139,36 @@ function requireNonEmptyString(value: unknown, label: string): string {
 }
 
 function assertProvider(provider: FrozenP0ProviderIdentity): void {
-  if (provider.provider !== 'deepseek') throw new Error('P0 provider must be deepseek')
   requireNonEmptyString(provider.requestModel, 'P0 request model')
   requireNonEmptyString(provider.reviewedSnapshot, 'P0 reviewed snapshot')
   requireNonEmptyString(provider.expectedResponseModel, 'P0 expected response model')
-  requireNonEmptyString(provider.expectedSystemFingerprint, 'P0 expected system fingerprint')
   requireNonEmptyString(provider.baseUrl, 'P0 provider baseUrl')
-  if (provider.adapterVersion !== 'deepseek-chat-v1') throw new Error('Unsupported P0 provider adapter version')
   if (provider.thinking !== 'enabled' && provider.thinking !== 'disabled') throw new Error('Unsupported P0 thinking mode')
   if (!['low', 'high', 'max'].includes(provider.reasoningEffort)) throw new Error('Unsupported P0 reasoning effort')
+
+  if (provider.provider === 'deepseek') {
+    requireNonEmptyString(provider.expectedSystemFingerprint, 'P0 expected system fingerprint')
+    if (provider.adapterVersion !== 'deepseek-chat-v1') throw new Error('Unsupported DeepSeek P0 provider adapter version')
+  } else if (provider.provider === 'opencode-go') {
+    if (provider.adapterVersion !== 'opencode-go-deepseek-chat-v1') {
+      throw new Error('Unsupported OpenCode Go P0 provider adapter version')
+    }
+    if (provider.requestModel !== 'deepseek-v4-pro' || provider.expectedResponseModel !== 'deepseek-v4-pro') {
+      throw new Error('OpenCode Go P0 is frozen to deepseek-v4-pro')
+    }
+    if (!/^[0-9a-f]{64}$/u.test(provider.providerProbeSha256)) {
+      throw new Error('OpenCode Go P0 provider probe sha256 must be 64 lowercase hex characters')
+    }
+    if (provider.reviewedSnapshot !== `opencode-go-probe:${provider.providerProbeSha256}`) {
+      throw new Error('OpenCode Go P0 reviewed snapshot must bind the provider probe sha256')
+    }
+    if (provider.expectedSystemFingerprint !== undefined) {
+      requireNonEmptyString(provider.expectedSystemFingerprint, 'P0 expected system fingerprint')
+    }
+  } else {
+    throw new Error('Unsupported P0 provider')
+  }
+
   let url: URL
   try {
     url = new URL(provider.baseUrl)
@@ -320,11 +353,14 @@ export async function createFrozenP0Inputs(
     requestModel: provider.requestModel,
     reviewedSnapshot: provider.reviewedSnapshot,
     expectedResponseModel: provider.expectedResponseModel,
-    expectedSystemFingerprint: provider.expectedSystemFingerprint,
+    ...(provider.expectedSystemFingerprint === undefined
+      ? {}
+      : { expectedSystemFingerprint: provider.expectedSystemFingerprint }),
     thinking: provider.thinking,
     reasoningEffort: provider.reasoningEffort,
     baseUrl: provider.baseUrl,
     adapterVersion: provider.adapterVersion,
+    ...(provider.provider === 'opencode-go' ? { providerProbeSha256: provider.providerProbeSha256 } : {}),
   }
 
   const [runnerIdentity, executorIdentity, manifestA, manifestB, manifestC, resourcePolicyRef, retryPolicyRef] = await Promise.all([
