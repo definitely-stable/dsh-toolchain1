@@ -21,6 +21,8 @@ import { validateAgentV2ResultAgainstDefinition } from './m2-agent-eval-v2-integ
 
 const TARGET_FINGERPRINT = 'dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe'
 const INDEX_FINGERPRINT = 'dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2'
+const EXPECTED_RESPONSE_MODEL = 'frozen-model'
+const EXPECTED_SYSTEM_FINGERPRINT = 'fp_frozen_backend'
 const sha256 = createNodeSha256Port()
 
 type JsonObject = Record<string, unknown>
@@ -79,7 +81,13 @@ async function buildFixture() {
     C: await jsonRef(manifests.C),
   }
   const runnerIdentity = await jsonRef({ runner: 'dsh-m2-isolated-runner', version: '2' })
-  const executorIdentity = await jsonRef({ provider: 'frozen-provider', model: 'frozen-model', snapshot: 'frozen-snapshot' })
+  const executorIdentity = await jsonRef({
+    provider: 'frozen-provider',
+    model: 'frozen-model',
+    snapshot: 'frozen-snapshot',
+    expectedResponseModel: EXPECTED_RESPONSE_MODEL,
+    expectedSystemFingerprint: EXPECTED_SYSTEM_FINGERPRINT,
+  })
   const resourcePolicy: ResourcePolicy = {
     maxWallTimeMs: 300000,
     maxTurns: 12,
@@ -214,7 +222,14 @@ async function buildFixture() {
     )
     const resourceRef = await jsonRef(resourceReceipt)
     const rawAnswer = await createInlineContentRef('Use the frozen exact-target API.', 'text/plain', 'utf8-bytes-v1', sha256)
-    const providerMetadata = await jsonRef({ completionId: `completion-${index}`, finishReason: 'stop', inputTokens: 100, outputTokens: 50 })
+    const providerMetadata = await jsonRef({
+      completionId: `completion-${index}`,
+      finishReason: 'stop',
+      responseModel: EXPECTED_RESPONSE_MODEL,
+      systemFingerprint: EXPECTED_SYSTEM_FINGERPRINT,
+      inputTokens: 100,
+      outputTokens: 50,
+    })
 
     runs.push({
       taskId: entry.taskId,
@@ -287,6 +302,19 @@ describe('M2.3 agent evaluation v2 integrity', () => {
     const providerMetadata = firstAttempt(result).providerMetadata as JsonObject
     providerMetadata.inline = `${providerMetadata.inline as string} `
     await expect(validateAgentV2ResultAgainstDefinition(definition, result, sha256)).rejects.toThrow(/provider|metadata|hash|byte|content/i)
+  })
+
+  it('rejects re-hashable provider backend metadata that does not match the frozen executor identity', async () => {
+    const { definition, result } = await buildFixture()
+    firstAttempt(result).providerMetadata = await jsonRef({
+      completionId: 'completion-drift',
+      finishReason: 'stop',
+      responseModel: EXPECTED_RESPONSE_MODEL,
+      systemFingerprint: 'fp_unexpected_backend',
+      inputTokens: 100,
+      outputTokens: 50,
+    })
+    await expect(validateAgentV2ResultAgainstDefinition(definition, result, sha256)).rejects.toThrow(/provider|backend|fingerprint|identity/i)
   })
 
   it('rejects a re-hashable trace or receipt that is bound to another RunControl', async () => {
