@@ -48,47 +48,77 @@ async function loadRunModule(): Promise<Record<string, unknown>> {
 }
 
 describe('M2.3 OpenCode Go identity probe', () => {
-  it('proves the exact Chat Completions function-tool path before P0 can be frozen', async () => {
+  it('proves function-tool and reasoning continuation before P0 can be frozen', async () => {
     const probeModule = await loadProbeModule()
     const probeOpenCodeGoIdentity = probeModule.probeOpenCodeGoIdentity as (
       environment: NodeJS.ProcessEnv,
       options: { baseUrl: string },
     ) => Promise<Record<string, unknown>>
 
-    let authorization: string | undefined
-    let body: Record<string, unknown> | undefined
+    const requests: Array<{ authorization: string | undefined; body: Record<string, unknown> }> = []
     const receipt = await withServer(async (request, response) => {
-      authorization = request.headers.authorization
-      body = await readRequestBody(request)
+      const body = await readRequestBody(request)
+      requests.push({ authorization: request.headers.authorization, body })
+      if (requests.length === 1) {
+        responseJson(response, 200, {
+          id: 'chatcmpl-opencode-probe-tool',
+          object: 'chat.completion',
+          model: 'deepseek-v4-pro',
+          system_fingerprint: 'fp_opencode_probe_fixture',
+          choices: [{
+            index: 0,
+            finish_reason: 'tool_calls',
+            message: {
+              role: 'assistant',
+              content: '',
+              reasoning_content: 'I will call the requested probe tool.',
+              tool_calls: [{
+                id: 'probe-call-1',
+                type: 'function',
+                function: { name: 'identity_probe', arguments: '{"value":"ok"}' },
+              }],
+            },
+          }],
+          usage: { prompt_tokens: 25, completion_tokens: 8, total_tokens: 33 },
+        })
+        return
+      }
       responseJson(response, 200, {
-        id: 'chatcmpl-opencode-probe-1',
+        id: 'chatcmpl-opencode-probe-final',
         object: 'chat.completion',
         model: 'deepseek-v4-pro',
         system_fingerprint: 'fp_opencode_probe_fixture',
         choices: [{
           index: 0,
-          finish_reason: 'tool_calls',
+          finish_reason: 'stop',
           message: {
             role: 'assistant',
-            content: '',
-            reasoning_content: 'I will call the requested probe tool.',
-            tool_calls: [{
-              id: 'probe-call-1',
-              type: 'function',
-              function: { name: 'identity_probe', arguments: '{"value":"ok"}' },
-            }],
+            content: 'probe-ok',
+            reasoning_content: 'The tool result confirms the continuation path.',
           },
         }],
-        usage: { prompt_tokens: 25, completion_tokens: 8, total_tokens: 33 },
+        usage: { prompt_tokens: 39, completion_tokens: 7, total_tokens: 46 },
       })
     }, baseUrl => probeOpenCodeGoIdentity({ OPENCODE_API_KEY: SECRET } as NodeJS.ProcessEnv, { baseUrl }))
 
-    expect(authorization).toBe(`Bearer ${SECRET}`)
-    expect(body).toMatchObject({
+    expect(requests).toHaveLength(2)
+    expect(requests.every(request => request.authorization === `Bearer ${SECRET}`)).toBe(true)
+    expect(requests[0]!.body).toMatchObject({
       model: 'deepseek-v4-pro',
       thinking: { type: 'enabled' },
       reasoning_effort: 'high',
       tool_choice: 'required',
+    })
+    const followUpMessages = requests[1]!.body.messages as Array<Record<string, unknown>>
+    expect(followUpMessages.at(-2)).toMatchObject({
+      role: 'assistant',
+      reasoning_content: 'I will call the requested probe tool.',
+      tool_calls: [{ id: 'probe-call-1', type: 'function' }],
+    })
+    expect(followUpMessages.at(-1)).toEqual({
+      role: 'tool',
+      tool_call_id: 'probe-call-1',
+      content: '{"value":"ok"}',
     })
     expect(receipt).toMatchObject({
       schema: 'dsh-toolchain-m2-opencode-go-probe-v1',
@@ -99,8 +129,9 @@ describe('M2.3 OpenCode Go identity probe', () => {
       thinking: 'enabled',
       reasoningEffort: 'high',
       functionToolCall: 'verified',
-      reasoningContinuation: 'observed',
+      reasoningContinuation: 'verified',
       tokenMeasurement: 'verified',
+      backendIdentityStrength: 'system-fingerprint',
     })
     expect(JSON.stringify(receipt)).not.toContain(SECRET)
   })
@@ -112,25 +143,41 @@ describe('M2.3 OpenCode Go identity probe', () => {
       options: { baseUrl: string },
     ) => Promise<Record<string, unknown>>
 
+    let requestCount = 0
     const receipt = await withServer(async (_request, response) => {
+      requestCount += 1
+      if (requestCount === 1) {
+        responseJson(response, 200, {
+          id: 'chatcmpl-opencode-probe-2-tool',
+          object: 'chat.completion',
+          model: 'deepseek-v4-pro',
+          choices: [{
+            index: 0,
+            finish_reason: 'tool_calls',
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [{
+                id: 'probe-call-2',
+                type: 'function',
+                function: { name: 'identity_probe', arguments: '{"value":"ok"}' },
+              }],
+            },
+          }],
+          usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 },
+        })
+        return
+      }
       responseJson(response, 200, {
-        id: 'chatcmpl-opencode-probe-2',
+        id: 'chatcmpl-opencode-probe-2-final',
         object: 'chat.completion',
         model: 'deepseek-v4-pro',
         choices: [{
           index: 0,
-          finish_reason: 'tool_calls',
-          message: {
-            role: 'assistant',
-            content: '',
-            tool_calls: [{
-              id: 'probe-call-2',
-              type: 'function',
-              function: { name: 'identity_probe', arguments: '{"value":"ok"}' },
-            }],
-          },
+          finish_reason: 'stop',
+          message: { role: 'assistant', content: 'probe-ok' },
         }],
-        usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 },
+        usage: { prompt_tokens: 31, completion_tokens: 4, total_tokens: 35 },
       })
     }, baseUrl => probeOpenCodeGoIdentity({ OPENCODE_API_KEY: SECRET } as NodeJS.ProcessEnv, { baseUrl }))
 
@@ -139,6 +186,8 @@ describe('M2.3 OpenCode Go identity probe', () => {
     expect(receipt).toMatchObject({
       backendIdentityStrength: 'response-model-only',
       reasoningContinuation: 'not-observed',
+      functionToolCall: 'verified',
+      tokenMeasurement: 'verified',
     })
   })
 
@@ -160,7 +209,7 @@ describe('M2.3 OpenCode Go identity probe', () => {
       thinking: 'enabled',
       reasoningEffort: 'high',
       functionToolCall: 'verified',
-      reasoningContinuation: 'observed',
+      reasoningContinuation: 'verified',
       tokenMeasurement: 'verified',
       backendIdentityStrength: 'system-fingerprint',
     }
