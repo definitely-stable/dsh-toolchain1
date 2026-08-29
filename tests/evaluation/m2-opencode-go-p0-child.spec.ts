@@ -178,8 +178,15 @@ describe('M2.3 OpenCode Go P0 process child', () => {
       thinking: { type: 'enabled' },
       reasoning_effort: 'high',
       max_tokens: 6000,
-      tool_choice: 'auto',
     })
+    expect(first).not.toHaveProperty('tool_choice')
+    expect(requests[1]!.body).not.toHaveProperty('tool_choice')
+    expect(first.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'function',
+        function: expect.objectContaining({ name: 'search_text' }),
+      }),
+    ]))
 
     const secondMessages = requests[1]!.body.messages as Array<Record<string, unknown>>
     expect(secondMessages.at(-2)).toMatchObject({
