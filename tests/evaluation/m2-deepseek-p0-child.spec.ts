@@ -163,6 +163,8 @@ describe('M2.3 DeepSeek P0 process child', () => {
       providerMetadata: {
         completionId: 'chatcmpl-final-1',
         finishReason: 'stop',
+        responseModel: 'deepseek-v4-pro',
+        systemFingerprint: SYSTEM_FINGERPRINT,
         inputTokens: 240,
         outputTokens: 50,
       },
