@@ -157,7 +157,7 @@ function createSnapshot(
       bundles,
       dependencies,
       profilePatchHash: projection.profile.profilePatchHash,
-      homePatchHash: projection.homePatchHash,
+      homePatchHash: projection.profile.homePatchHash,
       overlayPatchHashes,
     }),
     ...(facts.supportStatus === undefined ? {} : { supportStatus: facts.supportStatus }),
