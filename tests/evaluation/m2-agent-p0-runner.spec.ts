@@ -18,6 +18,8 @@ const PROVIDER: FrozenP0ProviderIdentity = Object.freeze({
   provider: 'deepseek',
   requestModel: 'deepseek-v4-pro',
   reviewedSnapshot: 'DeepSeek-V4-Pro-0813',
+  expectedResponseModel: 'deepseek-v4-pro',
+  expectedSystemFingerprint: 'fp_p0_fixture',
   thinking: 'enabled',
   reasoningEffort: 'high',
   baseUrl: 'https://api.deepseek.com',
