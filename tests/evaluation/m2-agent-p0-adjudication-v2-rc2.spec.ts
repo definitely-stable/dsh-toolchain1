@@ -65,25 +65,30 @@ describe('M2.3 P0 adjudication v2 against frozen rc.2 truth', () => {
     expect(outcome.taskSuccess).toBe('SUCCESS')
   })
 
-  it('exposes every incomplete authoritative package surface before target-wide absence is accepted', () => {
-    expect(truth.packages
-      .filter(pkg => !pkg.complete)
-      .map(pkg => ({ name: pkg.name, unresolvedPublicEdges: pkg.unresolvedPublicEdges })))
-      .toEqual([])
+  it('keeps real missing declaration closure visible instead of pretending the whole target is complete', () => {
+    expect(truth.packages.find(pkg => pkg.name === '@deepseek-ai/dsh-tools')?.complete).toBe(true)
+    expect(truth.packages.some(pkg => !pkg.complete)).toBe(true)
+    expect(truth.packages.find(pkg => pkg.name === '@deepseek-ai/dsh-client-runtime')).toMatchObject({
+      complete: false,
+    })
   })
 
-  it('parses the retained qualified drift claim and only accepts absence when frozen truth is complete enough', () => {
-    const [claim] = classifyP0ApiClaimsV2(
-      parseP0ApiClaimsV2('API_CLAIM package=* symbol=profile.patchReload assertion=absent'),
+  it('retains the qualified patchReload claim but fails target-wide absence closed on the partial frozen declaration universe', () => {
+    const outcome = adjudicateP0ModelOutcomeV2(
+      'p0-07',
+      'API_CLAIM package=* symbol=profile.patchReload assertion=absent',
       truth,
     )
 
-    expect(claim?.symbol).toBe('profile.patchReload')
-    expect(claim?.classification).toBe('VALID')
-    expect(claim?.resolution).toBe('complete-absence')
+    expect(outcome.parsedApiClaims[0]).toMatchObject({
+      symbol: 'profile.patchReload',
+      classification: 'UNKNOWN',
+      resolution: 'incomplete-universe',
+    })
+    expect(outcome.taskSuccess).toBe('UNKNOWN')
   })
 
-  it('rejects ToolAutopilot as absent from the complete frozen target public surface', () => {
+  it('proves the ToolAutopilot task from the complete dsh-tools scope without overstating target-wide completeness', () => {
     const outcome = adjudicateP0ModelOutcomeV2(
       'p0-08',
       'API_CLAIM package=* symbol=ToolAutopilot assertion=absent',
@@ -91,8 +96,8 @@ describe('M2.3 P0 adjudication v2 against frozen rc.2 truth', () => {
     )
 
     expect(outcome.parsedApiClaims[0]).toMatchObject({
-      classification: 'VALID',
-      resolution: 'complete-absence',
+      classification: 'UNKNOWN',
+      resolution: 'incomplete-universe',
     })
     expect(outcome.taskSuccess).toBe('SUCCESS')
   })
