@@ -14,6 +14,7 @@ const commitmentUrl = new URL('../../docs/evaluation/m2/agent-holdout-h1-v2.comm
 const TARGET_FINGERPRINT = 'dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe'
 const CONTRACT_INDEX_FINGERPRINT = 'dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2'
 const API_CLAIMS_SOURCE_COMMIT = '0bd4387e7da31344d92912670fac2de096cc0c7c'
+const TASK_ADJUDICATOR_SOURCE_COMMIT = '8539d8cc173512233c5a04ff9be65a1583c3e9cf'
 
 let committed: H1CommitmentV2
 let committedText: string
@@ -35,7 +36,7 @@ function readyProjection(): H1CommitmentV2 {
       },
       taskAdjudicator: {
         id: 'dsh-toolchain-m2-h1-task-adjudicator-v2',
-        sourceCommit: '9'.repeat(40),
+        sourceCommit: TASK_ADJUDICATOR_SOURCE_COMMIT,
       },
     },
     thresholds: {
@@ -100,7 +101,6 @@ describe('M2.3 H1 readiness v2', () => {
       status: 'BLOCKED',
       blockers: [
         'COMMITMENT_NOT_FINALIZED',
-        'TASK_ADJUDICATOR_NOT_FROZEN',
         'MCID_NOT_FROZEN',
         'NONINFERIORITY_MARGIN_NOT_FROZEN',
         'TASK_SET_NOT_COMMITTED',
