@@ -16,6 +16,17 @@ const target = Object.freeze({
   contractIndexFingerprint: 'dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2',
 })
 
+const domains = Object.freeze([
+  'tools',
+  'approval',
+  'scope',
+  'session-query',
+  'subagent',
+  'compaction',
+  'profile-lifecycle',
+  'runtime',
+])
+
 let publicCommitment: unknown
 
 beforeAll(async () => {
@@ -28,16 +39,29 @@ function hiddenDataset(taskCount = 96) {
     datasetId: 'H1',
     target,
     taskCount,
-    tasks: Array.from({ length: taskCount }, (_, index) => ({
-      id: `h1-synthetic-${String(index + 1).padStart(3, '0')}`,
-      domain: 'synthetic',
-      prompt: `Synthetic private-contract task ${index + 1}.`,
-      successRule: {
-        kind: 'api-exists-any',
-        package: '@deepseek-ai/dsh-tools',
-        symbols: ['defineTool'],
-      },
-    })),
+    tasks: Array.from({ length: taskCount }, (_, index) => {
+      const sequence = String(index + 1).padStart(3, '0')
+      const domain = domains[Math.floor(index / 12) % domains.length]!
+      const absent = index % 12 >= 9
+      return {
+        id: `h1-synthetic-${sequence}`,
+        domain,
+        prompt: `On the exact installed DSH target, resolve synthetic plugin contract fixture ${sequence} and name the target-valid API conclusion.`,
+        successRule: absent
+          ? {
+              kind: 'api-absent',
+              symbols: [`SyntheticAbsent${sequence}`],
+              proofScope: index % 2 === 0
+                ? { kind: 'target' }
+                : { kind: 'package', package: '@deepseek-ai/dsh-tools' },
+            }
+          : {
+              kind: 'api-exists-any',
+              package: '@deepseek-ai/dsh-tools',
+              symbols: [`SyntheticExists${sequence}`],
+            },
+      }
+    }),
   }
 }
 
@@ -126,6 +150,57 @@ describe('M2.3 H1 finalization boundary v2', () => {
     const weakReceipt = { ...providerReceipt(), backendIdentityStrength: 'response-model-only' }
     await expect(finalizeH1CommitmentV2(publicCommitment, hiddenDataset(), weakReceipt, sha256))
       .rejects.toThrow(/backend|identity|system/iu)
+  })
+
+  it('fails closed on structurally valid but degenerate H1 task construction', async () => {
+    const concentrated = structuredClone(hiddenDataset())
+    concentrated.tasks.forEach(task => { task.domain = 'tools' })
+    await expect(finalizeH1CommitmentV2(publicCommitment, concentrated, providerReceipt(), sha256))
+      .rejects.toThrow(/domain|construction/iu)
+
+    const duplicatePrompt = structuredClone(hiddenDataset())
+    duplicatePrompt.tasks[1]!.prompt = `${duplicatePrompt.tasks[0]!.prompt.toUpperCase()} !!!`
+    await expect(finalizeH1CommitmentV2(publicCommitment, duplicatePrompt, providerReceipt(), sha256))
+      .rejects.toThrow(/prompt|duplicate|construction/iu)
+
+    const repeatedRule = structuredClone(hiddenDataset())
+    repeatedRule.tasks[1]!.successRule = structuredClone(repeatedRule.tasks[0]!.successRule)
+    repeatedRule.tasks[2]!.successRule = structuredClone(repeatedRule.tasks[0]!.successRule)
+    await expect(finalizeH1CommitmentV2(publicCommitment, repeatedRule, providerReceipt(), sha256))
+      .rejects.toThrow(/rule|proposition|construction/iu)
+
+    const repeatedAtomicClaim = structuredClone(hiddenDataset())
+    repeatedAtomicClaim.tasks[0]!.successRule = {
+      kind: 'api-exists-any',
+      package: '@deepseek-ai/dsh-tools',
+      symbols: ['SharedConstructionApi'],
+    }
+    repeatedAtomicClaim.tasks[1]!.successRule = {
+      kind: 'api-exists-any',
+      package: '@deepseek-ai/dsh-tools',
+      symbols: ['SharedConstructionApi', 'SyntheticAliasOne'],
+    }
+    repeatedAtomicClaim.tasks[2]!.successRule = {
+      kind: 'api-exists-any',
+      package: '@deepseek-ai/dsh-tools',
+      symbols: ['SharedConstructionApi', 'SyntheticAliasTwo'],
+    }
+    await expect(finalizeH1CommitmentV2(publicCommitment, repeatedAtomicClaim, providerReceipt(), sha256))
+      .rejects.toThrow(/atomic|claim|construction/iu)
+
+    const balanceDrift = structuredClone(hiddenDataset())
+    balanceDrift.tasks[9]!.successRule = {
+      kind: 'api-exists-any',
+      package: '@deepseek-ai/dsh-tools',
+      symbols: ['SyntheticBalanceDrift'],
+    }
+    await expect(finalizeH1CommitmentV2(publicCommitment, balanceDrift, providerReceipt(), sha256))
+      .rejects.toThrow(/72|24|balance|construction/iu)
+
+    const treatmentCue = structuredClone(hiddenDataset())
+    treatmentCue.tasks[0]!.prompt = 'Use contract.search and contract.inspect from DSH Toolchain to answer this successRule for arm C.'
+    await expect(finalizeH1CommitmentV2(publicCommitment, treatmentCue, providerReceipt(), sha256))
+      .rejects.toThrow(/treatment|cue|contract\.search|construction/iu)
   })
 
   it('does not mutate the public source commitment or expose evaluator rules in model tasks', async () => {
