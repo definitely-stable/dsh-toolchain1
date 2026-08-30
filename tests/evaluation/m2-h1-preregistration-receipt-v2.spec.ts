@@ -127,7 +127,11 @@ describe('M2.3 H1 public preregistration receipt v2', () => {
     const { finalization, frozen } = await fixture()
 
     const readinessDrift = structuredClone(finalization)
-    readinessDrift.readiness = { status: 'BLOCKED', runAllowed: false, blockers: ['TASK_SET_NOT_COMMITTED'] }
+    ;(readinessDrift as unknown as { readiness: unknown }).readiness = {
+      status: 'BLOCKED',
+      runAllowed: false,
+      blockers: ['TASK_SET_NOT_COMMITTED'],
+    }
     await expect(createH1PreregistrationReceiptV2(readinessDrift, frozen, sha256))
       .rejects.toThrow(/READY|readiness|finalization/iu)
 
@@ -141,7 +145,7 @@ describe('M2.3 H1 public preregistration receipt v2', () => {
     const { finalization, frozen } = await fixture()
 
     const hashDrift = structuredClone(frozen)
-    hashDrift.definitionSha256 = '0'.repeat(64)
+    ;(hashDrift as unknown as { definitionSha256: string }).definitionSha256 = '0'.repeat(64)
     await expect(createH1PreregistrationReceiptV2(finalization, hashDrift, sha256))
       .rejects.toThrow(/definition|hash/iu)
 
@@ -158,7 +162,7 @@ describe('M2.3 H1 public preregistration receipt v2', () => {
       .rejects.toThrow(/ContentRef|runner|hash|definition/iu)
 
     const ledgerDrift = structuredClone(frozen)
-    ledgerDrift.ledgerBinding.expectedBackendFingerprint = 'fp_drifted_after_freeze'
+    ;(ledgerDrift.ledgerBinding as unknown as { expectedBackendFingerprint: string }).expectedBackendFingerprint = 'fp_drifted_after_freeze'
     await expect(createH1PreregistrationReceiptV2(finalization, ledgerDrift, sha256))
       .rejects.toThrow(/ledger|provider|fingerprint|binding/iu)
   })
@@ -167,7 +171,7 @@ describe('M2.3 H1 public preregistration receipt v2', () => {
     const { finalization, frozen } = await fixture()
     const receipt = await createH1PreregistrationReceiptV2(finalization, frozen, sha256)
 
-    const unknown = structuredClone(receipt) as Record<string, unknown>
+    const unknown = structuredClone(receipt) as unknown as Record<string, unknown>
     unknown.syntheticExtra = true
     await expect(validateH1PreregistrationReceiptV2(unknown, sha256))
       .rejects.toThrow(/unknown|key|shape/iu)
