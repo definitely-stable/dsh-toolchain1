@@ -1,0 +1,62 @@
+{
+  "schema": "dsh-toolchain-m2-agent-holdout-commitment-v2",
+  "version": "h1-commitment-v2",
+  "datasetId": "H1",
+  "status": "BLOCKED",
+  "target": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.1.1-rc.2",
+    "profile": "web",
+    "targetFingerprint": "dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe",
+    "contractIndexFingerprint": "dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2",
+    "ordinaryWorkspaceSha256": "ce2cd6608f7ef9095470d231f0562adf9bbd5a73f8ea7daeda2e40bb9da8e413"
+  },
+  "measurement": {
+    "truthFingerprint": "dsh-api-truth-v2:14ab2c32fa1307de300d09715b30a147a9ffe7884335ee0f19ebc5cb018871bb",
+    "apiClaimClassifier": "dsh-toolchain-m2-api-claims-v2",
+    "taskAdjudicator": null,
+    "historicalP0": {
+      "runId": 33264398212,
+      "headSha": "fee95e4613ffa32210f0800b7e5a9cbd929f0f6d",
+      "definitionSha256": "240d1e9ff32c976a55c6a312e16f2046833047c512d33f711bb0eef60c8be2c6",
+      "resultSha256": "f22f2e4016ba12fe585971d6bf70106745f0d9b5393ec1bdc1b506ec32ae1d8e",
+      "historicalStatus": "INCONCLUSIVE",
+      "derivedReportSha256": "aaba6e82c2506d0af0b440cb0bf34c1ebf68efc9293f32ca8eeeadeb294bdd69"
+    }
+  },
+  "thresholds": {
+    "mcidAbsoluteReduction": null,
+    "taskSuccessNoninferiorityMargin": null
+  },
+  "hiddenDataset": {
+    "sha256": null,
+    "taskCount": null
+  },
+  "provider": null,
+  "analysis": {
+    "trialsPerTask": 3,
+    "primary": {
+      "metric": "invalid-api-task-rate",
+      "comparison": "C-vs-B",
+      "trialToTaskAggregation": "mean-trial-invalid-indicator",
+      "uncertainty": {
+        "method": "paired-task-bootstrap",
+        "confidenceLevel": 0.95,
+        "resamples": 10000,
+        "seed": "m2-v2-primary",
+        "decisionRule": "lower-bound-at-least-mcid"
+      }
+    },
+    "guardrail": {
+      "metric": "task-success-noninferiority",
+      "trialToTaskAggregation": "mean-trial-success-indicator",
+      "uncertainty": {
+        "method": "paired-task-bootstrap",
+        "confidenceLevel": 0.95,
+        "resamples": 10000,
+        "seed": "m2-v2-guardrail",
+        "decisionRule": "lower-bound-at-least-negative-margin"
+      }
+    }
+  }
+}
