@@ -78,31 +78,37 @@ function h1Resources() {
   })
 }
 
-function h1Metrics() {
+function h1Metrics(finalization: H1FinalizationResultV2) {
+  const primary = finalization.commitment.analysis.primary
+  const guardrail = finalization.commitment.analysis.guardrail
   return Object.freeze({
     primary: {
-      name: 'invalid-api-task-rate',
-      comparison: 'C-vs-B',
-      trialToTaskAggregation: 'mean-trial-invalid-indicator',
-      mcidAbsoluteReduction: 0.1,
+      name: primary.metric,
+      comparison: primary.comparison,
+      trialToTaskAggregation: primary.trialToTaskAggregation,
+      mcidAbsoluteReduction: finalization.commitment.thresholds.mcidAbsoluteReduction,
       uncertainty: {
-        method: 'paired-task-bootstrap',
-        confidenceLevel: 0.95,
-        resamples: 10_000,
-        seed: 'm2-v2-primary',
-        decisionRule: 'lower-bound-at-least-mcid',
+        method: primary.uncertainty.method,
+        confidenceLevel: primary.uncertainty.confidenceLevel,
+        sidedness: primary.uncertainty.sidedness,
+        lowerQuantile: primary.uncertainty.lowerQuantile,
+        resamples: primary.uncertainty.resamples,
+        seed: primary.uncertainty.seed,
+        decisionRule: primary.uncertainty.decisionRule,
       },
     },
     guardrail: {
-      name: 'task-success-noninferiority',
-      trialToTaskAggregation: 'mean-trial-success-indicator',
-      margin: 0.05,
+      name: guardrail.metric,
+      trialToTaskAggregation: guardrail.trialToTaskAggregation,
+      margin: finalization.commitment.thresholds.taskSuccessNoninferiorityMargin,
       uncertainty: {
-        method: 'paired-task-bootstrap',
-        confidenceLevel: 0.95,
-        resamples: 10_000,
-        seed: 'm2-v2-guardrail',
-        decisionRule: 'lower-bound-at-least-negative-margin',
+        method: guardrail.uncertainty.method,
+        confidenceLevel: guardrail.uncertainty.confidenceLevel,
+        sidedness: guardrail.uncertainty.sidedness,
+        lowerQuantile: guardrail.uncertainty.lowerQuantile,
+        resamples: guardrail.uncertainty.resamples,
+        seed: guardrail.uncertainty.seed,
+        decisionRule: guardrail.uncertainty.decisionRule,
       },
     },
     secondary: ['toolchain-use-rate', 'wall-time'],
@@ -301,7 +307,7 @@ export async function createFrozenH1ExecutionDefinitionV2(
       trialsPerTaskArm: 3,
       schedule,
     },
-    metrics: h1Metrics(),
+    metrics: h1Metrics(finalization),
     oracle: {
       version: 'dsh-api-truth-v2',
       sha256: TRUTH_SHA256,
