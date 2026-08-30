@@ -1,0 +1,36 @@
+{
+  "schema": "dsh-toolchain-m2-h1-prospective-sensitivity-report-v2",
+  "status": "FROZEN-DERIVED",
+  "source": {
+    "prospectiveDesign": {
+      "id": "dsh-toolchain-m2-h1-prospective-design-v2",
+      "path": "docs/evaluation/m2/h1-prospective-design-v2.json",
+      "sourceCommit": "ceec1cb79ec77a6875bda678622ad2a7cdac4fad"
+    },
+    "planningEngine": {
+      "id": "normal-known-scenario-variance-v1",
+      "path": "tests/evaluation/m2-h1-design-sensitivity-v2.ts",
+      "sourceCommit": "ceec1cb79ec77a6875bda678622ad2a7cdac4fad"
+    },
+    "exactAudit": {
+      "id": "dsh-toolchain-m2-h1-exact-audit-v2",
+      "path": "tests/evaluation/m2-h1-design-exact-audit-v2.ts",
+      "sourceCommit": "ceec1cb79ec77a6875bda678622ad2a7cdac4fad"
+    }
+  },
+  "thresholds": {
+    "mcidAbsoluteReduction": 0.1,
+    "taskSuccessNoninferiorityMargin": 0.05
+  },
+  "selection": {
+    "approximateSelectedTaskCount": 96,
+    "exactSelectedTaskCount": 96,
+    "selectionAgrees": true,
+    "selectedTaskCount": 96,
+    "outcome": "ADEQUATE"
+  },
+  "execution": {
+    "h1Executed": false,
+    "providerCalls": 0
+  }
+}
