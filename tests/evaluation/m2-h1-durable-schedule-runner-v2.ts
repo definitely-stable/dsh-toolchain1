@@ -95,6 +95,9 @@ export async function runH1DurableScheduleV2(
         continue
       }
       if (recovery.status === 'RECOVERY_REQUIRED') {
+        if (recovery.state.status !== 'RECOVERY_REQUIRED') {
+          throw new Error('H1 durable schedule recovery returned a mismatched store state')
+        }
         return Object.freeze({
           status: 'RECOVERY_REQUIRED' as const,
           committedAttempts,
