@@ -17,7 +17,10 @@
       "id": "dsh-toolchain-m2-api-claims-v2",
       "sourceCommit": "0bd4387e7da31344d92912670fac2de096cc0c7c"
     },
-    "taskAdjudicator": null,
+    "taskAdjudicator": {
+      "id": "dsh-toolchain-m2-h1-task-adjudicator-v2",
+      "sourceCommit": "8539d8cc173512233c5a04ff9be65a1583c3e9cf"
+    },
     "historicalP0": {
       "runId": 33264398212,
       "headSha": "fee95e4613ffa32210f0800b7e5a9cbd929f0f6d",
