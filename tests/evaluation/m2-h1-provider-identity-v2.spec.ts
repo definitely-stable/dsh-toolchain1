@@ -74,27 +74,27 @@ describe('M2.3 H1 provider identity receipt v2', () => {
   it('rejects weak backend identity and missing capability evidence', async () => {
     const responseModelOnly = { ...receipt(), backendIdentityStrength: 'response-model-only' }
     delete (responseModelOnly as Partial<ReturnType<typeof receipt>>).systemFingerprint
-    await expect(commitH1ProviderIdentityReceiptV2(responseModelOnly, sha256)).rejects.toThrow(/system|backend|identity/u)
+    await expect(commitH1ProviderIdentityReceiptV2(responseModelOnly, sha256)).rejects.toThrow(/system|backend|identity/iu)
 
     await expect(commitH1ProviderIdentityReceiptV2({
       ...receipt(),
       reasoningContinuation: 'not-observed',
-    }, sha256)).rejects.toThrow(/reasoning/u)
+    }, sha256)).rejects.toThrow(/reasoning/iu)
 
     await expect(commitH1ProviderIdentityReceiptV2({
       ...receipt(),
       functionToolCall: 'not-observed',
-    }, sha256)).rejects.toThrow(/tool/u)
+    }, sha256)).rejects.toThrow(/tool/iu)
   })
 
   it('rejects provider/model/config drift, unknown fields and invalid token evidence', async () => {
     await expect(commitH1ProviderIdentityReceiptV2({ ...receipt(), requestModel: 'other-model' }, sha256))
-      .rejects.toThrow(/model/u)
+      .rejects.toThrow(/model/iu)
     await expect(commitH1ProviderIdentityReceiptV2({ ...receipt(), baseUrl: 'https://example.com/v1' }, sha256))
-      .rejects.toThrow(/baseUrl|OpenCode/u)
+      .rejects.toThrow(/baseUrl|OpenCode/iu)
     await expect(commitH1ProviderIdentityReceiptV2({ ...receipt(), secret: 'must-not-be-committed' }, sha256))
-      .rejects.toThrow(/secret|unknown/u)
+      .rejects.toThrow(/secret|unknown/iu)
     await expect(commitH1ProviderIdentityReceiptV2({ ...receipt(), inputTokens: -1 }, sha256))
-      .rejects.toThrow(/token/u)
+      .rejects.toThrow(/token/iu)
   })
 })
