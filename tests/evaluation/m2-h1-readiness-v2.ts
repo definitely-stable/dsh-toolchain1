@@ -31,6 +31,17 @@ const EXPECTED_TASK_ADJUDICATOR = Object.freeze({
   sourceCommit: '8539d8cc173512233c5a04ff9be65a1583c3e9cf',
 })
 
+const EXPECTED_PROSPECTIVE_DESIGN = Object.freeze({
+  id: 'dsh-toolchain-m2-h1-prospective-design-v2',
+  sourceCommit: 'ceec1cb79ec77a6875bda678622ad2a7cdac4fad',
+  selectedTaskCount: 96,
+})
+
+const EXPECTED_THRESHOLDS = Object.freeze({
+  mcidAbsoluteReduction: 0.1,
+  taskSuccessNoninferiorityMargin: 0.05,
+})
+
 const EXPECTED_HISTORICAL_P0 = Object.freeze({
   runId: 33264398212,
   headSha: 'fee95e4613ffa32210f0800b7e5a9cbd929f0f6d',
@@ -47,8 +58,10 @@ const EXPECTED_ANALYSIS = Object.freeze({
     comparison: 'C-vs-B',
     trialToTaskAggregation: 'mean-trial-invalid-indicator',
     uncertainty: {
-      method: 'paired-task-bootstrap',
+      method: 'paired-task-percentile-bootstrap',
       confidenceLevel: 0.95,
+      sidedness: 'two-sided',
+      lowerQuantile: 0.025,
       resamples: 10_000,
       seed: 'm2-v2-primary',
       decisionRule: 'lower-bound-at-least-mcid',
@@ -58,8 +71,10 @@ const EXPECTED_ANALYSIS = Object.freeze({
     metric: 'task-success-noninferiority',
     trialToTaskAggregation: 'mean-trial-success-indicator',
     uncertainty: {
-      method: 'paired-task-bootstrap',
+      method: 'paired-task-percentile-bootstrap',
       confidenceLevel: 0.95,
+      sidedness: 'two-sided',
+      lowerQuantile: 0.025,
       resamples: 10_000,
       seed: 'm2-v2-guardrail',
       decisionRule: 'lower-bound-at-least-negative-margin',
@@ -87,6 +102,7 @@ export type H1ReadinessBlockerV2 =
   | 'TARGET_IDENTITY_INVALID'
   | 'MEASUREMENT_IDENTITY_INVALID'
   | 'TASK_ADJUDICATOR_NOT_FROZEN'
+  | 'PROSPECTIVE_DESIGN_INVALID'
   | 'MCID_NOT_FROZEN'
   | 'NONINFERIORITY_MARGIN_NOT_FROZEN'
   | 'TASK_SET_NOT_COMMITTED'
@@ -123,6 +139,7 @@ export interface H1CommitmentV2 {
     readonly taskAdjudicator: H1ComponentIdentityV2 | null
     readonly historicalP0: typeof EXPECTED_HISTORICAL_P0
   }
+  readonly prospectiveDesign: typeof EXPECTED_PROSPECTIVE_DESIGN
   readonly thresholds: {
     readonly mcidAbsoluteReduction: number | null
     readonly taskSuccessNoninferiorityMargin: number | null
@@ -218,13 +235,13 @@ function validProviderIdentity(value: unknown): boolean {
   return true
 }
 
-function hiddenDatasetCommitted(value: unknown): boolean {
+function hiddenDatasetCommitted(value: unknown, expectedTaskCount: number): boolean {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
   const record = value as Record<string, unknown>
   return typeof record.sha256 === 'string'
     && SHA256_PATTERN.test(record.sha256)
     && Number.isInteger(record.taskCount)
-    && (record.taskCount as number) > 0
+    && record.taskCount === expectedTaskCount
 }
 
 export function evaluateH1ReadinessV2(value: unknown): H1ReadinessV2 {
@@ -253,6 +270,9 @@ export function evaluateH1ReadinessV2(value: unknown): H1ReadinessV2 {
     blockers.push('TASK_ADJUDICATOR_NOT_FROZEN')
   }
 
+  const designIdentityValid = equalCanonical(commitment.prospectiveDesign, EXPECTED_PROSPECTIVE_DESIGN)
+  if (!designIdentityValid) blockers.push('PROSPECTIVE_DESIGN_INVALID')
+
   const thresholds = requireRecord(commitment.thresholds, 'H1 thresholds')
   const mcid = validateThreshold(thresholds.mcidAbsoluteReduction, 'MCID', true)
   const margin = validateThreshold(
@@ -262,7 +282,16 @@ export function evaluateH1ReadinessV2(value: unknown): H1ReadinessV2 {
   )
   if (mcid === null) blockers.push('MCID_NOT_FROZEN')
   if (margin === null) blockers.push('NONINFERIORITY_MARGIN_NOT_FROZEN')
-  if (!hiddenDatasetCommitted(commitment.hiddenDataset)) blockers.push('TASK_SET_NOT_COMMITTED')
+  if (mcid !== null && margin !== null && !equalCanonical({
+    mcidAbsoluteReduction: mcid,
+    taskSuccessNoninferiorityMargin: margin,
+  }, EXPECTED_THRESHOLDS) && !blockers.includes('PROSPECTIVE_DESIGN_INVALID')) {
+    blockers.push('PROSPECTIVE_DESIGN_INVALID')
+  }
+
+  if (!hiddenDatasetCommitted(commitment.hiddenDataset, EXPECTED_PROSPECTIVE_DESIGN.selectedTaskCount)) {
+    blockers.push('TASK_SET_NOT_COMMITTED')
+  }
   if (!validProviderIdentity(commitment.provider)) blockers.push('PROVIDER_IDENTITY_NOT_FROZEN')
   if (!equalCanonical(commitment.analysis, EXPECTED_ANALYSIS)) blockers.push('ANALYSIS_PLAN_INVALID')
 
