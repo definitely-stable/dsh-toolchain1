@@ -203,10 +203,11 @@ function negativeScopeRelevant(rule: H1ApiAbsentRuleV2, claim: ClassifiedApiClai
   const accepted = new Set(rule.symbols)
   if (claimAcceptedSymbols(claim, accepted).length === 0) return false
   if (rule.proofScope.kind === 'target') return true
-  if (claim.package === '*' || claim.package === rule.proofScope.package) return true
+  const packageName = rule.proofScope.package
+  if (claim.package === '*' || claim.package === packageName) return true
   return claim.canonicalMatches.some(value => {
     const normalized = normalizedCanonicalMatch(value)
-    return normalized.package === rule.proofScope.package
+    return normalized.package === packageName
       && claimAcceptedSymbols(claim, accepted).length > 0
   })
 }
