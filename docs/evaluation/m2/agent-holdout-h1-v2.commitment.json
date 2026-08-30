@@ -30,9 +30,14 @@
       "derivedReportSha256": "aaba6e82c2506d0af0b440cb0bf34c1ebf68efc9293f32ca8eeeadeb294bdd69"
     }
   },
+  "prospectiveDesign": {
+    "id": "dsh-toolchain-m2-h1-prospective-design-v2",
+    "sourceCommit": "ceec1cb79ec77a6875bda678622ad2a7cdac4fad",
+    "selectedTaskCount": 96
+  },
   "thresholds": {
-    "mcidAbsoluteReduction": null,
-    "taskSuccessNoninferiorityMargin": null
+    "mcidAbsoluteReduction": 0.1,
+    "taskSuccessNoninferiorityMargin": 0.05
   },
   "hiddenDataset": {
     "sha256": null,
@@ -46,8 +51,10 @@
       "comparison": "C-vs-B",
       "trialToTaskAggregation": "mean-trial-invalid-indicator",
       "uncertainty": {
-        "method": "paired-task-bootstrap",
+        "method": "paired-task-percentile-bootstrap",
         "confidenceLevel": 0.95,
+        "sidedness": "two-sided",
+        "lowerQuantile": 0.025,
         "resamples": 10000,
         "seed": "m2-v2-primary",
         "decisionRule": "lower-bound-at-least-mcid"
@@ -57,8 +64,10 @@
       "metric": "task-success-noninferiority",
       "trialToTaskAggregation": "mean-trial-success-indicator",
       "uncertainty": {
-        "method": "paired-task-bootstrap",
+        "method": "paired-task-percentile-bootstrap",
         "confidenceLevel": 0.95,
+        "sidedness": "two-sided",
+        "lowerQuantile": 0.025,
         "resamples": 10000,
         "seed": "m2-v2-guardrail",
         "decisionRule": "lower-bound-at-least-negative-margin"
