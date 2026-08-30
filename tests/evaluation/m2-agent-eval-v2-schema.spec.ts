@@ -121,7 +121,7 @@ function definition(phase: 'P0' | 'H1' = 'P0'): JsonObject {
       secondary: ['toolchain-use-rate', 'wall-time'],
     },
     oracle: {
-      version: 'api-oracle-v1',
+      version: h1 ? 'dsh-api-truth-v2' : 'api-oracle-v1',
       sha256: '5'.repeat(64),
       classifications: ['VALID', 'INVALID', 'UNKNOWN'],
       unknownAutoInvalid: false,
