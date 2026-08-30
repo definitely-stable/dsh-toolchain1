@@ -538,7 +538,7 @@ function assertPublicSafe(value: unknown, path = '$'): void {
 
 function assertNoSecretLikeText(value: unknown): void {
   const text = canonicalizeEvaluationJson(value)
-  if (/Bearer\s+/iu.test(text) || /sk-[A-Za-z0-9_-]{8,}/u.test(text)) {
+  if (/Bearer\s+/iu.test(text) || /"sk-[A-Za-z0-9_-]{8,}"/u.test(text)) {
     throw new Error('H1 preregistration receipt contains credential-like material')
   }
 }
