@@ -199,11 +199,15 @@ Development policy lives in [`docs/development.md`](docs/development.md). All co
 
 This repository is the development incubator. The future public project is a new clean `definitely-stable/dsh-toolchain` repository created from curated approved source states; the incubator history is not intended to become the release history.
 
-M0 Foundation, M1 Target Intelligence, and M1.1 Target Frontend Parity are merged. M2.1 Offline Contract Index is merged. M2.2 Host live Inspect enrichment is implemented on its development PR with exact packed-artifact and corrective CI evidence; GitHub tracks its current review/merge state rather than encoding a transient PR state here.
+M0 Foundation, M1 Target Intelligence, M1.1 Target Frontend Parity, M2.1 Offline Contract Index, and M2.2 Agent-scoped Host Inspect enrichment are implemented and merged.
+
+M2.3 is the remaining M2 exit slice. Its deterministic R1 baseline has been recorded; a real provider-backed P0 calibration run was executed and retained with immutable historical status `INCONCLUSIVE`; corrected measurement/readjudication semantics and the frozen H1 prospective design are in place; and durable H1 ledger/store/coordinator/schedule, execution-definition, attempt-input, and public preregistration receipt machinery are implemented. These implementation artifacts do **not** mean that the real H1 is authorized or complete.
+
+The real private 96-task H1 dataset, strong provider/backend identity, finalized real commitment/execution definition, and real public preregistration receipt are still pending. Until the real receipt is committed to protected `main` and bound to an immutable ref/tag, H1 provider execution remains prohibited. The canonical current gate state and next permitted action are maintained in [`docs/evaluation/m2/status.md`](docs/evaluation/m2/status.md); capability sequencing remains in [`docs/roadmap.md`](docs/roadmap.md).
 
 The package root still exposes only stable public product/protocol identities. `createApplicationKernel()` remains an internal composition primitive; CLI, DSH Host, and MCP construct or receive the required runtime adapters internally.
 
-After M2.2, the remaining M2 slice is **M2.3 frozen retrieval evaluation**: compare progressive Contract Intelligence against frozen real DSH development tasks and only then decide whether M2 meets its invalid-API-guess/retrieval exit criteria. Source/artifact plugin validation, isolated verification, and DSH Web remain later milestones.
+If the single preregistered H1 resolves `PASS`, M2 closes and the next product slice is the smallest Exact Target Plugin Check alpha path. `NEEDS-IMPROVEMENT` freezes the H1 result and moves retrieval changes to a separate bounded slice; `INCONCLUSIVE` permits only the preregistered extension path. Source/artifact plugin validation, isolated verification, and DSH Web remain later milestones.
 
 ## License
 
