@@ -39,13 +39,9 @@ function readyProjection(): H1CommitmentV2 {
         sourceCommit: TASK_ADJUDICATOR_SOURCE_COMMIT,
       },
     },
-    thresholds: {
-      mcidAbsoluteReduction: 0.1,
-      taskSuccessNoninferiorityMargin: 0.05,
-    },
     hiddenDataset: {
       sha256: '8'.repeat(64),
-      taskCount: 12,
+      taskCount: 96,
     },
     provider: {
       provider: 'opencode-go',
@@ -101,8 +97,6 @@ describe('M2.3 H1 readiness v2', () => {
       status: 'BLOCKED',
       blockers: [
         'COMMITMENT_NOT_FINALIZED',
-        'MCID_NOT_FROZEN',
-        'NONINFERIORITY_MARGIN_NOT_FROZEN',
         'TASK_SET_NOT_COMMITTED',
         'PROVIDER_IDENTITY_NOT_FROZEN',
       ],
