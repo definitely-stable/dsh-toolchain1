@@ -80,10 +80,15 @@ describe('M2.3 strict private H1 dataset contract v2', () => {
   })
 
   it('requires a valid frozen declarative successRule on every task', async () => {
-    const missing = dataset() as ReturnType<typeof dataset> & {
-      tasks: Array<Record<string, unknown>>
+    const source = dataset()
+    const first = source.tasks[0]!
+    const missing = {
+      ...source,
+      tasks: [
+        { id: first.id, domain: first.domain, prompt: first.prompt },
+        source.tasks[1]!,
+      ],
     }
-    delete missing.tasks[0]!.successRule
     await expect(commitHiddenH1DatasetV2(missing, sha256)).rejects.toThrow(/successRule|success rule/u)
 
     const invalid = dataset()
