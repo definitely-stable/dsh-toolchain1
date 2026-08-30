@@ -1,8 +1,10 @@
 import type { Sha256Port } from '../../src/model/digest.js'
 import { canonicalizeEvaluationJson } from './m2-agent-eval-integrity.js'
+import { validateH1TaskSuccessRuleV2 } from './m2-h1-task-adjudication-v2.js'
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u
 const H1_TASK_ID_PATTERN = /^h1-[a-z0-9][a-z0-9-]{0,63}$/u
+const H1_DOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/u
 
 const EXPECTED_TARGET = Object.freeze({
   package: '@deepseek-ai/dsh',
@@ -174,6 +176,12 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+function assertExactKeys(record: Record<string, unknown>, allowed: readonly string[], label: string): void {
+  const allowedSet = new Set(allowed)
+  const unknown = Object.keys(record).filter(key => !allowedSet.has(key))
+  if (unknown.length > 0) throw new Error(`${label} contains unknown key(s): ${unknown.join(', ')}`)
+}
+
 function requireString(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error(`${label} must be a non-empty string`)
@@ -322,6 +330,9 @@ export async function commitHiddenH1DatasetV2(
   sha256: Sha256Port,
 ): Promise<H1DatasetCommitmentV2> {
   const dataset = requireRecord(value, 'H1 hidden dataset')
+  rejectOutcomeMaterial(dataset)
+  assertExactKeys(dataset, ['schema', 'datasetId', 'target', 'taskCount', 'tasks'], 'H1 hidden dataset')
+
   if (dataset.schema !== 'dsh-toolchain-m2-agent-dataset-v2' || dataset.datasetId !== 'H1') {
     throw new Error('H1 hidden dataset identity drifted')
   }
@@ -336,28 +347,42 @@ export async function commitHiddenH1DatasetV2(
     throw new Error('H1 hidden dataset taskCount must equal tasks.length')
   }
 
-  rejectOutcomeMaterial(dataset)
-
   const seen = new Set<string>()
-  const modelTasks = dataset.tasks.map((taskValue, index) => {
+  const normalizedTasks = dataset.tasks.map((taskValue, index) => {
     const task = requireRecord(taskValue, `H1 task[${index}]`)
+    assertExactKeys(task, ['id', 'domain', 'prompt', 'successRule'], `H1 task[${index}]`)
+
     const id = requireString(task.id, `H1 task[${index}].id`)
     if (!H1_TASK_ID_PATTERN.test(id)) {
       throw new Error(`H1 task id ${id} must use stable h1-* form`)
     }
     if (seen.has(id)) throw new Error(`H1 task ids must be unique: ${id}`)
     seen.add(id)
+
+    const domain = requireString(task.domain, `H1 task ${id} domain`)
+    if (!H1_DOMAIN_PATTERN.test(domain)) {
+      throw new Error(`H1 task ${id} domain must use a stable lowercase identifier`)
+    }
+
     const prompt = requireString(task.prompt, `H1 task ${id} prompt`)
-    return Object.freeze({ id, prompt })
+    const successRule = validateH1TaskSuccessRuleV2(task.successRule)
+    return Object.freeze({ id, domain, prompt, successRule })
   })
 
-  const canonicalDataset = canonicalizeEvaluationJson(dataset)
+  const normalizedDataset = Object.freeze({
+    schema: 'dsh-toolchain-m2-agent-dataset-v2' as const,
+    datasetId: 'H1' as const,
+    target: EXPECTED_DATASET_TARGET,
+    taskCount: normalizedTasks.length,
+    tasks: Object.freeze(normalizedTasks),
+  })
+  const canonicalDataset = canonicalizeEvaluationJson(normalizedDataset)
   const digest = await sha256.sha256Utf8(canonicalDataset)
   if (!SHA256_PATTERN.test(digest)) throw new Error('SHA-256 port returned a malformed H1 dataset digest')
 
   return Object.freeze({
     sha256: digest,
-    taskCount: dataset.tasks.length,
-    modelTasks: Object.freeze(modelTasks),
+    taskCount: normalizedTasks.length,
+    modelTasks: Object.freeze(normalizedTasks.map(task => Object.freeze({ id: task.id, prompt: task.prompt }))),
   })
 }
