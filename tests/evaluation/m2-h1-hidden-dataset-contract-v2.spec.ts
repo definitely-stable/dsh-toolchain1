@@ -80,14 +80,11 @@ describe('M2.3 strict private H1 dataset contract v2', () => {
   })
 
   it('requires a valid frozen declarative successRule on every task', async () => {
-    const source = dataset()
-    const first = source.tasks[0]!
     const missing = {
-      ...source,
-      tasks: [
-        { id: first.id, domain: first.domain, prompt: first.prompt },
-        source.tasks[1]!,
-      ],
+      ...dataset(),
+      tasks: dataset().tasks.map((task, index) => index === 0
+        ? { id: task.id, domain: task.domain, prompt: task.prompt }
+        : task),
     }
     await expect(commitHiddenH1DatasetV2(missing, sha256)).rejects.toThrow(/successRule|success rule/u)
 
@@ -101,10 +98,12 @@ describe('M2.3 strict private H1 dataset contract v2', () => {
   })
 
   it('rejects obsolete evaluator metadata, unknown top-level fields and malformed domains', async () => {
-    const obsolete = dataset() as ReturnType<typeof dataset> & {
-      tasks: Array<Record<string, unknown>>
+    const obsolete = {
+      ...dataset(),
+      tasks: dataset().tasks.map((task, index) => index === 0
+        ? { ...task, oracleHints: { symbols: ['defineTool'] } }
+        : task),
     }
-    obsolete.tasks[0]!.oracleHints = { symbols: ['defineTool'] }
     await expect(commitHiddenH1DatasetV2(obsolete, sha256)).rejects.toThrow(/oracleHints|unknown/u)
 
     const unknownTopLevel = { ...dataset(), notes: 'not part of the frozen schema' }
