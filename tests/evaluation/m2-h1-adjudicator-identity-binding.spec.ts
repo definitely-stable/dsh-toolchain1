@@ -26,8 +26,6 @@ describe('M2.3 H1 adjudicator identity binding', () => {
       status: 'BLOCKED',
       blockers: [
         'COMMITMENT_NOT_FINALIZED',
-        'MCID_NOT_FROZEN',
-        'NONINFERIORITY_MARGIN_NOT_FROZEN',
         'TASK_SET_NOT_COMMITTED',
         'PROVIDER_IDENTITY_NOT_FROZEN',
       ],
@@ -53,8 +51,6 @@ describe('M2.3 H1 adjudicator identity binding', () => {
       blockers: [
         'COMMITMENT_NOT_FINALIZED',
         'TASK_ADJUDICATOR_NOT_FROZEN',
-        'MCID_NOT_FROZEN',
-        'NONINFERIORITY_MARGIN_NOT_FROZEN',
         'TASK_SET_NOT_COMMITTED',
         'PROVIDER_IDENTITY_NOT_FROZEN',
       ],
