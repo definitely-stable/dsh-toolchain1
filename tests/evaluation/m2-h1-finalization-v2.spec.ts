@@ -97,6 +97,24 @@ describe('M2.3 H1 finalization boundary v2', () => {
       .rejects.toThrow(/source|target|readiness/iu)
   })
 
+  it('rejects unknown nested source metadata even when readiness would otherwise ignore it', async () => {
+    const measurementDrift = structuredClone(publicCommitment) as Record<string, unknown>
+    measurementDrift.measurement = {
+      ...(measurementDrift.measurement as Record<string, unknown>),
+      notes: 'must not be accepted as pristine',
+    }
+    await expect(finalizeH1CommitmentV2(measurementDrift, hiddenDataset(), providerReceipt(), sha256))
+      .rejects.toThrow(/measurement|unknown|pristine|source/iu)
+
+    const thresholdDrift = structuredClone(publicCommitment) as Record<string, unknown>
+    thresholdDrift.thresholds = {
+      ...(thresholdDrift.thresholds as Record<string, unknown>),
+      notes: 'must not be accepted as pristine',
+    }
+    await expect(finalizeH1CommitmentV2(thresholdDrift, hiddenDataset(), providerReceipt(), sha256))
+      .rejects.toThrow(/threshold|unknown|pristine|source/iu)
+  })
+
   it('fails closed on wrong task count, malformed dataset and weak provider identity', async () => {
     await expect(finalizeH1CommitmentV2(publicCommitment, hiddenDataset(95), providerReceipt(), sha256))
       .rejects.toThrow(/96|task|TASK_SET_NOT_COMMITTED/iu)
