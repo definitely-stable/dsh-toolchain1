@@ -109,9 +109,7 @@ describe('M2.3 exact discrete task-effect moments', () => {
       { effectThirds: 1, weight: 0.25 },
       { effectThirds: 0, weight: 0.65 },
       { effectThirds: -1, weight: 0.1 },
-    ])).toMatchObject({
-      mean: 0.05,
-    })
+    ]).mean).toBeCloseTo(0.05, 12)
   })
 
   it('rejects non-third effects, invalid weights and distributions that do not sum to one', () => {
