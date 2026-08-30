@@ -152,8 +152,8 @@ describe('M2.3 prospective lower-bound diagnostics', () => {
   it('treats MCID and NI boundary scenarios as ~2.5% diagnostics, not high-power targets', () => {
     const report = analyzeH1ProspectiveDesignV2(frozenDesign)
     for (const candidate of report.candidates) {
-      const atMcid = candidate.scenarios.find(item => item.scenarioId === 'at-mcid')
-      const atNi = candidate.scenarios.find(item => item.scenarioId === 'ni-boundary')
+      const atMcid = candidate.scenarios.find((item: { scenarioId: string }) => item.scenarioId === 'at-mcid')
+      const atNi = candidate.scenarios.find((item: { scenarioId: string }) => item.scenarioId === 'ni-boundary')
       expect(atMcid?.primary.passProbability).toBeCloseTo(0.025, 4)
       expect(atNi?.guardrail.passProbability).toBeCloseTo(0.025, 4)
     }
@@ -176,19 +176,25 @@ describe('M2.3 mechanical candidate selection', () => {
 
     if (report.selectedTaskCount === null) {
       expect(report.outcome).toBe('INADEQUATE')
-      expect(report.candidates.every(candidate => candidate.meetsAllCriteria === false)).toBe(true)
+      expect(report.candidates.every((candidate: { meetsAllCriteria: boolean }) => candidate.meetsAllCriteria === false)).toBe(true)
       return
     }
 
     expect(report.outcome).toBe('ADEQUATE')
-    const selectedIndex = report.candidates.findIndex(candidate => candidate.taskCount === report.selectedTaskCount)
+    const selectedIndex = report.candidates.findIndex(
+      (candidate: { taskCount: number }) => candidate.taskCount === report.selectedTaskCount,
+    )
     expect(selectedIndex).toBeGreaterThanOrEqual(0)
     expect(report.candidates[selectedIndex]?.meetsAllCriteria).toBe(true)
-    expect(report.candidates.slice(0, selectedIndex).every(candidate => candidate.meetsAllCriteria === false)).toBe(true)
+    expect(report.candidates.slice(0, selectedIndex).every(
+      (candidate: { meetsAllCriteria: boolean }) => candidate.meetsAllCriteria === false,
+    )).toBe(true)
   })
 
   it('does not use boundary diagnostics as hidden selection criteria', () => {
-    const frozenCriterionScenarios = new Set(frozenDesign.selection.criteria.map(item => item.scenarioId))
+    const frozenCriterionScenarios = new Set(
+      frozenDesign.selection.criteria.map((item: { scenarioId: string }) => item.scenarioId),
+    )
     for (const diagnostic of frozenDesign.boundaryDiagnostics) {
       expect(frozenCriterionScenarios.has(diagnostic.scenarioId)).toBe(false)
     }
@@ -202,11 +208,13 @@ describe('M2.3 mechanical candidate selection', () => {
     if (selectedIndex === frozenDesign.candidateTaskCounts.length - 1) return
 
     const reduced = clone(frozenDesign)
-    reduced.candidateTaskCounts = reduced.candidateTaskCounts.filter(value => value !== baseline.selectedTaskCount)
+    reduced.candidateTaskCounts = reduced.candidateTaskCounts.filter(
+      (value: number) => value !== baseline.selectedTaskCount,
+    )
     const next = analyzeH1ProspectiveDesignV2(reduced)
     const baselineLaterPassing = baseline.candidates
       .slice(selectedIndex + 1)
-      .find(candidate => candidate.meetsAllCriteria)
+      .find((candidate: { meetsAllCriteria: boolean; taskCount: number }) => candidate.meetsAllCriteria)
 
     expect(next.selectedTaskCount).toBe(baselineLaterPassing?.taskCount ?? null)
   })
