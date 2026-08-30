@@ -86,7 +86,7 @@ describe('M2.3 strict private H1 dataset contract v2', () => {
         ? { id: task.id, domain: task.domain, prompt: task.prompt }
         : task),
     }
-    await expect(commitHiddenH1DatasetV2(missing, sha256)).rejects.toThrow(/successRule|success rule/u)
+    await expect(commitHiddenH1DatasetV2(missing, sha256)).rejects.toThrow(/successRule|unknown/u)
 
     const invalid = dataset()
     invalid.tasks[0]!.successRule = {
