@@ -94,17 +94,25 @@ describe('M2.3 H1 exact execution definition v2', () => {
     expect(primary).toMatchObject({
       mcidAbsoluteReduction: 0.1,
       uncertainty: {
-        method: 'paired-task-bootstrap',
+        method: 'paired-task-percentile-bootstrap',
+        confidenceLevel: 0.95,
+        sidedness: 'two-sided',
+        lowerQuantile: 0.025,
         resamples: 10_000,
         seed: 'm2-v2-primary',
+        decisionRule: 'lower-bound-at-least-mcid',
       },
     })
     expect(guardrail).toMatchObject({
       margin: 0.05,
       uncertainty: {
-        method: 'paired-task-bootstrap',
+        method: 'paired-task-percentile-bootstrap',
+        confidenceLevel: 0.95,
+        sidedness: 'two-sided',
+        lowerQuantile: 0.025,
         resamples: 10_000,
         seed: 'm2-v2-guardrail',
+        decisionRule: 'lower-bound-at-least-negative-margin',
       },
     })
     expect(runnerIdentity).toMatchObject({
