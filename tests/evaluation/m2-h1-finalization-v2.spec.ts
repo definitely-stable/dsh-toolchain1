@@ -102,6 +102,18 @@ describe('M2.3 H1 finalization boundary v2', () => {
       backendIdentityStrength: 'system-fingerprint',
       backendFingerprint: 'fp_opencode_h1_finalization_fixture',
     })
+    expect(result.construction).toEqual({
+      policyId: 'dsh-toolchain-m2-h1-dataset-construction-v2',
+      taskCount: 96,
+      domainCount: 8,
+      minimumTasksPerDomain: 12,
+      maximumTasksPerDomain: 12,
+      positiveTaskCount: 72,
+      absenceTaskCount: 24,
+      uniqueNormalizedPromptCount: 96,
+      uniqueCanonicalRuleCount: 96,
+      uniqueAtomicClaimCount: 96,
+    })
     expect(result.modelTasks).toHaveLength(96)
     expect(Object.keys(result.modelTasks[0]!)).toEqual(['id', 'prompt'])
   })
