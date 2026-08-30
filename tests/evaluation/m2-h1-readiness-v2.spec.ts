@@ -58,7 +58,7 @@ function readyProjection(): H1CommitmentV2 {
   }
 }
 
-function hiddenDataset(successCriteria = ['uses the exact public API']) {
+function hiddenDataset(symbols = ['defineTool']) {
   return {
     schema: 'dsh-toolchain-m2-agent-dataset-v2',
     datasetId: 'H1',
@@ -75,15 +75,21 @@ function hiddenDataset(successCriteria = ['uses the exact public API']) {
         id: 'h1-001',
         domain: 'tools',
         prompt: 'Find the exact API needed for the first hidden task.',
-        oracleHints: { package: '@deepseek-ai/dsh-tools', symbols: ['defineTool'] },
-        successCriteria,
+        successRule: {
+          kind: 'api-exists-any',
+          package: '@deepseek-ai/dsh-tools',
+          symbols,
+        },
       },
       {
         id: 'h1-002',
         domain: 'session',
         prompt: 'Find the exact API needed for the second hidden task.',
-        oracleHints: { package: '@deepseek-ai/dsh-session-query', symbols: ['compileSessionTextFilter'] },
-        successCriteria: ['uses frozen rc.2 evidence'],
+        successRule: {
+          kind: 'api-exists-any',
+          package: '@deepseek-ai/dsh-session-query',
+          symbols: ['compileSessionTextFilter'],
+        },
       },
     ],
   }
@@ -107,6 +113,7 @@ describe('M2.3 H1 readiness v2', () => {
   it('stores only public commitments and no hidden H1 task material', () => {
     expect(committedText).not.toContain('"tasks"')
     expect(committedText).not.toContain('"prompt"')
+    expect(committedText).not.toContain('"successRule"')
     expect(committedText).not.toContain('"oracleHints"')
     expect(committedText).not.toContain('"successCriteria"')
     expect(committedText).not.toContain('"answers"')
@@ -214,7 +221,7 @@ describe('external hidden H1 dataset commitment v2', () => {
   it('hashes the complete evaluator dataset while exposing only id and prompt to the model', async () => {
     const first = await commitHiddenH1DatasetV2(hiddenDataset(), sha256)
     const changedEvaluatorOnly = await commitHiddenH1DatasetV2(
-      hiddenDataset(['different evaluator-only success rule']),
+      hiddenDataset(['differentApi']),
       sha256,
     )
 
@@ -225,16 +232,15 @@ describe('external hidden H1 dataset commitment v2', () => {
       { id: 'h1-001', prompt: 'Find the exact API needed for the first hidden task.' },
       { id: 'h1-002', prompt: 'Find the exact API needed for the second hidden task.' },
     ])
-    expect(JSON.stringify(first.modelTasks)).not.toContain('oracleHints')
-    expect(JSON.stringify(first.modelTasks)).not.toContain('successCriteria')
+    expect(JSON.stringify(first.modelTasks)).not.toContain('domain')
+    expect(JSON.stringify(first.modelTasks)).not.toContain('successRule')
   })
 
   it('canonicalizes object-key order but commits task order and rejects duplicate ids', async () => {
     const original = hiddenDataset()
     const reordered = {
       tasks: original.tasks.map(task => ({
-        successCriteria: task.successCriteria,
-        oracleHints: task.oracleHints,
+        successRule: task.successRule,
         prompt: task.prompt,
         domain: task.domain,
         id: task.id,
