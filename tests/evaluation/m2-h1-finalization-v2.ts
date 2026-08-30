@@ -1,4 +1,8 @@
 import type { Sha256Port } from '../../src/model/digest.js'
+import {
+  validateH1DatasetConstructionPolicyV2,
+  type H1DatasetConstructionSummaryV2,
+} from './m2-h1-dataset-construction-v2.js'
 import { commitH1ProviderIdentityReceiptV2 } from './m2-h1-provider-identity-v2.js'
 import {
   commitHiddenH1DatasetV2,
@@ -43,6 +47,7 @@ const EXPECTED_SOURCE_BLOCKERS = Object.freeze<H1ReadinessBlockerV2[]>([
 export interface H1FinalizationResultV2 {
   readonly commitment: H1CommitmentV2
   readonly readiness: H1ReadinessV2
+  readonly construction: H1DatasetConstructionSummaryV2
   readonly modelTasks: readonly {
     readonly id: string
     readonly prompt: string
@@ -115,6 +120,7 @@ export async function finalizeH1CommitmentV2(
 ): Promise<H1FinalizationResultV2> {
   const source = requirePristineBlockedSource(sourceValue)
   const hiddenDataset = await commitHiddenH1DatasetV2(hiddenDatasetValue, sha256)
+  const construction = validateH1DatasetConstructionPolicyV2(hiddenDatasetValue)
   const provider = await commitH1ProviderIdentityReceiptV2(providerReceiptValue, sha256)
 
   const commitment = Object.freeze({
@@ -137,6 +143,7 @@ export async function finalizeH1CommitmentV2(
   return Object.freeze({
     commitment,
     readiness,
+    construction,
     modelTasks: hiddenDataset.modelTasks,
   })
 }
