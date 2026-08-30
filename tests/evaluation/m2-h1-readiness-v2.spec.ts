@@ -13,6 +13,7 @@ const sha256 = createNodeSha256Port()
 const commitmentUrl = new URL('../../docs/evaluation/m2/agent-holdout-h1-v2.commitment.json', import.meta.url)
 const TARGET_FINGERPRINT = 'dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe'
 const CONTRACT_INDEX_FINGERPRINT = 'dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2'
+const API_CLAIMS_SOURCE_COMMIT = '0bd4387e7da31344d92912670fac2de096cc0c7c'
 
 let committed: H1CommitmentV2
 let committedText: string
@@ -28,7 +29,14 @@ function readyProjection(): H1CommitmentV2 {
     status: 'COMMITTED',
     measurement: {
       ...committed.measurement,
-      taskAdjudicator: `dsh-toolchain-m2-h1-task-adjudicator-v2:${'9'.repeat(64)}`,
+      apiClaimClassifier: {
+        id: 'dsh-toolchain-m2-api-claims-v2',
+        sourceCommit: API_CLAIMS_SOURCE_COMMIT,
+      },
+      taskAdjudicator: {
+        id: 'dsh-toolchain-m2-h1-task-adjudicator-v2',
+        sourceCommit: '9'.repeat(40),
+      },
     },
     thresholds: {
       mcidAbsoluteReduction: 0.1,
@@ -48,6 +56,7 @@ function readyProjection(): H1CommitmentV2 {
       reasoningEffort: 'high',
       backendIdentityStrength: 'system-fingerprint',
       backendFingerprint: 'provider-system-fingerprint-immutable-example',
+      identityReceiptSha256: '7'.repeat(64),
     },
   }
 }
@@ -90,6 +99,7 @@ describe('M2.3 H1 readiness v2', () => {
     expect(readiness).toEqual({
       status: 'BLOCKED',
       blockers: [
+        'COMMITMENT_NOT_FINALIZED',
         'TASK_ADJUDICATOR_NOT_FROZEN',
         'MCID_NOT_FROZEN',
         'NONINFERIORITY_MARGIN_NOT_FROZEN',
@@ -108,39 +118,101 @@ describe('M2.3 H1 readiness v2', () => {
     expect(committedText).not.toContain('"answers"')
   })
 
-  it('derives runAllowed only after every gate is valid and frozen', () => {
+  it('derives runAllowed only after every gate is valid and explicitly finalized', () => {
     expect(evaluateH1ReadinessV2(readyProjection())).toEqual({
       status: 'READY',
       blockers: [],
       runAllowed: true,
     })
+
+    expect(evaluateH1ReadinessV2({ ...readyProjection(), status: 'BLOCKED' })).toEqual({
+      status: 'BLOCKED',
+      blockers: ['COMMITMENT_NOT_FINALIZED'],
+      runAllowed: false,
+    })
   })
 
-  it('rejects response-model-only provider identity and malformed thresholds', () => {
-    const responseOnly = readyProjection()
-    responseOnly.provider = {
-      ...responseOnly.provider!,
-      backendIdentityStrength: 'response-model-only',
-      backendFingerprint: null,
+  it('rejects response-model-only provider identity, missing receipt and malformed thresholds', () => {
+    const responseOnly = {
+      ...readyProjection(),
+      provider: {
+        ...readyProjection().provider!,
+        backendIdentityStrength: 'response-model-only' as const,
+        backendFingerprint: null,
+      },
     }
     expect(evaluateH1ReadinessV2(responseOnly)).toMatchObject({
       runAllowed: false,
       blockers: ['PROVIDER_IDENTITY_NOT_FROZEN'],
     })
 
-    const badMcid = readyProjection()
-    badMcid.thresholds = {
-      ...badMcid.thresholds,
-      mcidAbsoluteReduction: 0,
+    const missingReceipt = {
+      ...readyProjection(),
+      provider: {
+        ...readyProjection().provider!,
+        identityReceiptSha256: null,
+      },
+    }
+    expect(evaluateH1ReadinessV2(missingReceipt)).toMatchObject({
+      runAllowed: false,
+      blockers: ['PROVIDER_IDENTITY_NOT_FROZEN'],
+    })
+
+    const badMcid = {
+      ...readyProjection(),
+      thresholds: {
+        ...readyProjection().thresholds,
+        mcidAbsoluteReduction: 0,
+      },
     }
     expect(() => evaluateH1ReadinessV2(badMcid)).toThrow(/MCID/u)
 
-    const badMargin = readyProjection()
-    badMargin.thresholds = {
-      ...badMargin.thresholds,
-      taskSuccessNoninferiorityMargin: 1.1,
+    const badMargin = {
+      ...readyProjection(),
+      thresholds: {
+        ...readyProjection().thresholds,
+        taskSuccessNoninferiorityMargin: 1.1,
+      },
     }
     expect(() => evaluateH1ReadinessV2(badMargin)).toThrow(/non-inferiority/u)
+  })
+
+  it('fails closed on target, measurement or statistical-plan drift', () => {
+    const targetDrift = {
+      ...readyProjection(),
+      target: { ...readyProjection().target, profile: 'headless' },
+    }
+    expect(evaluateH1ReadinessV2(targetDrift)).toMatchObject({
+      blockers: ['TARGET_IDENTITY_INVALID'],
+      runAllowed: false,
+    })
+
+    const measurementDrift = {
+      ...readyProjection(),
+      measurement: {
+        ...readyProjection().measurement,
+        apiClaimClassifier: {
+          id: 'dsh-toolchain-m2-api-claims-v2',
+          sourceCommit: 'a'.repeat(40),
+        },
+      },
+    }
+    expect(evaluateH1ReadinessV2(measurementDrift)).toMatchObject({
+      blockers: ['MEASUREMENT_IDENTITY_INVALID'],
+      runAllowed: false,
+    })
+
+    const analysisDrift = {
+      ...readyProjection(),
+      analysis: {
+        ...readyProjection().analysis,
+        trialsPerTask: 4,
+      },
+    }
+    expect(evaluateH1ReadinessV2(analysisDrift)).toMatchObject({
+      blockers: ['ANALYSIS_PLAN_INVALID'],
+      runAllowed: false,
+    })
   })
 })
 
@@ -191,13 +263,23 @@ describe('external hidden H1 dataset commitment v2', () => {
     ])
     expect(first.sha256).toBe(second.sha256)
 
-    const reversed = { ...original, tasks: [...original.tasks].reverse() }
+    const reversed = { ...original, tasks: [...original.tasks].toReversed() }
     expect((await commitHiddenH1DatasetV2(reversed, sha256)).sha256).not.toBe(first.sha256)
 
+    const firstTask = original.tasks[0]!
+    const secondTask = original.tasks[1]!
     const duplicate = {
       ...original,
-      tasks: [original.tasks[0], { ...original.tasks[1], id: original.tasks[0].id }],
+      tasks: [firstTask, { ...secondTask, id: firstTask.id }],
     }
     await expect(commitHiddenH1DatasetV2(duplicate, sha256)).rejects.toThrow(/unique/u)
+  })
+
+  it('rejects mismatched counts and pre-populated outcome material', async () => {
+    await expect(commitHiddenH1DatasetV2({ ...hiddenDataset(), taskCount: 3 }, sha256)).rejects.toThrow(/taskCount/u)
+
+    const withOutcome = hiddenDataset() as ReturnType<typeof hiddenDataset> & { runs?: unknown[] }
+    withOutcome.runs = [{ answer: 'peeked' }]
+    await expect(commitHiddenH1DatasetV2(withOutcome, sha256)).rejects.toThrow(/outcome|result|run/u)
   })
 })
