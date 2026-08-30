@@ -21,6 +21,8 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/u
 const TARGET_FINGERPRINT_PATTERN = /^dsh-target-v2:[0-9a-f]{64}$/u
 const CONTRACT_INDEX_FINGERPRINT_PATTERN = /^dsh-contract-index-v1:[0-9a-f]{64}$/u
 const SYSTEM_FINGERPRINT_PATTERN = /^[\x21-\x7e]{1,256}$/u
+const CREDENTIAL_TOKEN_PATTERN = /(?:^|[^A-Za-z0-9_-])sk-[A-Za-z0-9_-]{8,}(?=$|[^A-Za-z0-9_-])/u
+const BEARER_TOKEN_PATTERN = /Bearer\s+/iu
 const EXPECTED_TASK_COUNT = 96
 const EXPECTED_SCHEDULE_COUNT = 864
 const EXPECTED_SCHEDULE_SEED = 'm2-h1-holdout-v2'
@@ -536,10 +538,20 @@ function assertPublicSafe(value: unknown, path = '$'): void {
   }
 }
 
-function assertNoSecretLikeText(value: unknown): void {
-  const text = canonicalizeEvaluationJson(value)
-  if (/Bearer\s+/iu.test(text) || /"sk-[A-Za-z0-9_-]{8,}"/u.test(text)) {
-    throw new Error('H1 preregistration receipt contains credential-like material')
+function assertNoSecretLikeText(value: unknown, path = '$'): void {
+  if (typeof value === 'string') {
+    if (BEARER_TOKEN_PATTERN.test(value) || CREDENTIAL_TOKEN_PATTERN.test(value)) {
+      throw new Error(`H1 preregistration receipt contains credential-like material at ${path}`)
+    }
+    return
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoSecretLikeText(item, `${path}[${index}]`))
+    return
+  }
+  if (value === null || typeof value !== 'object') return
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    assertNoSecretLikeText(child, `${path}.${key}`)
   }
 }
 
