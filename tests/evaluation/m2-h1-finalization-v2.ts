@@ -22,6 +22,18 @@ const SOURCE_KEYS = Object.freeze([
   'analysis',
 ])
 
+const MEASUREMENT_KEYS = Object.freeze([
+  'truthFingerprint',
+  'apiClaimClassifier',
+  'taskAdjudicator',
+  'historicalP0',
+])
+
+const THRESHOLD_KEYS = Object.freeze([
+  'mcidAbsoluteReduction',
+  'taskSuccessNoninferiorityMargin',
+])
+
 const EXPECTED_SOURCE_BLOCKERS = Object.freeze<H1ReadinessBlockerV2[]>([
   'COMMITMENT_NOT_FINALIZED',
   'TASK_SET_NOT_COMMITTED',
@@ -69,6 +81,12 @@ function requirePristineBlockedSource(value: unknown): H1CommitmentV2 {
   if (source.status !== 'BLOCKED') {
     throw new Error('H1 finalization source must be the pristine public BLOCKED commitment')
   }
+
+  const measurement = requireRecord(source.measurement, 'H1 finalization source measurement')
+  assertExactKeys(measurement, MEASUREMENT_KEYS, 'H1 finalization source measurement')
+
+  const thresholds = requireRecord(source.thresholds, 'H1 finalization source thresholds')
+  assertExactKeys(thresholds, THRESHOLD_KEYS, 'H1 finalization source thresholds')
 
   const hiddenDataset = requireRecord(source.hiddenDataset, 'H1 finalization source hiddenDataset')
   assertExactKeys(hiddenDataset, ['sha256', 'taskCount'], 'H1 finalization source hiddenDataset')
