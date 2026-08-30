@@ -154,13 +154,6 @@ function requireSha256(value: unknown, label: string): string {
   return value
 }
 
-function requirePositiveInteger(value: unknown, label: string): number {
-  if (!Number.isInteger(value) || (value as number) < 1) {
-    throw new Error(`${label} must be a positive integer`)
-  }
-  return value as number
-}
-
 function validateBinding(binding: H1LedgerBindingV2): void {
   requireSha256(binding.definitionSha256, 'H1 ledger definition binding')
   requireSha256(binding.datasetCommitmentSha256, 'H1 ledger dataset commitment binding')
