@@ -34,6 +34,30 @@ async function validator() {
   return { ajv, validate: ajv.compile(schema) }
 }
 
+function uncertainty(
+  h1: boolean,
+  seed: string,
+  decisionRule: 'lower-bound-at-least-mcid' | 'lower-bound-at-least-negative-margin',
+): JsonObject {
+  return h1
+    ? {
+        method: 'paired-task-percentile-bootstrap',
+        confidenceLevel: 0.95,
+        sidedness: 'two-sided',
+        lowerQuantile: 0.025,
+        resamples: 10_000,
+        seed,
+        decisionRule,
+      }
+    : {
+        method: 'paired-task-bootstrap',
+        confidenceLevel: 0.95,
+        resamples: 10_000,
+        seed,
+        decisionRule,
+      }
+}
+
 function definition(phase: 'P0' | 'H1', oracleVersion: 'api-oracle-v1' | 'dsh-api-truth-v2'): JsonObject {
   const h1 = phase === 'H1'
   return {
@@ -97,25 +121,13 @@ function definition(phase: 'P0' | 'H1', oracleVersion: 'api-oracle-v1' | 'dsh-ap
         comparison: 'C-vs-B',
         trialToTaskAggregation: 'mean-trial-invalid-indicator',
         mcidAbsoluteReduction: h1 ? 0.1 : null,
-        uncertainty: {
-          method: 'paired-task-bootstrap',
-          confidenceLevel: 0.95,
-          resamples: 10_000,
-          seed: 'm2-v2-primary',
-          decisionRule: 'lower-bound-at-least-mcid',
-        },
+        uncertainty: uncertainty(h1, 'm2-v2-primary', 'lower-bound-at-least-mcid'),
       },
       guardrail: {
         name: 'task-success-noninferiority',
         trialToTaskAggregation: 'mean-trial-success-indicator',
         margin: h1 ? 0.05 : null,
-        uncertainty: {
-          method: 'paired-task-bootstrap',
-          confidenceLevel: 0.95,
-          resamples: 10_000,
-          seed: 'm2-v2-guardrail',
-          decisionRule: 'lower-bound-at-least-negative-margin',
-        },
+        uncertainty: uncertainty(h1, 'm2-v2-guardrail', 'lower-bound-at-least-negative-margin'),
       },
       secondary: ['toolchain-use-rate', 'wall-time'],
     },
@@ -153,7 +165,7 @@ function definition(phase: 'P0' | 'H1', oracleVersion: 'api-oracle-v1' | 'dsh-ap
   }
 }
 
-describe('M2.3 H1 oracle schema boundary v2', () => {
+describe('M2.3 H1 oracle/schema boundary v2', () => {
   it('keeps historical/new P0 on api-oracle-v1 and requires Truth v2 for H1', async () => {
     const { ajv, validate } = await validator()
 
@@ -161,5 +173,23 @@ describe('M2.3 H1 oracle schema boundary v2', () => {
     expect(validate(definition('P0', 'dsh-api-truth-v2')), ajv.errorsText(validate.errors)).toBe(false)
     expect(validate(definition('H1', 'dsh-api-truth-v2')), ajv.errorsText(validate.errors)).toBe(true)
     expect(validate(definition('H1', 'api-oracle-v1')), ajv.errorsText(validate.errors)).toBe(false)
+  })
+
+  it('keeps P0 on legacy bootstrap and requires the exact H1 percentile bootstrap shape', async () => {
+    const { ajv, validate } = await validator()
+
+    const p0WithH1Metrics = definition('P0', 'api-oracle-v1')
+    const p0Primary = ((p0WithH1Metrics.metrics as JsonObject).primary as JsonObject).uncertainty as JsonObject
+    p0Primary.method = 'paired-task-percentile-bootstrap'
+    p0Primary.sidedness = 'two-sided'
+    p0Primary.lowerQuantile = 0.025
+    expect(validate(p0WithH1Metrics), ajv.errorsText(validate.errors)).toBe(false)
+
+    const h1WithLegacyMetrics = definition('H1', 'dsh-api-truth-v2')
+    const h1Primary = ((h1WithLegacyMetrics.metrics as JsonObject).primary as JsonObject).uncertainty as JsonObject
+    h1Primary.method = 'paired-task-bootstrap'
+    delete h1Primary.sidedness
+    delete h1Primary.lowerQuantile
+    expect(validate(h1WithLegacyMetrics), ajv.errorsText(validate.errors)).toBe(false)
   })
 })
