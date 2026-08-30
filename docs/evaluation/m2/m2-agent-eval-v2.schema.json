@@ -116,6 +116,34 @@
                 "properties": { "version": { "const": "api-oracle-v1" } }
               }
             ]
+          },
+          "metrics": {
+            "allOf": [
+              { "$ref": "#/$defs/metrics" },
+              {
+                "type": "object",
+                "properties": {
+                  "primary": {
+                    "type": "object",
+                    "properties": {
+                      "uncertainty": {
+                        "type": "object",
+                        "properties": { "method": { "const": "paired-task-bootstrap" } }
+                      }
+                    }
+                  },
+                  "guardrail": {
+                    "type": "object",
+                    "properties": {
+                      "uncertainty": {
+                        "type": "object",
+                        "properties": { "method": { "const": "paired-task-bootstrap" } }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
           }
         }
       },
@@ -159,6 +187,20 @@
                             "type": "number",
                             "minimum": 0,
                             "maximum": 1
+                          },
+                          "uncertainty": {
+                            "allOf": [
+                              { "$ref": "#/$defs/primaryUncertainty" },
+                              {
+                                "type": "object",
+                                "required": ["sidedness", "lowerQuantile"],
+                                "properties": {
+                                  "method": { "const": "paired-task-percentile-bootstrap" },
+                                  "sidedness": { "const": "two-sided" },
+                                  "lowerQuantile": { "const": 0.025 }
+                                }
+                              }
+                            ]
                           }
                         }
                       }
@@ -174,6 +216,20 @@
                             "type": "number",
                             "minimum": 0,
                             "maximum": 1
+                          },
+                          "uncertainty": {
+                            "allOf": [
+                              { "$ref": "#/$defs/guardrailUncertainty" },
+                              {
+                                "type": "object",
+                                "required": ["sidedness", "lowerQuantile"],
+                                "properties": {
+                                  "method": { "const": "paired-task-percentile-bootstrap" },
+                                  "sidedness": { "const": "two-sided" },
+                                  "lowerQuantile": { "const": 0.025 }
+                                }
+                              }
+                            ]
                           }
                         }
                       }
@@ -342,8 +398,10 @@
       "additionalProperties": false,
       "required": ["method", "confidenceLevel", "resamples", "seed", "decisionRule"],
       "properties": {
-        "method": { "const": "paired-task-bootstrap" },
+        "method": { "enum": ["paired-task-bootstrap", "paired-task-percentile-bootstrap"] },
         "confidenceLevel": { "type": "number", "exclusiveMinimum": 0.5, "exclusiveMaximum": 1 },
+        "sidedness": { "const": "two-sided" },
+        "lowerQuantile": { "type": "number", "minimum": 0, "maximum": 1 },
         "resamples": { "type": "integer", "minimum": 1000 },
         "seed": { "type": "string", "minLength": 1 },
         "decisionRule": { "type": "string", "minLength": 1 }
