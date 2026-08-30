@@ -30,9 +30,22 @@
       "derivedReportSha256": "aaba6e82c2506d0af0b440cb0bf34c1ebf68efc9293f32ca8eeeadeb294bdd69"
     }
   },
+  "design": {
+    "id": "dsh-toolchain-m2-h1-prospective-design-result-v2",
+    "prospectiveDesign": {
+      "id": "dsh-toolchain-m2-h1-prospective-design-v2",
+      "path": "docs/evaluation/m2/h1-prospective-design-v2.json",
+      "sourceCommit": "ceec1cb79ec77a6875bda678622ad2a7cdac4fad"
+    },
+    "sensitivityReport": {
+      "path": "docs/evaluation/m2/h1-prospective-sensitivity-report-v2.json",
+      "canonicalSha256": "83f49897deb4f7733cd4df7ddee7220d586bf22e9e53282850129eea1c738d2a"
+    },
+    "selectedTaskCount": 96
+  },
   "thresholds": {
-    "mcidAbsoluteReduction": null,
-    "taskSuccessNoninferiorityMargin": null
+    "mcidAbsoluteReduction": 0.1,
+    "taskSuccessNoninferiorityMargin": 0.05
   },
   "hiddenDataset": {
     "sha256": null,
