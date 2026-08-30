@@ -237,7 +237,7 @@ function toAttemptRecord(entry: Pick<
         trial: entry.trial,
         attempt: entry.attempt,
         kind: entry.outcome,
-        reason: entry.reason,
+        reason: entry.reason!,
       }
     : {
         taskId: entry.taskId,
