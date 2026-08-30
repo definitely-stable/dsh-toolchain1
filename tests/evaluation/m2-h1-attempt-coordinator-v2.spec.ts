@@ -254,8 +254,11 @@ describe('M2.3 H1 durable single-attempt coordinator v2', () => {
     const root = await newRoot()
     const store = await createStore(root)
     const first = schedule[0]!
-    const wrong = attemptInput(first, 1)
-    wrong.identity.taskId = 'wrong-task-id'
+    const baseWrong = attemptInput(first, 1)
+    const wrong: ProcessAttemptEvidenceInput = {
+      ...baseWrong,
+      identity: { ...baseWrong.identity, taskId: 'wrong-task-id' },
+    }
 
     await expect(executeH1DurableAttemptV2({
       store,
@@ -274,9 +277,12 @@ describe('M2.3 H1 durable single-attempt coordinator v2', () => {
     const root = await newRoot()
     const store = await createStore(root)
     const first = schedule[0]!
-    const input = attemptInput(first, 1)
-    input.createToolRuntime = async () => {
-      throw new Error('fixture crash after begin')
+    const baseInput = attemptInput(first, 1)
+    const input: ProcessAttemptEvidenceInput = {
+      ...baseInput,
+      createToolRuntime: async () => {
+        throw new Error('fixture crash after begin')
+      },
     }
 
     await expect(executeH1DurableAttemptV2({
