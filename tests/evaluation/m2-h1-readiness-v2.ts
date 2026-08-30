@@ -2,7 +2,6 @@ import type { Sha256Port } from '../../src/model/digest.js'
 import { canonicalizeEvaluationJson } from './m2-agent-eval-integrity.js'
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u
-const GIT_SHA_PATTERN = /^[0-9a-f]{40}$/u
 const H1_TASK_ID_PATTERN = /^h1-[a-z0-9][a-z0-9-]{0,63}$/u
 
 const EXPECTED_TARGET = Object.freeze({
@@ -25,6 +24,11 @@ const EXPECTED_DATASET_TARGET = Object.freeze({
 const EXPECTED_CLASSIFIER = Object.freeze({
   id: 'dsh-toolchain-m2-api-claims-v2',
   sourceCommit: '0bd4387e7da31344d92912670fac2de096cc0c7c',
+})
+
+const EXPECTED_TASK_ADJUDICATOR = Object.freeze({
+  id: 'dsh-toolchain-m2-h1-task-adjudicator-v2',
+  sourceCommit: '8539d8cc173512233c5a04ff9be65a1583c3e9cf',
 })
 
 const EXPECTED_HISTORICAL_P0 = Object.freeze({
@@ -168,16 +172,6 @@ function equalCanonical(left: unknown, right: unknown): boolean {
   }
 }
 
-function validComponentIdentity(value: unknown, expectedId?: string): boolean {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
-  const record = value as Record<string, unknown>
-  return typeof record.id === 'string'
-    && record.id.length > 0
-    && (expectedId === undefined || record.id === expectedId)
-    && typeof record.sourceCommit === 'string'
-    && GIT_SHA_PATTERN.test(record.sourceCommit)
-}
-
 function validateThreshold(
   value: unknown,
   label: 'MCID' | 'task-success non-inferiority margin',
@@ -255,7 +249,7 @@ export function evaluateH1ReadinessV2(value: unknown): H1ReadinessV2 {
     && equalCanonical(measurement.apiClaimClassifier, EXPECTED_CLASSIFIER)
     && equalCanonical(measurement.historicalP0, EXPECTED_HISTORICAL_P0)
   if (!fixedMeasurementValid) blockers.push('MEASUREMENT_IDENTITY_INVALID')
-  if (!validComponentIdentity(measurement.taskAdjudicator, 'dsh-toolchain-m2-h1-task-adjudicator-v2')) {
+  if (!equalCanonical(measurement.taskAdjudicator, EXPECTED_TASK_ADJUDICATOR)) {
     blockers.push('TASK_ADJUDICATOR_NOT_FROZEN')
   }
 
