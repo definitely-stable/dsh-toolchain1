@@ -1,4 +1,5 @@
 import type { Sha256Port } from '../../src/model/digest.js'
+import { canonicalizeEvaluationJson } from './m2-agent-eval-integrity.js'
 import {
   validateH1DatasetConstructionPolicyV2,
   type H1DatasetConstructionSummaryV2,
@@ -44,8 +45,17 @@ const EXPECTED_SOURCE_BLOCKERS = Object.freeze<H1ReadinessBlockerV2[]>([
   'PROVIDER_IDENTITY_NOT_FROZEN',
 ])
 
+export interface H1FinalizedCommitmentV2 extends Omit<H1CommitmentV2, 'status' | 'hiddenDataset'> {
+  readonly status: 'COMMITTED'
+  readonly hiddenDataset: {
+    readonly sha256: string
+    readonly taskCount: number
+    readonly modelTaskProjectionSha256: string
+  }
+}
+
 export interface H1FinalizationResultV2 {
-  readonly commitment: H1CommitmentV2
+  readonly commitment: H1FinalizedCommitmentV2
   readonly readiness: H1ReadinessV2
   readonly construction: H1DatasetConstructionSummaryV2
   readonly modelTasks: readonly {
@@ -122,16 +132,20 @@ export async function finalizeH1CommitmentV2(
   const hiddenDataset = await commitHiddenH1DatasetV2(hiddenDatasetValue, sha256)
   const construction = validateH1DatasetConstructionPolicyV2(hiddenDatasetValue)
   const provider = await commitH1ProviderIdentityReceiptV2(providerReceiptValue, sha256)
+  const modelTaskProjectionSha256 = await sha256.sha256Utf8(
+    canonicalizeEvaluationJson(hiddenDataset.modelTasks),
+  )
 
-  const commitment = Object.freeze({
+  const commitment: H1FinalizedCommitmentV2 = Object.freeze({
     ...structuredClone(source),
     status: 'COMMITTED' as const,
     hiddenDataset: Object.freeze({
       sha256: hiddenDataset.sha256,
       taskCount: hiddenDataset.taskCount,
+      modelTaskProjectionSha256,
     }),
     provider: provider.identity,
-  }) satisfies H1CommitmentV2
+  })
 
   const readiness = evaluateH1ReadinessV2(commitment)
   if (readiness.status !== 'READY' || !readiness.runAllowed || readiness.blockers.length !== 0) {

@@ -33,6 +33,30 @@ async function validator() {
   return { ajv, validate: ajv.compile(schema) }
 }
 
+function uncertainty(
+  h1: boolean,
+  seed: string,
+  decisionRule: 'lower-bound-at-least-mcid' | 'lower-bound-at-least-negative-margin',
+): JsonObject {
+  return h1
+    ? {
+        method: 'paired-task-percentile-bootstrap',
+        confidenceLevel: 0.95,
+        sidedness: 'two-sided',
+        lowerQuantile: 0.025,
+        resamples: 10000,
+        seed,
+        decisionRule,
+      }
+    : {
+        method: 'paired-task-bootstrap',
+        confidenceLevel: 0.95,
+        resamples: 10000,
+        seed,
+        decisionRule,
+      }
+}
+
 function definition(phase: 'P0' | 'H1' = 'P0'): JsonObject {
   const h1 = phase === 'H1'
   return {
@@ -98,30 +122,18 @@ function definition(phase: 'P0' | 'H1' = 'P0'): JsonObject {
         comparison: 'C-vs-B',
         trialToTaskAggregation: 'mean-trial-invalid-indicator',
         mcidAbsoluteReduction: h1 ? 0.1 : null,
-        uncertainty: {
-          method: 'paired-task-bootstrap',
-          confidenceLevel: 0.95,
-          resamples: 10000,
-          seed: 'm2-v2-primary',
-          decisionRule: 'lower-bound-at-least-mcid',
-        },
+        uncertainty: uncertainty(h1, 'm2-v2-primary', 'lower-bound-at-least-mcid'),
       },
       guardrail: {
         name: 'task-success-noninferiority',
         trialToTaskAggregation: 'mean-trial-success-indicator',
         margin: h1 ? 0.05 : null,
-        uncertainty: {
-          method: 'paired-task-bootstrap',
-          confidenceLevel: 0.95,
-          resamples: 10000,
-          seed: 'm2-v2-guardrail',
-          decisionRule: 'lower-bound-at-least-negative-margin',
-        },
+        uncertainty: uncertainty(h1, 'm2-v2-guardrail', 'lower-bound-at-least-negative-margin'),
       },
       secondary: ['toolchain-use-rate', 'wall-time'],
     },
     oracle: {
-      version: 'api-oracle-v1',
+      version: h1 ? 'dsh-api-truth-v2' : 'api-oracle-v1',
       sha256: '5'.repeat(64),
       classifications: ['VALID', 'INVALID', 'UNKNOWN'],
       unknownAutoInvalid: false,
