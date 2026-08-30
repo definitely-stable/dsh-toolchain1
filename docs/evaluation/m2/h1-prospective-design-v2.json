@@ -1,0 +1,227 @@
+{
+  "schema": "dsh-toolchain-m2-h1-prospective-design-v2",
+  "version": "h1-prospective-design-v2",
+  "status": "FROZEN-PRE-ANALYSIS",
+  "analysisUnit": "task",
+  "trialsPerTaskArm": 3,
+  "thresholds": {
+    "mcidAbsoluteReduction": 0.1,
+    "taskSuccessNoninferiorityMargin": 0.05
+  },
+  "canonicalH1Inference": {
+    "method": "paired-task-percentile-bootstrap",
+    "confidenceLevel": 0.95,
+    "sidedness": "two-sided",
+    "lowerQuantile": 0.025,
+    "resamples": 10000,
+    "primarySeed": "m2-v2-primary",
+    "guardrailSeed": "m2-v2-guardrail"
+  },
+  "planningApproximation": {
+    "method": "normal-known-scenario-variance-v1",
+    "criticalZ": 1.959963984540054,
+    "decisionUse": "prospective-task-count-only"
+  },
+  "candidateTaskCounts": [24, 32, 48, 64, 80, 96, 128],
+  "selection": {
+    "rule": "smallest-candidate-meeting-all-criteria",
+    "criteria": [
+      {
+        "id": "below-mcid-false-accept",
+        "scenarioId": "below-mcid",
+        "endpoint": "primary",
+        "statistic": "passProbability",
+        "comparator": "lte",
+        "value": 0.05
+      },
+      {
+        "id": "useful-primary-power",
+        "scenarioId": "useful-balanced",
+        "endpoint": "primary",
+        "statistic": "passProbability",
+        "comparator": "gte",
+        "value": 0.9
+      },
+      {
+        "id": "neutral-guardrail-power",
+        "scenarioId": "useful-balanced",
+        "endpoint": "guardrail",
+        "statistic": "passProbability",
+        "comparator": "gte",
+        "value": 0.85
+      },
+      {
+        "id": "harmful-guardrail-false-accept",
+        "scenarioId": "harmful-guardrail",
+        "endpoint": "guardrail",
+        "statistic": "passProbability",
+        "comparator": "lte",
+        "value": 0.05
+      },
+      {
+        "id": "stress-primary-power",
+        "scenarioId": "stress-adverse-pairing",
+        "endpoint": "primary",
+        "statistic": "passProbability",
+        "comparator": "gte",
+        "value": 0.6
+      },
+      {
+        "id": "stress-guardrail-power",
+        "scenarioId": "stress-adverse-pairing",
+        "endpoint": "guardrail",
+        "statistic": "passProbability",
+        "comparator": "gte",
+        "value": 0.6
+      }
+    ]
+  },
+  "boundaryDiagnostics": [
+    {
+      "scenarioId": "at-mcid",
+      "endpoint": "primary",
+      "expectedPassProbability": 0.025
+    },
+    {
+      "scenarioId": "ni-boundary",
+      "endpoint": "guardrail",
+      "expectedPassProbability": 0.025
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "null-primary",
+      "purpose": "false-positive diagnostic when Toolchain has no primary effect",
+      "primaryEffects": [
+        { "effectThirds": 1, "weight": 0.2 },
+        { "effectThirds": 0, "weight": 0.6 },
+        { "effectThirds": -1, "weight": 0.2 }
+      ],
+      "guardrailEffects": [
+        { "effectThirds": 1, "weight": 0.1 },
+        { "effectThirds": 0, "weight": 0.8 },
+        { "effectThirds": -1, "weight": 0.1 }
+      ],
+      "expectedPrimaryMean": 0,
+      "expectedGuardrailMean": 0
+    },
+    {
+      "id": "below-mcid",
+      "purpose": "false-accept gate for an improvement that is not practically large enough",
+      "primaryEffects": [
+        { "effectThirds": 1, "weight": 0.25 },
+        { "effectThirds": 0, "weight": 0.65 },
+        { "effectThirds": -1, "weight": 0.1 }
+      ],
+      "guardrailEffects": [
+        { "effectThirds": 1, "weight": 0.1 },
+        { "effectThirds": 0, "weight": 0.8 },
+        { "effectThirds": -1, "weight": 0.1 }
+      ],
+      "expectedPrimaryMean": 0.05,
+      "expectedGuardrailMean": 0
+    },
+    {
+      "id": "at-mcid",
+      "purpose": "boundary diagnostic only; not a high-power selection target",
+      "primaryEffects": [
+        { "effectThirds": 1, "weight": 0.4 },
+        { "effectThirds": 0, "weight": 0.5 },
+        { "effectThirds": -1, "weight": 0.1 }
+      ],
+      "guardrailEffects": [
+        { "effectThirds": 1, "weight": 0.1 },
+        { "effectThirds": 0, "weight": 0.8 },
+        { "effectThirds": -1, "weight": 0.1 }
+      ],
+      "expectedPrimaryMean": 0.1,
+      "expectedGuardrailMean": 0
+    },
+    {
+      "id": "useful-balanced",
+      "purpose": "practically useful primary improvement with neutral task-success impact",
+      "primaryEffects": [
+        { "effectThirds": 2, "weight": 0.1 },
+        { "effectThirds": 1, "weight": 0.45 },
+        { "effectThirds": 0, "weight": 0.4 },
+        { "effectThirds": -1, "weight": 0.05 }
+      ],
+      "guardrailEffects": [
+        { "effectThirds": 1, "weight": 0.1 },
+        { "effectThirds": 0, "weight": 0.8 },
+        { "effectThirds": -1, "weight": 0.1 }
+      ],
+      "expectedPrimaryMean": 0.2,
+      "expectedGuardrailMean": 0
+    },
+    {
+      "id": "strong-benefit",
+      "purpose": "diagnostic for a clearly strong primary effect",
+      "primaryEffects": [
+        { "effectThirds": 2, "weight": 0.15 },
+        { "effectThirds": 1, "weight": 0.5 },
+        { "effectThirds": 0, "weight": 0.3 },
+        { "effectThirds": -1, "weight": 0.05 }
+      ],
+      "guardrailEffects": [
+        { "effectThirds": 1, "weight": 0.06 },
+        { "effectThirds": 0, "weight": 0.94 }
+      ],
+      "expectedPrimaryMean": 0.25,
+      "expectedGuardrailMean": 0.02
+    },
+    {
+      "id": "ni-boundary",
+      "purpose": "non-inferiority boundary diagnostic only; not a high-power selection target",
+      "primaryEffects": [
+        { "effectThirds": 2, "weight": 0.1 },
+        { "effectThirds": 1, "weight": 0.45 },
+        { "effectThirds": 0, "weight": 0.4 },
+        { "effectThirds": -1, "weight": 0.05 }
+      ],
+      "guardrailEffects": [
+        { "effectThirds": 1, "weight": 0.1 },
+        { "effectThirds": 0, "weight": 0.65 },
+        { "effectThirds": -1, "weight": 0.25 }
+      ],
+      "expectedPrimaryMean": 0.2,
+      "expectedGuardrailMean": -0.05
+    },
+    {
+      "id": "harmful-guardrail",
+      "purpose": "false-accept gate for materially harmful task-success degradation",
+      "primaryEffects": [
+        { "effectThirds": 2, "weight": 0.1 },
+        { "effectThirds": 1, "weight": 0.45 },
+        { "effectThirds": 0, "weight": 0.4 },
+        { "effectThirds": -1, "weight": 0.05 }
+      ],
+      "guardrailEffects": [
+        { "effectThirds": 1, "weight": 0.1 },
+        { "effectThirds": 0, "weight": 0.5 },
+        { "effectThirds": -1, "weight": 0.4 }
+      ],
+      "expectedPrimaryMean": 0.2,
+      "expectedGuardrailMean": -0.1
+    },
+    {
+      "id": "stress-adverse-pairing",
+      "purpose": "stress case with wide task-level paired differences, representing high heterogeneity/adverse B-C covariance",
+      "primaryEffects": [
+        { "effectThirds": 3, "weight": 0.1 },
+        { "effectThirds": 2, "weight": 0.15 },
+        { "effectThirds": 1, "weight": 0.2 },
+        { "effectThirds": 0, "weight": 0.4 },
+        { "effectThirds": -1, "weight": 0.1 },
+        { "effectThirds": -2, "weight": 0.05 }
+      ],
+      "guardrailEffects": [
+        { "effectThirds": 1, "weight": 0.2 },
+        { "effectThirds": 0, "weight": 0.6 },
+        { "effectThirds": -1, "weight": 0.2 }
+      ],
+      "expectedPrimaryMean": 0.2,
+      "expectedGuardrailMean": 0
+    }
+  ]
+}
