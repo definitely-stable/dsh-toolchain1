@@ -13,7 +13,10 @@
   },
   "measurement": {
     "truthFingerprint": "dsh-api-truth-v2:14ab2c32fa1307de300d09715b30a147a9ffe7884335ee0f19ebc5cb018871bb",
-    "apiClaimClassifier": "dsh-toolchain-m2-api-claims-v2",
+    "apiClaimClassifier": {
+      "id": "dsh-toolchain-m2-api-claims-v2",
+      "sourceCommit": "0bd4387e7da31344d92912670fac2de096cc0c7c"
+    },
     "taskAdjudicator": null,
     "historicalP0": {
       "runId": 33264398212,
