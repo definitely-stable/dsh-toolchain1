@@ -107,6 +107,15 @@
                 }
               }
             ]
+          },
+          "oracle": {
+            "allOf": [
+              { "$ref": "#/$defs/oracle" },
+              {
+                "type": "object",
+                "properties": { "version": { "const": "api-oracle-v1" } }
+              }
+            ]
           }
         }
       },
@@ -122,6 +131,15 @@
                   "id": { "const": "H1" },
                   "hiddenUntilRunComplete": { "const": true }
                 }
+              }
+            ]
+          },
+          "oracle": {
+            "allOf": [
+              { "$ref": "#/$defs/oracle" },
+              {
+                "type": "object",
+                "properties": { "version": { "const": "dsh-api-truth-v2" } }
               }
             ]
           },
@@ -392,7 +410,7 @@
       "additionalProperties": false,
       "required": ["version", "sha256", "classifications", "unknownAutoInvalid"],
       "properties": {
-        "version": { "const": "api-oracle-v1" },
+        "version": { "enum": ["api-oracle-v1", "dsh-api-truth-v2"] },
         "sha256": { "$ref": "#/$defs/sha256" },
         "classifications": { "const": ["VALID", "INVALID", "UNKNOWN"] },
         "unknownAutoInvalid": { "const": false }
