@@ -70,7 +70,7 @@ describe('M2.3 H1 exact execution definition v2', () => {
     })
   })
 
-  it('binds Truth v2, the full finalized commitment, and the frozen prospective analysis without leaking private evaluator fields', async () => {
+  it('binds Truth v2 and the full finalized measurement/design/analysis commitment without leaking private evaluator fields', async () => {
     const [finalized, workspace] = await Promise.all([
       createSyntheticH1Finalization(),
       readSyntheticH1Workspace(),
@@ -81,32 +81,42 @@ describe('M2.3 H1 exact execution definition v2', () => {
     const metrics = record(definition.metrics)
     const primary = record(metrics.primary)
     const guardrail = record(metrics.guardrail)
-    const primaryUncertainty = record(primary.uncertainty)
-    const guardrailUncertainty = record(guardrail.uncertainty)
     const commitmentSha256 = await sha256.sha256Utf8(canonicalizeEvaluationJson(finalized.commitment))
+    const execution = record(definition.execution)
+    const runnerIdentity = JSON.parse(String(record(execution.runnerIdentity).inline)) as Record<string, unknown>
 
-    expect(definition.experimentCommitmentSha256).toBe(commitmentSha256)
     expect(oracle).toEqual({
       version: 'dsh-api-truth-v2',
       sha256: '14ab2c32fa1307de300d09715b30a147a9ffe7884335ee0f19ebc5cb018871bb',
       classifications: ['VALID', 'INVALID', 'UNKNOWN'],
       unknownAutoInvalid: false,
     })
-    expect(primary.mcidAbsoluteReduction).toBe(0.1)
-    expect(guardrail.margin).toBe(0.05)
-    expect(primaryUncertainty).toMatchObject({
-      method: 'paired-task-percentile-bootstrap',
-      sidedness: 'two-sided',
-      lowerQuantile: 0.025,
-      resamples: 10_000,
-      seed: 'm2-v2-primary',
+    expect(primary).toMatchObject({
+      mcidAbsoluteReduction: 0.1,
+      uncertainty: {
+        method: 'paired-task-bootstrap',
+        resamples: 10_000,
+        seed: 'm2-v2-primary',
+      },
     })
-    expect(guardrailUncertainty).toMatchObject({
-      method: 'paired-task-percentile-bootstrap',
-      sidedness: 'two-sided',
-      lowerQuantile: 0.025,
-      resamples: 10_000,
-      seed: 'm2-v2-guardrail',
+    expect(guardrail).toMatchObject({
+      margin: 0.05,
+      uncertainty: {
+        method: 'paired-task-bootstrap',
+        resamples: 10_000,
+        seed: 'm2-v2-guardrail',
+      },
+    })
+    expect(runnerIdentity).toMatchObject({
+      runner: 'dsh-m2-isolated-runner',
+      version: '2',
+      executorProtocol: 'closed-ndjson-v1',
+      scheduleSeed: 'm2-h1-holdout-v2',
+      h1CommitmentSha256: commitmentSha256,
+      measurement: finalized.commitment.measurement,
+      prospectiveDesign: finalized.commitment.prospectiveDesign,
+      thresholds: finalized.commitment.thresholds,
+      analysis: finalized.commitment.analysis,
     })
 
     const serialized = canonicalizeEvaluationJson(frozen.definition)
