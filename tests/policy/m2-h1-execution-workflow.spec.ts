@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 const WORKFLOW = new URL('../../.github/workflows/m2-h1-execution.yml', import.meta.url)
 
 describe('M2 H1 execution workflow policy', () => {
-  it('is manual-only, Flash-only, bounded, secret-backed and resumable', async () => {
+  it('is manual-only, Flash-only, bounded, secret-backed and resumable without caching plaintext outcomes', async () => {
     const source = await readFile(WORKFLOW, 'utf8')
 
     expect(source).toContain('workflow_dispatch:')
@@ -22,8 +22,11 @@ describe('M2 H1 execution workflow policy', () => {
     expect(source).toContain('actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae')
     expect(source).toContain('actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae')
     expect(source).toContain('m2-h1-dc12ccf9-')
+    expect(source).toContain('h1-run-store.enc')
+    expect(source).toContain('openssl enc -aes-256-cbc -pbkdf2')
     expect(source).toContain('umask 077')
     expect(source).not.toContain('actions/upload-artifact')
     expect(source).not.toContain('m2-h1-private-candidate')
+    expect(source).not.toMatch(/path:\s*\$\{\{\s*runner\.temp\s*\}\}\/m2-h1-run-store\s*$/mu)
   })
 })
