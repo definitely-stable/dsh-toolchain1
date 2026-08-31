@@ -102,7 +102,9 @@ M2.2 exit criteria:
 
 ### M2.3 — Frozen retrieval evaluation / milestone exit
 
-**Status:** deterministic evaluation infrastructure and first rc.2 baseline implemented; controlled H1 agent evidence remains pending, so M2 is **not complete**.
+**Status:** R1, provider-backed P0, corrected measurement/readjudication, frozen H1 design, and durable H1 execution/preregistration infrastructure are implemented. The real private H1 finalization/public preregistration and controlled H1 outcome remain pending, so M2 is **not complete**.
+
+The canonical current operational gate state is maintained in [`docs/evaluation/m2/status.md`](evaluation/m2/status.md). This roadmap keeps capability and exit semantics; the status file carries the fast-moving H1 readiness details.
 
 Implemented evaluation boundary:
 - artifact-grade frozen `@deepseek-ai/dsh@0.1.1-rc.2` Web target and complete normalized Contract Index are fixed before corpus/scoring;
@@ -110,7 +112,10 @@ Implemented evaluation boundary:
 - all R1 tasks run only through production `searchContractIndex(..., limit=5)` and the real kernel `search -> inspect` loop is separately proven with target/index continuity and stale semantics;
 - evidence-sufficiency checks distinguish retrieval failures from acquisition gaps;
 - immutable first-run output records per-task ranking plus Success@1/3/5, MRR, no-result correctness, forbidden-hit rate and category/domain diagnostics;
-- A/B/C schema, exact rc.2 API oracle, public non-scoring P0 calibration set, retry/resource rules, canonical hashing, deterministic three-trial balanced scheduling and fail-closed H1 commitment gate are versioned and tested;
+- a real provider-backed P0 calibration run executed the frozen 72-entry schedule and is retained as immutable historical evidence with canonical status `INCONCLUSIVE`;
+- post-P0 measurement defects were corrected through a separately versioned governance/adjudication path, and retained observations were re-adjudicated offline without relabeling the historical result or rerunning P0 merely to change a status string;
+- the H1 prospective design freezes MCID `0.10`, task-success non-inferiority margin `0.05`, 96 tasks, three trials per task/arm, 864 balanced schedule entries, and paired-task percentile bootstrap analysis with 10,000 resamples;
+- durable H1 readiness/commitment, ledger/store, single-attempt coordination, resumable scheduling, frozen execution definition, derived attempt inputs, and public preregistration receipt construction/validation are implemented and fail closed;
 - required CI stays offline/deterministic; no external model call is required to pass repository CI.
 
 Measured R1 baseline before any retrieval tuning:
@@ -129,23 +134,30 @@ Agent-level exit protocol:
 - A = model memory reference;
 - B = conventional exact-target agent with ordinary file/search/docs access;
 - C = the same conventional exact-target agent plus Toolchain `contract.search` / `contract.inspect`; C is never forced to call Toolchain;
-- `VALID | INVALID | UNKNOWN` oracle semantics are frozen; UNKNOWN is never automatically INVALID;
-- P0 is public/non-scoring harness calibration;
-- H1 cannot run until P0 is complete, MCID and task-success non-inferiority margin are frozen, the hidden H1 task set is hash-committed and the exact experiment identities are content-addressed;
-- model-outcome retries are forbidden; `maxInfrastructureRetries = N` permits N retries after the initial attempt (at most `1 + N` attempts total), every attempt is retained, and an exhausted infrastructure-only run remains `INCONCLUSIVE`;
+- corrected `VALID | INVALID | UNKNOWN` measurement semantics are frozen separately from historical v1 artifacts; UNKNOWN is never automatically INVALID;
+- the historical provider-backed P0 remains `INCONCLUSIVE` and immutable; the corrected offline readjudication is calibration evidence, not a replacement run;
+- no further live P0 is required merely to obtain `CALIBRATED`; another provider-backed calibration would require a separately justified decision-relevant missing observation;
+- H1 uses the frozen MCID `0.10`, task-success non-inferiority margin `0.05`, 96 tasks, three trials per task/arm, 864-entry balanced schedule, task-level aggregation and paired-task percentile bootstrap;
+- model-outcome retries are forbidden; infrastructure retries remain bounded/content-addressed and all attempts are retained;
+- real H1 execution remains prohibited until the privately reviewed dataset and strong provider/backend identity are finalized, the real commitment/execution definition is READY, and the exact public preregistration receipt is committed to protected `main` and bound to an immutable ref/tag;
 - H1 result files are created only from an actual run, never synthesized to satisfy repository state.
 
 M2 exit criteria:
 - [x] M2.1 and M2.2 are merged and their exact artifact/native boundaries remain green;
 - [x] frozen real-target retrieval corpus/index and deterministic production-scoring report exist;
 - [x] real production search→inspect continuity/evidence/stale behavior is proven;
-- [x] versioned controlled-agent protocol/oracle/integrity infrastructure exists and fails closed before H1 commitment;
-- [ ] P0 harness calibration is actually executed and its harness-only decisions are frozen;
-- [ ] H1 thresholds/task set/experiment definition are committed before any H1 outcome is observed;
-- [ ] controlled H1 evidence demonstrates the preregistered C-vs-B Invalid API Task Rate improvement while satisfying task-success non-inferiority;
-- [ ] parent #28 closes only after the evidence-based PASS rule is met. If it is not met, freeze `NEEDS-IMPROVEMENT`/`INCONCLUSIVE` and move retrieval changes to a separate reviewed slice.
+- [x] real provider-backed P0 was executed and retained; its historical `INCONCLUSIVE` result remains immutable;
+- [x] corrected measurement semantics and offline readjudication of retained P0 observations are frozen without outcome-driven product tuning;
+- [x] MCID `0.10` and task-success non-inferiority margin `0.05` are frozen prospectively;
+- [x] 96-task / three-trial / 864-entry H1 schedule and paired-bootstrap analysis are frozen by the H1 design/finalization machinery;
+- [x] durable controlled-agent readiness/commitment, ledger/store, coordinator/schedule, execution-definition/attempt-input, and preregistration receipt infrastructure exists and fails closed;
+- [ ] real private 96-task H1 dataset is finalized and independently reviewed;
+- [ ] strong real provider/backend identity receipt is frozen without exposing H1 tasks/prompts;
+- [ ] real H1 commitment/execution definition is finalized READY and the public preregistration receipt is committed to protected `main` plus immutable ref/tag before any H1 outcome;
+- [ ] one valid controlled H1 result demonstrates the preregistered C-vs-B Invalid API Task Rate improvement while satisfying task-success non-inferiority;
+- [ ] parent #28 closes only after the evidence-based PASS rule is met. If it is not met, freeze `NEEDS-IMPROVEMENT`/`INCONCLUSIVE` and follow the separately allowed next path.
 
-No embeddings, semantic reranker, vector database or other retrieval layer is justified merely by architecture preference. The measured baseline and later controlled H1 evidence decide the next retrieval slice.
+No embeddings, semantic reranker, vector database or other retrieval layer is justified merely by architecture preference. The measured baseline and controlled H1 evidence decide whether a separate retrieval-improvement slice exists.
 
 ### First usable alpha gate — Exact Target Plugin Check
 
