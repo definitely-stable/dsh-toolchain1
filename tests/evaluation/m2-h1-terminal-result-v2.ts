@@ -324,7 +324,7 @@ async function buildRunsAndObservations(input: {
           taskSuccess: fresh.taskSuccess,
         }))
       } else {
-        attempts.push(Object.freeze(structuredClone(attempt) as Record<string, unknown>))
+        attempts.push(Object.freeze(structuredClone(attempt) as unknown as Record<string, unknown>))
       }
     }
 
