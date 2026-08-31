@@ -45,6 +45,7 @@
   "scripts": {
     "clean": "node scripts/clean.mjs",
     "generate": "node scripts/generate-protocol.mjs",
+    "m2:h1:preregister": "node scripts/prepare-m2-h1-preregistration.mjs",
     "check:generated": "node scripts/generate-protocol.mjs --check",
     "check:protocol": "node scripts/check-protocol.mjs",
     "check:architecture": "node scripts/check-architecture.mjs",
