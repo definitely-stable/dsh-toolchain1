@@ -196,12 +196,8 @@ export async function createFrozenH1ExecutionDefinitionV2(
   const taskPromptSha256 = await assertModelTaskProjection(finalization, sha256)
 
   const provider = finalization.commitment.provider
-  if (
-    provider === null
-    || provider.identityReceiptSha256 === null
-    || provider.backendFingerprint === null
-  ) {
-    throw new Error('H1 execution definition requires a strong finalized provider identity')
+  if (provider === null || provider.identityReceiptSha256 === null) {
+    throw new Error('H1 execution definition requires a finalized managed-gateway provider identity')
   }
 
   const toolchain = await createFrozenToolchainBroker('0'.repeat(64))
@@ -247,8 +243,7 @@ export async function createFrozenH1ExecutionDefinitionV2(
     adapterVersion: provider.adapterVersion,
     thinking: provider.thinking,
     reasoningEffort: provider.reasoningEffort,
-    backendIdentityStrength: provider.backendIdentityStrength,
-    expectedSystemFingerprint: provider.backendFingerprint,
+    identityMode: provider.identityMode,
     providerIdentityReceiptSha256: provider.identityReceiptSha256,
   })
 
@@ -343,7 +338,6 @@ export async function createFrozenH1ExecutionDefinitionV2(
     datasetCommitmentSha256: finalization.commitment.hiddenDataset.sha256,
     providerIdentityReceiptSha256: provider.identityReceiptSha256,
     expectedResponseModel: provider.responseModel,
-    expectedBackendFingerprint: provider.backendFingerprint,
   })
 
   return Object.freeze({
