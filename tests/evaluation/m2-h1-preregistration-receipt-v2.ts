@@ -20,7 +20,6 @@ import type { H1LedgerBindingV2 } from './m2-h1-run-ledger-v2.js'
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u
 const TARGET_FINGERPRINT_PATTERN = /^dsh-target-v2:[0-9a-f]{64}$/u
 const CONTRACT_INDEX_FINGERPRINT_PATTERN = /^dsh-contract-index-v1:[0-9a-f]{64}$/u
-const SYSTEM_FINGERPRINT_PATTERN = /^[\x21-\x7e]{1,256}$/u
 const CREDENTIAL_TOKEN_PATTERN = /(?:^|[^A-Za-z0-9_-])sk-[A-Za-z0-9_-]{8,}(?=$|[^A-Za-z0-9_-])/u
 const BEARER_TOKEN_PATTERN = /Bearer\s+/iu
 const EXPECTED_TASK_COUNT = 96
@@ -137,6 +136,8 @@ const FORBIDDEN_PUBLIC_KEYS = new Set([
   'access_token',
   'secret',
   'password',
+  'backendfingerprint',
+  'expectedbackendfingerprint',
 ])
 
 export interface H1PreregistrationReceiptV2 {
@@ -162,8 +163,7 @@ export interface H1PreregistrationReceiptV2 {
     readonly taskCount: number
     readonly modelTaskProjectionSha256: string
   }
-  readonly provider: H1ProviderIdentityV2 & {
-    readonly backendFingerprint: string
+  readonly provider: Omit<H1ProviderIdentityV2, 'identityReceiptSha256'> & {
     readonly identityReceiptSha256: string
   }
   readonly execution: {
@@ -328,15 +328,11 @@ function expectedLedgerBinding(
   if (provider?.identityReceiptSha256 === null || provider?.identityReceiptSha256 === undefined) {
     throw new Error('H1 preregistration requires a provider identity receipt SHA')
   }
-  if (provider.backendFingerprint === null) {
-    throw new Error('H1 preregistration requires a strong provider backend fingerprint')
-  }
   return {
     definitionSha256,
     datasetCommitmentSha256: finalization.commitment.hiddenDataset.sha256,
     providerIdentityReceiptSha256: provider.identityReceiptSha256,
     expectedResponseModel: provider.responseModel,
-    expectedBackendFingerprint: provider.backendFingerprint,
   }
 }
 
@@ -457,8 +453,8 @@ async function assertFrozenDefinition(
 
   const commitmentSha256 = await sha256.sha256Utf8(canonicalizeEvaluationJson(finalization.commitment))
   const provider = finalization.commitment.provider
-  if (provider === null || provider.backendFingerprint === null || provider.identityReceiptSha256 === null) {
-    throw new Error('H1 preregistration requires a finalized strong provider identity')
+  if (provider === null || provider.identityReceiptSha256 === null) {
+    throw new Error('H1 preregistration requires a finalized managed-gateway provider identity')
   }
   assertExactKeys(runnerIdentity.parsed, [
     'runner',
@@ -499,8 +495,7 @@ async function assertFrozenDefinition(
     adapterVersion: provider.adapterVersion,
     thinking: provider.thinking,
     reasoningEffort: provider.reasoningEffort,
-    backendIdentityStrength: provider.backendIdentityStrength,
-    expectedSystemFingerprint: provider.backendFingerprint,
+    identityMode: provider.identityMode,
     providerIdentityReceiptSha256: provider.identityReceiptSha256,
   }
   assertCanonicalEqual(executorIdentity.parsed, expectedExecutor, 'H1 preregistration executor identity')
@@ -556,10 +551,10 @@ function assertNoSecretLikeText(value: unknown, path = '$'): void {
 }
 
 function providerProjection(provider: H1ProviderIdentityV2 | null): H1PreregistrationReceiptV2['provider'] {
-  if (provider === null || provider.backendFingerprint === null || provider.identityReceiptSha256 === null) {
-    throw new Error('H1 preregistration requires a strong finalized provider identity')
+  if (provider === null || provider.identityReceiptSha256 === null) {
+    throw new Error('H1 preregistration requires a finalized managed-gateway provider identity')
   }
-  return Object.freeze({ ...provider, backendFingerprint: provider.backendFingerprint, identityReceiptSha256: provider.identityReceiptSha256 })
+  return Object.freeze({ ...provider, identityReceiptSha256: provider.identityReceiptSha256 })
 }
 
 function receiptProjection(receipt: Omit<H1PreregistrationReceiptV2, 'receiptSha256'>): unknown {
@@ -646,7 +641,7 @@ function validateTarget(record: Record<string, unknown>): void {
 function validateProvider(record: Record<string, unknown>): void {
   assertExactKeys(record, [
     'provider', 'baseUrl', 'requestModel', 'responseModel', 'adapterVersion', 'thinking', 'reasoningEffort',
-    'backendIdentityStrength', 'backendFingerprint', 'identityReceiptSha256',
+    'identityMode', 'identityReceiptSha256',
   ], 'H1 preregistration provider')
   if (
     record.provider !== 'opencode-go'
@@ -656,12 +651,10 @@ function validateProvider(record: Record<string, unknown>): void {
     || record.adapterVersion !== 'opencode-go-deepseek-chat-v1'
     || record.thinking !== 'enabled'
     || record.reasoningEffort !== 'high'
-    || record.backendIdentityStrength !== 'system-fingerprint'
+    || record.identityMode !== 'managed-gateway'
   ) {
     throw new Error('H1 preregistration provider identity drifted')
   }
-  const fingerprint = requireString(record.backendFingerprint, 'H1 preregistration backend fingerprint')
-  if (!SYSTEM_FINGERPRINT_PATTERN.test(fingerprint)) throw new Error('H1 preregistration backend fingerprint is malformed')
   requireSha256(record.identityReceiptSha256, 'H1 preregistration provider receipt SHA')
   const url = new URL(requireString(record.baseUrl, 'H1 preregistration provider base URL'))
   if (url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
@@ -705,14 +698,13 @@ function validateExecution(record: Record<string, unknown>, hiddenDataset: Recor
 
   const ledger = requireRecord(record.ledgerBinding, 'H1 preregistration ledger binding')
   assertExactKeys(ledger, [
-    'definitionSha256', 'datasetCommitmentSha256', 'providerIdentityReceiptSha256', 'expectedResponseModel', 'expectedBackendFingerprint',
+    'definitionSha256', 'datasetCommitmentSha256', 'providerIdentityReceiptSha256', 'expectedResponseModel',
   ], 'H1 preregistration ledger binding')
   if (
     requireSha256(ledger.definitionSha256, 'H1 preregistration ledger definition SHA') !== definitionSha256
     || requireSha256(ledger.datasetCommitmentSha256, 'H1 preregistration ledger dataset SHA') !== hiddenDataset.sha256
     || requireSha256(ledger.providerIdentityReceiptSha256, 'H1 preregistration ledger provider receipt SHA') !== provider.identityReceiptSha256
     || ledger.expectedResponseModel !== provider.responseModel
-    || ledger.expectedBackendFingerprint !== provider.backendFingerprint
   ) {
     throw new Error('H1 preregistration ledger binding is internally inconsistent')
   }
