@@ -25,6 +25,8 @@ describe('M2 H1 execution workflow policy', () => {
     expect(source).toContain('h1-run-store.enc')
     expect(source).toContain('openssl enc -aes-256-cbc -pbkdf2')
     expect(source).toContain('umask 077')
+    expect(source).toContain('H1_DATASET=$RUNNER_TEMP/m2-h1-private-dataset.json')
+    expect(source).not.toMatch(/\n    env:\n(?:      .*\n)*?      .*\$\{\{\s*runner\./u)
     expect(source).not.toContain('actions/upload-artifact')
     expect(source).not.toContain('m2-h1-private-candidate')
     expect(source).not.toMatch(/path:\s*\$\{\{\s*runner\.temp\s*\}\}\/m2-h1-run-store\s*$/mu)
