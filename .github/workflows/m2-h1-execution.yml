@@ -24,12 +24,6 @@ jobs:
   execute:
     runs-on: ubuntu-24.04
     timeout-minutes: 330
-    env:
-      H1_DATASET: ${{ runner.temp }}/m2-h1-private-dataset.json
-      H1_RUN_STORE: ${{ runner.temp }}/m2-h1-run-store
-      H1_STATE_ARCHIVE: ${{ runner.temp }}/h1-run-store.tar
-      H1_STATE_ENCRYPTED: ${{ runner.temp }}/h1-run-store.enc
-      H1_EXPECTED_MODEL: deepseek-v4-flash
     steps:
       - name: Require main ref
         shell: bash
@@ -39,6 +33,18 @@ jobs:
             echo '::error::M2 H1 execution is allowed only from refs/heads/main'
             exit 1
           fi
+
+      - name: Initialize private runner paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          {
+            echo "H1_DATASET=$RUNNER_TEMP/m2-h1-private-dataset.json"
+            echo "H1_RUN_STORE=$RUNNER_TEMP/m2-h1-run-store"
+            echo "H1_STATE_ARCHIVE=$RUNNER_TEMP/h1-run-store.tar"
+            echo "H1_STATE_ENCRYPTED=$RUNNER_TEMP/h1-run-store.enc"
+          } >> "$GITHUB_ENV"
 
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
