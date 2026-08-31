@@ -6,13 +6,15 @@ import {
 } from '../../scripts/run-m2-h1-opencode-go.mjs'
 
 describe('M2 H1 execution operator command', () => {
-  it('defaults to preflight-only and requires an explicit bounded execution budget before model calls', () => {
+  it('defaults to preflight-only and requires source-bound publication plus an explicit bounded execution budget before model calls', () => {
     expect(parseArguments([
       '--dataset', '/private/h1.json',
       '--run-store', '/private/h1-run',
+      '--source-bound-preregistration', '/public/h1-source-bound.json',
     ])).toEqual({
       dataset: '/private/h1.json',
       runStore: '/private/h1-run',
+      sourceBoundPreregistration: '/public/h1-source-bound.json',
       execute: false,
       maxCommittedAttempts: undefined,
     })
@@ -20,11 +22,13 @@ describe('M2 H1 execution operator command', () => {
     expect(parseArguments([
       '--dataset', '/private/h1.json',
       '--run-store', '/private/h1-run',
+      '--source-bound-preregistration', '/public/h1-source-bound.json',
       '--execute',
       '--max-committed-attempts', '24',
     ])).toEqual({
       dataset: '/private/h1.json',
       runStore: '/private/h1-run',
+      sourceBoundPreregistration: '/public/h1-source-bound.json',
       execute: true,
       maxCommittedAttempts: 24,
     })
@@ -32,11 +36,17 @@ describe('M2 H1 execution operator command', () => {
     expect(() => parseArguments([
       '--dataset', '/private/h1.json',
       '--run-store', '/private/h1-run',
+    ])).toThrow(/source-bound-preregistration/u)
+    expect(() => parseArguments([
+      '--dataset', '/private/h1.json',
+      '--run-store', '/private/h1-run',
+      '--source-bound-preregistration', '/public/h1-source-bound.json',
       '--execute',
     ])).toThrow(/max-committed-attempts/u)
     expect(() => parseArguments([
       '--dataset', '/private/h1.json',
       '--run-store', '/private/h1-run',
+      '--source-bound-preregistration', '/public/h1-source-bound.json',
       '--execute',
       '--max-committed-attempts', '49',
     ])).toThrow(/1\.\.48/u)
