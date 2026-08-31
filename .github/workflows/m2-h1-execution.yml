@@ -46,9 +46,10 @@ jobs:
             echo "H1_RUN_STORE=$RUNNER_TEMP/m2-h1-run-store"
             echo "H1_STATE_ARCHIVE=$RUNNER_TEMP/h1-run-store.tar"
             echo "H1_STATE_ENCRYPTED=$RUNNER_TEMP/h1-run-store.enc"
+            echo "H1_SOURCE_BOUND_PREREGISTRATION=$RUNNER_TEMP/h1-source-bound-preregistration-v2.json"
           } >> "$GITHUB_ENV"
 
-      - name: Checkout
+      - name: Checkout publication
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
@@ -65,6 +66,32 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
           package-manager-cache: false
+
+      - name: Resolve bound H1 execution source
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_PUBLICATION='docs/evaluation/m2/h1-source-bound-preregistration-v2.json'
+          if [[ ! -f "$SOURCE_PUBLICATION" ]]; then
+            echo '::error::Missing published H1 source-bound preregistration envelope'
+            exit 1
+          fi
+          cp "$SOURCE_PUBLICATION" "$H1_SOURCE_BOUND_PREREGISTRATION"
+          H1_BOUND_SOURCE_COMMIT="$(node -e '
+            const fs = require("node:fs")
+            const envelope = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+            const identity = JSON.parse(envelope.sourceBinding.sourceIdentity.inline)
+            if (!/^[0-9a-f]{40}$/.test(identity.sourceCommitSha)) process.exit(2)
+            process.stdout.write(identity.sourceCommitSha)
+          ' "$H1_SOURCE_BOUND_PREREGISTRATION")"
+          echo "H1_BOUND_SOURCE_COMMIT=$H1_BOUND_SOURCE_COMMIT" >> "$GITHUB_ENV"
+
+      - name: Checkout exact bound H1 source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+          clean: true
+          ref: ${{ env.H1_BOUND_SOURCE_COMMIT }}
 
       - name: Install frozen dependency graph
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -107,7 +134,8 @@ jobs:
           set -euo pipefail
           pnpm m2:h1:run \
             --dataset "$H1_DATASET" \
-            --run-store "$H1_RUN_STORE"
+            --run-store "$H1_RUN_STORE" \
+            --source-bound-preregistration "$H1_SOURCE_BOUND_PREREGISTRATION"
 
       - name: Execute bounded H1 chunk
         id: execute
@@ -123,6 +151,7 @@ jobs:
           pnpm m2:h1:run \
             --dataset "$H1_DATASET" \
             --run-store "$H1_RUN_STORE" \
+            --source-bound-preregistration "$H1_SOURCE_BOUND_PREREGISTRATION" \
             --execute \
             --max-committed-attempts "${{ inputs.max_committed_attempts }}"
 
