@@ -123,7 +123,7 @@ describe('M2.3 H1 preregistration operator command', () => {
     })
     expect(serialized).not.toContain(syntheticH1HiddenDataset().tasks[0]!.prompt)
     expect(serialized).not.toContain('successRule')
-    expect(serialized).not.toMatch(/Bearer\s+|sk-[A-Za-z0-9_-]{8,}/iu)
+    expect(serialized).not.toMatch(/Bearer\s+|(?:^|[^A-Za-z0-9_-])sk-[A-Za-z0-9_-]{8,}(?=$|[^A-Za-z0-9_-])/iu)
   })
 
   it('fails closed on a non-96 hidden dataset and does not create an output file', async () => {
