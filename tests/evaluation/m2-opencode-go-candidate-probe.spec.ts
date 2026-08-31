@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -103,6 +104,23 @@ describe('M2.3 OpenCode Go candidate identity probe', () => {
       responseModel: 'deepseek-v4-pro',
       backendIdentityStrength: 'system-fingerprint',
       systemFingerprint: 'fp_candidate_fixture',
+    })
+  })
+
+  it('parses an explicit candidate model for provider-only CLI discovery', async () => {
+    const module = await import(`${new URL('../../scripts/probe-m2-opencode-go.mjs', import.meta.url).href}?args=${Math.random()}`) as Record<string, unknown>
+    const parseProbeArguments = module.parseProbeArguments as (
+      args: readonly string[],
+    ) => { readonly output: string; readonly model?: string }
+
+    expect(parseProbeArguments([
+      '--model',
+      'glm-5.3-flash',
+      '--output',
+      'candidate-receipt.json',
+    ])).toEqual({
+      model: 'glm-5.3-flash',
+      output: path.resolve('candidate-receipt.json'),
     })
   })
 })
