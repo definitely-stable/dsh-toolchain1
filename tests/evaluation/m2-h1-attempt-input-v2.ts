@@ -35,7 +35,6 @@ const ALLOWED_ENVIRONMENT = new Set([
   'OPENCODE_GO_BASE_URL',
   'OPENCODE_GO_REQUEST_MODEL',
   'OPENCODE_GO_EXPECTED_RESPONSE_MODEL',
-  'OPENCODE_GO_EXPECTED_SYSTEM_FINGERPRINT',
   'OPENCODE_GO_THINKING',
   'OPENCODE_GO_REASONING_EFFORT',
   'OPENCODE_GO_MAX_OUTPUT_TOKENS',
@@ -45,7 +44,6 @@ const REQUIRED_PROVIDER_ENVIRONMENT = Object.freeze([
   'OPENCODE_GO_BASE_URL',
   'OPENCODE_GO_REQUEST_MODEL',
   'OPENCODE_GO_EXPECTED_RESPONSE_MODEL',
-  'OPENCODE_GO_EXPECTED_SYSTEM_FINGERPRINT',
   'OPENCODE_GO_THINKING',
   'OPENCODE_GO_REASONING_EFFORT',
   'OPENCODE_GO_MAX_OUTPUT_TOKENS',
@@ -147,7 +145,6 @@ function assertEnvironment(
   executorIdentity: Record<string, unknown>,
   resourcePolicy: ResourcePolicy,
   expectedResponseModel: string,
-  expectedBackendFingerprint: string,
 ): void {
   for (const [key, value] of Object.entries(environment)) {
     if (!ALLOWED_ENVIRONMENT.has(key)) throw new Error(`H1 child environment key ${key} is outside the allowlist`)
@@ -163,7 +160,6 @@ function assertEnvironment(
     OPENCODE_GO_BASE_URL: requireString(executorIdentity.baseUrl, 'H1 executor baseUrl'),
     OPENCODE_GO_REQUEST_MODEL: requireString(executorIdentity.requestModel, 'H1 executor requestModel'),
     OPENCODE_GO_EXPECTED_RESPONSE_MODEL: expectedResponseModel,
-    OPENCODE_GO_EXPECTED_SYSTEM_FINGERPRINT: expectedBackendFingerprint,
     OPENCODE_GO_THINKING: requireString(executorIdentity.thinking, 'H1 executor thinking'),
     OPENCODE_GO_REASONING_EFFORT: requireString(executorIdentity.reasoningEffort, 'H1 executor reasoningEffort'),
     OPENCODE_GO_MAX_OUTPUT_TOKENS: String(resourcePolicy.maxOutputTokens),
@@ -285,16 +281,22 @@ async function validateFrozenInputs(
   await parseJsonContentRef(execution.runnerIdentity, 'H1 runner identity', sha256)
   const executorIdentity = await parseJsonContentRef(execution.executorIdentity, 'H1 executor identity', sha256)
   const expectedResponseModel = requireString(executorIdentity.expectedResponseModel, 'H1 executor expectedResponseModel')
-  const expectedBackendFingerprint = requireString(executorIdentity.expectedSystemFingerprint, 'H1 executor expectedSystemFingerprint')
   if (
     expectedResponseModel !== frozen.ledgerBinding.expectedResponseModel
-    || expectedBackendFingerprint !== frozen.ledgerBinding.expectedBackendFingerprint
     || executorIdentity.providerIdentityReceiptSha256 !== frozen.ledgerBinding.providerIdentityReceiptSha256
   ) {
     throw new Error('H1 executor identity drifted from the frozen ledger binding')
   }
-  if (executorIdentity.provider !== 'opencode-go' || executorIdentity.adapterVersion !== 'opencode-go-deepseek-chat-v1') {
-    throw new Error('H1 executor identity must remain the frozen OpenCode Go adapter')
+  if (
+    executorIdentity.provider !== 'opencode-go'
+    || executorIdentity.adapterVersion !== 'opencode-go-deepseek-chat-v1'
+    || executorIdentity.identityMode !== 'managed-gateway'
+    || executorIdentity.requestModel !== 'deepseek-v4-flash'
+    || executorIdentity.expectedResponseModel !== 'deepseek-v4-flash'
+    || executorIdentity.thinking !== 'enabled'
+    || executorIdentity.reasoningEffort !== 'high'
+  ) {
+    throw new Error('H1 executor identity must remain the frozen OpenCode Go managed-gateway adapter')
   }
 
   await validateOrdinaryWorkspace(workspace, sha256)
@@ -321,7 +323,6 @@ async function validateFrozenInputs(
     executorIdentity,
     frozen.resourcePolicy,
     frozen.ledgerBinding.expectedResponseModel,
-    frozen.ledgerBinding.expectedBackendFingerprint,
   )
 
   return Object.freeze({
