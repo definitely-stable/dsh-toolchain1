@@ -51,8 +51,7 @@ function readyProjection(): H1CommitmentV2 {
       adapterVersion: 'opencode-go-deepseek-chat-v1',
       thinking: 'enabled',
       reasoningEffort: 'high',
-      backendIdentityStrength: 'system-fingerprint',
-      backendFingerprint: 'provider-system-fingerprint-immutable-example',
+      identityMode: 'managed-gateway',
       identityReceiptSha256: '7'.repeat(64),
     },
   }
@@ -133,16 +132,27 @@ describe('M2.3 H1 readiness v2', () => {
     })
   })
 
-  it('rejects response-model-only provider identity, missing receipt and malformed thresholds', () => {
-    const responseOnly = {
+  it('accepts only the exact committed managed-gateway identity and a valid receipt hash', () => {
+    const wrongMode = {
       ...readyProjection(),
       provider: {
         ...readyProjection().provider!,
-        backendIdentityStrength: 'response-model-only' as const,
-        backendFingerprint: null,
+        identityMode: 'checkpoint' as never,
       },
     }
-    expect(evaluateH1ReadinessV2(responseOnly)).toMatchObject({
+    expect(evaluateH1ReadinessV2(wrongMode)).toMatchObject({
+      runAllowed: false,
+      blockers: ['PROVIDER_IDENTITY_NOT_FROZEN'],
+    })
+
+    const modelDrift = {
+      ...readyProjection(),
+      provider: {
+        ...readyProjection().provider!,
+        responseModel: 'other-model',
+      },
+    }
+    expect(evaluateH1ReadinessV2(modelDrift)).toMatchObject({
       runAllowed: false,
       blockers: ['PROVIDER_IDENTITY_NOT_FROZEN'],
     })
@@ -159,6 +169,20 @@ describe('M2.3 H1 readiness v2', () => {
       blockers: ['PROVIDER_IDENTITY_NOT_FROZEN'],
     })
 
+    const legacyBackendFields = {
+      ...readyProjection(),
+      provider: {
+        ...readyProjection().provider!,
+        backendFingerprint: 'fp_should_not_define_managed_gateway_identity',
+      },
+    }
+    expect(evaluateH1ReadinessV2(legacyBackendFields)).toMatchObject({
+      runAllowed: false,
+      blockers: ['PROVIDER_IDENTITY_NOT_FROZEN'],
+    })
+  })
+
+  it('rejects malformed thresholds', () => {
     const badMcid = {
       ...readyProjection(),
       thresholds: {
