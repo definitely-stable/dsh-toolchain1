@@ -36,7 +36,6 @@ const PENDING_KEYS = Object.freeze([
   'datasetCommitmentSha256',
   'providerIdentityReceiptSha256',
   'expectedResponseModel',
-  'expectedBackendFingerprint',
   'scheduleSha256',
   'preEntryCount',
   'preTailEntrySha256',
@@ -56,7 +55,6 @@ export interface H1PendingAttemptIntentV2 {
   readonly datasetCommitmentSha256: string
   readonly providerIdentityReceiptSha256: string
   readonly expectedResponseModel: string
-  readonly expectedBackendFingerprint: string
   readonly scheduleSha256: string
   readonly preEntryCount: number
   readonly preTailEntrySha256: string | null
@@ -355,7 +353,6 @@ function pendingHashMaterial(pending: Omit<H1PendingAttemptIntentV2, 'intentSha2
     datasetCommitmentSha256: pending.datasetCommitmentSha256,
     providerIdentityReceiptSha256: pending.providerIdentityReceiptSha256,
     expectedResponseModel: pending.expectedResponseModel,
-    expectedBackendFingerprint: pending.expectedBackendFingerprint,
     scheduleSha256: pending.scheduleSha256,
     preEntryCount: pending.preEntryCount,
     preTailEntrySha256: pending.preTailEntrySha256,
@@ -391,7 +388,6 @@ async function parsePendingIntent(
     datasetCommitmentSha256: requireSha256(record.datasetCommitmentSha256, 'H1 pending attempt dataset binding'),
     providerIdentityReceiptSha256: requireSha256(record.providerIdentityReceiptSha256, 'H1 pending attempt provider binding'),
     expectedResponseModel: requireNonEmptyString(record.expectedResponseModel, 'H1 pending attempt response model'),
-    expectedBackendFingerprint: requireNonEmptyString(record.expectedBackendFingerprint, 'H1 pending attempt backend fingerprint'),
     scheduleSha256: requireSha256(record.scheduleSha256, 'H1 pending attempt schedule binding'),
     preEntryCount: requireInteger(record.preEntryCount, 'H1 pending attempt pre-entry count'),
     preTailEntrySha256,
@@ -407,7 +403,6 @@ async function parsePendingIntent(
     || material.datasetCommitmentSha256 !== context.binding.datasetCommitmentSha256
     || material.providerIdentityReceiptSha256 !== context.binding.providerIdentityReceiptSha256
     || material.expectedResponseModel !== context.binding.expectedResponseModel
-    || material.expectedBackendFingerprint !== context.binding.expectedBackendFingerprint
     || material.scheduleSha256 !== scheduleSha256
   ) {
     throw new Error('H1 pending attempt binding drifted from the validated ledger/store identity')
@@ -614,7 +609,6 @@ export async function beginH1RunStoreAttemptV2(
       datasetCommitmentSha256: context.binding.datasetCommitmentSha256,
       providerIdentityReceiptSha256: context.binding.providerIdentityReceiptSha256,
       expectedResponseModel: context.binding.expectedResponseModel,
-      expectedBackendFingerprint: context.binding.expectedBackendFingerprint,
       scheduleSha256: ledger.header.scheduleSha256,
       preEntryCount: ledger.entries.length,
       preTailEntrySha256: tailHash(ledger),
