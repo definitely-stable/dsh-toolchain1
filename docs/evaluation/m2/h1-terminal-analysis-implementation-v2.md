@@ -2,6 +2,8 @@
 
 Status: **FROZEN BEFORE TERMINAL H1 ANALYSIS**
 
+Frozen terminal runtime source commit: `2e3e49702d0581364952affd96d86c518dda361b`.
+
 This document fixes the implementation details needed to execute the already-preregistered H1 analysis without changing its scientific design. It does not change the H1 task set, arms, provider, retry policy, MCID, non-inferiority margin, analysis unit, seeds or resample count.
 
 The terminal path is offline and read-only with respect to H1 execution. It accepts only a durable run-store whose canonical ledger validates as `COMPLETE`, reloads every ledger-referenced durable attempt evidence object, rebuilds frozen Truth v2, and re-adjudicates every retained model raw answer with `dsh-toolchain-m2-h1-task-adjudicator-v2`. Stored `parsedApiClaims` and `taskSuccess` must exactly match fresh adjudication or finalization fails closed.
@@ -14,4 +16,4 @@ The empirical bootstrap distribution is sorted numerically and quantiles use lin
 
 `PASS` requires the primary lower bound to be at least `0.10` and the guardrail lower bound to be at least `-0.05`. Fully resolved evidence that misses either rule is `NEEDS-IMPROVEMENT`. Incomplete/unresolved decision evidence is `INCONCLUSIVE`.
 
-The full reconstructed v2 result is finally checked by `validateAgentV2ResultAgainstDefinition()` against the exact frozen H1 definition before any terminal artifact is emitted. The workflow performs no provider/model call and requires no provider credential.
+The full reconstructed v2 result is finally checked by `validateAgentV2ResultAgainstDefinition()` against the exact frozen H1 definition before any terminal artifact is emitted. The workflow performs no provider/model call and requires no provider credential. The workflow itself may be maintained as an operator shell on `main`, but it must checkout the exact frozen terminal runtime source commit above before installing dependencies or running the finalizer.
