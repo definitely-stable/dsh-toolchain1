@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 45
     env:
       H1_TERMINAL_SOURCE_COMMIT: 2e3e49702d0581364952affd96d86c518dda361b
+      H1_DATASET_RAW_SHA256: c007472514fa6fd1daa06cffb94f4052062a03bdceba475773830e73a01e32e6
     steps:
       - name: Require main ref and numeric execution run id
         shell: bash
@@ -94,7 +95,7 @@ jobs:
             exit 1
           fi
           printf '%s' "$H1_DATASET_SECRET" | base64 --decode | gzip --decompress > "$H1_DATASET"
-          echo 'c007472514fa6fd1daa06cffb94f4052062a03bdceba475773830e73a01e32e6  '"$H1_DATASET" | sha256sum --check --status
+          echo "$H1_DATASET_RAW_SHA256  $H1_DATASET" | sha256sum --check --status
           H1_STATE_KEY="$(printf '%s' "$H1_DATASET_SECRET" | sha256sum | cut -d' ' -f1)"
           export H1_STATE_KEY
           openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:H1_STATE_KEY -in "$H1_STATE_ENCRYPTED" -out "$H1_STATE_ARCHIVE"
@@ -111,6 +112,13 @@ jobs:
             --run-store "$H1_RUN_STORE" \
             --output-dir "$H1_TERMINAL_OUTPUT"
 
+      - name: Disclose exact hidden H1 dataset after terminal gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 600 "$H1_DATASET" "$H1_TERMINAL_OUTPUT/h1-hidden-dataset-v2.json"
+          echo "$H1_DATASET_RAW_SHA256  $H1_TERMINAL_OUTPUT/h1-hidden-dataset-v2.json" | sha256sum --check --status
+
       - name: Upload terminal H1 evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -119,6 +127,7 @@ jobs:
             ${{ runner.temp }}/m2-h1-terminal/h1-result-v2.json
             ${{ runner.temp }}/m2-h1-terminal/h1-analysis-v2.json
             ${{ runner.temp }}/m2-h1-terminal/h1-summary.md
+            ${{ runner.temp }}/m2-h1-terminal/h1-hidden-dataset-v2.json
           if-no-files-found: error
           retention-days: 90
           compression-level: 6
