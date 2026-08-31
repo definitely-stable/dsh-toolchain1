@@ -105,7 +105,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm m2:h1:run -- \
+          pnpm m2:h1:run \
             --dataset "$H1_DATASET" \
             --run-store "$H1_RUN_STORE"
 
@@ -120,7 +120,7 @@ jobs:
             echo '::error::Missing required secret OPENCODE_API_KEY'
             exit 1
           fi
-          pnpm m2:h1:run -- \
+          pnpm m2:h1:run \
             --dataset "$H1_DATASET" \
             --run-store "$H1_RUN_STORE" \
             --execute \
