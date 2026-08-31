@@ -7,12 +7,13 @@ import { fileURLToPath } from 'node:url'
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const DEFAULT_BASE_URL = 'https://opencode.ai/zen/go/v1'
-const REQUEST_MODEL = 'deepseek-v4-flash'
+const DEFAULT_REQUEST_MODEL = 'deepseek-v4-flash'
 const THINKING = 'enabled'
 const REASONING_EFFORT = 'high'
 const MAX_OUTPUT_TOKENS = 256
 const MAX_PROVIDER_ERROR_BYTES = 4_096
 const MAX_PROVIDER_ERROR_FIELD_CHARACTERS = 240
+const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u
 
 function requireEnvironment(environment, name) {
   const value = environment[name]
@@ -45,6 +46,13 @@ function requireRecord(value, label) {
 function requireString(value, label, { allowEmpty = false } = {}) {
   if (typeof value !== 'string' || (!allowEmpty && value.length === 0)) throw new Error(`${label} must be a string`)
   return value
+}
+
+function selectedModel(value) {
+  if (value === undefined) return DEFAULT_REQUEST_MODEL
+  const model = requireString(value, 'OpenCode Go probe model')
+  if (!MODEL_PATTERN.test(model)) throw new Error('OpenCode Go probe model must be a safe non-empty model id')
+  return model
 }
 
 function optionalString(value, label) {
@@ -83,9 +91,9 @@ function initialMessages() {
   ]
 }
 
-function requestBody(messages) {
+function requestBody(messages, requestModel) {
   return {
-    model: REQUEST_MODEL,
+    model: requestModel,
     messages,
     thinking: { type: THINKING },
     reasoning_effort: REASONING_EFFORT,
@@ -162,7 +170,7 @@ async function boundedProviderErrorDetails(response, apiKey) {
     .join(' ')
 }
 
-async function requestCompletion(configuration, messages) {
+async function requestCompletion(configuration, messages, requestModel) {
   let response
   try {
     response = await fetch(configuration.endpoint, {
@@ -171,7 +179,7 @@ async function requestCompletion(configuration, messages) {
         authorization: `Bearer ${configuration.apiKey}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify(requestBody(messages)),
+      body: JSON.stringify(requestBody(messages, requestModel)),
       signal: AbortSignal.timeout(120_000),
     })
   } catch {
@@ -190,8 +198,8 @@ async function requestCompletion(configuration, messages) {
   }
   const completion = requireRecord(value, 'OpenCode Go probe completion')
   const responseModel = requireString(completion.model, 'OpenCode Go probe response model')
-  if (responseModel !== REQUEST_MODEL) {
-    throw new Error(`OpenCode Go probe response model drift: expected ${REQUEST_MODEL}, got ${responseModel}`)
+  if (responseModel !== requestModel) {
+    throw new Error(`OpenCode Go probe response model drift: expected ${requestModel}, got ${responseModel}`)
   }
   const systemFingerprint = optionalString(completion.system_fingerprint, 'OpenCode Go probe system_fingerprint')
   const choices = completion.choices
@@ -246,20 +254,21 @@ function assistantToolMessage(message) {
 export async function probeOpenCodeGoIdentity(environment = process.env, options = {}) {
   const apiKey = requireEnvironment(environment, 'OPENCODE_API_KEY')
   const baseUrl = normalizedBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL)
+  const requestModel = selectedModel(options.model)
   const configuration = {
     apiKey,
     endpoint: new URL(`${baseUrl}/chat/completions`),
   }
 
   const messages = initialMessages()
-  const first = await requestCompletion(configuration, messages)
+  const first = await requestCompletion(configuration, messages, requestModel)
   if (first.finishReason !== 'tool_calls') throw new Error('OpenCode Go probe did not finish the first response with tool_calls')
   const call = parseProbeToolCall(first.message)
   const firstReasoning = optionalString(first.message.reasoning_content, 'OpenCode Go probe reasoning_content')
 
   messages.push(assistantToolMessage(first.message))
   messages.push({ role: 'tool', tool_call_id: call.id, content: '{"value":"ok"}' })
-  const second = await requestCompletion(configuration, messages)
+  const second = await requestCompletion(configuration, messages, requestModel)
   if (Array.isArray(second.message.tool_calls) && second.message.tool_calls.length > 0) {
     throw new Error('OpenCode Go probe continuation unexpectedly requested another tool')
   }
@@ -275,7 +284,7 @@ export async function probeOpenCodeGoIdentity(environment = process.env, options
     schema: 'dsh-toolchain-m2-opencode-go-probe-v1',
     provider: 'opencode-go',
     baseUrl,
-    requestModel: REQUEST_MODEL,
+    requestModel,
     responseModel: second.responseModel,
     ...(second.systemFingerprint === undefined ? {} : { systemFingerprint: second.systemFingerprint }),
     thinking: THINKING,
