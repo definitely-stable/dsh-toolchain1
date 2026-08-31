@@ -1,0 +1,65 @@
+name: M2 H1 Prereg Runtime Export
+
+on:
+  push:
+    branches: [ops/m2-h1-prereg-runtime-export]
+    paths:
+      - '.github/workflows/m2-h1-prereg-runtime-export.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        with:
+          install: false
+
+      - name: Set up Node 24.19
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.19.0'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          package-manager-cache: false
+
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Record exact runtime versions
+        run: |
+          node --version > .m2-h1-node-version.txt
+          pnpm --version > .m2-h1-pnpm-version.txt
+          cp "$(command -v node)" .m2-h1-node
+
+      - name: Upload exact preregistration runtime bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m2-h1-prereg-runtime-main-3e5025e
+          path: |
+            package.json
+            pnpm-lock.yaml
+            tsconfig.json
+            tsconfig.test.json
+            tsconfig.scripts.json
+            scripts
+            src
+            tests
+            docs
+            node_modules
+            .m2-h1-node
+            .m2-h1-node-version.txt
+            .m2-h1-pnpm-version.txt
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
