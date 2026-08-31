@@ -61,7 +61,6 @@ export async function createH1DurableInvocationIdV2(
     datasetCommitmentSha256: binding.datasetCommitmentSha256,
     providerIdentityReceiptSha256: binding.providerIdentityReceiptSha256,
     expectedResponseModel: binding.expectedResponseModel,
-    expectedBackendFingerprint: binding.expectedBackendFingerprint,
     scheduleIndex: resume.scheduleIndex,
     taskId: resume.taskId,
     arm: resume.arm,
