@@ -67,7 +67,6 @@ const binding = Object.freeze<H1LedgerBindingV2>({
   datasetCommitmentSha256: '2'.repeat(64),
   providerIdentityReceiptSha256: '3'.repeat(64),
   expectedResponseModel: 'deepseek-v4-flash',
-  expectedBackendFingerprint: 'fp_h1_coordinator_fixture',
 })
 const resourcePolicy = Object.freeze<ResourcePolicy>({
   maxWallTimeMs: 300000,
@@ -108,7 +107,6 @@ beforeAll(async () => {
         outcome: 'model-outcome',
         evidenceSha256: evidenceSha(scheduleIndex),
         responseModel: binding.expectedResponseModel,
-        systemFingerprint: binding.expectedBackendFingerprint,
       },
       sha256,
     )
@@ -204,7 +202,7 @@ function attemptInput(
     executorIdentity: {
       provider: 'fixture-provider',
       model: binding.expectedResponseModel,
-      snapshot: binding.expectedBackendFingerprint,
+      snapshot: `provider-identity-receipt:${binding.providerIdentityReceiptSha256}`,
     },
     modelEnvelope,
     isolation: {
