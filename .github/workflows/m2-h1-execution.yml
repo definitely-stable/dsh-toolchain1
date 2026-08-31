@@ -24,6 +24,8 @@ jobs:
   execute:
     runs-on: ubuntu-24.04
     timeout-minutes: 330
+    env:
+      H1_EXPECTED_MODEL: deepseek-v4-flash
     steps:
       - name: Require main ref
         shell: bash
