@@ -99,9 +99,11 @@ describe('M2.3 H1 finalization boundary v2', () => {
     expect(result.commitment.hiddenDataset.sha256).toMatch(/^[0-9a-f]{64}$/u)
     expect(result.commitment.provider).toMatchObject({
       provider: 'opencode-go',
-      backendIdentityStrength: 'system-fingerprint',
-      backendFingerprint: 'fp_opencode_h1_finalization_fixture',
+      requestModel: 'deepseek-v4-flash',
+      responseModel: 'deepseek-v4-flash',
+      identityMode: 'managed-gateway',
     })
+    expect(result.commitment.provider?.identityReceiptSha256).toMatch(/^[0-9a-f]{64}$/u)
     expect(result.construction).toEqual({
       policyId: 'dsh-toolchain-m2-h1-dataset-construction-v2',
       taskCount: 96,
@@ -151,7 +153,7 @@ describe('M2.3 H1 finalization boundary v2', () => {
       .rejects.toThrow(/threshold|unknown|pristine|source/iu)
   })
 
-  it('fails closed on wrong task count, malformed dataset and weak provider identity', async () => {
+  it('fails closed on wrong task count, malformed dataset and inconsistent provider receipt', async () => {
     await expect(finalizeH1CommitmentV2(publicCommitment, hiddenDataset(95), providerReceipt(), sha256))
       .rejects.toThrow(/96|task|TASK_SET_NOT_COMMITTED/iu)
 
@@ -159,8 +161,8 @@ describe('M2.3 H1 finalization boundary v2', () => {
     await expect(finalizeH1CommitmentV2(publicCommitment, malformedDataset, providerReceipt(), sha256))
       .rejects.toThrow(/notes|unknown/iu)
 
-    const weakReceipt = { ...providerReceipt(), backendIdentityStrength: 'response-model-only' }
-    await expect(finalizeH1CommitmentV2(publicCommitment, hiddenDataset(), weakReceipt, sha256))
+    const inconsistentReceipt = { ...providerReceipt(), backendIdentityStrength: 'response-model-only' }
+    await expect(finalizeH1CommitmentV2(publicCommitment, hiddenDataset(), inconsistentReceipt, sha256))
       .rejects.toThrow(/backend|identity|system/iu)
   })
 
