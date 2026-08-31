@@ -10,7 +10,6 @@ import {
   CANONICAL_H1_NODE_VERSION,
   createCanonicalH1ExecutionSourceIdentityV2,
   createH1ExecutionSourceBindingV2,
-  validateH1ExecutionSourceBindingV2,
   type H1ExecutionSourceIdentityV2,
 } from './m2-h1-execution-source-binding-v2.js'
 import { createSourceBoundH1AttemptInputFactoryV2 } from './m2-h1-source-bound-attempt-factory-v2.js'
