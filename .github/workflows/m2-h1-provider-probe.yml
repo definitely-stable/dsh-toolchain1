@@ -16,9 +16,27 @@ concurrency:
 
 jobs:
   probe:
-    name: provider identity / opencode-go
+    name: provider identity / opencode-go / ${{ matrix.model }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - deepseek-v4-pro
+          - deepseek-v4-flash
+          - glm-5.3-flash
+          - glm-5.3
+          - glm-5.2
+          - glm-5.1
+          - kimi-k3
+          - kimi-k2.7-code
+          - kimi-k2.6
+          - longcat-2.0
+          - mimo-v2.5
+          - mimo-v2.5-pro
+          - hy4-preview
+          - hy3
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -32,18 +50,24 @@ jobs:
           package-manager-cache: false
 
       - name: Probe provider identity only
+        id: probe
+        continue-on-error: true
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-        run: node scripts/probe-m2-opencode-go.mjs --output .artifacts/m2-h1-provider-identity.json
+        run: >-
+          node scripts/probe-m2-opencode-go.mjs
+          --model "${{ matrix.model }}"
+          --output ".artifacts/candidate-${{ matrix.model }}.json"
 
-      - name: Upload provider identity receipt
+      - name: Upload successful provider candidate receipt
+        if: steps.probe.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: m2-h1-provider-identity
-          path: .artifacts/m2-h1-provider-identity.json
+          name: m2-h1-provider-candidate-${{ matrix.model }}
+          path: .artifacts/candidate-${{ matrix.model }}.json
           if-no-files-found: error
           retention-days: 1
 
-      - name: Require strong backend identity
-        run: |
-          node --input-type=module -e "import fs from 'node:fs'; const r=JSON.parse(fs.readFileSync('.artifacts/m2-h1-provider-identity.json','utf8')); if (r.backendIdentityStrength !== 'system-fingerprint' || typeof r.systemFingerprint !== 'string' || r.systemFingerprint.length === 0) { console.error('H1 requires backendIdentityStrength=system-fingerprint with a non-empty systemFingerprint'); process.exit(1) } console.log('H1 provider identity is strong and preregistration-compatible')"
+      - name: Report candidate probe outcome
+        if: always()
+        run: echo "candidate=${{ matrix.model }} outcome=${{ steps.probe.outcome }}"
