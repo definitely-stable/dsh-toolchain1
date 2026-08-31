@@ -1,0 +1,142 @@
+name: M2 H1 Execution
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_committed_attempts:
+        description: Maximum durable attempts to commit in this chunk
+        required: true
+        default: '24'
+        type: choice
+        options:
+          - '12'
+          - '24'
+          - '48'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-h1-execution-main
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    env:
+      H1_DATASET: ${{ runner.temp }}/m2-h1-private-dataset.json
+      H1_RUN_STORE: ${{ runner.temp }}/m2-h1-run-store
+      H1_STATE_ARCHIVE: ${{ runner.temp }}/h1-run-store.tar
+      H1_STATE_ENCRYPTED: ${{ runner.temp }}/h1-run-store.enc
+      H1_EXPECTED_MODEL: deepseek-v4-flash
+    steps:
+      - name: Require main ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo '::error::M2 H1 execution is allowed only from refs/heads/main'
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        with:
+          install: false
+
+      - name: Set up Node 24.19
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          package-manager-cache: false
+
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Restore encrypted H1 run state
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: ${{ runner.temp }}/h1-run-store.enc
+          key: m2-h1-dc12ccf9-${{ github.run_id }}
+          restore-keys: |
+            m2-h1-dc12ccf9-
+
+      - name: Materialize private H1 inputs
+        shell: bash
+        env:
+          H1_DATASET_SECRET: ${{ secrets.M2_H1_DATASET_GZIP_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "${H1_DATASET_SECRET:-}" ]]; then
+            echo '::error::Missing required secret M2_H1_DATASET_GZIP_BASE64'
+            exit 1
+          fi
+          printf '%s' "$H1_DATASET_SECRET" | base64 --decode | gzip --decompress > "$H1_DATASET"
+          echo 'c007472514fa6fd1daa06cffb94f4052062a03bdceba475773830e73a01e32e6  '"$H1_DATASET" | sha256sum --check --status
+          H1_STATE_KEY="$(printf '%s' "$H1_DATASET_SECRET" | sha256sum | cut -d' ' -f1)"
+          if [[ -f "$H1_STATE_ENCRYPTED" ]]; then
+            export H1_STATE_KEY
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:H1_STATE_KEY -in "$H1_STATE_ENCRYPTED" -out "$H1_STATE_ARCHIVE"
+            mkdir -p "$H1_RUN_STORE"
+            tar -xf "$H1_STATE_ARCHIVE" -C "$H1_RUN_STORE"
+            rm -f "$H1_STATE_ARCHIVE"
+          else
+            mkdir -p "$H1_RUN_STORE"
+          fi
+
+      - name: Preflight exact preregistered H1 binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm m2:h1:run -- \
+            --dataset "$H1_DATASET" \
+            --run-store "$H1_RUN_STORE"
+
+      - name: Execute bounded H1 chunk
+        id: execute
+        shell: bash
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${OPENCODE_API_KEY:-}" ]]; then
+            echo '::error::Missing required secret OPENCODE_API_KEY'
+            exit 1
+          fi
+          pnpm m2:h1:run -- \
+            --dataset "$H1_DATASET" \
+            --run-store "$H1_RUN_STORE" \
+            --execute \
+            --max-committed-attempts "${{ inputs.max_committed_attempts }}"
+
+      - name: Encrypt resumable H1 run state
+        if: always()
+        shell: bash
+        env:
+          H1_DATASET_SECRET: ${{ secrets.M2_H1_DATASET_GZIP_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -d "$H1_RUN_STORE" && -n "${H1_DATASET_SECRET:-}" ]]; then
+            tar -cf "$H1_STATE_ARCHIVE" -C "$H1_RUN_STORE" .
+            H1_STATE_KEY="$(printf '%s' "$H1_DATASET_SECRET" | sha256sum | cut -d' ' -f1)"
+            export H1_STATE_KEY
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:H1_STATE_KEY -in "$H1_STATE_ARCHIVE" -out "$H1_STATE_ENCRYPTED"
+            rm -f "$H1_STATE_ARCHIVE"
+          fi
+
+      - name: Save encrypted H1 run state
+        if: always()
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: ${{ runner.temp }}/h1-run-store.enc
+          key: m2-h1-dc12ccf9-${{ github.run_id }}
