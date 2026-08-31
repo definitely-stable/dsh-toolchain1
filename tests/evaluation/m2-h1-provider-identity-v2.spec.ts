@@ -12,20 +12,19 @@ function receipt() {
     baseUrl: 'https://opencode.ai/zen/go/v1',
     requestModel: 'deepseek-v4-flash',
     responseModel: 'deepseek-v4-flash',
-    systemFingerprint: 'fp_opencode_h1_fixture',
     thinking: 'enabled',
     reasoningEffort: 'high',
     functionToolCall: 'verified',
     reasoningContinuation: 'verified',
     tokenMeasurement: 'verified',
-    backendIdentityStrength: 'system-fingerprint',
+    backendIdentityStrength: 'response-model-only',
     inputTokens: 64,
     outputTokens: 17,
   }
 }
 
 describe('M2.3 H1 provider identity receipt v2', () => {
-  it('derives the complete readiness identity from one canonical strong receipt', async () => {
+  it('commits the exact OpenCode Go Flash managed-gateway boundary without inventing a backend fingerprint', async () => {
     const committed = await commitH1ProviderIdentityReceiptV2(receipt(), sha256)
 
     expect(committed.sha256).toMatch(/^[0-9a-f]{64}$/u)
@@ -37,13 +36,14 @@ describe('M2.3 H1 provider identity receipt v2', () => {
       adapterVersion: 'opencode-go-deepseek-chat-v1',
       thinking: 'enabled',
       reasoningEffort: 'high',
-      backendIdentityStrength: 'system-fingerprint',
-      backendFingerprint: 'fp_opencode_h1_fixture',
+      identityMode: 'managed-gateway',
       identityReceiptSha256: committed.sha256,
     })
+    expect(JSON.stringify(committed.identity)).not.toContain('backendFingerprint')
+    expect(JSON.stringify(committed.identity)).not.toContain('systemFingerprint')
   })
 
-  it('canonicalizes object-key order while keeping receipt evidence commitment-significant', async () => {
+  it('canonicalizes object-key order while keeping observable provider evidence commitment-significant', async () => {
     const original = receipt()
     const reordered = {
       outputTokens: original.outputTokens,
@@ -54,7 +54,6 @@ describe('M2.3 H1 provider identity receipt v2', () => {
       functionToolCall: original.functionToolCall,
       reasoningEffort: original.reasoningEffort,
       thinking: original.thinking,
-      systemFingerprint: original.systemFingerprint,
       responseModel: original.responseModel,
       requestModel: original.requestModel,
       baseUrl: original.baseUrl,
@@ -62,20 +61,26 @@ describe('M2.3 H1 provider identity receipt v2', () => {
       schema: original.schema,
     }
     const changedEvidence = { ...receipt(), inputTokens: 65 }
-    const changedBackend = { ...receipt(), systemFingerprint: 'fp_opencode_h1_other' }
 
     const first = await commitH1ProviderIdentityReceiptV2(original, sha256)
     expect((await commitH1ProviderIdentityReceiptV2(reordered, sha256)).sha256).toBe(first.sha256)
     expect((await commitH1ProviderIdentityReceiptV2(changedEvidence, sha256)).sha256).not.toBe(first.sha256)
-    expect((await commitH1ProviderIdentityReceiptV2(changedBackend, sha256)).identity.backendFingerprint)
-      .toBe('fp_opencode_h1_other')
   })
 
-  it('rejects weak backend identity and missing capability evidence', async () => {
-    const responseModelOnly = { ...receipt(), backendIdentityStrength: 'response-model-only' }
-    delete (responseModelOnly as Partial<ReturnType<typeof receipt>>).systemFingerprint
-    await expect(commitH1ProviderIdentityReceiptV2(responseModelOnly, sha256)).rejects.toThrow(/system|backend|identity/iu)
+  it('accepts an optional provider-reported system fingerprint only as committed probe evidence', async () => {
+    const withOptionalFingerprint = {
+      ...receipt(),
+      backendIdentityStrength: 'system-fingerprint',
+      systemFingerprint: 'fp_optional_provider_signal',
+    }
+    const committed = await commitH1ProviderIdentityReceiptV2(withOptionalFingerprint, sha256)
 
+    expect(committed.identity.identityMode).toBe('managed-gateway')
+    expect(JSON.stringify(committed.identity)).not.toContain('fp_optional_provider_signal')
+    expect(committed.sha256).not.toBe((await commitH1ProviderIdentityReceiptV2(receipt(), sha256)).sha256)
+  })
+
+  it('rejects missing capability evidence and inconsistent raw backend metadata', async () => {
     await expect(commitH1ProviderIdentityReceiptV2({
       ...receipt(),
       reasoningContinuation: 'not-observed',
@@ -85,10 +90,22 @@ describe('M2.3 H1 provider identity receipt v2', () => {
       ...receipt(),
       functionToolCall: 'not-observed',
     }, sha256)).rejects.toThrow(/tool/iu)
+
+    await expect(commitH1ProviderIdentityReceiptV2({
+      ...receipt(),
+      backendIdentityStrength: 'system-fingerprint',
+    }, sha256)).rejects.toThrow(/fingerprint|backend/iu)
+
+    await expect(commitH1ProviderIdentityReceiptV2({
+      ...receipt(),
+      systemFingerprint: 'fp_without_matching_strength',
+    }, sha256)).rejects.toThrow(/fingerprint|backend/iu)
   })
 
   it('rejects provider/model/config drift, unknown fields and invalid token evidence', async () => {
     await expect(commitH1ProviderIdentityReceiptV2({ ...receipt(), requestModel: 'other-model' }, sha256))
+      .rejects.toThrow(/model/iu)
+    await expect(commitH1ProviderIdentityReceiptV2({ ...receipt(), responseModel: 'other-model' }, sha256))
       .rejects.toThrow(/model/iu)
     await expect(commitH1ProviderIdentityReceiptV2({ ...receipt(), baseUrl: 'https://example.com/v1' }, sha256))
       .rejects.toThrow(/baseUrl|OpenCode/iu)

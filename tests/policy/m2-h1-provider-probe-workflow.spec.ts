@@ -10,12 +10,18 @@ async function workflowSource(): Promise<string> {
 }
 
 describe('M2.3 H1 provider identity probe workflow', () => {
-  it('is a narrow provider-only identity probe with no H1 execution surface', async () => {
+  it('is a narrow provider-only Flash probe with no H1 execution surface', async () => {
     const source = await workflowSource()
 
     expect(source).toContain('probe-m2-opencode-go.mjs')
     expect(source).toContain('OPENCODE_API_KEY')
-    expect(source).toContain('m2-h1-provider-candidate-')
+    expect(source).toContain('--model deepseek-v4-flash')
+    expect(source).toContain('m2-h1-provider-identity.json')
+    expect(source).not.toContain('matrix:')
+    expect(source).not.toContain('deepseek-v4-pro')
+    expect(source).not.toContain('glm-5.3')
+    expect(source).not.toContain('kimi-k3')
+    expect(source).not.toContain('mimo-v2.5')
     expect(source).not.toContain('run-m2-p0-opencode-go')
     expect(source).not.toContain('prepare-m2-h1-preregistration')
     expect(source).not.toContain('m2:h1:preregister')
@@ -24,7 +30,7 @@ describe('M2.3 H1 provider identity probe workflow', () => {
     expect(source).not.toContain('dataset')
   })
 
-  it('runs once when introduced on main and remains manually repeatable without broad push triggers', async () => {
+  it('runs once when introduced on main and remains manually repeatable with read-only repository permissions', async () => {
     const source = await workflowSource()
 
     expect(source).toContain('workflow_dispatch:')
@@ -34,48 +40,41 @@ describe('M2.3 H1 provider identity probe workflow', () => {
     expect(source).toContain('permissions:')
     expect(source).toContain('contents: read')
     expect(source).toContain('timeout-minutes: 5')
-  })
-
-  it('discovers strong identity only across current OpenCode Go chat-completions candidates', async () => {
-    const source = await workflowSource()
-    const candidates = [
-      'deepseek-v4-pro',
-      'deepseek-v4-flash',
-      'glm-5.3-flash',
-      'glm-5.3',
-      'glm-5.2',
-      'glm-5.1',
-      'kimi-k3',
-      'kimi-k2.7-code',
-      'kimi-k2.6',
-      'longcat-2.0',
-      'mimo-v2.5',
-      'mimo-v2.5-pro',
-      'hy4-preview',
-      'hy3',
-    ]
-
-    expect(source).toContain('fail-fast: false')
-    expect(source).toContain('continue-on-error: true')
-    expect(source).toContain('--model "${{ matrix.model }}"')
-    for (const candidate of candidates) expect(source).toContain(`- ${candidate}`)
-    expect(source).not.toContain('- gpt-5.6-luna')
-    expect(source).not.toContain('- grok-4.6')
-    expect(source).not.toContain('- qwen3.8-max')
-    expect(source).not.toContain('- deepseek-v4-flash-vision-exp')
-  })
-
-  it('publishes successful candidate receipts without making incompatible candidates fatal', async () => {
-    const source = await workflowSource()
-
-    expect(source).toContain('actions/upload-artifact@')
-    expect(source).toContain('m2-h1-provider-candidate-${{ matrix.model }}')
-    expect(source).toContain('candidate-${{ matrix.model }}.json')
-    expect(source).toContain("if: steps.probe.outcome == 'success'")
-    expect(source).toContain('if-no-files-found: error')
-    expect(source).toContain('retention-days: 1')
     expect(source).not.toMatch(/contents:\s*write/iu)
     expect(source).not.toMatch(/actions:\s*write/iu)
     expect(source).not.toMatch(/pull-requests:\s*write/iu)
+  })
+
+  it('requires the exact managed-gateway capability receipt without requiring a hidden backend fingerprint', async () => {
+    const source = await workflowSource()
+
+    for (const fragment of [
+      "provider !== 'opencode-go'",
+      "baseUrl !== 'https://opencode.ai/zen/go/v1'",
+      "requestModel !== 'deepseek-v4-flash'",
+      "responseModel !== 'deepseek-v4-flash'",
+      "thinking !== 'enabled'",
+      "reasoningEffort !== 'high'",
+      "functionToolCall !== 'verified'",
+      "reasoningContinuation !== 'verified'",
+      "tokenMeasurement !== 'verified'",
+    ]) expect(source).toContain(fragment)
+
+    expect(source).toContain('Number.isInteger(r.inputTokens)')
+    expect(source).toContain('Number.isInteger(r.outputTokens)')
+    expect(source).not.toContain('Require strong backend identity')
+    expect(source).not.toContain("backendIdentityStrength !== 'system-fingerprint'")
+    expect(source).not.toContain('systemFingerprint.length')
+  })
+
+  it('publishes exactly one short-lived provider receipt artifact', async () => {
+    const source = await workflowSource()
+
+    expect(source).toContain('actions/upload-artifact@')
+    expect(source).toContain('name: m2-h1-provider-identity')
+    expect(source).toContain('path: .artifacts/m2-h1-provider-identity.json')
+    expect(source).toContain('if-no-files-found: error')
+    expect(source).toContain('retention-days: 1')
+    expect(source).not.toContain('continue-on-error: true')
   })
 })

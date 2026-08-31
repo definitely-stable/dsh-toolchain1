@@ -124,8 +124,7 @@ export interface H1ProviderIdentityV2 {
   readonly adapterVersion: string
   readonly thinking: 'enabled' | 'disabled'
   readonly reasoningEffort: 'low' | 'high' | 'max'
-  readonly backendIdentityStrength: 'response-model-only' | 'system-fingerprint' | 'immutable-revision'
-  readonly backendFingerprint: string | null
+  readonly identityMode: 'managed-gateway'
   readonly identityReceiptSha256: string | null
 }
 
@@ -216,28 +215,31 @@ function validateThreshold(
 function validProviderIdentity(value: unknown): boolean {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
   const record = value as Record<string, unknown>
-  const strings = ['provider', 'requestModel', 'responseModel', 'adapterVersion']
-  if (strings.some(key => typeof record[key] !== 'string' || (record[key] as string).trim().length === 0)) {
+  const keys = [
+    'provider',
+    'baseUrl',
+    'requestModel',
+    'responseModel',
+    'adapterVersion',
+    'thinking',
+    'reasoningEffort',
+    'identityMode',
+    'identityReceiptSha256',
+  ] as const
+  if (!equalCanonical(Object.keys(record).toSorted(), [...keys].toSorted())) return false
+  if (
+    record.provider !== 'opencode-go'
+    || record.baseUrl !== 'https://opencode.ai/zen/go/v1'
+    || record.requestModel !== 'deepseek-v4-flash'
+    || record.responseModel !== 'deepseek-v4-flash'
+    || record.adapterVersion !== 'opencode-go-deepseek-chat-v1'
+    || record.thinking !== 'enabled'
+    || record.reasoningEffort !== 'high'
+    || record.identityMode !== 'managed-gateway'
+  ) {
     return false
   }
-  if (record.thinking !== 'enabled' && record.thinking !== 'disabled') return false
-  if (record.reasoningEffort !== 'low' && record.reasoningEffort !== 'high' && record.reasoningEffort !== 'max') {
-    return false
-  }
-  if (record.backendIdentityStrength !== 'system-fingerprint' && record.backendIdentityStrength !== 'immutable-revision') {
-    return false
-  }
-  if (typeof record.backendFingerprint !== 'string' || record.backendFingerprint.trim().length === 0) return false
   if (typeof record.identityReceiptSha256 !== 'string' || !SHA256_PATTERN.test(record.identityReceiptSha256)) {
-    return false
-  }
-
-  if (typeof record.baseUrl !== 'string') return false
-  try {
-    const url = new URL(record.baseUrl)
-    if (url.protocol !== 'https:') return false
-    if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') return false
-  } catch {
     return false
   }
   return true

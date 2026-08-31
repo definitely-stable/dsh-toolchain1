@@ -16,27 +16,9 @@ concurrency:
 
 jobs:
   probe:
-    name: provider identity / opencode-go / ${{ matrix.model }}
+    name: provider identity / opencode-go / deepseek-v4-flash
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        model:
-          - deepseek-v4-pro
-          - deepseek-v4-flash
-          - glm-5.3-flash
-          - glm-5.3
-          - glm-5.2
-          - glm-5.1
-          - kimi-k3
-          - kimi-k2.7-code
-          - kimi-k2.6
-          - longcat-2.0
-          - mimo-v2.5
-          - mimo-v2.5-pro
-          - hy4-preview
-          - hy3
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -49,25 +31,22 @@ jobs:
           node-version: '24.19.0'
           package-manager-cache: false
 
-      - name: Probe provider identity only
-        id: probe
-        continue-on-error: true
+      - name: Probe managed OpenCode Go Flash boundary only
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         run: >-
           node scripts/probe-m2-opencode-go.mjs
-          --model "${{ matrix.model }}"
-          --output ".artifacts/candidate-${{ matrix.model }}.json"
+          --model deepseek-v4-flash
+          --output .artifacts/m2-h1-provider-identity.json
 
-      - name: Upload successful provider candidate receipt
-        if: steps.probe.outcome == 'success'
+      - name: Validate exact managed-gateway capability receipt
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const r=JSON.parse(fs.readFileSync('.artifacts/m2-h1-provider-identity.json','utf8')); const bad = r.provider !== 'opencode-go' || r.baseUrl !== 'https://opencode.ai/zen/go/v1' || r.requestModel !== 'deepseek-v4-flash' || r.responseModel !== 'deepseek-v4-flash' || r.thinking !== 'enabled' || r.reasoningEffort !== 'high' || r.functionToolCall !== 'verified' || r.reasoningContinuation !== 'verified' || r.tokenMeasurement !== 'verified' || !Number.isInteger(r.inputTokens) || r.inputTokens < 0 || !Number.isInteger(r.outputTokens) || r.outputTokens < 0; if (bad) { console.error('H1 requires the exact OpenCode Go / deepseek-v4-flash managed-gateway capability receipt'); process.exit(1) } console.log('H1 managed-gateway provider receipt is preregistration-compatible')"
+
+      - name: Upload provider identity receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: m2-h1-provider-candidate-${{ matrix.model }}
-          path: .artifacts/candidate-${{ matrix.model }}.json
+          name: m2-h1-provider-identity
+          path: .artifacts/m2-h1-provider-identity.json
           if-no-files-found: error
           retention-days: 1
-
-      - name: Report candidate probe outcome
-        if: always()
-        run: echo "candidate=${{ matrix.model }} outcome=${{ steps.probe.outcome }}"

@@ -155,7 +155,7 @@ describe('M2.3 H1 exact execution definition v2', () => {
     expect(harness.networkPolicy).toBe('provider-only')
   })
 
-  it('freezes the calibrated resource/retry envelope and derives ledger/provider bindings without caller overrides', async () => {
+  it('freezes the calibrated resource/retry envelope and binds execution to the managed-gateway receipt and response model', async () => {
     const [finalized, workspace] = await Promise.all([
       createSyntheticH1Finalization(),
       readSyntheticH1Workspace(),
@@ -182,7 +182,6 @@ describe('M2.3 H1 exact execution definition v2', () => {
       datasetCommitmentSha256: finalized.commitment.hiddenDataset.sha256,
       providerIdentityReceiptSha256: provider.identityReceiptSha256,
       expectedResponseModel: provider.responseModel,
-      expectedBackendFingerprint: provider.backendFingerprint,
     })
 
     const definition = record(frozen.definition)
@@ -195,15 +194,19 @@ describe('M2.3 H1 exact execution definition v2', () => {
     })
     const executorRef = record(record(definition.execution).executorIdentity)
     const executor = JSON.parse(String(executorRef.inline)) as Record<string, unknown>
-    expect(executor).toMatchObject({
+    expect(executor).toEqual({
       provider: provider.provider,
       baseUrl: provider.baseUrl,
       requestModel: provider.requestModel,
       expectedResponseModel: provider.responseModel,
       adapterVersion: provider.adapterVersion,
-      expectedSystemFingerprint: provider.backendFingerprint,
+      thinking: provider.thinking,
+      reasoningEffort: provider.reasoningEffort,
+      identityMode: 'managed-gateway',
       providerIdentityReceiptSha256: provider.identityReceiptSha256,
     })
+    expect(JSON.stringify(executor)).not.toContain('SystemFingerprint')
+    expect(JSON.stringify(frozen.ledgerBinding)).not.toContain('BackendFingerprint')
   })
 
   it('fails closed when the exact ordinary workspace drifts', async () => {
@@ -246,11 +249,11 @@ describe('M2.3 H1 exact execution definition v2', () => {
       .rejects.toThrow(/readiness|finalization|blocker|consistent/iu)
   })
 
-  it('changes the definition/binding identity when the frozen provider backend identity changes', async () => {
+  it('changes definition and ledger receipt binding when committed provider probe evidence changes', async () => {
     const workspace = await readSyntheticH1Workspace()
     const [leftFinalized, rightFinalized] = await Promise.all([
-      createSyntheticH1Finalization('fp_opencode_h1_execution_fixture_a'),
-      createSyntheticH1Finalization('fp_opencode_h1_execution_fixture_b'),
+      createSyntheticH1Finalization(64),
+      createSyntheticH1Finalization(65),
     ])
     const [left, right] = await Promise.all([
       createFrozenH1ExecutionDefinitionV2(leftFinalized, workspace, sha256),
@@ -258,7 +261,8 @@ describe('M2.3 H1 exact execution definition v2', () => {
     ])
 
     expect(left.definitionSha256).not.toBe(right.definitionSha256)
-    expect(left.ledgerBinding.expectedBackendFingerprint).not.toBe(right.ledgerBinding.expectedBackendFingerprint)
     expect(left.ledgerBinding.providerIdentityReceiptSha256).not.toBe(right.ledgerBinding.providerIdentityReceiptSha256)
+    expect(left.ledgerBinding.expectedResponseModel).toBe('deepseek-v4-flash')
+    expect(right.ledgerBinding.expectedResponseModel).toBe('deepseek-v4-flash')
   })
 })

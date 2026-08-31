@@ -33,7 +33,6 @@ const binding = Object.freeze<H1LedgerBindingV2>({
   datasetCommitmentSha256: '2'.repeat(64),
   providerIdentityReceiptSha256: '3'.repeat(64),
   expectedResponseModel: 'deepseek-v4-flash',
-  expectedBackendFingerprint: 'fp_h1_store_fixture',
 })
 
 let schedule: readonly AgentScheduleEntry[]
@@ -83,7 +82,6 @@ async function commitNextModelOutcome(store: H1RunStoreV2, invocationId: string,
     outcome: 'model-outcome',
     evidenceSha256: evidenceSha(evidence),
     responseModel: binding.expectedResponseModel,
-    systemFingerprint: binding.expectedBackendFingerprint,
   })
 }
 
@@ -99,10 +97,12 @@ describe('M2.3 H1 crash-safe filesystem run store v2', () => {
       orphanedTempFiles: [],
       resume: { scheduleIndex: 0, attempt: 1 },
     })
-    expect(JSON.parse(await readFile(join(root, 'ledger.json'), 'utf8'))).toMatchObject({
+    const persisted = JSON.parse(await readFile(join(root, 'ledger.json'), 'utf8'))
+    expect(persisted).toMatchObject({
       header: { schema: 'dsh-toolchain-m2-h1-run-ledger-v2', scheduleLength: 864 },
       entries: [],
     })
+    expect(JSON.stringify(persisted)).not.toContain('BackendFingerprint')
 
     await commitNextModelOutcome(store, 'invocation-001', 1)
     await closeTracked(store)
@@ -124,11 +124,14 @@ describe('M2.3 H1 crash-safe filesystem run store v2', () => {
 
     expect(pending).toMatchObject({
       schema: 'dsh-toolchain-m2-h1-pending-attempt-v2',
+      providerIdentityReceiptSha256: binding.providerIdentityReceiptSha256,
+      expectedResponseModel: binding.expectedResponseModel,
       scheduleIndex: 0,
       attempt: 1,
       preEntryCount: 0,
       preTailEntrySha256: null,
     })
+    expect(JSON.stringify(pending)).not.toContain('BackendFingerprint')
     expect(pending.intentSha256).toMatch(/^[0-9a-f]{64}$/u)
     await closeTracked(store)
 
@@ -188,7 +191,6 @@ describe('M2.3 H1 crash-safe filesystem run store v2', () => {
       outcome: 'model-outcome',
       evidenceSha256: evidenceSha(30),
       responseModel: binding.expectedResponseModel,
-      systemFingerprint: binding.expectedBackendFingerprint,
     })
     await writeFile(join(root, 'pending-attempt.json'), pendingBytes, 'utf8')
     await closeTracked(store)

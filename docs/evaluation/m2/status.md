@@ -41,9 +41,10 @@ Upstream `dsh-v0.1.2-alpha.1` / `profile.patchReload` compatibility remains a se
 | Single-attempt coordinator + resumable schedule | **IMPLEMENTED** | Pending intent, terminal evidence, ledger commit and recovery are ordered and tested. |
 | Frozen H1 execution-definition machinery | **IMPLEMENTED** | Exact execution definition and derived attempt inputs are content-addressed/fail-closed. |
 | Public preregistration receipt constructor/validator | **IMPLEMENTED** | Synthetic fixtures prove deterministic construction/validation only. |
-| Real private 96-task H1 dataset | **NOT FINALIZED** | Must be authored and independently reviewed outside public Git. |
-| Strong real provider/backend identity receipt | **NOT FINALIZED** | Provider-only stability probes must use no H1 task or prompt. |
-| Real finalized H1 commitment/execution definition | **NOT FINALIZED** | Must be produced privately from the reviewed dataset and frozen provider identity. |
+| H1 managed-gateway provider contract | **IMPLEMENTED** | H1 is fixed to OpenCode Go / `deepseek-v4-flash`; exact endpoint/model/settings/capability receipt is committed without claiming an unobservable backend checkpoint. |
+| Real private 96-task H1 dataset | **NOT FINALIZED** | Must be independently reviewed outside public Git before publication. |
+| Real managed-gateway provider receipt | **NOT FINALIZED** | One Flash-only provider probe must be selected and retained; it contains no H1 task or prompt. |
+| Real finalized H1 commitment/execution definition | **NOT FINALIZED** | Must be produced privately from the reviewed dataset and exact provider receipt. |
 | Real public H1 preregistration receipt | **NOT PUBLISHED** | No real receipt currently exists in the repository. |
 | H1 provider execution | **PROHIBITED** | No H1 task may be sent to the provider before the publication barrier below is satisfied. |
 | M2 exit | **PENDING** | Requires one valid controlled H1 outcome under the frozen rule. |
@@ -73,20 +74,21 @@ Therefore embeddings, semantic reranking, vector databases, benchmark-specific q
 
 The implementation required to construct, freeze, schedule, persist, recover and validate H1 exists. That is **not equivalent to a real preregistration**.
 
+H1 is intentionally scoped to the observable managed service, not an unverifiable hidden checkpoint: OpenCode Go at `https://opencode.ai/zen/go/v1`, request/response model `deepseek-v4-flash`, thinking enabled, reasoning effort high, verified tool calling, verified reasoning continuation and provider token accounting. The provider receipt is content-addressed; every model outcome must still match response model `deepseek-v4-flash`.
+
 No H1 task may be sent to the provider until all of the following occur in order:
 
-1. author the real 96-task H1 dataset privately under [`h1-dataset-construction-policy-v2.md`](h1-dataset-construction-policy-v2.md), with no H1 provider calls;
-2. independently review the private dataset and validate its construction-policy invariants;
-3. run provider-only stability probes that contain no H1 task/prompt and freeze a strong provider/backend identity receipt;
-4. privately execute the existing finalization path and require the H1 commitment to become `COMMITTED`, readiness to become `READY`, and `runAllowed=true`;
-5. privately create the frozen H1 execution definition against the exact ordinary workspace and verify exactly 96 model tasks plus 864 balanced schedule entries at concurrency 1;
-6. generate and independently validate the real `dsh-toolchain-m2-h1-preregistration-receipt-v2`;
-7. commit that exact real receipt and `receiptSha256` to protected `main` without replacing the pristine BLOCKED source commitment template;
-8. bind the publication commit/receipt SHA to an immutable repository ref/tag;
-9. only then initialize the canonical durable H1 run store and execute the exact frozen schedule;
-10. after terminal resolution, publish the exact hidden dataset bytes and verify that they reproduce the precommitted dataset/model-task projection hashes.
+1. finish and independently review the real 96-task H1 dataset privately under [`h1-dataset-construction-policy-v2.md`](h1-dataset-construction-policy-v2.md), with no H1 provider calls;
+2. run the single provider-only `deepseek-v4-flash` capability probe, containing no H1 task/prompt, and retain the exact receipt;
+3. privately execute the existing finalization path and require the H1 commitment to become `COMMITTED`, readiness to become `READY`, and `runAllowed=true`;
+4. privately create the frozen H1 execution definition against the exact ordinary workspace and verify exactly 96 model tasks plus 864 balanced schedule entries at concurrency 1;
+5. generate and independently validate the real `dsh-toolchain-m2-h1-preregistration-receipt-v2`;
+6. commit that exact real receipt and `receiptSha256` to protected `main` without replacing the pristine BLOCKED source commitment template;
+7. bind the publication commit/receipt SHA to an immutable repository ref/tag;
+8. only then initialize the canonical durable H1 run store and execute the exact frozen schedule;
+9. after terminal resolution, publish the exact hidden dataset bytes and verify that they reproduce the precommitted dataset/model-task projection hashes.
 
-Until steps 1–8 complete, **H1 provider execution remains prohibited**.
+Until steps 1–7 complete, **H1 provider execution remains prohibited**.
 
 ## M2 exit routing
 
@@ -117,10 +119,11 @@ Preregistered validity criteria prevent interpretation, including incomplete sch
 - no retrieval/ranking tuning before H1 justifies a separate slice;
 - no modification of historical P0 outputs, v1 oracle artifacts, or pristine H1 commitment templates;
 - no synthetic real H1 dataset, provider receipt, preregistration receipt or result;
+- no hidden-checkpoint inference or backend-fingerprint requirement for the managed OpenCode Go route;
 - no H1 provider execution before the public barrier;
 - no M3 plugin validation or M4 runtime verification implementation;
 - no mixing Issue #33 `profile.patchReload` lifecycle semantics into the frozen rc.2 experiment.
 
 ## Next permitted work
 
-The next substantive M2.3 work is **operational H1 finalization**, not another evaluation abstraction: privately finish/review the 96-task dataset, freeze the real provider/backend identity without exposing H1 prompts, finalize the real commitment/execution definition, and publish the real preregistration receipt. Only that publication unlocks the single controlled H1 execution.
+The next substantive M2.3 work is **operational H1 finalization**: finish/review the private 96-task dataset, retain the one real Flash-only provider capability receipt, finalize the real commitment/execution definition, and publish the real preregistration receipt. Only that publication unlocks the single controlled H1 execution.

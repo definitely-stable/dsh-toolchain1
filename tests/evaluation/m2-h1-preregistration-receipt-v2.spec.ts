@@ -15,15 +15,14 @@ import {
 } from './m2-h1-synthetic-fixture-v2.js'
 
 const sha256 = createNodeSha256Port()
-const SYSTEM_FINGERPRINT = 'fp_h1_preregistration_fixture'
 const blockedCommitmentUrl = new URL(
   '../../docs/evaluation/m2/agent-holdout-h1-v2.commitment.json',
   import.meta.url,
 )
 
-async function fixture(systemFingerprint = SYSTEM_FINGERPRINT) {
+async function fixture(inputTokens = 64) {
   const [finalization, workspace] = await Promise.all([
-    createSyntheticH1Finalization(systemFingerprint),
+    createSyntheticH1Finalization(inputTokens),
     readSyntheticH1Workspace(),
   ])
   const frozen = await createFrozenH1ExecutionDefinitionV2(finalization, workspace, sha256)
@@ -76,8 +75,7 @@ describe('M2.3 H1 public preregistration receipt v2', () => {
         adapterVersion: 'opencode-go-deepseek-chat-v1',
         thinking: 'enabled',
         reasoningEffort: 'high',
-        backendIdentityStrength: 'system-fingerprint',
-        backendFingerprint: SYSTEM_FINGERPRINT,
+        identityMode: 'managed-gateway',
         identityReceiptSha256: finalization.commitment.provider?.identityReceiptSha256,
       },
       execution: {
@@ -94,6 +92,7 @@ describe('M2.3 H1 public preregistration receipt v2', () => {
         outcomeMaterial: 'absent-pre-run',
       },
     })
+    expect(JSON.stringify(left.provider)).not.toContain('Fingerprint')
     expect(left.receiptSha256).toMatch(/^[0-9a-f]{64}$/u)
     await expect(validateH1PreregistrationReceiptV2(left, sha256)).resolves.toEqual(left)
   })
@@ -118,6 +117,8 @@ describe('M2.3 H1 public preregistration receipt v2', () => {
       'apiKey',
       'authorization',
       'outcomes',
+      'backendFingerprint',
+      'expectedBackendFingerprint',
     ]) {
       expect(keys.has(forbidden)).toBe(false)
     }
@@ -141,7 +142,7 @@ describe('M2.3 H1 public preregistration receipt v2', () => {
       .rejects.toThrow(/task|projection|commitment|hash/iu)
   })
 
-  it('fails closed on definition, schedule, ContentRef or ledger-binding drift before a receipt is emitted', async () => {
+  it('fails closed on definition, schedule, ContentRef or provider-receipt ledger-binding drift before a receipt is emitted', async () => {
     const { finalization, frozen } = await fixture()
 
     const hashDrift = structuredClone(frozen)
@@ -162,9 +163,9 @@ describe('M2.3 H1 public preregistration receipt v2', () => {
       .rejects.toThrow(/ContentRef|runner|hash|definition/iu)
 
     const ledgerDrift = structuredClone(frozen)
-    ;(ledgerDrift.ledgerBinding as unknown as { expectedBackendFingerprint: string }).expectedBackendFingerprint = 'fp_drifted_after_freeze'
+    ;(ledgerDrift.ledgerBinding as { providerIdentityReceiptSha256: string }).providerIdentityReceiptSha256 = '0'.repeat(64)
     await expect(createH1PreregistrationReceiptV2(finalization, ledgerDrift, sha256))
-      .rejects.toThrow(/ledger|provider|fingerprint|binding/iu)
+      .rejects.toThrow(/ledger|provider|receipt|binding/iu)
   })
 
   it('independently validates exact receipt shape, privacy invariants and the external receipt hash', async () => {
@@ -186,14 +187,15 @@ describe('M2.3 H1 public preregistration receipt v2', () => {
       .rejects.toThrow(/prompt|private|hidden|unknown/iu)
   })
 
-  it('changes receipt identity when the frozen provider backend identity changes', async () => {
-    const leftFixture = await fixture('fp_h1_preregistration_left')
-    const rightFixture = await fixture('fp_h1_preregistration_right')
+  it('changes receipt identity when committed provider probe evidence changes without changing the Flash model boundary', async () => {
+    const leftFixture = await fixture(64)
+    const rightFixture = await fixture(65)
     const left = await createH1PreregistrationReceiptV2(leftFixture.finalization, leftFixture.frozen, sha256)
     const right = await createH1PreregistrationReceiptV2(rightFixture.finalization, rightFixture.frozen, sha256)
 
-    expect(left.provider.backendFingerprint).not.toBe(right.provider.backendFingerprint)
     expect(left.provider.identityReceiptSha256).not.toBe(right.provider.identityReceiptSha256)
+    expect(left.provider.responseModel).toBe('deepseek-v4-flash')
+    expect(right.provider.responseModel).toBe('deepseek-v4-flash')
     expect(left.execution.definitionSha256).not.toBe(right.execution.definitionSha256)
     expect(left.receiptSha256).not.toBe(right.receiptSha256)
   })

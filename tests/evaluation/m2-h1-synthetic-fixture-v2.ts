@@ -58,21 +58,20 @@ export function syntheticH1HiddenDataset(taskCount = 96) {
   }
 }
 
-export function syntheticH1ProviderReceipt(systemFingerprint = 'fp_opencode_h1_execution_fixture') {
+export function syntheticH1ProviderReceipt(inputTokens = 64) {
   return {
     schema: 'dsh-toolchain-m2-opencode-go-probe-v1',
     provider: 'opencode-go',
     baseUrl: 'https://opencode.ai/zen/go/v1',
     requestModel: 'deepseek-v4-flash',
     responseModel: 'deepseek-v4-flash',
-    systemFingerprint,
     thinking: 'enabled',
     reasoningEffort: 'high',
     functionToolCall: 'verified',
     reasoningContinuation: 'verified',
     tokenMeasurement: 'verified',
-    backendIdentityStrength: 'system-fingerprint',
-    inputTokens: 64,
+    backendIdentityStrength: 'response-model-only',
+    inputTokens,
     outputTokens: 17,
   }
 }
@@ -81,14 +80,12 @@ export async function readSyntheticH1Workspace(): Promise<OrdinaryWorkspace> {
   return JSON.parse(await readFile(workspaceUrl, 'utf8')) as OrdinaryWorkspace
 }
 
-export async function createSyntheticH1Finalization(
-  systemFingerprint = 'fp_opencode_h1_execution_fixture',
-): Promise<H1FinalizationResultV2> {
+export async function createSyntheticH1Finalization(inputTokens = 64): Promise<H1FinalizationResultV2> {
   const source = JSON.parse(await readFile(commitmentUrl, 'utf8')) as unknown
   return finalizeH1CommitmentV2(
     source,
     syntheticH1HiddenDataset(),
-    syntheticH1ProviderReceipt(systemFingerprint),
+    syntheticH1ProviderReceipt(inputTokens),
     createNodeSha256Port(),
   )
 }

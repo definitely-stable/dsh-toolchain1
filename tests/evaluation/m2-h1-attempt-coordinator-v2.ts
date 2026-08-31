@@ -19,9 +19,9 @@ import {
   validateTraceReceipt,
   type ContentRef,
   type IsolationReceipt,
+  type ResourceReceipt,
   type RunControl,
   type TraceReceipt,
-  type ResourceReceipt,
 } from './m2-agent-execution-evidence.js'
 import {
   executeProcessAttemptWithEvidence,
@@ -239,7 +239,6 @@ async function assertStoreBindingBeforeBegin(
     ['datasetCommitmentSha256', binding.datasetCommitmentSha256, 'dataset commitment'],
     ['providerIdentityReceiptSha256', binding.providerIdentityReceiptSha256, 'provider identity receipt'],
     ['expectedResponseModel', binding.expectedResponseModel, 'response model'],
-    ['expectedBackendFingerprint', binding.expectedBackendFingerprint, 'backend fingerprint'],
   ] as const
   for (const [field, expected, label] of fields) {
     if (header[field] !== expected) throw new Error(`H1 coordinator ${label} binding does not match the store ledger`)
@@ -290,7 +289,6 @@ function assertPendingBinding(
     || pending.datasetCommitmentSha256 !== binding.datasetCommitmentSha256
     || pending.providerIdentityReceiptSha256 !== binding.providerIdentityReceiptSha256
     || pending.expectedResponseModel !== binding.expectedResponseModel
-    || pending.expectedBackendFingerprint !== binding.expectedBackendFingerprint
   ) {
     throw new Error('H1 durable attempt pending intent binding drifted from the frozen binding')
   }
@@ -448,15 +446,8 @@ async function validateTerminalResult(
       sha256,
     )
     const responseModel = requireNonEmptyString(providerMetadata.responseModel, 'H1 provider response model')
-    const systemFingerprint = requireNonEmptyString(
-      providerMetadata.systemFingerprint,
-      'H1 provider backend fingerprint',
-    )
     if (responseModel !== binding.expectedResponseModel) {
       throw new Error('H1 provider response model drifted from the frozen binding')
-    }
-    if (systemFingerprint !== binding.expectedBackendFingerprint) {
-      throw new Error('H1 provider backend fingerprint drifted from the frozen binding')
     }
     if (!Array.isArray(attempt.parsedApiClaims)) throw new Error('H1 model attempt parsedApiClaims must be an array')
     if (attempt.taskSuccess !== 'SUCCESS' && attempt.taskSuccess !== 'FAILURE' && attempt.taskSuccess !== 'UNKNOWN') {
@@ -471,7 +462,6 @@ async function validateTerminalResult(
       outcome: 'model-outcome',
       evidenceSha256: '',
       responseModel,
-      systemFingerprint,
     }
   } else {
     if (

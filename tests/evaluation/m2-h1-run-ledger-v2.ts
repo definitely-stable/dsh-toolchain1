@@ -20,7 +20,6 @@ const HEADER_KEYS = Object.freeze([
   'datasetCommitmentSha256',
   'providerIdentityReceiptSha256',
   'expectedResponseModel',
-  'expectedBackendFingerprint',
   'scheduleSha256',
   'scheduleLength',
 ])
@@ -47,7 +46,6 @@ const MODEL_ENTRY_KEYS = Object.freeze([
   'outcome',
   'evidenceSha256',
   'responseModel',
-  'systemFingerprint',
   'previousEntrySha256',
   'entrySha256',
 ])
@@ -57,7 +55,6 @@ export interface H1LedgerBindingV2 {
   readonly datasetCommitmentSha256: string
   readonly providerIdentityReceiptSha256: string
   readonly expectedResponseModel: string
-  readonly expectedBackendFingerprint: string
 }
 
 export interface H1RunLedgerHeaderV2 extends H1LedgerBindingV2 {
@@ -77,7 +74,6 @@ export interface H1RunLedgerEntryV2 {
   readonly reason?: string
   readonly evidenceSha256: string
   readonly responseModel?: string
-  readonly systemFingerprint?: string
   readonly previousEntrySha256: string | null
   readonly entrySha256: string
 }
@@ -122,7 +118,6 @@ export type H1RunLedgerAttemptInputV2 =
       readonly outcome: 'model-outcome'
       readonly evidenceSha256: string
       readonly responseModel: string
-      readonly systemFingerprint: string
     }
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -159,7 +154,6 @@ function validateBinding(binding: H1LedgerBindingV2): void {
   requireSha256(binding.datasetCommitmentSha256, 'H1 ledger dataset commitment binding')
   requireSha256(binding.providerIdentityReceiptSha256, 'H1 ledger provider identity receipt binding')
   requireNonEmptyString(binding.expectedResponseModel, 'H1 ledger expected response model')
-  requireNonEmptyString(binding.expectedBackendFingerprint, 'H1 ledger expected backend fingerprint')
 }
 
 function validateTaskIds(taskIds: readonly string[]): void {
@@ -191,7 +185,6 @@ function bindingFieldsMatch(header: Record<string, unknown>, binding: H1LedgerBi
     ['datasetCommitmentSha256', 'dataset commitment'],
     ['providerIdentityReceiptSha256', 'provider identity receipt'],
     ['expectedResponseModel', 'response model'],
-    ['expectedBackendFingerprint', 'backend fingerprint'],
   ] as const
   for (const [field, label] of fields) {
     if (header[field] !== binding[field]) {
@@ -214,7 +207,6 @@ function entryHashMaterial(entry: Omit<H1RunLedgerEntryV2, 'entrySha256'>): Reco
   }
   if (entry.reason !== undefined) material.reason = entry.reason
   if (entry.responseModel !== undefined) material.responseModel = entry.responseModel
-  if (entry.systemFingerprint !== undefined) material.systemFingerprint = entry.systemFingerprint
   return material
 }
 
@@ -357,17 +349,10 @@ export async function validateH1RunLedgerV2(
     let normalized: Omit<H1RunLedgerEntryV2, 'entrySha256'>
     if (record.outcome === 'model-outcome') {
       const responseModel = requireNonEmptyString(record.responseModel, `H1 ledger entry[${index}] response model`)
-      const systemFingerprint = requireNonEmptyString(
-        record.systemFingerprint,
-        `H1 ledger entry[${index}] system fingerprint`,
-      )
       if (responseModel !== binding.expectedResponseModel) {
         throw new Error(`H1 ledger provider response model drifted at sequence ${index + 1}`)
       }
-      if (systemFingerprint !== binding.expectedBackendFingerprint) {
-        throw new Error(`H1 ledger provider backend fingerprint drifted at sequence ${index + 1}`)
-      }
-      normalized = { ...base, responseModel, systemFingerprint }
+      normalized = { ...base, responseModel }
     } else {
       const reason = requireNonEmptyString(record.reason, `H1 ledger entry[${index}] infrastructure reason`)
       if (!retryPolicy.retryableReasons.includes(reason)) {
@@ -441,9 +426,6 @@ export async function appendH1RunLedgerAttemptV2(
     if (attempt.responseModel !== binding.expectedResponseModel) {
       throw new Error('H1 ledger provider response model drifted before append')
     }
-    if (attempt.systemFingerprint !== binding.expectedBackendFingerprint) {
-      throw new Error('H1 ledger provider backend fingerprint drifted before append')
-    }
   } else {
     requireNonEmptyString(attempt.reason, 'H1 ledger appended infrastructure reason')
     if (!retryPolicy.retryableReasons.includes(attempt.reason)) {
@@ -484,11 +466,7 @@ export async function appendH1RunLedgerAttemptV2(
   } as const
   const normalized: Omit<H1RunLedgerEntryV2, 'entrySha256'> = attempt.outcome === 'infrastructure-failure'
     ? { ...base, reason: attempt.reason }
-    : {
-        ...base,
-        responseModel: attempt.responseModel,
-        systemFingerprint: attempt.systemFingerprint,
-      }
+    : { ...base, responseModel: attempt.responseModel }
   const entrySha256 = await hashEntry(normalized, sha256)
   const entry = Object.freeze({ ...normalized, entrySha256 })
 

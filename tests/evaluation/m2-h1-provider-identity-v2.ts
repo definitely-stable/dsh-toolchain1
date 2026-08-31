@@ -16,17 +16,16 @@ const EXPECTED = Object.freeze({
   functionToolCall: 'verified',
   reasoningContinuation: 'verified',
   tokenMeasurement: 'verified',
-  backendIdentityStrength: 'system-fingerprint',
   adapterVersion: 'opencode-go-deepseek-chat-v1',
+  identityMode: 'managed-gateway',
 })
 
-const RECEIPT_KEYS = Object.freeze([
+const REQUIRED_RECEIPT_KEYS = Object.freeze([
   'schema',
   'provider',
   'baseUrl',
   'requestModel',
   'responseModel',
-  'systemFingerprint',
   'thinking',
   'reasoningEffort',
   'functionToolCall',
@@ -36,6 +35,7 @@ const RECEIPT_KEYS = Object.freeze([
   'inputTokens',
   'outputTokens',
 ])
+const OPTIONAL_RECEIPT_KEYS = Object.freeze(['systemFingerprint'])
 
 export interface H1ProviderIdentityReceiptCommitmentV2 {
   readonly sha256: string
@@ -49,13 +49,13 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function assertExactKeys(record: Record<string, unknown>): void {
-  const allowed = new Set(RECEIPT_KEYS)
+function assertReceiptKeys(record: Record<string, unknown>): void {
+  const allowed = new Set([...REQUIRED_RECEIPT_KEYS, ...OPTIONAL_RECEIPT_KEYS])
   const unknown = Object.keys(record).filter(key => !allowed.has(key))
   if (unknown.length > 0) {
     throw new Error(`H1 provider identity receipt contains unknown key(s): ${unknown.join(', ')}`)
   }
-  const missing = RECEIPT_KEYS.filter(key => !(key in record))
+  const missing = REQUIRED_RECEIPT_KEYS.filter(key => !(key in record))
   if (missing.length > 0) {
     throw new Error(`H1 provider identity receipt is missing required key(s): ${missing.join(', ')}`)
   }
@@ -70,13 +70,6 @@ function requireExactString(record: Record<string, unknown>, key: keyof typeof E
   return expected
 }
 
-function requireSystemFingerprint(value: unknown): string {
-  if (typeof value !== 'string' || !SYSTEM_FINGERPRINT_PATTERN.test(value)) {
-    throw new Error('H1 provider identity receipt requires a non-empty printable systemFingerprint')
-  }
-  return value
-}
-
 function requireTokenCount(value: unknown, label: string): number {
   if (!Number.isInteger(value) || (value as number) < 0) {
     throw new Error(`H1 provider identity receipt ${label} must be a non-negative integer token count`)
@@ -84,12 +77,34 @@ function requireTokenCount(value: unknown, label: string): number {
   return value as number
 }
 
+function normalizeBackendObservation(receipt: Record<string, unknown>): {
+  readonly backendIdentityStrength: 'response-model-only' | 'system-fingerprint'
+  readonly systemFingerprint?: string
+} {
+  if (receipt.backendIdentityStrength === 'response-model-only') {
+    if ('systemFingerprint' in receipt) {
+      throw new Error('H1 provider identity receipt response-model-only backend must not claim a systemFingerprint')
+    }
+    return Object.freeze({ backendIdentityStrength: 'response-model-only' as const })
+  }
+  if (receipt.backendIdentityStrength === 'system-fingerprint') {
+    if (typeof receipt.systemFingerprint !== 'string' || !SYSTEM_FINGERPRINT_PATTERN.test(receipt.systemFingerprint)) {
+      throw new Error('H1 provider identity receipt system-fingerprint backend requires a printable systemFingerprint')
+    }
+    return Object.freeze({
+      backendIdentityStrength: 'system-fingerprint' as const,
+      systemFingerprint: receipt.systemFingerprint,
+    })
+  }
+  throw new Error('H1 provider identity receipt backendIdentityStrength must describe observable response-model or system-fingerprint evidence')
+}
+
 export async function commitH1ProviderIdentityReceiptV2(
   value: unknown,
   sha256: Sha256Port,
 ): Promise<H1ProviderIdentityReceiptCommitmentV2> {
   const receipt = requireRecord(value, 'H1 provider identity receipt')
-  assertExactKeys(receipt)
+  assertReceiptKeys(receipt)
 
   requireExactString(receipt, 'schema')
   requireExactString(receipt, 'provider')
@@ -101,9 +116,8 @@ export async function commitH1ProviderIdentityReceiptV2(
   requireExactString(receipt, 'functionToolCall')
   requireExactString(receipt, 'reasoningContinuation')
   requireExactString(receipt, 'tokenMeasurement')
-  requireExactString(receipt, 'backendIdentityStrength')
 
-  const systemFingerprint = requireSystemFingerprint(receipt.systemFingerprint)
+  const backendObservation = normalizeBackendObservation(receipt)
   const inputTokens = requireTokenCount(receipt.inputTokens, 'inputTokens')
   const outputTokens = requireTokenCount(receipt.outputTokens, 'outputTokens')
 
@@ -113,13 +127,12 @@ export async function commitH1ProviderIdentityReceiptV2(
     baseUrl: EXPECTED.baseUrl,
     requestModel: EXPECTED.requestModel,
     responseModel: EXPECTED.responseModel,
-    systemFingerprint,
+    ...backendObservation,
     thinking: EXPECTED.thinking,
     reasoningEffort: EXPECTED.reasoningEffort,
     functionToolCall: EXPECTED.functionToolCall,
     reasoningContinuation: EXPECTED.reasoningContinuation,
     tokenMeasurement: EXPECTED.tokenMeasurement,
-    backendIdentityStrength: EXPECTED.backendIdentityStrength,
     inputTokens,
     outputTokens,
   })
@@ -138,8 +151,7 @@ export async function commitH1ProviderIdentityReceiptV2(
       adapterVersion: EXPECTED.adapterVersion,
       thinking: EXPECTED.thinking,
       reasoningEffort: EXPECTED.reasoningEffort,
-      backendIdentityStrength: EXPECTED.backendIdentityStrength,
-      backendFingerprint: systemFingerprint,
+      identityMode: EXPECTED.identityMode,
       identityReceiptSha256: digest,
     }),
   })

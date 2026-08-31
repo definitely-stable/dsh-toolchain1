@@ -43,7 +43,7 @@ const INFRA_FAILURE = fileURLToPath(new URL(
   './fixtures/process-executor/infrastructure-error.mjs',
   import.meta.url,
 ))
-const WEAK_METADATA = fileURLToPath(new URL(
+const MISSING_RESPONSE_MODEL = fileURLToPath(new URL(
   './fixtures/process-executor/provider-metadata.mjs',
   import.meta.url,
 ))
@@ -62,7 +62,6 @@ const binding = Object.freeze<H1LedgerBindingV2>({
   datasetCommitmentSha256: '2'.repeat(64),
   providerIdentityReceiptSha256: '3'.repeat(64),
   expectedResponseModel: 'deepseek-v4-flash',
-  expectedBackendFingerprint: 'fp_h1_coordinator_fixture',
 })
 const resourcePolicy = Object.freeze<ResourcePolicy>({
   maxWallTimeMs: 300000,
@@ -142,7 +141,7 @@ function attemptInput(
     executorIdentity: {
       provider: 'fixture-provider',
       model: binding.expectedResponseModel,
-      snapshot: binding.expectedBackendFingerprint,
+      snapshot: `provider-identity-receipt:${binding.providerIdentityReceiptSha256}`,
     },
     modelEnvelope,
     isolation: {
@@ -184,7 +183,7 @@ async function createStore(root: string): Promise<H1RunStoreV2> {
 }
 
 describe('M2.3 H1 durable single-attempt coordinator v2', () => {
-  it('persists terminal model evidence before committing the exact ledger outcome', async () => {
+  it('persists provider metadata but commits only the observable response-model identity to the ledger', async () => {
     const root = await newRoot()
     const store = await createStore(root)
     const first = schedule[0]!
@@ -202,21 +201,25 @@ describe('M2.3 H1 durable single-attempt coordinator v2', () => {
     const evidence = JSON.parse(await readFile(committed.evidencePath, 'utf8')) as {
       pendingIntentSha256: string
       evidenceSha256: string
-      result: { attempt: { outcome: string } }
+      result: { attempt: { outcome: string; providerMetadata: { inline: string } } }
     }
     expect(evidence.pendingIntentSha256).toMatch(/^[0-9a-f]{64}$/u)
     expect(evidence.evidenceSha256).toBe(committed.evidenceSha256)
     expect(evidence.result.attempt.outcome).toBe('model-outcome')
+    expect(JSON.parse(evidence.result.attempt.providerMetadata.inline)).toMatchObject({
+      responseModel: 'deepseek-v4-flash',
+      systemFingerprint: 'fp_h1_coordinator_fixture',
+    })
 
     const ledger = JSON.parse(await readFile(join(root, 'ledger.json'), 'utf8')) as {
-      entries: Array<{ evidenceSha256: string; responseModel?: string; systemFingerprint?: string }>
+      entries: Array<{ evidenceSha256: string; responseModel?: string }>
     }
     expect(ledger.entries).toHaveLength(1)
     expect(ledger.entries[0]).toMatchObject({
       evidenceSha256: committed.evidenceSha256,
       responseModel: binding.expectedResponseModel,
-      systemFingerprint: binding.expectedBackendFingerprint,
     })
+    expect(JSON.stringify(ledger.entries[0])).not.toContain('systemFingerprint')
     await closeH1RunStoreV2(store)
   })
 
@@ -344,7 +347,7 @@ describe('M2.3 H1 durable single-attempt coordinator v2', () => {
     await closeH1RunStoreV2(store)
   })
 
-  it('rejects a model outcome without strong response model and backend fingerprint and never commits it', async () => {
+  it('rejects a model outcome without the exact observable response model and never commits it', async () => {
     const root = await newRoot()
     const store = await createStore(root)
     const first = schedule[0]!
@@ -352,10 +355,10 @@ describe('M2.3 H1 durable single-attempt coordinator v2', () => {
     await expect(executeH1DurableAttemptV2({
       store,
       binding,
-      invocationId: 'fixture-invocation-weak-provider-1',
-      attemptInput: attemptInput(first, 1, WEAK_METADATA),
+      invocationId: 'fixture-invocation-missing-response-model-1',
+      attemptInput: attemptInput(first, 1, MISSING_RESPONSE_MODEL),
       sha256,
-    })).rejects.toThrow(/model|fingerprint|provider|metadata/iu)
+    })).rejects.toThrow(/response|model|provider|metadata/iu)
 
     expect(await inspectH1RunStoreV2(store)).toMatchObject({ status: 'RECOVERY_REQUIRED' })
     const ledger = JSON.parse(await readFile(join(root, 'ledger.json'), 'utf8')) as { entries: unknown[] }

@@ -26,7 +26,6 @@ const binding = Object.freeze<H1LedgerBindingV2>({
   datasetCommitmentSha256: '2'.repeat(64),
   providerIdentityReceiptSha256: '3'.repeat(64),
   expectedResponseModel: 'deepseek-v4-flash',
-  expectedBackendFingerprint: 'fp_h1_ledger_fixture',
 })
 
 let schedule: readonly AgentScheduleEntry[]
@@ -60,7 +59,6 @@ async function appendModelOutcome(
       outcome: 'model-outcome',
       evidenceSha256: evidenceSha(scheduleIndex + attempt + 1),
       responseModel: binding.expectedResponseModel,
-      systemFingerprint: binding.expectedBackendFingerprint,
     },
     sha256,
   )
@@ -73,6 +71,7 @@ describe('M2.3 H1 append-only run ledger v2', () => {
 
     expect(ledger.header.scheduleLength).toBe(864)
     expect(ledger.entries).toEqual([])
+    expect(JSON.stringify(ledger.header)).not.toContain('BackendFingerprint')
     expect(resume).toEqual({
       status: 'NEXT',
       scheduleIndex: 0,
@@ -173,7 +172,7 @@ describe('M2.3 H1 append-only run ledger v2', () => {
     })
   })
 
-  it('fails closed on provider identity drift before appending a model outcome', async () => {
+  it('fails closed on observable response-model drift before appending a model outcome', async () => {
     const ledger = await createH1RunLedgerV2(binding, schedule, taskIds, sha256)
     const first = schedule[0]!
 
@@ -191,11 +190,10 @@ describe('M2.3 H1 append-only run ledger v2', () => {
         attempt: 1,
         outcome: 'model-outcome',
         evidenceSha256: evidenceSha(920),
-        responseModel: binding.expectedResponseModel,
-        systemFingerprint: 'fp_drifted_backend',
+        responseModel: 'unexpected-model',
       },
       sha256,
-    )).rejects.toThrow(/provider|backend|fingerprint/iu)
+    )).rejects.toThrow(/provider|response|model|drift/iu)
   })
 
   it('fails closed when reopened against drifted definition or schedule binding', async () => {
