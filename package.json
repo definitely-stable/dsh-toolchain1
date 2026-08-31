@@ -46,6 +46,7 @@
     "clean": "node scripts/clean.mjs",
     "generate": "node scripts/generate-protocol.mjs",
     "m2:h1:preregister": "node scripts/prepare-m2-h1-preregistration.mjs",
+    "m2:h1:run": "node scripts/run-m2-h1-opencode-go.mjs",
     "check:generated": "node scripts/generate-protocol.mjs --check",
     "check:protocol": "node scripts/check-protocol.mjs",
     "check:architecture": "node scripts/check-architecture.mjs",
