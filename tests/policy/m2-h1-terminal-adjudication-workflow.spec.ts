@@ -28,6 +28,7 @@ describe('M2 H1 terminal adjudication workflow policy', () => {
     expect(source).toContain('h1-result-v2.json')
     expect(source).toContain('h1-analysis-v2.json')
     expect(source).toContain('h1-summary.md')
+    expect(source).toContain('h1-hidden-dataset-v2.json')
   })
 
   it('executes terminal analysis only from the frozen CI-green source commit', async () => {
@@ -36,6 +37,20 @@ describe('M2 H1 terminal adjudication workflow policy', () => {
     expect(source).toContain('ref: ${{ env.H1_TERMINAL_SOURCE_COMMIT }}')
     expect(source).toContain('clean: true')
     expect(source).toContain('Checkout exact frozen terminal adjudication source')
+  })
+
+  it('reveals the exact hidden dataset only after the terminal finalizer succeeds', async () => {
+    const source = await readFile(WORKFLOW, 'utf8')
+    const finalizer = source.indexOf('- name: Finalize and adjudicate completed H1')
+    const disclosure = source.indexOf('- name: Disclose exact hidden H1 dataset after terminal gate')
+    const upload = source.indexOf('- name: Upload terminal H1 evidence')
+
+    expect(finalizer).toBeGreaterThanOrEqual(0)
+    expect(disclosure).toBeGreaterThan(finalizer)
+    expect(upload).toBeGreaterThan(disclosure)
+    expect(source).toContain('H1_DATASET_RAW_SHA256: c007472514fa6fd1daa06cffb94f4052062a03bdceba475773830e73a01e32e6')
+    expect(source).toContain('install -m 600 "$H1_DATASET" "$H1_TERMINAL_OUTPUT/h1-hidden-dataset-v2.json"')
+    expect(source).toContain('sha256sum --check --status')
   })
 
   it('does not run concurrently with H1 execution', async () => {
