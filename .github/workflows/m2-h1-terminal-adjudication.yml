@@ -1,0 +1,133 @@
+name: M2 H1 Terminal Adjudication
+
+on:
+  workflow_dispatch:
+    inputs:
+      h1_execution_run_id:
+        description: Run ID of the M2 H1 Execution run whose durable state is COMPLETE
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-h1-execution-main
+  cancel-in-progress: false
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      H1_TERMINAL_SOURCE_COMMIT: 2e3e49702d0581364952affd96d86c518dda361b
+      H1_DATASET_RAW_SHA256: c007472514fa6fd1daa06cffb94f4052062a03bdceba475773830e73a01e32e6
+    steps:
+      - name: Require main ref and numeric execution run id
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo '::error::M2 H1 terminal adjudication is allowed only from refs/heads/main'
+            exit 1
+          fi
+          if [[ ! "${{ inputs.h1_execution_run_id }}" =~ ^[0-9]+$ ]]; then
+            echo '::error::h1_execution_run_id must be a numeric GitHub Actions run id'
+            exit 1
+          fi
+          if [[ ! "$H1_TERMINAL_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::H1 terminal source commit must remain an exact Git commit SHA'
+            exit 1
+          fi
+
+      - name: Initialize private terminal paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          {
+            echo "H1_DATASET=$RUNNER_TEMP/m2-h1-private-dataset.json"
+            echo "H1_RUN_STORE=$RUNNER_TEMP/m2-h1-run-store"
+            echo "H1_STATE_ARCHIVE=$RUNNER_TEMP/h1-run-store.tar"
+            echo "H1_STATE_ENCRYPTED=$RUNNER_TEMP/h1-run-store.enc"
+            echo "H1_TERMINAL_OUTPUT=$RUNNER_TEMP/m2-h1-terminal"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout exact frozen terminal adjudication source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+          clean: true
+          ref: ${{ env.H1_TERMINAL_SOURCE_COMMIT }}
+
+      - name: Install pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        with:
+          install: false
+
+      - name: Set up Node 24.19
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          package-manager-cache: false
+
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Restore exact completed H1 run state
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: ${{ runner.temp }}/h1-run-store.enc
+          key: m2-h1-dc12ccf9-${{ inputs.h1_execution_run_id }}
+          fail-on-cache-miss: true
+
+      - name: Materialize private H1 inputs
+        shell: bash
+        env:
+          H1_DATASET_SECRET: ${{ secrets.M2_H1_DATASET_GZIP_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "${H1_DATASET_SECRET:-}" ]]; then
+            echo '::error::Missing required secret M2_H1_DATASET_GZIP_BASE64'
+            exit 1
+          fi
+          printf '%s' "$H1_DATASET_SECRET" | base64 --decode | gzip --decompress > "$H1_DATASET"
+          echo "$H1_DATASET_RAW_SHA256  $H1_DATASET" | sha256sum --check --status
+          H1_STATE_KEY="$(printf '%s' "$H1_DATASET_SECRET" | sha256sum | cut -d' ' -f1)"
+          export H1_STATE_KEY
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:H1_STATE_KEY -in "$H1_STATE_ENCRYPTED" -out "$H1_STATE_ARCHIVE"
+          mkdir -p "$H1_RUN_STORE"
+          tar -xf "$H1_STATE_ARCHIVE" -C "$H1_RUN_STORE"
+          rm -f "$H1_STATE_ARCHIVE" "$H1_STATE_ENCRYPTED"
+
+      - name: Finalize and adjudicate completed H1
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm m2:h1:finalize \
+            --dataset "$H1_DATASET" \
+            --run-store "$H1_RUN_STORE" \
+            --output-dir "$H1_TERMINAL_OUTPUT"
+
+      - name: Disclose exact hidden H1 dataset after terminal gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 600 "$H1_DATASET" "$H1_TERMINAL_OUTPUT/h1-hidden-dataset-v2.json"
+          echo "$H1_DATASET_RAW_SHA256  $H1_TERMINAL_OUTPUT/h1-hidden-dataset-v2.json" | sha256sum --check --status
+
+      - name: Upload terminal H1 evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: m2-h1-terminal-${{ inputs.h1_execution_run_id }}
+          path: |
+            ${{ runner.temp }}/m2-h1-terminal/h1-result-v2.json
+            ${{ runner.temp }}/m2-h1-terminal/h1-analysis-v2.json
+            ${{ runner.temp }}/m2-h1-terminal/h1-summary.md
+            ${{ runner.temp }}/m2-h1-terminal/h1-hidden-dataset-v2.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 6
