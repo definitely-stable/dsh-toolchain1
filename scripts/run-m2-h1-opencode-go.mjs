@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
+import { execFile } from 'node:child_process'
 import { access, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { compileEvaluationRuntime } from './prepare-m2-h1-preregistration.mjs'
@@ -11,6 +13,7 @@ const REPOSITORY_ROOT = fileURLToPath(new URL('../', import.meta.url))
 const PUBLIC_PREREGISTRATION = 'docs/evaluation/m2/h1-preregistration-receipt-v2.json'
 const PUBLIC_PROVIDER_RECEIPT = 'docs/evaluation/m2/h1-provider-identity-receipt-v1.json'
 const CHILD_ADAPTER = 'scripts/m2-opencode-go-p0-child.mjs'
+const execFileAsync = promisify(execFile)
 
 const EXPECTED = Object.freeze({
   preregistrationReceiptSha256: 'dc12ccf907f507b5f6da08c790a1a84563160e984879724e5c18283e0404219b',
@@ -51,6 +54,7 @@ function parseBudget(value) {
 export function parseArguments(args) {
   let dataset
   let runStore
+  let sourceBoundPreregistration
   let execute = false
   let maxCommittedAttempts
 
@@ -68,6 +72,14 @@ export function parseArguments(args) {
       index += 1
       continue
     }
+    if (argument === '--source-bound-preregistration') {
+      if (sourceBoundPreregistration !== undefined) {
+        throw new Error('Duplicate --source-bound-preregistration option')
+      }
+      sourceBoundPreregistration = requireArgumentValue(args, index, argument)
+      index += 1
+      continue
+    }
     if (argument === '--execute') {
       if (execute) throw new Error('Duplicate --execute option')
       execute = true
@@ -82,8 +94,8 @@ export function parseArguments(args) {
     throw new Error(`Unknown H1 execution command argument: ${String(argument)}`)
   }
 
-  if (dataset === undefined || runStore === undefined) {
-    throw new Error('H1 execution command requires --dataset and --run-store')
+  if (dataset === undefined || runStore === undefined || sourceBoundPreregistration === undefined) {
+    throw new Error('H1 execution command requires --dataset, --run-store and --source-bound-preregistration')
   }
   if (execute && maxCommittedAttempts === undefined) {
     throw new Error('--execute requires --max-committed-attempts in 1..48')
@@ -92,7 +104,7 @@ export function parseArguments(args) {
     throw new Error('--max-committed-attempts is meaningful only with --execute')
   }
 
-  return Object.freeze({ dataset, runStore, execute, maxCommittedAttempts })
+  return Object.freeze({ dataset, runStore, sourceBoundPreregistration, execute, maxCommittedAttempts })
 }
 
 function isInside(parent, candidate) {
@@ -118,7 +130,7 @@ async function requireRegularJsonFile(filename, label) {
   return resolved
 }
 
-async function validatePrivatePaths(datasetValue, runStoreValue, root) {
+async function validateExecutionPaths(datasetValue, runStoreValue, sourcePublicationValue, root) {
   const dataset = path.resolve(datasetValue)
   const runStore = path.resolve(runStoreValue)
   if (isInside(root, dataset)) throw new Error('H1 private dataset must remain outside the repository')
@@ -127,6 +139,10 @@ async function validatePrivatePaths(datasetValue, runStoreValue, root) {
   return Object.freeze({
     dataset: await requireRegularJsonFile(dataset, 'H1 private dataset'),
     runStore,
+    sourceBoundPreregistration: await requireRegularJsonFile(
+      sourcePublicationValue,
+      'H1 source-bound preregistration',
+    ),
   })
 }
 
@@ -214,17 +230,31 @@ async function importExecutionRuntime(runtimeRoot) {
     import(pathToFileURL(path.join(runtimeRoot, 'tests', 'evaluation', 'm2-h1-finalization-v2.js')).href),
     import(pathToFileURL(path.join(runtimeRoot, 'tests', 'evaluation', 'm2-h1-execution-definition-v2.js')).href),
     import(pathToFileURL(path.join(runtimeRoot, 'tests', 'evaluation', 'm2-h1-preregistration-receipt-v2.js')).href),
-    import(pathToFileURL(path.join(runtimeRoot, 'tests', 'evaluation', 'm2-h1-attempt-input-v2.js')).href),
+    import(pathToFileURL(path.join(runtimeRoot, 'tests', 'evaluation', 'm2-h1-execution-source-binding-v2.js')).href),
+    import(pathToFileURL(path.join(runtimeRoot, 'tests', 'evaluation', 'm2-h1-source-bound-preregistration-v2.js')).href),
+    import(pathToFileURL(path.join(runtimeRoot, 'tests', 'evaluation', 'm2-h1-source-bound-attempt-factory-v2.js')).href),
     import(pathToFileURL(path.join(runtimeRoot, 'tests', 'evaluation', 'm2-h1-run-store-v2.js')).href),
     import(pathToFileURL(path.join(runtimeRoot, 'tests', 'evaluation', 'm2-h1-durable-schedule-runner-v2.js')).href),
   ])
-  const [sha, finalization, definition, preregistration, attemptInput, runStore, scheduleRunner] = modules
+  const [
+    sha,
+    finalization,
+    definition,
+    preregistration,
+    sourceBinding,
+    sourcePublication,
+    sourceAttemptFactory,
+    runStore,
+    scheduleRunner,
+  ] = modules
   return Object.freeze({
     createNodeSha256Port: sha.createNodeSha256Port,
     finalizeH1CommitmentV2: finalization.finalizeH1CommitmentV2,
     createFrozenH1ExecutionDefinitionV2: definition.createFrozenH1ExecutionDefinitionV2,
     validateH1PreregistrationReceiptV2: preregistration.validateH1PreregistrationReceiptV2,
-    createFrozenH1AttemptInputFactoryV2: attemptInput.createFrozenH1AttemptInputFactoryV2,
+    readH1ExecutionSourceIdentityV2: sourceBinding.readH1ExecutionSourceIdentityV2,
+    validateH1SourceBoundPreregistrationV2: sourcePublication.validateH1SourceBoundPreregistrationV2,
+    createSourceBoundH1AttemptInputFactoryV2: sourceAttemptFactory.createSourceBoundH1AttemptInputFactoryV2,
     createH1RunStoreV2: runStore.createH1RunStoreV2,
     openH1RunStoreV2: runStore.openH1RunStoreV2,
     closeH1RunStoreV2: runStore.closeH1RunStoreV2,
@@ -238,7 +268,9 @@ function requireRuntime(runtime) {
     'finalizeH1CommitmentV2',
     'createFrozenH1ExecutionDefinitionV2',
     'validateH1PreregistrationReceiptV2',
-    'createFrozenH1AttemptInputFactoryV2',
+    'readH1ExecutionSourceIdentityV2',
+    'validateH1SourceBoundPreregistrationV2',
+    'createSourceBoundH1AttemptInputFactoryV2',
     'createH1RunStoreV2',
     'openH1RunStoreV2',
     'closeH1RunStoreV2',
@@ -268,6 +300,39 @@ function childEnvironment(environment, apiKey) {
   return result
 }
 
+async function resolveCheckedOutSourceCommit(root) {
+  let stdout
+  try {
+    ;({ stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+      windowsHide: true,
+    }))
+  } catch (error) {
+    throw new Error('Unable to resolve checked-out H1 Git source commit', { cause: error })
+  }
+  const commit = stdout.trim()
+  if (!/^[0-9a-f]{40}$/u.test(commit)) {
+    throw new Error('Checked-out H1 Git source commit is not an exact lowercase 40-hex commit id')
+  }
+  return commit
+}
+
+function assertCheckedOutSourceIdentity(identity, checkedOutSourceCommit) {
+  if (identity.sourceCommitSha !== checkedOutSourceCommit) {
+    throw new Error('Checked-out H1 source commit drifted from source-bound preregistration')
+  }
+  if (identity.entrypoint !== CHILD_ADAPTER) {
+    throw new Error('H1 source-bound child entrypoint drifted from the canonical OpenCode Go adapter')
+  }
+  if (identity.runtime !== 'node' || identity.runtimeVersion !== process.versions.node) {
+    throw new Error('H1 Node runtime drifted from source-bound preregistration')
+  }
+  if (identity.protocol !== 'closed-ndjson-v1') {
+    throw new Error('H1 execution protocol drifted from source-bound preregistration')
+  }
+}
+
 async function ledgerExists(runStore) {
   try {
     await access(path.join(runStore, 'ledger.json'))
@@ -280,42 +345,78 @@ async function ledgerExists(runStore) {
 
 export async function prepareH1Execution(options) {
   const root = path.resolve(options.root)
-  const paths = await validatePrivatePaths(options.dataset, options.runStore, root)
+  const paths = await validateExecutionPaths(
+    options.dataset,
+    options.runStore,
+    options.sourceBoundPreregistration,
+    root,
+  )
   const runtime = requireRuntime(options.runtime)
   const sha256 = runtime.createNodeSha256Port()
-  const [sourceCommitment, hiddenDataset, providerReceipt, workspace, publishedReceipt] = await Promise.all([
+  const [sourceCommitment, hiddenDataset, providerReceipt, workspace, publishedReceipt, sourcePublication] = await Promise.all([
     readJson(path.join(root, 'docs', 'evaluation', 'm2', 'agent-holdout-h1-v2.commitment.json'), 'pristine H1 commitment'),
     readJson(paths.dataset, 'private H1 dataset'),
     readJson(path.join(root, PUBLIC_PROVIDER_RECEIPT), 'published H1 provider receipt'),
     readJson(path.join(root, 'tests', 'evaluation', 'fixtures', 'm2', 'rc2-web-v1', 'ordinary-workspace.json'), 'frozen ordinary workspace'),
     readJson(path.join(root, PUBLIC_PREREGISTRATION), 'published H1 preregistration receipt'),
+    readJson(paths.sourceBoundPreregistration, 'H1 source-bound preregistration'),
   ])
 
   const finalization = await runtime.finalizeH1CommitmentV2(sourceCommitment, hiddenDataset, providerReceipt, sha256)
   const frozen = await runtime.createFrozenH1ExecutionDefinitionV2(finalization, workspace, sha256)
-  const validatedPublication = await runtime.validateH1PreregistrationReceiptV2(publishedReceipt, sha256)
+  const [validatedPublication, validatedSourcePublication] = await Promise.all([
+    runtime.validateH1PreregistrationReceiptV2(publishedReceipt, sha256),
+    runtime.validateH1SourceBoundPreregistrationV2(sourcePublication, sha256),
+  ])
   assertPublishedH1ExecutionBinding(validatedPublication, frozen)
+  assertPublishedH1ExecutionBinding(validatedSourcePublication.receipt, frozen)
+  if (validatedSourcePublication.receipt.receiptSha256 !== validatedPublication.receiptSha256) {
+    throw new Error('H1 source-bound preregistration embeds a different scientific preregistration receipt')
+  }
 
-  return Object.freeze({ paths, sha256, workspace, frozen, validatedPublication })
+  const sourceIdentity = await runtime.readH1ExecutionSourceIdentityV2(
+    validatedSourcePublication.sourceBinding,
+    frozen,
+    sha256,
+  )
+  const checkedOutSourceCommit = await resolveCheckedOutSourceCommit(root)
+  assertCheckedOutSourceIdentity(sourceIdentity, checkedOutSourceCommit)
+
+  return Object.freeze({
+    paths,
+    sha256,
+    workspace,
+    frozen,
+    validatedPublication,
+    validatedSourcePublication,
+    sourceIdentity,
+    checkedOutSourceCommit,
+  })
 }
 
 export async function executeH1Operator(options) {
   const prepared = await prepareH1Execution(options)
+  const common = {
+    definitionSha256: prepared.frozen.definitionSha256,
+    datasetCommitmentSha256: prepared.frozen.ledgerBinding.datasetCommitmentSha256,
+    providerIdentityReceiptSha256: prepared.frozen.ledgerBinding.providerIdentityReceiptSha256,
+    sourceBindingSha256: prepared.validatedSourcePublication.sourceBinding.sourceBindingSha256,
+    sourceCommitSha: prepared.checkedOutSourceCommit,
+    scheduleCount: prepared.frozen.schedule.length,
+    runStore: prepared.paths.runStore,
+  }
   if (!options.execute) {
     return Object.freeze({
       status: 'PREFLIGHT_READY',
-      definitionSha256: prepared.frozen.definitionSha256,
-      datasetCommitmentSha256: prepared.frozen.ledgerBinding.datasetCommitmentSha256,
-      providerIdentityReceiptSha256: prepared.frozen.ledgerBinding.providerIdentityReceiptSha256,
-      scheduleCount: prepared.frozen.schedule.length,
-      runStore: prepared.paths.runStore,
+      ...common,
     })
   }
 
   const apiKey = requireCredential(options.environment)
   const child = path.join(path.resolve(options.root), CHILD_ADAPTER)
-  const factory = await options.runtime.createFrozenH1AttemptInputFactoryV2(
+  const factory = await options.runtime.createSourceBoundH1AttemptInputFactoryV2(
     prepared.frozen,
+    prepared.validatedSourcePublication.sourceBinding,
     prepared.workspace,
     {
       command: process.execPath,
@@ -323,6 +424,7 @@ export async function executeH1Operator(options) {
       cwd: path.resolve(options.root),
       environment: childEnvironment(options.environment, apiKey),
     },
+    prepared.checkedOutSourceCommit,
     prepared.sha256,
   )
 
@@ -356,11 +458,7 @@ export async function executeH1Operator(options) {
     return Object.freeze({
       status: result.status,
       committedAttempts: result.committedAttempts,
-      definitionSha256: prepared.frozen.definitionSha256,
-      datasetCommitmentSha256: prepared.frozen.ledgerBinding.datasetCommitmentSha256,
-      providerIdentityReceiptSha256: prepared.frozen.ledgerBinding.providerIdentityReceiptSha256,
-      scheduleCount: prepared.frozen.schedule.length,
-      runStore: prepared.paths.runStore,
+      ...common,
       next: result.status === 'PAUSED' ? result.state.resume : undefined,
     })
   } finally {
@@ -375,6 +473,8 @@ function safeSummary(result) {
     `definitionSha256=${result.definitionSha256}`,
     `datasetCommitmentSha256=${result.datasetCommitmentSha256}`,
     `providerIdentityReceiptSha256=${result.providerIdentityReceiptSha256}`,
+    `sourceBindingSha256=${result.sourceBindingSha256}`,
+    `sourceCommitSha=${result.sourceCommitSha}`,
     `scheduleCount=${result.scheduleCount}`,
     `runStore=${result.runStore}`,
   ]
