@@ -36,30 +36,23 @@ jobs:
       - name: Install frozen dependency graph
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Record exact runtime versions
+      - name: Build symlink-preserving runtime tarball
         run: |
           node --version > .m2-h1-node-version.txt
           pnpm --version > .m2-h1-pnpm-version.txt
           cp "$(command -v node)" .m2-h1-node
+          mkdir -p .artifacts
+          tar -czf .artifacts/m2-h1-prereg-runtime-main-3e5025e.tar.gz \
+            package.json pnpm-lock.yaml \
+            tsconfig.json tsconfig.test.json tsconfig.scripts.json \
+            scripts src tests docs spec node_modules \
+            .m2-h1-node .m2-h1-node-version.txt .m2-h1-pnpm-version.txt
+          tar -tzf .artifacts/m2-h1-prereg-runtime-main-3e5025e.tar.gz >/dev/null
 
-      - name: Upload exact preregistration runtime bundle
+      - name: Upload exact preregistration runtime tarball
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: m2-h1-prereg-runtime-main-3e5025e
-          path: |
-            package.json
-            pnpm-lock.yaml
-            tsconfig.json
-            tsconfig.test.json
-            tsconfig.scripts.json
-            scripts
-            src
-            tests
-            docs
-            node_modules
-            .m2-h1-node
-            .m2-h1-node-version.txt
-            .m2-h1-pnpm-version.txt
+          name: m2-h1-prereg-runtime-main-3e5025e-tar
+          path: .artifacts/m2-h1-prereg-runtime-main-3e5025e.tar.gz
           if-no-files-found: error
-          include-hidden-files: true
           retention-days: 1
