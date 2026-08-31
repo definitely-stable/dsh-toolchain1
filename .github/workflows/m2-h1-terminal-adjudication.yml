@@ -19,6 +19,8 @@ jobs:
   adjudicate:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      H1_TERMINAL_SOURCE_COMMIT: 2e3e49702d0581364952affd96d86c518dda361b
     steps:
       - name: Require main ref and numeric execution run id
         shell: bash
@@ -30,6 +32,10 @@ jobs:
           fi
           if [[ ! "${{ inputs.h1_execution_run_id }}" =~ ^[0-9]+$ ]]; then
             echo '::error::h1_execution_run_id must be a numeric GitHub Actions run id'
+            exit 1
+          fi
+          if [[ ! "$H1_TERMINAL_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::H1 terminal source commit must remain an exact Git commit SHA'
             exit 1
           fi
 
@@ -46,10 +52,12 @@ jobs:
             echo "H1_TERMINAL_OUTPUT=$RUNNER_TEMP/m2-h1-terminal"
           } >> "$GITHUB_ENV"
 
-      - name: Checkout terminal adjudication source
+      - name: Checkout exact frozen terminal adjudication source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
+          clean: true
+          ref: ${{ env.H1_TERMINAL_SOURCE_COMMIT }}
 
       - name: Install pnpm
         uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
