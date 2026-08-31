@@ -14,7 +14,6 @@ import { closeH1RunStoreV2, createH1RunStoreV2, type H1RunStoreV2 } from './m2-h
 import { createSyntheticH1Finalization, readSyntheticH1Workspace } from './m2-h1-synthetic-fixture-v2.js'
 
 const sha256 = createNodeSha256Port()
-const SYSTEM_FINGERPRINT = 'fp_h1_coordinator_fixture'
 const H1_SUCCESS = fileURLToPath(new URL(
   './fixtures/process-executor/h1-terminal-success.mjs',
   import.meta.url,
@@ -33,7 +32,6 @@ function processConfiguration(overrides: Readonly<Record<string, string>> = {}) 
       OPENCODE_GO_BASE_URL: 'https://opencode.ai/zen/go/v1',
       OPENCODE_GO_REQUEST_MODEL: 'deepseek-v4-flash',
       OPENCODE_GO_EXPECTED_RESPONSE_MODEL: 'deepseek-v4-flash',
-      OPENCODE_GO_EXPECTED_SYSTEM_FINGERPRINT: SYSTEM_FINGERPRINT,
       OPENCODE_GO_THINKING: 'enabled',
       OPENCODE_GO_REASONING_EFFORT: 'high',
       OPENCODE_GO_MAX_OUTPUT_TOKENS: '12000',
@@ -44,7 +42,7 @@ function processConfiguration(overrides: Readonly<Record<string, string>> = {}) 
 
 async function frozenFixture() {
   const [finalization, workspace] = await Promise.all([
-    createSyntheticH1Finalization(SYSTEM_FINGERPRINT),
+    createSyntheticH1Finalization(),
     readSyntheticH1Workspace(),
   ])
   const frozen = await createFrozenH1ExecutionDefinitionV2(finalization, workspace, sha256)
@@ -127,6 +125,7 @@ describe('M2.3 frozen H1 process-attempt input v2', () => {
         maxStdoutBytes: 64 * 1024,
         maxStderrBytes: 16 * 1024,
       })
+      expect(built.process.environment).not.toHaveProperty('OPENCODE_GO_EXPECTED_SYSTEM_FINGERPRINT')
       expect(built.isolation.workspaceMode).toBe(arm === 'A' ? 'fresh' : 'read-only-reset')
       if (arm === 'A') {
         expect(built.isolation.workspaceSnapshotSha256).not.toBe(workspace.workspaceSnapshotSha256)
@@ -198,7 +197,7 @@ describe('M2.3 frozen H1 process-attempt input v2', () => {
       .rejects.toThrow(/workspace|documentation|hash|identity/iu)
   })
 
-  it('requires an explicit allowlisted child environment bound to the frozen provider identity', async () => {
+  it('requires an explicit allowlisted child environment bound to the frozen managed-gateway identity', async () => {
     const { frozen, workspace } = await frozenFixture()
 
     await expect(createFrozenH1AttemptInputFactoryV2(
@@ -216,9 +215,16 @@ describe('M2.3 frozen H1 process-attempt input v2', () => {
     await expect(createFrozenH1AttemptInputFactoryV2(
       frozen,
       workspace,
-      processConfiguration({ OPENCODE_GO_EXPECTED_SYSTEM_FINGERPRINT: 'fp_drifted' }),
+      processConfiguration({ OPENCODE_GO_EXPECTED_SYSTEM_FINGERPRINT: 'fp_must_not_be_required' }),
       sha256,
-    )).rejects.toThrow(/fingerprint|provider|identity|environment/iu)
+    )).rejects.toThrow(/environment|allowlist|fingerprint/iu)
+
+    await expect(createFrozenH1AttemptInputFactoryV2(
+      frozen,
+      workspace,
+      processConfiguration({ OPENCODE_GO_EXPECTED_RESPONSE_MODEL: 'other-model' }),
+      sha256,
+    )).rejects.toThrow(/response|model|provider|environment/iu)
 
     await expect(createFrozenH1AttemptInputFactoryV2(
       frozen,
@@ -258,14 +264,14 @@ describe('M2.3 frozen H1 process-attempt input v2', () => {
       state: { status: 'NEXT', resume: { scheduleIndex: 1, attempt: 1 } },
     })
     const ledger = JSON.parse(await readFile(join(root, 'ledger.json'), 'utf8')) as {
-      entries: Array<{ scheduleIndex: number; outcome: string; responseModel?: string; systemFingerprint?: string }>
+      entries: Array<{ scheduleIndex: number; outcome: string; responseModel?: string }>
     }
     expect(ledger.entries).toHaveLength(1)
-    expect(ledger.entries[0]).toMatchObject({
+    expect(ledger.entries[0]).toEqual(expect.objectContaining({
       scheduleIndex: 0,
       outcome: 'model-outcome',
       responseModel: 'deepseek-v4-flash',
-      systemFingerprint: SYSTEM_FINGERPRINT,
-    })
+    }))
+    expect(JSON.stringify(ledger.entries[0])).not.toContain('systemFingerprint')
   })
 })
