@@ -4,7 +4,7 @@ Status: **FROZEN BEFORE TERMINAL H1 ANALYSIS**
 
 Frozen terminal runtime source commit: `2e3e49702d0581364952affd96d86c518dda361b`.
 
-This document fixes the implementation details needed to execute the already-preregistered H1 analysis without changing its scientific design. It does not change the H1 task set, arms, provider, retry policy, MCID, non-inferiority margin, analysis unit, seeds or resample count.
+Timing/provenance note: the H1 uncertainty family, confidence level, 10,000 resamples, task-level pairing, seeds and decision rules were already preregistered before H1 model outcomes. This document is a post-launch implementation clarification committed after the first 12 H1 model outcomes had been durably produced, but before terminal unblinding or outcome analysis. It freezes implementation details that the original definition did not spell out byte-for-byte — deterministic seed-to-PRNG mapping, bootstrap sampler transition and empirical-quantile interpolation. Those details do not alter the frozen task set, arms, provider, retry policy, MCID, non-inferiority margin, analysis unit, seeds, resample count or decision rules.
 
 The terminal path is offline and read-only with respect to H1 execution. It accepts only a durable run-store whose canonical ledger validates as `COMPLETE`, reloads every ledger-referenced durable attempt evidence object, rebuilds frozen Truth v2, and re-adjudicates every retained model raw answer with `dsh-toolchain-m2-h1-task-adjudicator-v2`. Stored `parsedApiClaims` and `taskSuccess` must exactly match fresh adjudication or finalization fails closed.
 
