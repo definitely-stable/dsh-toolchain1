@@ -32,4 +32,14 @@ describe('M2 H1 execution workflow policy', () => {
     expect(source).not.toContain('m2-h1-private-candidate')
     expect(source).not.toMatch(/path:\s*\$\{\{\s*runner\.temp\s*\}\}\/m2-h1-run-store\s*$/mu)
   })
+
+  it('executes H1 only from the exact source-bound checkout while keeping the publication envelope outside that checkout', async () => {
+    const source = await readFile(WORKFLOW, 'utf8')
+
+    expect(source).toContain('H1_SOURCE_BOUND_PREREGISTRATION')
+    expect(source).toContain('H1_BOUND_SOURCE_COMMIT')
+    expect(source).toContain('h1-source-bound-preregistration-v2.json')
+    expect(source).toContain('ref: ${{ env.H1_BOUND_SOURCE_COMMIT }}')
+    expect(source).toContain('--source-bound-preregistration "$H1_SOURCE_BOUND_PREREGISTRATION"')
+  })
 })
