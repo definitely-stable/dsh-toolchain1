@@ -317,22 +317,53 @@ function canonicalJsonValue(value) {
   throw new Error(`Canonical probe JSON cannot encode ${typeof value}`)
 }
 
-function parseArguments(args) {
-  if (args.length !== 2 || args[0] !== '--output' || typeof args[1] !== 'string' || args[1].trim() === '') {
-    throw new Error('Usage: node scripts/probe-m2-opencode-go.mjs --output <new-json-path>')
+export function parseProbeArguments(args) {
+  if (!Array.isArray(args) || args.length < 2 || args.length > 4 || args.length % 2 !== 0) {
+    throw new Error('Usage: node scripts/probe-m2-opencode-go.mjs [--model <model-id>] --output <new-json-path>')
   }
-  const output = path.resolve(args[1])
+
+  let outputValue
+  let modelValue
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index]
+    const value = args[index + 1]
+    if (typeof value !== 'string' || value.trim() === '') {
+      throw new Error('OpenCode Go probe CLI values must be non-empty strings')
+    }
+    if (flag === '--output') {
+      if (outputValue !== undefined) throw new Error('OpenCode Go probe --output may be specified only once')
+      outputValue = value
+      continue
+    }
+    if (flag === '--model') {
+      if (modelValue !== undefined) throw new Error('OpenCode Go probe --model may be specified only once')
+      modelValue = selectedModel(value)
+      continue
+    }
+    throw new Error(`Unknown OpenCode Go probe argument: ${String(flag)}`)
+  }
+
+  if (outputValue === undefined) {
+    throw new Error('Usage: node scripts/probe-m2-opencode-go.mjs [--model <model-id>] --output <new-json-path>')
+  }
+  const output = path.resolve(outputValue)
   if (path.extname(output).toLocaleLowerCase('en-US') !== '.json') throw new Error('OpenCode Go probe output must use .json')
-  return output
+  return Object.freeze({
+    ...(modelValue === undefined ? {} : { model: modelValue }),
+    output,
+  })
 }
 
 export async function main(args = process.argv.slice(2), environment = process.env) {
-  const output = parseArguments(args)
-  const receipt = await probeOpenCodeGoIdentity(environment)
-  await mkdir(path.dirname(output), { recursive: true })
-  await writeFile(output, `${JSON.stringify(canonicalJsonValue(receipt))}\n`, { encoding: 'utf8', flag: 'wx' })
-  console.log(`OpenCode Go P0 identity probe verified model=${receipt.responseModel} backend=${receipt.backendIdentityStrength} output=${output}`)
-  return Object.freeze({ output, receipt })
+  const parsed = parseProbeArguments(args)
+  const receipt = await probeOpenCodeGoIdentity(
+    environment,
+    parsed.model === undefined ? {} : { model: parsed.model },
+  )
+  await mkdir(path.dirname(parsed.output), { recursive: true })
+  await writeFile(parsed.output, `${JSON.stringify(canonicalJsonValue(receipt))}\n`, { encoding: 'utf8', flag: 'wx' })
+  console.log(`OpenCode Go P0 identity probe verified model=${receipt.responseModel} backend=${receipt.backendIdentityStrength} output=${parsed.output}`)
+  return Object.freeze({ output: parsed.output, receipt })
 }
 
 const invokedDirectly = process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(SCRIPT_PATH)
