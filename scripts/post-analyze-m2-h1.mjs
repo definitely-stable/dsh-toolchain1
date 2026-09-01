@@ -193,7 +193,9 @@ function buildRunRow(runValue, taskMetadata) {
   let invalidApi = null
   let unresolvedApi = false
   let taskSuccess = null
+  /** @type {ReturnType<typeof toolUsageFromAttempt>} */
   let toolUsage = Object.freeze({ totalCalls: 0, toolchainCalls: 0, toolchainUsed: false, searchUsed: false, inspectUsed: false, toolchainErrors: 0, toolNames: [] })
+  /** @type {ReturnType<typeof resourceFromAttempt>} */
   let resource = Object.freeze({ wallTimeMs: null, turns: null, inputTokens: null, outputTokens: null })
   if (modelAttempt !== undefined) {
     const claims = requireArray(modelAttempt.parsedApiClaims, 'model attempt parsedApiClaims').map(value => requireRecord(value, 'parsed API claim'))
