@@ -1,0 +1,118 @@
+name: M2 H1 Hourly Autopilot
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: m2-h1-hourly-autopilot
+  cancel-in-progress: false
+
+jobs:
+  continue-h1:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Require main ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo '::error::M2 H1 hourly autopilot is allowed only from refs/heads/main'
+            exit 1
+          fi
+
+      - name: Inspect latest H1 execution
+        id: inspect
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'should_dispatch=false' >> "$GITHUB_OUTPUT"
+
+          LATEST_JSON="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$GITHUB_REPOSITORY/actions/workflows/m2-h1-execution.yml/runs?per_page=1")"
+          LATEST_ID="$(jq -r '.workflow_runs[0].id // empty' <<<"$LATEST_JSON")"
+          LATEST_STATUS="$(jq -r '.workflow_runs[0].status // empty' <<<"$LATEST_JSON")"
+          LATEST_CONCLUSION="$(jq -r '.workflow_runs[0].conclusion // empty' <<<"$LATEST_JSON")"
+
+          if [[ -z "$LATEST_ID" ]]; then
+            echo '::error::No M2 H1 Execution run exists yet; autopilot will not bootstrap the experiment'
+            exit 1
+          fi
+
+          echo "latest_id=$LATEST_ID" >> "$GITHUB_OUTPUT"
+          echo "Latest H1 execution: id=$LATEST_ID status=$LATEST_STATUS conclusion=${LATEST_CONCLUSION:-<none>}"
+
+          if [[ "$LATEST_STATUS" != 'completed' ]]; then
+            echo "H1 execution is still $LATEST_STATUS; no new chunk will be dispatched"
+            exit 0
+          fi
+
+          if [[ "$LATEST_CONCLUSION" != 'success' ]]; then
+            echo '::error::Latest H1 execution did not succeed; autopilot will not dispatch'
+            exit 1
+          fi
+
+          LOG_ZIP="$RUNNER_TEMP/h1-execution-$LATEST_ID.zip"
+          LOG_DIR="$RUNNER_TEMP/h1-execution-$LATEST_ID"
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$GITHUB_REPOSITORY/actions/runs/$LATEST_ID/logs" > "$LOG_ZIP"
+          mkdir -p "$LOG_DIR"
+          unzip -qq "$LOG_ZIP" -d "$LOG_DIR"
+
+          TERMINAL_LINE="$(grep -RhoE \
+            'M2\.3 H1 OpenCode Go operator status=(PAUSED|COMPLETE|RECOVERY_REQUIRED)[^[:cntrl:]]*' \
+            "$LOG_DIR" | tail -n 1 || true)"
+
+          if [[ "$TERMINAL_LINE" == *'status=COMPLETE'* ]]; then
+            echo 'H1 execution is COMPLETE; no further chunks will be dispatched'
+            exit 0
+          fi
+
+          if [[ "$TERMINAL_LINE" == *'status=RECOVERY_REQUIRED'* ]]; then
+            echo '::error::H1 execution requires recovery; autopilot will not dispatch'
+            exit 1
+          fi
+
+          if [[ "$TERMINAL_LINE" != *'status=PAUSED'* ]]; then
+            echo '::error::Unable to determine terminal H1 execution status from the successful run logs'
+            exit 1
+          fi
+
+          echo 'should_dispatch=true' >> "$GITHUB_OUTPUT"
+          echo "H1 execution is PAUSED; next bounded chunk is eligible"
+
+      - name: Dispatch next 48-attempt H1 chunk
+        if: steps.inspect.outputs.should_dispatch == 'true'
+        shell: bash
+        env:
+          LATEST_ID: ${{ steps.inspect.outputs.latest_id }}
+        run: |
+          set -euo pipefail
+
+          CURRENT_JSON="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$GITHUB_REPOSITORY/actions/workflows/m2-h1-execution.yml/runs?per_page=1")"
+          CURRENT_LATEST_ID="$(jq -r '.workflow_runs[0].id // empty' <<<"$CURRENT_JSON")"
+          CURRENT_STATUS="$(jq -r '.workflow_runs[0].status // empty' <<<"$CURRENT_JSON")"
+
+          if [[ "$CURRENT_LATEST_ID" != "$LATEST_ID" ]]; then
+            echo "A newer H1 execution appeared during the check ($CURRENT_LATEST_ID != $LATEST_ID); no duplicate dispatch"
+            exit 0
+          fi
+          if [[ "$CURRENT_STATUS" != 'completed' ]]; then
+            echo "Latest H1 execution changed state to $CURRENT_STATUS; no duplicate dispatch"
+            exit 0
+          fi
+
+          gh workflow run m2-h1-execution.yml --ref main -f max_committed_attempts=48
+          echo "Dispatched next M2 H1 Execution chunk with max_committed_attempts=48 after run $LATEST_ID"
