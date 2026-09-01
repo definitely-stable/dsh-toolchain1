@@ -23,6 +23,7 @@ jobs:
       H1_EXECUTION_RUN_ID: '33533666686'
       TERMINAL_WORKFLOW: m2-h1-terminal-adjudication.yml
       POST_WORKFLOW: m2-h1-post-analysis.yml
+      TERMINAL_SOURCE_REVISION: 'a27e86e2174e782c438abd91881094492f423af3'
     steps:
       - name: Verify completed H1 execution source run
         shell: bash
@@ -139,6 +140,7 @@ jobs:
             echo '## M2 H1 completion chain'
             echo
             echo "- H1 execution: $H1_EXECUTION_RUN_ID"
+            echo "- Terminal source revision: $TERMINAL_SOURCE_REVISION"
             echo "- Terminal adjudication: $TERMINAL_RUN_ID"
             echo "- Post-H1 analysis: $POST_RUN_ID"
           } >> "$GITHUB_STEP_SUMMARY"

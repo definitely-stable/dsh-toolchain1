@@ -204,14 +204,10 @@ export function reAdjudicateH1ModelAttemptV2(
   storedTaskSuccess: H1TaskSuccessV2,
   truth: ApiTruthUniverseV2,
 ): ReturnType<typeof adjudicateH1ModelOutcomeV2> {
-  const fresh = adjudicateH1ModelOutcomeV2(rule, rawAnswer, truth)
-  if (
-    canonicalizeEvaluationJson(fresh.parsedApiClaims) !== canonicalizeEvaluationJson(storedClaims)
-    || fresh.taskSuccess !== storedTaskSuccess
-  ) {
-    throw new Error('H1 terminal fresh adjudication drifted from persisted model-outcome adjudication')
+  if (storedClaims.length !== 0 || storedTaskSuccess !== 'UNKNOWN') {
+    throw new Error('H1 terminal model-outcome execution placeholders are not pristine before frozen adjudication')
   }
-  return fresh
+  return adjudicateH1ModelOutcomeV2(rule, rawAnswer, truth)
 }
 
 function taskRulesFromDataset(

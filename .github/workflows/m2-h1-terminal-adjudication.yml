@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      H1_TERMINAL_SOURCE_COMMIT: 2e3e49702d0581364952affd96d86c518dda361b
+      H1_TERMINAL_SOURCE_COMMIT: a27e86e2174e782c438abd91881094492f423af3
       H1_DATASET_RAW_SHA256: c007472514fa6fd1daa06cffb94f4052062a03bdceba475773830e73a01e32e6
     steps:
       - name: Require main ref and numeric execution run id

@@ -148,26 +148,26 @@ async function readCompleted(rootDir: string, fixture: Awaited<ReturnType<typeof
 }
 
 describe('M2 H1 terminal result v2', () => {
-  it('re-adjudicates retained raw answer bytes with the frozen H1 adjudicator', () => {
-    const stored = adjudicateH1ModelOutcomeV2(rule, answer, truth)
+  it('re-adjudicates retained raw answer bytes when execution-time derived fields are pristine placeholders', () => {
+    const fresh = adjudicateH1ModelOutcomeV2(rule, answer, truth)
     expect(reAdjudicateH1ModelAttemptV2(
       rule,
       answer,
-      stored.parsedApiClaims,
-      stored.taskSuccess,
+      [],
+      'UNKNOWN',
       truth,
-    )).toEqual(stored)
+    )).toEqual(fresh)
   })
 
-  it('fails closed if persisted derived adjudication differs from fresh frozen adjudication', () => {
+  it('fails closed if execution-time derived fields are not pristine placeholders before terminal adjudication', () => {
     const stored = adjudicateH1ModelOutcomeV2(rule, answer, truth)
     expect(() => reAdjudicateH1ModelAttemptV2(
       rule,
       answer,
       stored.parsedApiClaims,
-      'FAILURE',
+      stored.taskSuccess,
       truth,
-    )).toThrow(/adjudication|drift/u)
+    )).toThrow(/placeholder|pristine|adjudicat/u)
   })
 
   it('refuses a valid but partial NEXT ledger before reading durable evidence', async () => {
