@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: read
+  attestations: write
+  id-token: write
 
 concurrency:
   group: m2-h1-execution-main
@@ -119,6 +121,43 @@ jobs:
           install -m 600 "$H1_DATASET" "$H1_TERMINAL_OUTPUT/h1-hidden-dataset-v2.json"
           echo "$H1_DATASET_RAW_SHA256  $H1_TERMINAL_OUTPUT/h1-hidden-dataset-v2.json" | sha256sum --check --status
 
+      - name: Write terminal H1 evidence manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$H1_TERMINAL_OUTPUT"
+          sha256sum \
+            h1-result-v2.json \
+            h1-analysis-v2.json \
+            h1-summary.md \
+            h1-hidden-dataset-v2.json \
+            > h1-terminal-sha256sums.txt
+          jq -n \
+            --arg schema 'dsh-toolchain-m2-h1-terminal-evidence-manifest-v1' \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg workflow "$GITHUB_WORKFLOW" \
+            --arg workflowRunId "$GITHUB_RUN_ID" \
+            --arg h1ExecutionRunId '${{ inputs.h1_execution_run_id }}' \
+            --arg terminalSourceCommit "$H1_TERMINAL_SOURCE_COMMIT" \
+            --arg datasetRawSha256 "$H1_DATASET_RAW_SHA256" \
+            --rawfile checksums h1-terminal-sha256sums.txt \
+            '{
+              schema: $schema,
+              repository: $repository,
+              workflow: $workflow,
+              workflowRunId: $workflowRunId,
+              h1ExecutionRunId: $h1ExecutionRunId,
+              terminalSourceCommit: $terminalSourceCommit,
+              datasetRawSha256: $datasetRawSha256,
+              files: ($checksums | split("\n") | map(select(length > 0) | capture("^(?<sha256>[0-9a-f]{64})  (?<path>.+)$")))
+            }' > h1-terminal-manifest-v1.json
+          jq -e '.files | length == 4' h1-terminal-manifest-v1.json >/dev/null
+
+      - name: Attest terminal H1 evidence provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6
+        with:
+          subject-checksums: ${{ runner.temp }}/m2-h1-terminal/h1-terminal-sha256sums.txt
+
       - name: Upload terminal H1 evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -128,6 +167,8 @@ jobs:
             ${{ runner.temp }}/m2-h1-terminal/h1-analysis-v2.json
             ${{ runner.temp }}/m2-h1-terminal/h1-summary.md
             ${{ runner.temp }}/m2-h1-terminal/h1-hidden-dataset-v2.json
+            ${{ runner.temp }}/m2-h1-terminal/h1-terminal-sha256sums.txt
+            ${{ runner.temp }}/m2-h1-terminal/h1-terminal-manifest-v1.json
           if-no-files-found: error
           retention-days: 90
           compression-level: 6
