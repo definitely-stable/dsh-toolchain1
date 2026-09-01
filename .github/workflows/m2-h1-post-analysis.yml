@@ -1,0 +1,100 @@
+name: M2 H1 Post Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      terminal_adjudication_run_id:
+        description: Run ID of the successful M2 H1 Terminal Adjudication workflow
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: m2-h1-post-analysis-${{ inputs.terminal_adjudication_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require main ref and numeric terminal run id
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo '::error::M2 H1 post-analysis is allowed only from refs/heads/main'
+            exit 1
+          fi
+          if [[ ! "${{ inputs.terminal_adjudication_run_id }}" =~ ^[0-9]+$ ]]; then
+            echo '::error::terminal_adjudication_run_id must be numeric'
+            exit 1
+          fi
+
+      - name: Verify source terminal adjudication run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TERMINAL_RUN_ID: ${{ inputs.terminal_adjudication_run_id }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$TERMINAL_RUN_ID" > "$RUNNER_TEMP/terminal-run.json"
+          jq -e '
+            .name == "M2 H1 Terminal Adjudication"
+            and .path == ".github/workflows/m2-h1-terminal-adjudication.yml"
+            and .event == "workflow_dispatch"
+            and .head_branch == "main"
+            and .status == "completed"
+            and .conclusion == "success"
+          ' "$RUNNER_TEMP/terminal-run.json" >/dev/null
+
+      - name: Checkout post-analysis source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Set up Node 24.19
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+
+      - name: Download terminal evidence artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          path: ${{ runner.temp }}/m2-h1-terminal
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.terminal_adjudication_run_id }}
+          merge-multiple: true
+
+      - name: Build exploratory post-H1 diagnostics and decision receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/post-analyze-m2-h1.mjs \
+            --terminal-dir "$RUNNER_TEMP/m2-h1-terminal" \
+            --output-dir "$RUNNER_TEMP/m2-h1-post-analysis" \
+            --terminal-run-id "${{ inputs.terminal_adjudication_run_id }}"
+
+      - name: Publish H1 report to job summary
+        shell: bash
+        run: cat "$RUNNER_TEMP/m2-h1-post-analysis/h1-final-report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload post-H1 analysis evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: m2-h1-post-analysis-${{ inputs.terminal_adjudication_run_id }}
+          path: |
+            ${{ runner.temp }}/m2-h1-post-analysis/h1-post-analysis-v1.json
+            ${{ runner.temp }}/m2-h1-post-analysis/h1-task-diagnostics-v1.jsonl
+            ${{ runner.temp }}/m2-h1-post-analysis/h1-final-report.md
+            ${{ runner.temp }}/m2-h1-post-analysis/h1-decision-receipt-v1.json
+            ${{ runner.temp }}/m2-h1-post-analysis/h1-post-analysis-sha256sums.txt
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 6
