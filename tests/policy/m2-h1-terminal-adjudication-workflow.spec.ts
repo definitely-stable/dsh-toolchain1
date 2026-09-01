@@ -43,14 +43,35 @@ describe('M2 H1 terminal adjudication workflow policy', () => {
     const source = await readFile(WORKFLOW, 'utf8')
     const finalizer = source.indexOf('- name: Finalize and adjudicate completed H1')
     const disclosure = source.indexOf('- name: Disclose exact hidden H1 dataset after terminal gate')
+    const manifest = source.indexOf('- name: Write terminal H1 evidence manifest')
     const upload = source.indexOf('- name: Upload terminal H1 evidence')
 
     expect(finalizer).toBeGreaterThanOrEqual(0)
     expect(disclosure).toBeGreaterThan(finalizer)
-    expect(upload).toBeGreaterThan(disclosure)
+    expect(manifest).toBeGreaterThan(disclosure)
+    expect(upload).toBeGreaterThan(manifest)
     expect(source).toContain('H1_DATASET_RAW_SHA256: c007472514fa6fd1daa06cffb94f4052062a03bdceba475773830e73a01e32e6')
     expect(source).toContain('install -m 600 "$H1_DATASET" "$H1_TERMINAL_OUTPUT/h1-hidden-dataset-v2.json"')
     expect(source).toContain('sha256sum --check --status')
+  })
+
+  it('emits a terminal evidence manifest and provenance attestation for every disclosed output file', async () => {
+    const source = await readFile(WORKFLOW, 'utf8')
+    const manifest = source.indexOf('- name: Write terminal H1 evidence manifest')
+    const attest = source.indexOf('- name: Attest terminal H1 evidence provenance')
+    const upload = source.indexOf('- name: Upload terminal H1 evidence')
+
+    expect(source).toContain('attestations: write')
+    expect(source).toContain('id-token: write')
+    expect(manifest).toBeGreaterThanOrEqual(0)
+    expect(attest).toBeGreaterThan(manifest)
+    expect(upload).toBeGreaterThan(attest)
+    expect(source).toContain('h1-terminal-sha256sums.txt')
+    expect(source).toContain('h1-terminal-manifest-v1.json')
+    expect(source).toContain('dsh-toolchain-m2-h1-terminal-evidence-manifest-v1')
+    expect(source).toContain('actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6')
+    expect(source).toContain('subject-checksums: ${{ runner.temp }}/m2-h1-terminal/h1-terminal-sha256sums.txt')
+    expect(source).toContain('jq -e \'.files | length == 4\' h1-terminal-manifest-v1.json')
   })
 
   it('does not run concurrently with H1 execution', async () => {
