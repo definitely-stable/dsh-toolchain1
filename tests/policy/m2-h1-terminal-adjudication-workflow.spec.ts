@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 
 const WORKFLOW = new URL('../../.github/workflows/m2-h1-terminal-adjudication.yml', import.meta.url)
-const TERMINAL_SOURCE_COMMIT = '2e3e49702d0581364952affd96d86c518dda361b'
+const TERMINAL_SOURCE_COMMIT = 'a27e86e2174e782c438abd91881094492f423af3'
 
 describe('M2 H1 terminal adjudication workflow policy', () => {
   it('is manual-only, exact-cache, offline and artifact-producing', async () => {
