@@ -1,0 +1,144 @@
+name: M2 H1 Finalize Once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/m2-h1-finalize-once.yml
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: m2-h1-finalize-once-33533666686
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      H1_EXECUTION_RUN_ID: '33533666686'
+      TERMINAL_WORKFLOW: m2-h1-terminal-adjudication.yml
+      POST_WORKFLOW: m2-h1-post-analysis.yml
+    steps:
+      - name: Verify completed H1 execution source run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$H1_EXECUTION_RUN_ID" > "$RUNNER_TEMP/h1-run.json"
+          jq -e '
+            .name == "M2 H1 Execution"
+            and .path == ".github/workflows/m2-h1-execution.yml"
+            and .event == "workflow_dispatch"
+            and .head_branch == "main"
+            and .status == "completed"
+            and .conclusion == "success"
+          ' "$RUNNER_TEMP/h1-run.json" >/dev/null
+
+      - name: Dispatch and await canonical terminal adjudication
+        id: terminal
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="/repos/$GITHUB_REPOSITORY/actions/workflows/$TERMINAL_WORKFLOW/runs?event=workflow_dispatch&branch=main&per_page=20"
+          baseline="$(gh api "$api" --jq '.workflow_runs[0].id // 0')"
+
+          jq -n --arg ref main --arg runId "$H1_EXECUTION_RUN_ID" \
+            '{ref:$ref, inputs:{h1_execution_run_id:$runId}}' \
+            | gh api --method POST "/repos/$GITHUB_REPOSITORY/actions/workflows/$TERMINAL_WORKFLOW/dispatches" --input - >/dev/null
+
+          terminal_run_id=''
+          for _ in $(seq 1 60); do
+            terminal_run_id="$(gh api "$api" --jq ".workflow_runs[] | select(.id != $baseline) | .id" | head -n1)"
+            if [[ -n "$terminal_run_id" ]]; then
+              break
+            fi
+            sleep 5
+          done
+          if [[ -z "$terminal_run_id" ]]; then
+            echo '::error::Canonical terminal adjudication run was not observed after dispatch'
+            exit 1
+          fi
+          echo "terminal_run_id=$terminal_run_id" >> "$GITHUB_OUTPUT"
+
+          for _ in $(seq 1 300); do
+            gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$terminal_run_id" > "$RUNNER_TEMP/terminal-run.json"
+            status="$(jq -r '.status' "$RUNNER_TEMP/terminal-run.json")"
+            if [[ "$status" == 'completed' ]]; then
+              conclusion="$(jq -r '.conclusion' "$RUNNER_TEMP/terminal-run.json")"
+              if [[ "$conclusion" != 'success' ]]; then
+                echo "::error::Terminal adjudication run $terminal_run_id completed with $conclusion"
+                exit 1
+              fi
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Timed out awaiting terminal adjudication run $terminal_run_id"
+          exit 1
+
+      - name: Dispatch and await canonical post-H1 analysis
+        id: post
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TERMINAL_RUN_ID: ${{ steps.terminal.outputs.terminal_run_id }}
+        run: |
+          set -euo pipefail
+          api="/repos/$GITHUB_REPOSITORY/actions/workflows/$POST_WORKFLOW/runs?event=workflow_dispatch&branch=main&per_page=20"
+          baseline="$(gh api "$api" --jq '.workflow_runs[0].id // 0')"
+
+          jq -n --arg ref main --arg runId "$TERMINAL_RUN_ID" \
+            '{ref:$ref, inputs:{terminal_adjudication_run_id:$runId}}' \
+            | gh api --method POST "/repos/$GITHUB_REPOSITORY/actions/workflows/$POST_WORKFLOW/dispatches" --input - >/dev/null
+
+          post_run_id=''
+          for _ in $(seq 1 60); do
+            post_run_id="$(gh api "$api" --jq ".workflow_runs[] | select(.id != $baseline) | .id" | head -n1)"
+            if [[ -n "$post_run_id" ]]; then
+              break
+            fi
+            sleep 5
+          done
+          if [[ -z "$post_run_id" ]]; then
+            echo '::error::Canonical post-H1 analysis run was not observed after dispatch'
+            exit 1
+          fi
+          echo "post_run_id=$post_run_id" >> "$GITHUB_OUTPUT"
+
+          for _ in $(seq 1 120); do
+            gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$post_run_id" > "$RUNNER_TEMP/post-run.json"
+            status="$(jq -r '.status' "$RUNNER_TEMP/post-run.json")"
+            if [[ "$status" == 'completed' ]]; then
+              conclusion="$(jq -r '.conclusion' "$RUNNER_TEMP/post-run.json")"
+              if [[ "$conclusion" != 'success' ]]; then
+                echo "::error::Post-H1 analysis run $post_run_id completed with $conclusion"
+                exit 1
+              fi
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Timed out awaiting post-H1 analysis run $post_run_id"
+          exit 1
+
+      - name: Publish one-shot completion receipt
+        shell: bash
+        env:
+          TERMINAL_RUN_ID: ${{ steps.terminal.outputs.terminal_run_id }}
+          POST_RUN_ID: ${{ steps.post.outputs.post_run_id }}
+        run: |
+          {
+            echo '## M2 H1 completion chain'
+            echo
+            echo "- H1 execution: $H1_EXECUTION_RUN_ID"
+            echo "- Terminal adjudication: $TERMINAL_RUN_ID"
+            echo "- Post-H1 analysis: $POST_RUN_ID"
+          } >> "$GITHUB_STEP_SUMMARY"
