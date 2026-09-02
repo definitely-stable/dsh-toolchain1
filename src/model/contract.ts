@@ -557,19 +557,21 @@ export function searchContractIndex(
   const kindSet = kinds === undefined ? undefined : new Set(kinds)
   const contracts = index.contracts.filter(contract => kindSet === undefined || kindSet.has(contract.kind))
   const strictMatches = rankedMatches(contracts, query, strictLexicalMatch, limit)
-  const matches = strictMatches.length > 0 || !isIntentFallbackQuery(query)
-    ? strictMatches
-    : rankedMatches(
-        contracts,
-        query,
-        (contract, intentQuery) => intentMatch(
-          contract,
-          intentQuery,
-          derived ?? createContractSearchIndex(index),
-        ),
-        Math.min(limit, 1),
-      )
+  if (strictMatches.length > 0 || !isIntentFallbackQuery(query)) {
+    const evidenceIds = new Set(strictMatches.flatMap(match => match.evidenceIds))
+    return Object.freeze({
+      matches: Object.freeze(strictMatches),
+      evidence: evidenceSubset(index, evidenceIds),
+    })
+  }
 
+  const intentIndex = derived ?? createContractSearchIndex(index)
+  const matches = rankedMatches(
+    contracts,
+    query,
+    (contract, intentQuery) => intentMatch(contract, intentQuery, intentIndex),
+    Math.min(limit, 1),
+  )
   const evidenceIds = new Set(matches.flatMap(match => match.evidenceIds))
   return Object.freeze({
     matches: Object.freeze(matches),
