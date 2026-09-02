@@ -6,6 +6,7 @@ import type {
   AcquiredPluginRequirement,
   AcquiredPluginSubject,
   PluginPackageRelationship,
+  PluginSubjectAcquisitionPort,
 } from '../model/plugin.js'
 import type { Diagnostic, Evidence } from '../protocol/index.js'
 
@@ -367,5 +368,13 @@ export async function acquirePluginDirectory(
     requirements: Object.freeze([...requirements]),
     evidence: Object.freeze([...evidence]),
     diagnostics: Object.freeze([...diagnostics]),
+  })
+}
+
+export function createPluginDirectoryAcquisition(
+  digest: Sha256Port,
+): PluginSubjectAcquisitionPort {
+  return Object.freeze({
+    acquire: subject => acquirePluginDirectory(subject.path, digest),
   })
 }
