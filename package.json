@@ -34,6 +34,7 @@
     "lib",
     "cordis.patch.yml",
     "spec/schemas/v1/*.json",
+    "skills/dsh-toolchain",
     "README.md",
     "LICENSE"
   ],
