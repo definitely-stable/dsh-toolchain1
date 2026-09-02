@@ -99,6 +99,8 @@ interface IntentDocument {
 
 export const CONTRACT_SEARCH_RANKER_VERSION = 'dsh-contract-search-v2-intent'
 
+const intentDocumentCache = new WeakMap<ContractDefinition, IntentDocument>()
+
 type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue }
 
 function compareCodePoints(left: string, right: string): number {
@@ -479,6 +481,9 @@ function addFactTokenEvidence(
 }
 
 function intentDocument(contract: ContractDefinition): IntentDocument {
+  const cached = intentDocumentCache.get(contract)
+  if (cached !== undefined) return cached
+
   const factEvidence = new Map<string, string[]>()
   for (const fact of contract.facts) {
     for (const token of searchTokens(`${fact.key} ${fact.value}`)) {
@@ -491,12 +496,14 @@ function intentDocument(contract: ContractDefinition): IntentDocument {
     factEvidenceByToken.set(token, frozenEvidenceIds(evidenceIds))
   }
 
-  return Object.freeze({
+  const document = Object.freeze({
     identityTokens: new Set(searchTokens(`${contract.name} ${contract.qualifiedName}`)),
     summaryTokens: new Set(searchTokens(contract.summary ?? '')),
     kindTokens: new Set(searchTokens(contract.kind)),
     factEvidenceByToken,
   })
+  intentDocumentCache.set(contract, document)
+  return document
 }
 
 function intentTokenMatch(
