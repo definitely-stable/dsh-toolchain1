@@ -26,6 +26,7 @@ function dependencies(
     resolveTarget: vi.fn(async () => { throw new Error('target resolve is not used by contract CLI tests') }),
     searchContracts,
     inspectContract,
+    checkPlugin: vi.fn(async () => { throw new Error('plugin check is not used by contract CLI tests') }),
   } as ApplicationKernel
 
   return {
