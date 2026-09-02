@@ -6,7 +6,7 @@ import {
   createContractSearchIndex,
   type ContractSearchIndex,
 } from '../../src/model/contract-search-index.js'
-import type { ContractKind } from '../../src/protocol/index.js'
+import type { ContractDefinition, ContractKind, Evidence } from '../../src/protocol/index.js'
 
 type SearchLane = 'strict' | 'intent' | 'none'
 type SearchField = 'identity' | 'fact' | 'summary' | 'kind'
@@ -55,51 +55,51 @@ function explainContractSearch(
 }
 
 function fixtureIndex(): ContractIndex {
-  return Object.freeze({
+  const evidence: Evidence[] = [
+    {
+      id: 'e:validate',
+      kind: 'type-declaration',
+      strength: 'authoritative',
+      source: '@deepseek-ai/dsh-tools/index.d.ts',
+      contentHash: '1'.repeat(64),
+      location: '/fixture/dsh-tools/index.d.ts',
+    },
+    {
+      id: 'e:schema',
+      kind: 'type-declaration',
+      strength: 'authoritative',
+      source: '@deepseek-ai/dsh-tools/index.d.ts',
+      contentHash: '2'.repeat(64),
+      location: '/fixture/dsh-tools/index.d.ts',
+    },
+  ]
+  const contract: ContractDefinition = {
+    id: 'package:tool-definition',
+    kind: 'package',
+    name: 'ToolDefinition',
+    qualifiedName: '@deepseek-ai/dsh-tools.ToolDefinition',
+    availability: 'available',
+    summary: 'Tool schema helpers',
+    facts: [
+      {
+        key: 'declaration-export',
+        value: 'validateArgs',
+        evidenceIds: ['e:validate'],
+      },
+      {
+        key: 'declaration-export',
+        value: 'ToolSchema',
+        evidenceIds: ['e:schema'],
+      },
+    ],
+    evidenceIds: ['e:validate', 'e:schema'],
+  }
+  return {
     targetFingerprint: `dsh-target-v2:${'a'.repeat(64)}`,
     fingerprint: `dsh-contract-index-v1:${'b'.repeat(64)}`,
-    evidence: Object.freeze([
-      Object.freeze({
-        id: 'e:validate',
-        kind: 'type-declaration' as const,
-        strength: 'authoritative' as const,
-        source: '@deepseek-ai/dsh-tools/index.d.ts',
-        contentHash: '1'.repeat(64),
-        location: '/fixture/dsh-tools/index.d.ts',
-      }),
-      Object.freeze({
-        id: 'e:schema',
-        kind: 'type-declaration' as const,
-        strength: 'authoritative' as const,
-        source: '@deepseek-ai/dsh-tools/index.d.ts',
-        contentHash: '2'.repeat(64),
-        location: '/fixture/dsh-tools/index.d.ts',
-      }),
-    ]),
-    contracts: Object.freeze([
-      Object.freeze({
-        id: 'package:tool-definition',
-        kind: 'package' as const,
-        name: 'ToolDefinition',
-        qualifiedName: '@deepseek-ai/dsh-tools.ToolDefinition',
-        availability: 'available' as const,
-        summary: 'Tool schema helpers',
-        facts: Object.freeze([
-          Object.freeze({
-            key: 'declaration-export',
-            value: 'validateArgs',
-            evidenceIds: Object.freeze(['e:validate']),
-          }),
-          Object.freeze({
-            key: 'declaration-export',
-            value: 'ToolSchema',
-            evidenceIds: Object.freeze(['e:schema']),
-          }),
-        ]),
-        evidenceIds: Object.freeze(['e:validate', 'e:schema']),
-      }),
-    ]),
-  })
+    evidence,
+    contracts: [contract],
+  }
 }
 
 describe('Contract Search internal explanation', () => {
