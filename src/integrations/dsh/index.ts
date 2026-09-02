@@ -5,7 +5,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import { createDshContractFilesystemAcquisition } from '../../acquisition/dsh-contract-filesystem.js'
 import { createDshFilesystemTargetAcquisition } from '../../acquisition/dsh-filesystem.js'
 import { createNodeSha256Port } from '../../acquisition/node-sha256.js'
-import { createPluginDirectoryAcquisition } from '../../acquisition/plugin-directory.js'
+import { createPluginSubjectAcquisition } from '../../acquisition/plugin-subject.js'
 import {
   checkPluginResponse,
   createApplicationKernel,
@@ -51,7 +51,7 @@ function createNodeKernel(digest: Sha256Port) {
   return createApplicationKernel({
     targetAcquisition: createDshFilesystemTargetAcquisition({ digest }),
     contractAcquisition: createDshContractFilesystemAcquisition({ digest }),
-    pluginSubjectAcquisition: createPluginDirectoryAcquisition(digest),
+    pluginSubjectAcquisition: createPluginSubjectAcquisition(digest),
     digest,
   })
 }
