@@ -586,7 +586,10 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
         ruleset: PLUGIN_STATIC_RULESET,
         scopeComplete: false,
         verdict: analysis.verdict,
-        requirements: analysis.requirements.map(requirement => ({ ...requirement })),
+        requirements: analysis.requirements.map(requirement => ({
+          ...requirement,
+          evidenceIds: [...requirement.evidenceIds],
+        })),
         evidence: pluginCheckEvidence(
           subject.evidence,
           index,
