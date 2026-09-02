@@ -10,6 +10,7 @@ const REQUIRED_POLICY_FILES = [
   'package/README.md',
   'package/LICENSE',
   'package/spec/schemas/v1/toolchain-protocol.schema.json',
+  'package/skills/dsh-toolchain/SKILL.md',
 ]
 
 const FORBIDDEN_PREFIXES = [
