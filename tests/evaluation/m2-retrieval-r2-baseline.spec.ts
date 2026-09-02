@@ -10,12 +10,12 @@ import {
 } from './m2-retrieval-r2.js'
 
 interface ScenarioBaseline {
-  readonly taskCount: number
-  readonly answerableCount: number
-  readonly top1Hits: number
-  readonly top5Hits: number
-  readonly noResultCorrect: number
-  readonly forbiddenHitAt5: number
+  taskCount: number
+  answerableCount: number
+  top1Hits: number
+  top5Hits: number
+  noResultCorrect: number
+  forbiddenHitAt5: number
 }
 
 function emptyScenarioBaseline(): ScenarioBaseline {
