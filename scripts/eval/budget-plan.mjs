@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
+const BC_ARMS = /** @type {const} */ (['B', 'C'])
 
 /** @typedef {'deterministic' | 'canary' | 'dev' | 'release' | 'research'} EvalModeName */
 /** @typedef {'implementation-validity' | 'measurement-health' | 'engineering-signal' | 'release-confidence' | 'exploratory-evidence'} ClaimStrength */
@@ -33,7 +34,7 @@ const MODES = Object.freeze({
   canary: Object.freeze({
     mode: 'canary',
     taskCount: 8,
-    arms: Object.freeze(['B', 'C']),
+    arms: BC_ARMS,
     repetitions: 1,
     expectedModelCalls: 16,
     hardModelCallCap: 16,
@@ -42,7 +43,7 @@ const MODES = Object.freeze({
   dev: Object.freeze({
     mode: 'dev',
     taskCount: 20,
-    arms: Object.freeze(['B', 'C']),
+    arms: BC_ARMS,
     repetitions: 1,
     expectedModelCalls: 40,
     hardModelCallCap: 40,
@@ -51,7 +52,7 @@ const MODES = Object.freeze({
   release: Object.freeze({
     mode: 'release',
     taskCount: 32,
-    arms: Object.freeze(['B', 'C']),
+    arms: BC_ARMS,
     repetitions: 1,
     expectedModelCalls: 64,
     hardModelCallCap: 64,
@@ -60,7 +61,7 @@ const MODES = Object.freeze({
   research: Object.freeze({
     mode: 'research',
     taskCount: 48,
-    arms: Object.freeze(['B', 'C']),
+    arms: BC_ARMS,
     repetitions: 1,
     expectedModelCalls: 96,
     hardModelCallCap: 96,
@@ -68,11 +69,6 @@ const MODES = Object.freeze({
   }),
 })
 
-/**
- * @param {unknown} value
- * @param {string} label
- * @returns {number}
- */
 function requireNonNegativeInteger(value, label) {
   if (!Number.isSafeInteger(value) || Number(value) < 0) {
     throw new Error(`${label} must be a non-negative safe integer`)
@@ -80,43 +76,28 @@ function requireNonNegativeInteger(value, label) {
   return Number(value)
 }
 
-/**
- * @param {unknown} name
- * @returns {EvalModeDefinition}
- */
+/** @param {unknown} name @returns {EvalModeDefinition} */
 export function getEvalMode(name) {
-  if (typeof name !== 'string' || !(name in MODES)) {
-    throw new Error(`Unknown evaluation mode: ${String(name)}`)
-  }
+  if (typeof name !== 'string' || !(name in MODES)) throw new Error(`Unknown evaluation mode: ${String(name)}`)
   return MODES[/** @type {EvalModeName} */ (name)]
 }
 
-/**
- * @param {{ mode: EvalModeName | string; taskCount?: number; repetitions?: number }} input
- */
+/** @param {{ mode: EvalModeName | string; taskCount?: number; repetitions?: number }} input */
 export function planEvalBudget(input) {
   if (input === null || typeof input !== 'object') throw new Error('evaluation budget input must be an object')
   const definition = getEvalMode(input.mode)
-  const taskCount = input.taskCount === undefined
-    ? definition.taskCount
-    : requireNonNegativeInteger(input.taskCount, 'taskCount')
-  const repetitions = input.repetitions === undefined
-    ? definition.repetitions
-    : requireNonNegativeInteger(input.repetitions, 'repetitions')
+  const taskCount = input.taskCount === undefined ? definition.taskCount : requireNonNegativeInteger(input.taskCount, 'taskCount')
+  const repetitions = input.repetitions === undefined ? definition.repetitions : requireNonNegativeInteger(input.repetitions, 'repetitions')
 
   if (definition.mode === 'deterministic') {
-    if (taskCount !== 0 || repetitions !== 0) {
-      throw new Error('Deterministic mode cannot schedule model work')
-    }
+    if (taskCount !== 0 || repetitions !== 0) throw new Error('Deterministic mode cannot schedule model work')
   } else if (taskCount < 1 || repetitions < 1) {
     throw new Error('Model evaluation modes require at least one task and one repetition')
   }
 
   const expectedModelCalls = taskCount * definition.arms.length * repetitions
   if (expectedModelCalls > definition.hardModelCallCap) {
-    throw new Error(
-      `Requested evaluation requires ${expectedModelCalls} model calls, above ${definition.mode} hard model-call cap ${definition.hardModelCallCap}`,
-    )
+    throw new Error(`Requested evaluation requires ${expectedModelCalls} model calls, above ${definition.mode} hard model-call cap ${definition.hardModelCallCap}`)
   }
 
   return Object.freeze({
@@ -131,30 +112,15 @@ export function planEvalBudget(input) {
   })
 }
 
-/**
- * @param {string[]} args
- */
 function parseArguments(args) {
   let mode
   let taskCount
   let repetitions
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
-    if (argument === '--mode') {
-      mode = args[index + 1]
-      index += 1
-      continue
-    }
-    if (argument === '--tasks') {
-      taskCount = Number(args[index + 1])
-      index += 1
-      continue
-    }
-    if (argument === '--repetitions') {
-      repetitions = Number(args[index + 1])
-      index += 1
-      continue
-    }
+    if (argument === '--mode') { mode = args[index + 1]; index += 1; continue }
+    if (argument === '--tasks') { taskCount = Number(args[index + 1]); index += 1; continue }
+    if (argument === '--repetitions') { repetitions = Number(args[index + 1]); index += 1; continue }
     throw new Error(`Unknown eval budget argument: ${String(argument)}`)
   }
   if (mode === undefined) throw new Error('eval budget planner requires --mode')
@@ -169,10 +135,5 @@ export function main(args = process.argv.slice(2)) {
 
 const invokedDirectly = process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(SCRIPT_PATH)
 if (invokedDirectly) {
-  try {
-    main()
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error))
-    process.exitCode = 1
-  }
+  try { main() } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1 }
 }
