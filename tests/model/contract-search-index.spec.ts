@@ -1,39 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import * as contractModel from '../../src/model/contract.js'
+import { createContractSearchIndex } from '../../src/model/contract-search-index.js'
 import type { ContractDefinition } from '../../src/protocol/index.js'
-
-interface DerivedFactShape {
-  readonly index: number
-  readonly key: string
-  readonly value: string
-  readonly tokens: readonly string[]
-  readonly evidenceIds: readonly string[]
-}
-
-interface DerivedDocumentShape {
-  readonly contractId: string
-  readonly identity: { readonly tokens: readonly string[] }
-  readonly facts: readonly DerivedFactShape[]
-}
-
-interface DerivedIndexShape {
-  readonly rankerVersion: string
-  readonly contractIndexFingerprint: string
-  readonly documentCount: number
-  readonly documents: ReadonlyMap<string, DerivedDocumentShape>
-  readonly postings: ReadonlyMap<string, readonly { readonly contractId: string }[]>
-  readonly documentFrequency: ReadonlyMap<string, number>
-  readonly retainedTokenCount: number
-  readonly postingCount: number
-}
-
-type ContractModelWithSearchIndex = typeof contractModel & {
-  readonly createContractSearchIndex?: (source: {
-    readonly fingerprint: string
-    readonly contracts: readonly ContractDefinition[]
-  }) => DerivedIndexShape
-}
 
 const toolsContract: ContractDefinition = {
   id: 'package:tools',
@@ -76,16 +44,8 @@ const otherContract: ContractDefinition = {
 
 const contracts: readonly ContractDefinition[] = Object.freeze([toolsContract, otherContract])
 
-function builder() {
-  return (contractModel as ContractModelWithSearchIndex).createContractSearchIndex
-}
-
 describe('ContractSearchIndex derived state', () => {
   it('preserves field and fact boundaries while deriving deterministic postings and document frequency', () => {
-    const createContractSearchIndex = builder()
-    expect(typeof createContractSearchIndex).toBe('function')
-    if (createContractSearchIndex === undefined) return
-
     const derived = createContractSearchIndex({
       fingerprint: `dsh-contract-index-v1:${'a'.repeat(64)}`,
       contracts,
@@ -129,10 +89,6 @@ describe('ContractSearchIndex derived state', () => {
   })
 
   it('counts one document per term even when a token repeats across fields and facts in the same contract', () => {
-    const createContractSearchIndex = builder()
-    expect(typeof createContractSearchIndex).toBe('function')
-    if (createContractSearchIndex === undefined) return
-
     const derived = createContractSearchIndex({
       fingerprint: `dsh-contract-index-v1:${'b'.repeat(64)}`,
       contracts: [toolsContract],
