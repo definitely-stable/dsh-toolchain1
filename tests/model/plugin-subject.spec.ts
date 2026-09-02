@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -9,8 +11,7 @@ import type { Sha256Port } from '../../src/model/digest.js'
 
 const digest: Sha256Port = {
   async sha256Utf8(value) {
-    const normalized = Buffer.from(value, 'utf8').toString('hex').slice(0, 64).padEnd(64, '0')
-    return normalized
+    return createHash('sha256').update(value, 'utf8').digest('hex')
   },
 }
 
