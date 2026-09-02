@@ -146,6 +146,12 @@ function deepseekRequirements(
             `peerDependenciesMeta.${packageName} must be an object.`,
             [manifestLocation],
           ))
+        } else if ('optional' in packageMeta && typeof packageMeta.optional !== 'boolean') {
+          diagnostics.push(diagnostic(
+            'PLUGIN_MANIFEST_INVALID',
+            `peerDependenciesMeta.${packageName}.optional must be boolean when present.`,
+            [manifestLocation],
+          ))
         } else if (packageMeta.optional === true) {
           relationship = 'host-peer-optional'
         }
