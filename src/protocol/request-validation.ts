@@ -2,18 +2,10 @@ import type {
   ContractInspectRequest,
   ContractKind,
   ContractSearchRequest,
+  PluginCheckRequest,
+  PluginSubjectRequest,
   TargetResolveRequest,
 } from './generated.js'
-
-export interface PluginSubjectRequest {
-  readonly kind: 'directory'
-  readonly path: string
-}
-
-export interface PluginCheckRequest {
-  readonly target: TargetResolveRequest
-  readonly subject: PluginSubjectRequest
-}
 
 export const CONTRACT_KINDS = Object.freeze([
   'service',
