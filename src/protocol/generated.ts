@@ -153,6 +153,7 @@ export type PluginRequirementAnalysis = {
   readonly "relationship": PluginPackageRelationship
   readonly "status": PluginRequirementStatus
   readonly "targetVersion"?: string
+  readonly "evidenceIds": Array<string>
 }
 
 export type PluginCheckResult = {
