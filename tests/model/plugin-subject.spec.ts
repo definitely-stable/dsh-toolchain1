@@ -92,10 +92,13 @@ describe('dsh-plugin-subject-v1 semantic identity', () => {
   })
 
   it('does not invent a semantic fingerprint for an invalid subject without package identity', () => {
-    expect(createPluginSubjectSemanticProjection(subject({
+    const invalidSubject: AcquiredPluginSubject = {
       completeness: 'invalid',
-      packageName: undefined,
-      packageVersion: undefined,
-    }))).toBeUndefined()
+      requirements: [],
+      evidence: [],
+      diagnostics: [],
+    }
+
+    expect(createPluginSubjectSemanticProjection(invalidSubject)).toBeUndefined()
   })
 })
