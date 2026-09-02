@@ -4,7 +4,7 @@ import { parseArgs } from 'node:util'
 import { createDshContractFilesystemAcquisition } from '../../acquisition/dsh-contract-filesystem.js'
 import { createDshFilesystemTargetAcquisition } from '../../acquisition/dsh-filesystem.js'
 import { createNodeSha256Port } from '../../acquisition/node-sha256.js'
-import { createPluginDirectoryAcquisition } from '../../acquisition/plugin-directory.js'
+import { createPluginSubjectAcquisition } from '../../acquisition/plugin-subject.js'
 import {
   checkPluginResponse,
   createApplicationKernel,
@@ -52,14 +52,14 @@ Usage:
   dsh-toolchain target resolve --profile <name> [--dsh-home <path>] [--dsh-package-root <path>] [--patch <path> ...]
   dsh-toolchain contract search --profile <name> --query <text> [--kind <kind> ...] [--limit <1-25>] [target hints]
   dsh-toolchain contract inspect --profile <name> --contract-index <fingerprint> --contract-id <id> [target hints]
-  dsh-toolchain plugin check --profile <name> --subject <directory> [target hints]
+  dsh-toolchain plugin check --profile <name> --subject <directory-or-tgz> [target hints]
 
 Commands:
   mcp                Serve DSH Toolchain over MCP stdio
   target resolve     Resolve one exact installed DSH target as Protocol v1 JSON
   contract search    Search deterministic contracts for one exact installed target
   contract inspect   Inspect one contract against an exact contract-index fingerprint
-  plugin check       Check one plugin directory against an exact installed DSH target
+  plugin check       Check one plugin directory or packed .tgz against an exact installed DSH target
 
 Options:
   -h, --help                 Show help
@@ -75,7 +75,7 @@ Options:
       --contract-index <fingerprint>
                              Contract index fingerprint required by inspect
       --contract-id <id>     Contract id required by inspect
-      --subject <directory>  Plugin directory to check without executing candidate code
+      --subject <path>       Plugin directory or packed .tgz; candidate code is never executed
 `
 
 function createNodeKernel(): ApplicationKernel {
@@ -83,7 +83,7 @@ function createNodeKernel(): ApplicationKernel {
   return createApplicationKernel({
     targetAcquisition: createDshFilesystemTargetAcquisition({ digest }),
     contractAcquisition: createDshContractFilesystemAcquisition({ digest }),
-    pluginSubjectAcquisition: createPluginDirectoryAcquisition(digest),
+    pluginSubjectAcquisition: createPluginSubjectAcquisition(digest),
     digest,
   })
 }
@@ -205,10 +205,11 @@ function pluginCheckRequest(values: CliOptionValues): PluginCheckRequest | undef
   const target = targetRequest(values)
   const subject = values.subject
   if (target === undefined || typeof subject !== 'string' || subject.trim().length === 0) return undefined
+  const kind = subject.toLowerCase().endsWith('.tgz') ? 'packed' : 'directory'
   try {
     return parsePluginCheckRequest({
       target,
-      subject: { kind: 'directory', path: subject },
+      subject: { kind, path: subject },
     })
   } catch {
     return undefined
