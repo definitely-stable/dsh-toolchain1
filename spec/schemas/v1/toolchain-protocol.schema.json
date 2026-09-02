@@ -309,13 +309,18 @@
     "pluginRequirementAnalysis": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["packageName", "range", "relationship", "status"],
+      "required": ["packageName", "range", "relationship", "status", "evidenceIds"],
       "properties": {
         "packageName": {"type": "string", "minLength": 1},
         "range": {"type": "string", "minLength": 1},
         "relationship": {"$ref": "#/$defs/pluginPackageRelationship"},
         "status": {"$ref": "#/$defs/pluginRequirementStatus"},
-        "targetVersion": {"type": "string", "minLength": 1}
+        "targetVersion": {"type": "string", "minLength": 1},
+        "evidenceIds": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        }
       }
     },
     "pluginCheckResult": {
