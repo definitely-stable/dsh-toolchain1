@@ -8,7 +8,7 @@ import type {
   PluginPackageRelationship,
   PluginSubjectAcquisitionPort,
 } from '../model/plugin.js'
-import type { Diagnostic, Evidence } from '../protocol/index.js'
+import type { Diagnostic, Evidence, PluginSubjectRequest } from '../protocol/index.js'
 
 const MAX_PLUGIN_MANIFEST_BYTES = 1024 * 1024
 const MAX_PLUGIN_BUNDLE_PATCH_BYTES = 4 * 1024 * 1024
@@ -375,6 +375,6 @@ export function createPluginDirectoryAcquisition(
   digest: Sha256Port,
 ): PluginSubjectAcquisitionPort {
   return Object.freeze({
-    acquire: subject => acquirePluginDirectory(subject.path, digest),
+    acquire: (subject: PluginSubjectRequest) => acquirePluginDirectory(subject.path, digest),
   })
 }
