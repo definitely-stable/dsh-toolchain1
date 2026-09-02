@@ -632,7 +632,7 @@ export function searchContractIndex(
   const strictMatches = rankedMatches(contracts, query, strictLexicalMatch, limit)
   const matches = strictMatches.length > 0 || !isIntentFallbackQuery(query)
     ? strictMatches
-    : rankedMatches(contracts, query, intentMatch, limit)
+    : rankedMatches(contracts, query, intentMatch, Math.min(limit, 1))
 
   const evidenceIds = new Set(matches.flatMap(match => match.evidenceIds))
   return Object.freeze({
