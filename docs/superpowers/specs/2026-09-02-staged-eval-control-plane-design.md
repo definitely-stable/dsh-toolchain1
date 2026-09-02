@@ -54,23 +54,9 @@ The product decision under active development is ordinary exact-target tooling (
 
 Budget planning is deterministic and fail-closed.
 
-Each mode defines:
+Each mode defines task count, arm count, repetitions, expected model calls and a hard maximum model-call count. The planner rejects unknown modes, overrides that exceed the selected mode cap and implicit mode escalation. The normal operator path does not ask a human to choose chunk sizes; the selected mode is the budget.
 
-- task count;
-- arm count;
-- repetitions;
-- expected model calls;
-- hard maximum model calls;
-- optional token warning threshold.
-
-The planner MUST reject:
-
-- unknown modes;
-- task/repetition overrides that exceed the selected mode's hard call cap;
-- an attempt to use arm A in `canary`, `dev`, or `release` without selecting a separate research design;
-- implicit mode escalation.
-
-The normal operator path does not ask a human to choose chunk sizes. The selected mode is the budget.
+A single operator dispatch follows `plan -> canary -> health -> remainder`. For any requested model mode larger than canary, the first 16 calls are the canary portion of the same bounded plan. The remaining calls are permitted only when canary health is `PASS`; a failed canary terminates the run without consuming the rest of the budget.
 
 ## Measurement health gate
 
@@ -80,7 +66,7 @@ The first version freezes these development health thresholds:
 
 - format/schema compliance >= 0.98;
 - decision resolution >= 0.95;
-- infrastructure failure rate <= 0.02;
+- unrecovered infrastructure missingness <= 0.02;
 - absolute B/C decision-resolution gap <= 0.05.
 
 These are development/calibration controls, not post-hoc changes to H1. They govern whether staged evaluation may advance.
@@ -95,54 +81,32 @@ The health gate outputs `PASS` or `STOP` plus machine-readable reasons. A failed
 `decisionResolutionRate`
 : fraction of scheduled B/C trials that produce a resolved decision observation.
 
-`infrastructureFailureRate`
-: infrastructure-failure attempts divided by all committed attempts represented in the health input.
+`unrecoveredInfrastructureRate`
+: fraction of scheduled B/C observations for which infrastructure failure leaves no model outcome after the allowed retry policy.
+
+`retryAttemptRate`
+: additional retry attempts divided by total attempts. This is reported as operational cost/reliability evidence but does not by itself invalidate a measurement when a retry successfully recovers the scheduled observation.
 
 `resolutionGap`
 : absolute difference between B and C decision-resolution rates.
 
-The gate also reports per-arm counts so missingness asymmetry is visible.
+The gate reports per-arm counts so missingness asymmetry is visible. Recovered retries and unrecovered missingness are deliberately distinct; counting every transient retry as a validity failure would make successful recovery self-defeating.
 
 ## Structured measurement boundary
 
 H1 demonstrated that a free-text convention such as `API_CLAIM ...` is too fragile to serve as an implicit measurement transport.
 
-The staged control plane therefore treats format compliance as a first-class health signal and prepares the next runner for a structured result sidecar. In this first implementation slice, the generic health schema already separates:
-
-- `formatValid`;
-- `decisionResolved`;
-- `infrastructureFailures`;
-- arm identity.
-
-A future runner can populate those fields from provider-native structured output or a deterministic extractor without changing the health controller.
+The staged control plane treats format compliance as a first-class health signal and prepares the next runner for a structured result sidecar. The generic health schema separates `formatValid`, `decisionResolved`, retry/infrastructure evidence and arm identity. A future runner can populate those fields from provider-native structured output or a deterministic extractor without changing the health controller.
 
 ## H1 development corpus
 
-The terminal H1 dataset is disclosed and no longer a holdout. It is archived in the repository as `docs/evaluation/m2/h1-dev-corpus-v1.json` with explicit `DEVELOPMENT_ONLY` status.
+The terminal H1 dataset is disclosed and no longer a holdout. It is archived under `docs/evaluation/m2/h1-dev-corpus-v1/` with a small manifest and task shards, all explicitly marked `DEVELOPMENT_ONLY`.
 
-It may be used for:
-
-- evaluator calibration;
-- regression fixtures;
-- targeted retrieval/tool-use experiments;
-- failure-cluster reproduction.
-
-It MUST NOT be used as the confirmatory H2 holdout or represented as unseen evidence after product tuning.
+It may be used for evaluator calibration, regression fixtures, targeted retrieval/tool-use experiments and failure-cluster reproduction. It MUST NOT be used as the confirmatory H2 holdout or represented as unseen evidence after product tuning.
 
 ## Agent skill
 
-`.agents/skills/dsh-eval/SKILL.md` becomes the canonical agent operator entrypoint.
-
-The skill must:
-
-1. inspect the requested change and choose the cheapest sufficient mode;
-2. run deterministic checks before model calls;
-3. call the budget planner and display the hard cap before execution;
-4. execute canary before any newly introduced/changed measurement path is allowed to run a larger mode;
-5. stop on health failure rather than consuming the remaining budget;
-6. collect artifacts and summarize quality, cost, and failure clusters;
-7. never claim dev/release results are confirmatory H2 evidence;
-8. never re-run H1.
+`.agents/skills/dsh-eval/SKILL.md` becomes the canonical agent operator entrypoint. The skill must choose the cheapest sufficient mode, run deterministic checks before model calls, display the hard cap before execution, require canary health before spending a larger budget, stop on health failure, summarize measurement/product/cost separately, never claim dev/release results are H2 evidence and never rerun H1.
 
 The skill is orchestration guidance. Budget and health decisions live in deterministic scripts so model interpretation cannot silently weaken them.
 
@@ -154,44 +118,28 @@ Normal change:
 change
   -> deterministic checks
   -> plan dev budget (40 calls max)
-  -> run/consume dev evidence
-  -> health gate
-  -> compare candidate/baseline
-  -> concise report
-```
-
-New evaluator/measurement behavior:
-
-```text
-measurement change
-  -> deterministic self-test
-  -> canary (16 calls max)
+  -> first 16 calls as canary
   -> health PASS?
        no -> STOP
-       yes -> dev/release as explicitly requested
+       yes -> execute remaining 24 calls
+  -> health + product + cost report
 ```
 
-A larger research run is never an automatic consequence of a dev run.
+A larger release/research run follows the same rule and is never an automatic consequence of a smaller mode.
 
 ## H2 boundary
 
-H2 preparation begins only after the following are true on development/calibration data:
-
-- structured measurement contract is stable;
-- canary health passes repeatedly;
-- deterministic end-to-end evaluator fixtures cover success/failure/format/infra paths;
-- expected cost and token overhead are measured;
-- task-selection and repetition policy are frozen without looking at the future H2 holdout.
+H2 preparation begins only after the structured measurement contract is stable, canary health passes repeatedly, deterministic end-to-end evaluator fixtures cover success/failure/format/infra paths, expected cost/token overhead are measured, and task-selection/repetition policy is frozen without looking at the future H2 holdout.
 
 Only then is a new hidden H2 dataset generated and committed by hash before provider execution. H2 may use a sequential design, but stopping boundaries must be preregistered before outcomes are observed.
 
 ## Evidence and reporting
 
-Every staged evaluation report should distinguish three axes:
+Every staged evaluation report distinguishes three axes:
 
 1. `measurementHealth` — can the result be interpreted?
 2. `productSignal` — what did B vs C do on resolved development examples?
-3. `cost` — calls, turns, wall time and token usage.
+3. `cost` — calls, retry attempts, turns, wall time and token usage.
 
 A green GitHub job means the workflow executed correctly. It does not imply that the product passed; a healthy negative result and a measurement STOP are both valid workflow outcomes and must be represented explicitly.
 
@@ -201,11 +149,6 @@ The one-shot `.github/workflows/m2-h1-finalize-once.yml` served only to finalize
 
 ## External practice alignment
 
-This design intentionally mirrors current evaluation practice:
-
-- start with small curated development datasets and expand from real failure cases;
-- use repetitions only when nondeterminism warrants them;
-- preserve sample-level logs and separate scoring from execution;
-- use early stopping/sequential methods to avoid fixed-size compute waste, but preregister stopping rules for confirmatory experiments.
+This design mirrors current evaluation practice: start with small curated development datasets and expand from real failure cases; use repetitions only when nondeterminism warrants them; preserve sample-level logs and separate scoring from execution; and use early stopping/sequential methods to avoid fixed-size compute waste while preregistering stopping rules for confirmatory experiments.
 
 The design does not import an external eval framework. The existing repository already has strong evidence/provenance machinery; the missing capability is a lean control plane, not another dependency stack.
