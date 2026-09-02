@@ -90,6 +90,13 @@ interface IntentTokenMatch {
   readonly evidenceIds: readonly string[]
 }
 
+interface IntentDocument {
+  readonly identityTokens: ReadonlySet<string>
+  readonly summaryTokens: ReadonlySet<string>
+  readonly kindTokens: ReadonlySet<string>
+  readonly factEvidenceByToken: ReadonlyMap<string, readonly string[]>
+}
+
 export const CONTRACT_SEARCH_RANKER_VERSION = 'dsh-contract-search-v2-intent'
 
 type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue }
@@ -458,27 +465,58 @@ function requiredIntentMatches(tokenCount: number): number {
   return Math.min(3, Math.max(2, Math.ceil(tokenCount * 0.4)))
 }
 
-function intentTokenMatch(
+function addFactTokenEvidence(
+  target: Map<string, string[]>,
   token: string,
-  contract: ContractDefinition,
-  identityTokens: ReadonlySet<string>,
-  summaryTokens: ReadonlySet<string>,
-  kindTokens: ReadonlySet<string>,
-): IntentTokenMatch | undefined {
-  if (identityTokens.has(token)) {
-    return Object.freeze({ score: 45, evidenceIds: contractExistenceWitness(contract) })
+  evidenceIds: readonly string[],
+): void {
+  const current = target.get(token)
+  if (current === undefined) {
+    target.set(token, [...evidenceIds])
+  } else {
+    current.push(...evidenceIds)
   }
+}
 
+function intentDocument(contract: ContractDefinition): IntentDocument {
+  const factEvidence = new Map<string, string[]>()
   for (const fact of contract.facts) {
-    if (searchTokens(`${fact.key} ${fact.value}`).includes(token)) {
-      return Object.freeze({ score: 35, evidenceIds: frozenEvidenceIds(fact.evidenceIds) })
+    for (const token of searchTokens(`${fact.key} ${fact.value}`)) {
+      addFactTokenEvidence(factEvidence, token, fact.evidenceIds)
     }
   }
 
-  if (summaryTokens.has(token)) {
+  const factEvidenceByToken = new Map<string, readonly string[]>()
+  for (const [token, evidenceIds] of factEvidence) {
+    factEvidenceByToken.set(token, frozenEvidenceIds(evidenceIds))
+  }
+
+  return Object.freeze({
+    identityTokens: new Set(searchTokens(`${contract.name} ${contract.qualifiedName}`)),
+    summaryTokens: new Set(searchTokens(contract.summary ?? '')),
+    kindTokens: new Set(searchTokens(contract.kind)),
+    factEvidenceByToken,
+  })
+}
+
+function intentTokenMatch(
+  token: string,
+  contract: ContractDefinition,
+  document: IntentDocument,
+): IntentTokenMatch | undefined {
+  if (document.identityTokens.has(token)) {
+    return Object.freeze({ score: 45, evidenceIds: contractExistenceWitness(contract) })
+  }
+
+  const factEvidenceIds = document.factEvidenceByToken.get(token)
+  if (factEvidenceIds !== undefined) {
+    return Object.freeze({ score: 35, evidenceIds: factEvidenceIds })
+  }
+
+  if (document.summaryTokens.has(token)) {
     return Object.freeze({ score: 20, evidenceIds: contractExistenceWitness(contract) })
   }
-  if (kindTokens.has(token)) {
+  if (document.kindTokens.has(token)) {
     return Object.freeze({ score: 15, evidenceIds: contractExistenceWitness(contract) })
   }
   return undefined
@@ -488,15 +526,13 @@ function intentMatch(contract: ContractDefinition, query: string): LexicalMatch 
   const queryTokens = intentQueryTokens(query)
   if (queryTokens.length === 0) return undefined
 
-  const identityTokens = new Set(searchTokens(`${contract.name} ${contract.qualifiedName}`))
-  const summaryTokens = new Set(searchTokens(contract.summary ?? ''))
-  const kindTokens = new Set(searchTokens(contract.kind))
+  const document = intentDocument(contract)
   const evidenceIds: string[] = []
   let matched = 0
   let score = 0
 
   for (const token of queryTokens) {
-    const match = intentTokenMatch(token, contract, identityTokens, summaryTokens, kindTokens)
+    const match = intentTokenMatch(token, contract, document)
     if (match === undefined) continue
     matched += 1
     score += match.score
