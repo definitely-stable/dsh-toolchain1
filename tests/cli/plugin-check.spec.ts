@@ -84,6 +84,24 @@ describe('plugin.check CLI projection', () => {
     })
   })
 
+  it('classifies a .tgz path as one packed plugin subject without inspecting or extracting it in the CLI layer', async () => {
+    const streams = io()
+    const deps = dependencies('unproven')
+
+    const code = await runCli(
+      ['plugin', 'check', '--profile', 'web', '--subject', '/candidate/example-plugin.tgz'],
+      streams.value,
+      deps,
+    )
+
+    expect(code).toBe(1)
+    expect(streams.stderr()).toBe('')
+    expect(deps.kernel?.checkPlugin).toHaveBeenCalledWith({
+      target: { profile: 'web' },
+      subject: { kind: 'packed', path: '/candidate/example-plugin.tgz' },
+    })
+  })
+
   it('keeps Protocol status ok for an incompatible plugin but fails the CLI process for CI use', async () => {
     const streams = io()
     const code = await runCli(
