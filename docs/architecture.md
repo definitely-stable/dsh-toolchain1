@@ -4,7 +4,7 @@ Status: **Architecture baseline v1**
 
 ## Purpose and product boundary
 
-DSH Toolchain is installed primarily as a DeepSeek Harness bundle, but its core development semantics are not embedded in Harness. The bundle is the distribution/runtime shell; a DSH-independent kernel owns target modeling, contract query, analysis, diagnostics, operations, and verification orchestration.
+DSH Toolchain is installed primarily as a DeepSeek Harness bundle, but its core development semantics are not embedded in Harness. The bundle is the distribution/runtime shell; a DSH-independent kernel owns target modeling, contract query, static plugin checking, diagnostics, operations, and verification orchestration.
 
 This split preserves native DSH adoption while making the same toolchain useful to external coding agents and CI.
 
@@ -68,11 +68,13 @@ live Cordis/runtime observations
 
 Providers emit evidence. A normalization/lowering layer converts DSH-specific shapes into stable Toolchain entities. The analysis layer consumes only those normalized values.
 
+For plugin checking, normalize/analyze/validate are internal deterministic passes behind the public static `plugin.check` use case. They are not separate transport operations and MUST NOT become independently divergent frontend APIs.
+
 This follows the compiler/rust-analyzer pattern: IO belongs at the boundary; the semantic model is an explicit input to pure analysis.
 
 ### Immutable target snapshots
 
-A `TargetSnapshot` is the unit of reproducibility. Search, inspection, analysis, validation, and verification claims are evaluated against a snapshot identity, not against an implicitly mutable `~/.dsh`.
+A `TargetSnapshot` is the unit of reproducibility. Search, inspection, static plugin-check, and verification claims are evaluated against a snapshot identity, not against an implicitly mutable `~/.dsh`.
 
 A snapshot contains a canonical semantic fingerprint over compatibility-relevant target state. Machine-specific paths, user names, secrets, timestamps, and session contents are excluded from the semantic identity.
 
@@ -109,11 +111,12 @@ Owns transport-neutral use cases:
 - `target.resolve`
 - `contract.search`
 - `contract.inspect`
-- `plugin.analyze`
-- `plugin.validate`
+- `plugin.check`
 - `plugin.verify`
 - `operation.get`
 - `operation.cancel`
+
+`plugin.check` is the public static compatibility boundary. It acquires the exact target/Contract Index and plugin subject, runs the internal normalization/analysis/validation passes, and returns evidence-backed `compatible-in-scope`, `incompatible`, or `unproven` without executing candidate code. `plugin.verify` remains a separate later execution boundary owned by M4.
 
 The kernel defines no MCP, CLI, Typert, HTTP, Cordis, React, Node-runtime, or filesystem/process concepts.
 
@@ -123,7 +126,7 @@ The kernel is an internal package boundary in M0. Its factory is deliberately **
 
 Owns `TargetSnapshot`, contract entities, plugin model, diagnostics, evidence references, compatibility facts, and deterministic analysis passes.
 
-Broken plugins are normal input. Analysis prefers partial results plus diagnostics over throwing for expected defects.
+Broken plugins are normal input. Static checking prefers partial results plus diagnostics over throwing for expected defects. Internal normalize/analyze/validate passes do not create separate public operation identities.
 
 ### DSH acquisition
 
@@ -160,6 +163,8 @@ Long-running operations may map to the current MCP Tasks extension when client s
 ### CLI
 
 The CLI is both a human interface and a stable machine interface for CI/agents that prefer process execution. Machine mode is versioned JSON; progress mode uses JSON Lines. Human formatting is a renderer over the same results.
+
+For `plugin check`, the Protocol application result and process exit status are intentionally separate: a semantic incompatibility remains a successful Protocol operation with `status: "ok"`, while the CLI MAY return a non-zero process status so CI can fail closed.
 
 ## Protocol and contract ownership
 
