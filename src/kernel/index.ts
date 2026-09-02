@@ -13,6 +13,12 @@ import type {
   ContractSearchSuccessResponse,
   Diagnostic,
   Evidence,
+  PluginCheckFailureResponse,
+  PluginCheckRequest,
+  PluginCheckResponse,
+  PluginCheckResult,
+  PluginCheckStaleResponse,
+  PluginCheckSuccessResponse,
   ResolvedBundleIdentity,
   ResolvedPackageIdentity,
   TargetResolveFailureResponse,
@@ -42,6 +48,12 @@ import {
   type ContractSearchIndex,
   type ContractSearchIndexSource,
 } from '../model/contract-search-index.js'
+import { analyzePluginCompatibility } from '../model/plugin-check.js'
+import {
+  createPluginSubjectSemanticProjection,
+  fingerprintPluginSubject,
+  type PluginSubjectAcquisitionPort,
+} from '../model/plugin.js'
 import {
   createTargetSemanticProjectionV2,
   fingerprintTarget,
@@ -67,16 +79,24 @@ export interface ContractInspectOutcome {
   readonly data: ContractInspectResult
 }
 
+export interface PluginCheckOutcome {
+  readonly snapshotFingerprint: string
+  readonly data: PluginCheckResult
+  readonly diagnostics: readonly Diagnostic[]
+}
+
 export interface ApplicationKernel {
   describe(): KernelDescriptor
   resolveTarget(request: TargetResolveRequest): Promise<TargetResolveResult>
   searchContracts(request: ContractSearchRequest, enrichment?: ContractEnrichmentPort): Promise<ContractSearchOutcome>
   inspectContract(request: ContractInspectRequest, enrichment?: ContractEnrichmentPort): Promise<ContractInspectOutcome>
+  checkPlugin(request: PluginCheckRequest): Promise<PluginCheckOutcome>
 }
 
 export interface ApplicationKernelOptions {
   readonly targetAcquisition: TargetAcquisitionPort
   readonly contractAcquisition?: ContractAcquisitionPort
+  readonly pluginSubjectAcquisition?: PluginSubjectAcquisitionPort
   readonly digest: Sha256Port
   readonly now?: () => string
   /** Internal deterministic seam for search-index lifecycle tests. */
@@ -124,6 +144,7 @@ const descriptor: KernelDescriptor = Object.freeze({
 
 const MAX_CONTRACT_REPAIR_IDS = 10
 const MAX_CONTRACT_SEARCH_INDEX_CACHE = 8
+const PLUGIN_STATIC_RULESET = 'plugin-static-alpha-v1' as const
 
 function freezeBundleIdentity(identity: ResolvedBundleIdentity): ResolvedBundleIdentity {
   return Object.freeze({
@@ -352,6 +373,53 @@ export async function inspectContractResponse(
   }
 }
 
+export async function checkPluginResponse(
+  kernel: ApplicationKernel,
+  request: PluginCheckRequest,
+  requestId: string,
+): Promise<PluginCheckResponse> {
+  try {
+    const outcome = await kernel.checkPlugin(request)
+    const response: PluginCheckSuccessResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      snapshotFingerprint: outcome.snapshotFingerprint,
+      status: 'ok',
+      data: outcome.data,
+      diagnostics: [...outcome.diagnostics],
+    }
+    return response
+  } catch (error) {
+    if (error instanceof TargetAcquisitionError) {
+      const response: PluginCheckFailureResponse = {
+        protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+        requestId,
+        status: 'failed',
+        diagnostics: [targetDiagnostic(error)],
+      }
+      return response
+    }
+    if (!(error instanceof ContractOperationError)) throw error
+    if (isStaleContractError(error)) {
+      const response: PluginCheckStaleResponse = {
+        protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+        requestId,
+        snapshotFingerprint: error.snapshotFingerprint,
+        status: 'stale',
+        diagnostics: [contractDiagnostic(error)],
+      }
+      return response
+    }
+    const response: PluginCheckFailureResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'failed',
+      diagnostics: [contractDiagnostic(error)],
+    }
+    return response
+  }
+}
+
 export function createApplicationKernel(options: ApplicationKernelOptions): ApplicationKernel {
   const now = options.now ?? (() => new Date().toISOString())
   const searchIndexFactory = options.createContractSearchIndex ?? createContractSearchIndex
@@ -474,6 +542,36 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
           contract: selection.contract,
           evidence: [...selection.evidence],
         }),
+      })
+    },
+    async checkPlugin(request: PluginCheckRequest): Promise<PluginCheckOutcome> {
+      if (options.pluginSubjectAcquisition === undefined) {
+        throw new Error('Plugin subject acquisition is not configured for this application kernel')
+      }
+
+      const { snapshot, index } = await buildContractIndex(request.target)
+      const subject = await options.pluginSubjectAcquisition.acquire(request.subject)
+      const projection = createPluginSubjectSemanticProjection(subject)
+      const subjectFingerprint = projection === undefined
+        ? undefined
+        : await fingerprintPluginSubject(projection, options.digest)
+      const analysis = analyzePluginCompatibility(subject, index)
+      const data: PluginCheckResult = {
+        contractIndexFingerprint: index.fingerprint,
+        ...(subjectFingerprint === undefined ? {} : { subjectFingerprint }),
+        subjectCompleteness: subject.completeness,
+        ruleset: PLUGIN_STATIC_RULESET,
+        scopeComplete: false,
+        verdict: analysis.verdict,
+        requirements: analysis.requirements.map(requirement => ({ ...requirement })),
+        evidence: subject.evidence.map(freezeEvidence),
+        candidateCodeExecuted: false,
+      }
+
+      return Object.freeze({
+        snapshotFingerprint: snapshot.fingerprint,
+        data: Object.freeze(data),
+        diagnostics: Object.freeze([...analysis.diagnostics]),
       })
     },
   })
