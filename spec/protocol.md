@@ -105,7 +105,7 @@ An absent profile patch is valid and hashes the exact sentinel `dsh-target-v2:pr
 
 The `runtime` field is the Node/platform/architecture under which Toolchain resolves compatibility for this snapshot. It is not proof that an unrelated separately launched DSH process used the same runtime. Later live observations and verification receipts MUST bind their actually executed runtime and the runtime/environment facts relevant to their claims, and MUST NOT silently claim equivalence when runtime-sensitive target semantics or launcher-synthesized availability differ.
 
-Search, inspection, validation, and verification results that make target-specific claims MUST identify the snapshot fingerprint.
+Search, inspection, plugin-check, and verification results that make target-specific claims MUST identify the snapshot fingerprint.
 
 ## Evidence
 
@@ -197,21 +197,53 @@ A successful inspection returns exactly one normalized `ContractDefinition`, its
 
 Current DSH exposes official read-only runtime inspection through `ctx.cordisInspect` / `cordis_inspect_list` / `cordis_inspect_query`. Toolchain MUST prefer/consume that official seam for live runtime contract evidence when the target exposes it rather than reimplementing DSH reflection. Because those queries are Agent-scoped, offline CLI/MCP calls without a real DSH Agent remain usable through package/manifest/type evidence and report live availability as `unknown`.
 
-## Plugin analysis and validation
+## Static plugin check
 
-`plugin.analyze` produces a normalized plugin model plus diagnostics without requiring candidate runtime execution.
+### `plugin.check`
 
-`plugin.validate` applies declared validation levels/checks to that model. Static validation MUST NOT execute candidate plugin code.
+`plugin.check` is the public static Exact Target Plugin Check operation. Normalize/analyze/validate are internal implementation passes behind this operation; they are not separate public Protocol operations.
 
-Validation MUST NOT mutate the user's active DSH profile.
+The request contains:
 
-A failed validation is a successful protocol operation whose report status is `failed`.
+- `target` — the same closed `TargetResolveRequest` used by `target.resolve` and Contract Intelligence;
+- `subject` — currently `{ "kind": "directory", "path": <non-empty path> }`.
 
-These M3 contracts remain baseline semantics until their operation-specific request/result schemas are implemented.
+Directory acquisition MUST be read-only and MUST NOT execute or import candidate JavaScript, invoke package-manager install/pack operations, run lifecycle scripts, spawn candidate subprocesses, or mutate the user's target profile. Acquisition SHOULD apply explicit file-size bounds and MUST reject declared bundle-patch resolution that escapes the acquired plugin root, including escapes through symlinks, junctions, or other realpath indirection.
+
+A plugin subject with malformed/missing files is expected application input. When the target and Contract Index can still be acquired coherently, such defects MUST produce `status: "ok"`, `subjectCompleteness: "partial"` or `"invalid"`, an `unproven` compatibility verdict where proof is incomplete, and diagnostics containing any independently valid findings. A malformed candidate MUST NOT be converted into a transport failure merely because its package manifest or declared patch is broken.
+
+`subjectFingerprint`, when present, uses `dsh-plugin-subject-v1:<sha256>` over compatibility-relevant semantic plugin identity. Filesystem coordinates, diagnostics, evidence locations, and unrelated manifest content MUST NOT rename that semantic subject. If package identity cannot be established, a successful semantic report MAY omit `subjectFingerprint` rather than inventing one.
+
+A successful `PluginCheckResult` binds at least:
+
+- `contractIndexFingerprint` for the exact target evidence used by the reducer;
+- `subjectCompleteness`;
+- optional `subjectFingerprint` when semantic identity is established;
+- a versioned static `ruleset`;
+- `scopeComplete`, which is `false` for the current alpha and therefore forbids interpreting a positive result as an exhaustive proof;
+- `verdict`: `compatible-in-scope`, `incompatible`, or `unproven`;
+- normalized requirement findings and supporting evidence;
+- `candidateCodeExecuted: false`.
+
+The current static reducer MUST evaluate compatibility facts directly against the exact `ContractIndex`; it MUST NOT depend on `contract.search` ranking or retrieval success to decide whether a required Host package exists.
+
+Package relationships have distinct semantics:
+
+- `host-peer-required` — the exact target must provide the shared Host peer; proven absence is `incompatible`;
+- `host-peer-optional` — absence does not block the plugin, but if the peer is actually installed its relevant version relationship is checked;
+- `artifact-dependency` — ordinary artifact/package dependencies are not treated as requirements that must independently appear in the Host Contract Index.
+
+The static alpha range adapter proves exact string version equality only. Unsupported/broad semver expressions MUST yield `unproven` when a version relation matters; Toolchain MUST NOT guess compatibility with a partial home-grown semver implementation. A later npm-compatible semver adapter must preserve normal prerelease semantics and be reviewed as a separate semantic dependency decision.
+
+Verdict precedence is conservative: proven required-host incompatibility wins; otherwise any incomplete subject or material unproven relation yields `unproven`; only the checks actually covered by the current ruleset may yield `compatible-in-scope`. `compatible-in-scope` MUST NOT be presented as runtime verification or as proof that candidate code boots successfully.
+
+Target/Contract Index acquisition failure remains an application `failed` response. A coherence failure that invalidates the acquired target-bound index remains `stale`. Unexpected infrastructure failures MAY remain transport/infrastructure errors. These are distinct from ordinary candidate defects.
+
+Frontend process status is not the Protocol application status. A CLI MAY return a non-zero process code for `incompatible` or `unproven` so CI can fail closed while still emitting a schema-valid `status: "ok"` `PluginCheckResponse`.
 
 ## Verification
 
-`plugin.verify` follows `spec/verification.md`.
+`plugin.verify` follows `spec/verification.md` and is a separate M4 execution boundary from static `plugin.check`.
 
 A verification success claim MUST bind to both a candidate artifact fingerprint and a target snapshot fingerprint.
 
@@ -247,19 +279,23 @@ The M1 CLI vertical slice proves `target.resolve`; immediate post-M1 frontend pa
 
 M2 contract projections MUST call the same kernel search/inspect use cases. The DSH adapter MAY enrich live evidence through the host-owned Inspect capability when a real Agent scope exists; it MUST NOT create a second identity-sensitive tools/Inspect runtime merely for Toolchain.
 
+`toolchain_plugin_check` MUST project the shared kernel `plugin.check` use case and canonical request parser. The DSH adapter MUST NOT execute candidate code or implement a second compatibility reducer.
+
 ### DSH Web
 
-Web MUST consume Host application semantics rather than implement validation/verification rules in the browser.
+Web MUST consume Host application semantics rather than implement static plugin-check or verification rules in the browser.
 
 ### MCP
 
 The MCP projection uses structured results conforming to the Toolchain Protocol. MCP-specific task support MAY map Toolchain Operations onto the current MCP Tasks extension without changing kernel semantics.
 
-Immediate post-M1 target parity MUST project the existing kernel `target.resolve` semantics rather than introducing an MCP-owned target DTO. M2 `contract.search` / `contract.inspect` likewise project Protocol DTOs and shared kernel behavior rather than MCP-owned ranking/acquisition logic.
+Immediate post-M1 target parity MUST project the existing kernel `target.resolve` semantics rather than introducing an MCP-owned target DTO. M2 `contract.search` / `contract.inspect` likewise project Protocol DTOs and shared kernel behavior rather than MCP-owned ranking/acquisition logic. `plugin.check` likewise uses the canonical Protocol request/response schemas and shared kernel behavior.
 
 ### CLI
 
 Machine CLI output MUST be explicitly protocol-versioned. JSON/JSONL mode MUST keep machine output separate from human logs/progress.
+
+For `plugin check`, exit code `0` is reserved for `status: "ok"` with `verdict: "compatible-in-scope"`; `incompatible`, `unproven`, `failed`, and `stale` return a non-zero application/CI exit code while preserving the Protocol JSON response. Invalid CLI arguments are a separate command-line usage error.
 
 ## Compatibility status vocabulary
 
