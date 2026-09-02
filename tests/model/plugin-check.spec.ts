@@ -77,6 +77,46 @@ describe('Exact Target Plugin Check static compatibility reducer', () => {
 
     expect(verdict(analysis)).toBe('compatible-in-scope')
     expect(analysis.diagnostics).toEqual([])
+    expect(analysis.requirements).toContainEqual(expect.objectContaining({
+      packageName: '@deepseek-ai/dsh-tools',
+      status: 'not-required-from-host',
+    }))
+  })
+
+  it('checks an optional Host peer when that package is actually installed', () => {
+    const exact = analyzePluginCompatibility(subject({
+      requirements: [{
+        packageName: '@deepseek-ai/dsh-tools',
+        range: '0.1.2-alpha.5',
+        relationship: 'host-peer-optional',
+      }],
+    }), contractIndex({ '@deepseek-ai/dsh-tools': '0.1.2-alpha.5' }))
+
+    expect(verdict(exact)).toBe('compatible-in-scope')
+    expect(exact.requirements).toContainEqual(expect.objectContaining({
+      packageName: '@deepseek-ai/dsh-tools',
+      status: 'satisfied',
+      targetVersion: '0.1.2-alpha.5',
+    }))
+
+    const range = analyzePluginCompatibility(subject({
+      requirements: [{
+        packageName: '@deepseek-ai/dsh-tools',
+        range: '^0.1.2-alpha.5',
+        relationship: 'host-peer-optional',
+      }],
+    }), contractIndex({ '@deepseek-ai/dsh-tools': '0.1.2-alpha.5' }))
+
+    expect(verdict(range)).toBe('unproven')
+    expect(range.requirements).toContainEqual(expect.objectContaining({
+      packageName: '@deepseek-ai/dsh-tools',
+      status: 'unproven',
+      targetVersion: '0.1.2-alpha.5',
+    }))
+    expect(range.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'PLUGIN_DSH_VERSION_UNPROVEN',
+      severity: 'warning',
+    }))
   })
 
   it('proves an exact required Host version but refuses to guess unsupported semver ranges', () => {
