@@ -34,6 +34,7 @@ const inspectKeys = new Set<keyof ContractInspectRequest>([
 ])
 const pluginCheckKeys = new Set<keyof PluginCheckRequest>(['target', 'subject'])
 const pluginSubjectKeys = new Set<keyof PluginSubjectRequest>(['kind', 'path'])
+const pluginSubjectKinds = new Set<PluginSubjectRequest['kind']>(['directory', 'packed'])
 const profilePattern = /^(?!\.{1,2}$)(?!node_modules$)[^/\\]+$/u
 
 function invalid(message: string): never {
@@ -134,12 +135,16 @@ export function parsePluginCheckRequest(value: unknown): PluginCheckRequest {
   const parsedTarget = parseTargetResolveRequestWithMessage(target, message)
   if (!isRecord(subject)) invalid(message)
   if (Object.keys(subject).some(key => !pluginSubjectKeys.has(key as keyof PluginSubjectRequest))) invalid(message)
-  if (subject.kind !== 'directory' || !nonEmptyString(subject.path)) invalid(message)
+  if (
+    typeof subject.kind !== 'string'
+    || !pluginSubjectKinds.has(subject.kind as PluginSubjectRequest['kind'])
+    || !nonEmptyString(subject.path)
+  ) invalid(message)
 
   return {
     target: parsedTarget,
     subject: {
-      kind: 'directory',
+      kind: subject.kind as PluginSubjectRequest['kind'],
       path: subject.path,
     },
   }
