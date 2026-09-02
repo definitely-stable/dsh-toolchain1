@@ -37,6 +37,12 @@ import {
   type ContractIndex,
 } from '../model/contract.js'
 import {
+  CONTRACT_SEARCH_RANKER_VERSION,
+  createContractSearchIndex,
+  type ContractSearchIndex,
+  type ContractSearchIndexSource,
+} from '../model/contract-search-index.js'
+import {
   createTargetSemanticProjectionV2,
   fingerprintTarget,
   TargetAcquisitionError,
@@ -73,6 +79,8 @@ export interface ApplicationKernelOptions {
   readonly contractAcquisition?: ContractAcquisitionPort
   readonly digest: Sha256Port
   readonly now?: () => string
+  /** Internal deterministic seam for search-index lifecycle tests. */
+  readonly createContractSearchIndex?: (source: ContractSearchIndexSource) => ContractSearchIndex
 }
 
 type ContractOperationErrorCode =
@@ -115,6 +123,7 @@ const descriptor: KernelDescriptor = Object.freeze({
 })
 
 const MAX_CONTRACT_REPAIR_IDS = 10
+const MAX_CONTRACT_SEARCH_INDEX_CACHE = 8
 
 function freezeBundleIdentity(identity: ResolvedBundleIdentity): ResolvedBundleIdentity {
   return Object.freeze({
@@ -345,6 +354,22 @@ export async function inspectContractResponse(
 
 export function createApplicationKernel(options: ApplicationKernelOptions): ApplicationKernel {
   const now = options.now ?? (() => new Date().toISOString())
+  const searchIndexFactory = options.createContractSearchIndex ?? createContractSearchIndex
+  const searchIndexes = new Map<string, ContractSearchIndex>()
+
+  function cachedSearchIndex(index: ContractIndex): ContractSearchIndex {
+    const key = `${CONTRACT_SEARCH_RANKER_VERSION}\u0000${index.fingerprint}`
+    const cached = searchIndexes.get(key)
+    if (cached !== undefined) return cached
+
+    const created = searchIndexFactory(index)
+    searchIndexes.set(key, created)
+    if (searchIndexes.size > MAX_CONTRACT_SEARCH_INDEX_CACHE) {
+      const oldest = searchIndexes.keys().next().value
+      if (oldest !== undefined) searchIndexes.delete(oldest)
+    }
+    return created
+  }
 
   async function resolveTarget(request: TargetResolveRequest): Promise<TargetResolveResult> {
     const facts = await options.targetAcquisition.acquire(request)
@@ -391,7 +416,13 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
       enrichment?: ContractEnrichmentPort,
     ): Promise<ContractSearchOutcome> {
       const { snapshot, index } = await buildContractIndex(request.target, enrichment)
-      const selection = searchContractIndex(index, request.query, request.kinds, request.limit ?? 10)
+      const selection = searchContractIndex(
+        index,
+        request.query,
+        request.kinds,
+        request.limit ?? 10,
+        cachedSearchIndex(index),
+      )
       return Object.freeze({
         snapshotFingerprint: snapshot.fingerprint,
         data: Object.freeze({
