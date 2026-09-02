@@ -49,15 +49,15 @@ describe('native DSH plugin check tool', () => {
     expect(resolve).toHaveBeenCalledWith(request)
   })
 
-  it('rejects unknown request keys before invoking the service resolver', async () => {
+  it('rejects unknown request keys before invoking the service resolver', () => {
     const resolve = vi.fn(async () => response())
     const tool = createPluginCheckToolDefinition(resolve)
 
-    await expect(tool.execute({
+    expect(() => tool.execute({
       target: { profile: 'web' },
       subject: { kind: 'directory', path: '/candidate' },
       executeCandidate: true,
-    })).rejects.toThrow(TypeError)
+    })).toThrow(TypeError)
     expect(resolve).not.toHaveBeenCalled()
   })
 })
