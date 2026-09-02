@@ -195,7 +195,7 @@ export async function acquirePluginDirectory(
   let canonicalRoot: string
   try {
     canonicalRoot = await realpath(subjectRoot)
-  } catch (cause) {
+  } catch {
     return Object.freeze({
       completeness: 'invalid' as const,
       requirements: Object.freeze([]),
@@ -238,7 +238,7 @@ export async function acquirePluginDirectory(
     const parsed = JSON.parse(manifestContent) as unknown
     if (!isRecord(parsed)) throw new TypeError('package.json root must be an object')
     manifest = parsed
-  } catch (cause) {
+  } catch {
     return Object.freeze({
       completeness: 'invalid' as const,
       requirements: Object.freeze([]),
