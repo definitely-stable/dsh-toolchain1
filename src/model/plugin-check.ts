@@ -107,7 +107,7 @@ export function analyzePluginCompatibility(
   let unproven = subject.completeness !== 'complete'
 
   for (const requirement of normalizedRequirements(subject.requirements)) {
-    if (requirement.relationship !== 'host-peer-required') {
+    if (requirement.relationship === 'artifact-dependency') {
       requirements.push(Object.freeze({
         packageName: requirement.packageName,
         range: requirement.range,
@@ -119,6 +119,16 @@ export function analyzePluginCompatibility(
 
     const installed = packageVersion(index, requirement.packageName)
     if (!installed.exists) {
+      if (requirement.relationship === 'host-peer-optional') {
+        requirements.push(Object.freeze({
+          packageName: requirement.packageName,
+          range: requirement.range,
+          relationship: requirement.relationship,
+          status: 'not-required-from-host' as const,
+        }))
+        continue
+      }
+
       provenIncompatible = true
       requirements.push(Object.freeze({
         packageName: requirement.packageName,
@@ -153,12 +163,15 @@ export function analyzePluginCompatibility(
       status: 'unproven' as const,
       ...(installed.version === undefined ? {} : { targetVersion: installed.version }),
     }))
+    const peerKind = requirement.relationship === 'host-peer-optional'
+      ? 'optional Host peer'
+      : 'required Host peer'
     diagnostics.push(pluginDiagnostic(
       'PLUGIN_DSH_VERSION_UNPROVEN',
       'warning',
       installed.version === undefined
-        ? `The exact target does not expose one unambiguous version fact for required Host peer ${requirement.packageName}.`
-        : `Compatibility of required Host peer ${requirement.packageName} range ${requirement.range} with target version ${installed.version} is not proven by the static alpha range adapter.`,
+        ? `The exact target does not expose one unambiguous version fact for ${peerKind} ${requirement.packageName}.`
+        : `Compatibility of ${peerKind} ${requirement.packageName} range ${requirement.range} with target version ${installed.version} is not proven by the static alpha range adapter.`,
     ))
   }
 
