@@ -29,7 +29,7 @@ export function createPluginCheckToolDefinition(
           type: 'object',
           additionalProperties: false,
           properties: {
-            kind: { const: 'directory' },
+            kind: { enum: ['directory', 'packed'] },
             path: { type: 'string', minLength: 1, pattern: '\\S' },
           },
           required: ['kind', 'path'],
