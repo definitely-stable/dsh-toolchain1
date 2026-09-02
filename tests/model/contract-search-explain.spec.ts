@@ -78,8 +78,8 @@ function fixtureIndex(): ContractIndex {
     ]),
     contracts: Object.freeze([
       Object.freeze({
-        id: 'symbol:ToolDefinition',
-        kind: 'symbol' as const,
+        id: 'package:tool-definition',
+        kind: 'package' as const,
         name: 'ToolDefinition',
         qualifiedName: '@deepseek-ai/dsh-tools.ToolDefinition',
         availability: 'available' as const,
@@ -129,7 +129,7 @@ describe('Contract Search internal explanation', () => {
     expect(explanation.queryTokens).toEqual(['args', 'schema', 'validate'])
     expect(explanation.results).toEqual([
       {
-        contractId: 'symbol:ToolDefinition',
+        contractId: 'package:tool-definition',
         score: 155,
         terms: [
           {
