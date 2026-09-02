@@ -85,6 +85,22 @@ interface LexicalMatch {
   readonly evidenceIds: readonly string[]
 }
 
+interface IntentTokenMatch {
+  readonly score: number
+  readonly evidenceIds: readonly string[]
+}
+
+interface IntentDocument {
+  readonly identityTokens: ReadonlySet<string>
+  readonly summaryTokens: ReadonlySet<string>
+  readonly kindTokens: ReadonlySet<string>
+  readonly factEvidenceByToken: ReadonlyMap<string, readonly string[]>
+}
+
+export const CONTRACT_SEARCH_RANKER_VERSION = 'dsh-contract-search-v2-intent'
+
+const intentDocumentCache = new WeakMap<ContractDefinition, IntentDocument>()
+
 type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue }
 
 function compareCodePoints(left: string, right: string): number {
@@ -380,7 +396,170 @@ function factOrSummaryWitness(
   return frozenEvidenceIds(evidenceIds)
 }
 
-function lexicalMatch(contract: ContractDefinition, query: string): LexicalMatch | undefined {
+const INTENT_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'api',
+  'are',
+  'as',
+  'at',
+  'be',
+  'before',
+  'by',
+  'can',
+  'could',
+  'did',
+  'do',
+  'does',
+  'for',
+  'from',
+  'how',
+  'i',
+  'in',
+  'into',
+  'is',
+  'it',
+  'may',
+  'of',
+  'on',
+  'or',
+  'please',
+  'should',
+  'that',
+  'the',
+  'this',
+  'through',
+  'to',
+  'use',
+  'using',
+  'was',
+  'we',
+  'were',
+  'what',
+  'when',
+  'where',
+  'which',
+  'who',
+  'why',
+  'with',
+  'would',
+  'you',
+])
+
+function searchTokens(value: string): readonly string[] {
+  const expanded = value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .toLocaleLowerCase('en-US')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+  if (expanded === '') return Object.freeze([])
+  return Object.freeze(sortedUnique(expanded.split(/\s+/u).filter(token => token !== '')))
+}
+
+function intentQueryTokens(query: string): readonly string[] {
+  return Object.freeze(searchTokens(query).filter(token => !INTENT_STOP_WORDS.has(token)))
+}
+
+function isIntentFallbackQuery(query: string): boolean {
+  const trimmed = query.trim()
+  return /\s/u.test(trimmed) && intentQueryTokens(trimmed).length >= 2
+}
+
+function requiredIntentMatches(tokenCount: number): number {
+  if (tokenCount <= 1) return tokenCount
+  return Math.min(3, Math.max(2, Math.ceil(tokenCount * 0.4)))
+}
+
+function addFactTokenEvidence(
+  target: Map<string, string[]>,
+  token: string,
+  evidenceIds: readonly string[],
+): void {
+  const current = target.get(token)
+  if (current === undefined) {
+    target.set(token, [...evidenceIds])
+  } else {
+    current.push(...evidenceIds)
+  }
+}
+
+function intentDocument(contract: ContractDefinition): IntentDocument {
+  const cached = intentDocumentCache.get(contract)
+  if (cached !== undefined) return cached
+
+  const factEvidence = new Map<string, string[]>()
+  for (const fact of contract.facts) {
+    for (const token of searchTokens(`${fact.key} ${fact.value}`)) {
+      addFactTokenEvidence(factEvidence, token, fact.evidenceIds)
+    }
+  }
+
+  const factEvidenceByToken = new Map<string, readonly string[]>()
+  for (const [token, evidenceIds] of factEvidence) {
+    factEvidenceByToken.set(token, frozenEvidenceIds(evidenceIds))
+  }
+
+  const document = Object.freeze({
+    identityTokens: new Set(searchTokens(`${contract.name} ${contract.qualifiedName}`)),
+    summaryTokens: new Set(searchTokens(contract.summary ?? '')),
+    kindTokens: new Set(searchTokens(contract.kind)),
+    factEvidenceByToken,
+  })
+  intentDocumentCache.set(contract, document)
+  return document
+}
+
+function intentTokenMatch(
+  token: string,
+  contract: ContractDefinition,
+  document: IntentDocument,
+): IntentTokenMatch | undefined {
+  if (document.identityTokens.has(token)) {
+    return Object.freeze({ score: 45, evidenceIds: contractExistenceWitness(contract) })
+  }
+
+  const factEvidenceIds = document.factEvidenceByToken.get(token)
+  if (factEvidenceIds !== undefined) {
+    return Object.freeze({ score: 35, evidenceIds: factEvidenceIds })
+  }
+
+  if (document.summaryTokens.has(token)) {
+    return Object.freeze({ score: 20, evidenceIds: contractExistenceWitness(contract) })
+  }
+  if (document.kindTokens.has(token)) {
+    return Object.freeze({ score: 15, evidenceIds: contractExistenceWitness(contract) })
+  }
+  return undefined
+}
+
+function intentMatch(contract: ContractDefinition, query: string): LexicalMatch | undefined {
+  const queryTokens = intentQueryTokens(query)
+  if (queryTokens.length === 0) return undefined
+
+  const document = intentDocument(contract)
+  const evidenceIds: string[] = []
+  let matched = 0
+  let score = 0
+
+  for (const token of queryTokens) {
+    const match = intentTokenMatch(token, contract, document)
+    if (match === undefined) continue
+    matched += 1
+    score += match.score
+    evidenceIds.push(...match.evidenceIds)
+  }
+
+  if (matched < requiredIntentMatches(queryTokens.length)) return undefined
+  const coverageBonus = Math.round((matched / queryTokens.length) * 50)
+  return Object.freeze({
+    score: Math.min(199, score + coverageBonus),
+    evidenceIds: frozenEvidenceIds(evidenceIds),
+  })
+}
+
+function strictLexicalMatch(contract: ContractDefinition, query: string): LexicalMatch | undefined {
   const normalizedQuery = query.trim().toLocaleLowerCase('en-US')
   if (normalizedQuery === '') return undefined
 
@@ -422,17 +601,15 @@ function evidenceSubset(index: ContractIndex, ids: ReadonlySet<string>): readonl
   return Object.freeze(index.evidence.filter(item => ids.has(item.id)))
 }
 
-export function searchContractIndex(
-  index: ContractIndex,
+function rankedMatches(
+  contracts: readonly ContractDefinition[],
   query: string,
-  kinds?: readonly ContractKind[],
-  limit = 10,
-): ContractSearchSelection {
-  const kindSet = kinds === undefined ? undefined : new Set(kinds)
-  const matches = index.contracts
-    .filter(contract => kindSet === undefined || kindSet.has(contract.kind))
+  matcher: (contract: ContractDefinition, query: string) => LexicalMatch | undefined,
+  limit: number,
+): ContractReference[] {
+  return contracts
     .map(contract => {
-      const match = lexicalMatch(contract, query)
+      const match = matcher(contract, query)
       return match === undefined ? undefined : reference(contract, match)
     })
     .filter((match): match is ContractReference => match !== undefined)
@@ -442,6 +619,20 @@ export function searchContractIndex(
       || compareCodePoints(left.id, right.id),
     )
     .slice(0, Math.max(0, limit))
+}
+
+export function searchContractIndex(
+  index: ContractIndex,
+  query: string,
+  kinds?: readonly ContractKind[],
+  limit = 10,
+): ContractSearchSelection {
+  const kindSet = kinds === undefined ? undefined : new Set(kinds)
+  const contracts = index.contracts.filter(contract => kindSet === undefined || kindSet.has(contract.kind))
+  const strictMatches = rankedMatches(contracts, query, strictLexicalMatch, limit)
+  const matches = strictMatches.length > 0 || !isIntentFallbackQuery(query)
+    ? strictMatches
+    : rankedMatches(contracts, query, intentMatch, Math.min(limit, 1))
 
   const evidenceIds = new Set(matches.flatMap(match => match.evidenceIds))
   return Object.freeze({
