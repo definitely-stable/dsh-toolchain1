@@ -72,8 +72,13 @@ describe('plugin.check canonical Protocol contract', () => {
           range: '^5.0.0',
           relationship: 'host-peer-required',
           status: 'missing',
+          evidenceIds: ['plugin:manifest'],
         }],
-        evidence: [],
+        evidence: [{
+          id: 'plugin:manifest',
+          kind: 'manifest',
+          strength: 'authoritative',
+        }],
         candidateCodeExecuted: false,
       },
       diagnostics: [{
@@ -83,6 +88,33 @@ describe('plugin.check canonical Protocol contract', () => {
         summary: 'Required Host peer is absent.',
       }],
     })).toBe(true)
+  })
+
+  it('rejects a requirement finding whose provenance field is omitted', async () => {
+    const { response } = await schemaAndValidators()
+
+    expect(response({
+      protocolVersion: '1',
+      requestId: 'request-no-evidence',
+      snapshotFingerprint: `dsh-target-v2:${'e'.repeat(64)}`,
+      status: 'ok',
+      data: {
+        contractIndexFingerprint: `dsh-contract-index-v1:${'f'.repeat(64)}`,
+        subjectCompleteness: 'complete',
+        ruleset: 'plugin-static-alpha-v1',
+        scopeComplete: false,
+        verdict: 'incompatible',
+        requirements: [{
+          packageName: '@deepseek-ai/cordis',
+          range: '5.0.0',
+          relationship: 'host-peer-required',
+          status: 'missing',
+        }],
+        evidence: [],
+        candidateCodeExecuted: false,
+      },
+      diagnostics: [],
+    })).toBe(false)
   })
 
   it('permits an invalid subject result without inventing a subject fingerprint', async () => {
@@ -117,6 +149,7 @@ describe('plugin.check canonical Protocol contract', () => {
     expect(generated).toContain('export type PluginSubjectRequest =')
     expect(generated).toContain('export type PluginCheckRequest =')
     expect(generated).toContain('export type PluginCheckResult =')
+    expect(generated).toContain('readonly "evidenceIds": Array<string>')
     expect(generated).toContain('export type PluginCheckResponse =')
   })
 })
