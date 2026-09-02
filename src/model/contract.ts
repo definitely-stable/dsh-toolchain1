@@ -6,7 +6,16 @@ import type {
   Evidence,
   TargetSnapshot,
 } from '../protocol/index.js'
+import {
+  CONTRACT_SEARCH_RANKER_VERSION,
+  createContractSearchIndex,
+  intentQueryTokens,
+  type ContractSearchDocument,
+  type ContractSearchIndex,
+} from './contract-search-index.js'
 import type { Sha256Port } from './digest.js'
+
+export { CONTRACT_SEARCH_RANKER_VERSION }
 
 export type ContractAcquisitionErrorCode =
   | 'CONTRACT_EVIDENCE_STALE'
@@ -89,17 +98,6 @@ interface IntentTokenMatch {
   readonly score: number
   readonly evidenceIds: readonly string[]
 }
-
-interface IntentDocument {
-  readonly identityTokens: ReadonlySet<string>
-  readonly summaryTokens: ReadonlySet<string>
-  readonly kindTokens: ReadonlySet<string>
-  readonly factEvidenceByToken: ReadonlyMap<string, readonly string[]>
-}
-
-export const CONTRACT_SEARCH_RANKER_VERSION = 'dsh-contract-search-v2-intent'
-
-const intentDocumentCache = new WeakMap<ContractDefinition, IntentDocument>()
 
 type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue }
 
@@ -396,72 +394,6 @@ function factOrSummaryWitness(
   return frozenEvidenceIds(evidenceIds)
 }
 
-const INTENT_STOP_WORDS = new Set([
-  'a',
-  'an',
-  'and',
-  'api',
-  'are',
-  'as',
-  'at',
-  'be',
-  'before',
-  'by',
-  'can',
-  'could',
-  'did',
-  'do',
-  'does',
-  'for',
-  'from',
-  'how',
-  'i',
-  'in',
-  'into',
-  'is',
-  'it',
-  'may',
-  'of',
-  'on',
-  'or',
-  'please',
-  'should',
-  'that',
-  'the',
-  'this',
-  'through',
-  'to',
-  'use',
-  'using',
-  'was',
-  'we',
-  'were',
-  'what',
-  'when',
-  'where',
-  'which',
-  'who',
-  'why',
-  'with',
-  'would',
-  'you',
-])
-
-function searchTokens(value: string): readonly string[] {
-  const expanded = value
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-    .toLocaleLowerCase('en-US')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-  if (expanded === '') return Object.freeze([])
-  return Object.freeze(sortedUnique(expanded.split(/\s+/u).filter(token => token !== '')))
-}
-
-function intentQueryTokens(query: string): readonly string[] {
-  return Object.freeze(searchTokens(query).filter(token => !INTENT_STOP_WORDS.has(token)))
-}
-
 function isIntentFallbackQuery(query: string): boolean {
   const trimmed = query.trim()
   return /\s/u.test(trimmed) && intentQueryTokens(trimmed).length >= 2
@@ -472,73 +404,52 @@ function requiredIntentMatches(tokenCount: number): number {
   return Math.min(3, Math.max(2, Math.ceil(tokenCount * 0.4)))
 }
 
-function addFactTokenEvidence(
-  target: Map<string, string[]>,
+function factEvidenceForToken(
+  document: ContractSearchDocument,
   token: string,
-  evidenceIds: readonly string[],
-): void {
-  const current = target.get(token)
-  if (current === undefined) {
-    target.set(token, [...evidenceIds])
-  } else {
-    current.push(...evidenceIds)
-  }
-}
-
-function intentDocument(contract: ContractDefinition): IntentDocument {
-  const cached = intentDocumentCache.get(contract)
-  if (cached !== undefined) return cached
-
-  const factEvidence = new Map<string, string[]>()
-  for (const fact of contract.facts) {
-    for (const token of searchTokens(`${fact.key} ${fact.value}`)) {
-      addFactTokenEvidence(factEvidence, token, fact.evidenceIds)
-    }
-  }
-
-  const factEvidenceByToken = new Map<string, readonly string[]>()
-  for (const [token, evidenceIds] of factEvidence) {
-    factEvidenceByToken.set(token, frozenEvidenceIds(evidenceIds))
-  }
-
-  const document = Object.freeze({
-    identityTokens: new Set(searchTokens(`${contract.name} ${contract.qualifiedName}`)),
-    summaryTokens: new Set(searchTokens(contract.summary ?? '')),
-    kindTokens: new Set(searchTokens(contract.kind)),
-    factEvidenceByToken,
-  })
-  intentDocumentCache.set(contract, document)
-  return document
+): readonly string[] | undefined {
+  const evidenceIds = document.facts
+    .filter(fact => fact.uniqueTokens.has(token))
+    .flatMap(fact => fact.evidenceIds)
+  return evidenceIds.length === 0 ? undefined : frozenEvidenceIds(evidenceIds)
 }
 
 function intentTokenMatch(
   token: string,
   contract: ContractDefinition,
-  document: IntentDocument,
+  document: ContractSearchDocument,
 ): IntentTokenMatch | undefined {
-  if (document.identityTokens.has(token)) {
+  if (document.identity.uniqueTokens.has(token)) {
     return Object.freeze({ score: 45, evidenceIds: contractExistenceWitness(contract) })
   }
 
-  const factEvidenceIds = document.factEvidenceByToken.get(token)
+  const factEvidenceIds = factEvidenceForToken(document, token)
   if (factEvidenceIds !== undefined) {
     return Object.freeze({ score: 35, evidenceIds: factEvidenceIds })
   }
 
-  if (document.summaryTokens.has(token)) {
+  if (document.summary.uniqueTokens.has(token)) {
     return Object.freeze({ score: 20, evidenceIds: contractExistenceWitness(contract) })
   }
-  if (document.kindTokens.has(token)) {
+  if (document.kind.uniqueTokens.has(token)) {
     return Object.freeze({ score: 15, evidenceIds: contractExistenceWitness(contract) })
   }
   return undefined
 }
 
-function intentMatch(contract: ContractDefinition, query: string): LexicalMatch | undefined {
+function intentMatch(
+  contract: ContractDefinition,
+  query: string,
+  derived: ContractSearchIndex,
+): LexicalMatch | undefined {
   const queryTokens = intentQueryTokens(query)
   if (queryTokens.length === 0) return undefined
 
-  const document = intentDocument(contract)
+  const document = derived.documents.get(contract.id)
+  if (document === undefined) {
+    throw new Error(`ContractSearchIndex is missing contract ${contract.id}`)
+  }
+
   const evidenceIds: string[] = []
   let matched = 0
   let score = 0
@@ -621,18 +532,43 @@ function rankedMatches(
     .slice(0, Math.max(0, limit))
 }
 
+function validateDerivedSearchIndex(index: ContractIndex, derived: ContractSearchIndex): void {
+  if (derived.contractIndexFingerprint !== index.fingerprint) {
+    throw new Error(
+      `ContractSearchIndex fingerprint mismatch: expected ${index.fingerprint}, received ${derived.contractIndexFingerprint}`,
+    )
+  }
+  if (derived.rankerVersion !== CONTRACT_SEARCH_RANKER_VERSION) {
+    throw new Error(
+      `ContractSearchIndex ranker version mismatch: expected ${CONTRACT_SEARCH_RANKER_VERSION}, received ${derived.rankerVersion}`,
+    )
+  }
+}
+
 export function searchContractIndex(
   index: ContractIndex,
   query: string,
   kinds?: readonly ContractKind[],
   limit = 10,
+  derived?: ContractSearchIndex,
 ): ContractSearchSelection {
+  if (derived !== undefined) validateDerivedSearchIndex(index, derived)
+
   const kindSet = kinds === undefined ? undefined : new Set(kinds)
   const contracts = index.contracts.filter(contract => kindSet === undefined || kindSet.has(contract.kind))
   const strictMatches = rankedMatches(contracts, query, strictLexicalMatch, limit)
   const matches = strictMatches.length > 0 || !isIntentFallbackQuery(query)
     ? strictMatches
-    : rankedMatches(contracts, query, intentMatch, Math.min(limit, 1))
+    : rankedMatches(
+        contracts,
+        query,
+        (contract, intentQuery) => intentMatch(
+          contract,
+          intentQuery,
+          derived ?? createContractSearchIndex(index),
+        ),
+        Math.min(limit, 1),
+      )
 
   const evidenceIds = new Set(matches.flatMap(match => match.evidenceIds))
   return Object.freeze({
