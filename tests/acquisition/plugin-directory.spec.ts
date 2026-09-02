@@ -103,6 +103,27 @@ describe('plugin directory acquisition', () => {
     })
   })
 
+  it('distinguishes a malformed present dsh.bundle.patch from a missing declaration', async () => {
+    const root = await fixture()
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+      name: 'example-plugin',
+      version: '1.0.0',
+      dsh: { bundle: { patch: 42 } },
+    }), 'utf8')
+
+    const acquired = await acquirePluginDirectory(root, createNodeSha256Port())
+
+    expect(acquired.completeness).toBe('partial')
+    expect(acquired.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'PLUGIN_MANIFEST_INVALID',
+      domain: 'plugin',
+      severity: 'error',
+    }))
+    expect(acquired.diagnostics).not.toContainEqual(expect.objectContaining({
+      code: 'PLUGIN_BUNDLE_PATCH_MISSING',
+    }))
+  })
+
   it('preserves valid manifest identity but reports a bundle patch escaping the subject root', async () => {
     const parent = await fixture()
     const root = path.join(parent, 'plugin')
