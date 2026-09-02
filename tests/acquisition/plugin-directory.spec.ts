@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -180,6 +180,33 @@ describe('plugin directory acquisition', () => {
     })
     expect(acquired.bundlePatchHash).toBeUndefined()
     expect(acquired.requirements).toHaveLength(1)
+  })
+
+  it('rejects a lexically contained bundle patch whose symlink or junction resolves outside the subject root', async () => {
+    const parent = await fixture()
+    const root = path.join(parent, 'plugin')
+    const outside = path.join(parent, 'outside')
+    const linked = path.join(root, 'linked')
+    await mkdir(root)
+    await mkdir(outside)
+    await writeFile(path.join(outside, 'cordis.patch.yml'), '- name: outside\n', 'utf8')
+    await symlink(outside, linked, process.platform === 'win32' ? 'junction' : 'dir')
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+      name: 'example-plugin',
+      version: '1.0.0',
+      dsh: { bundle: { patch: './linked/cordis.patch.yml' } },
+    }), 'utf8')
+
+    const acquired = await acquirePluginDirectory(root, createNodeSha256Port())
+
+    expect(acquired.completeness).toBe('partial')
+    expect(acquired.bundlePatchHash).toBeUndefined()
+    expect(acquired.evidence.map(item => item.id)).toEqual(['plugin:manifest'])
+    expect(acquired.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'PLUGIN_BUNDLE_PATCH_OUTSIDE_ROOT',
+      domain: 'plugin',
+      severity: 'error',
+    }))
   })
 
   it('keeps independently valid manifest facts when the declared bundle patch is missing', async () => {
