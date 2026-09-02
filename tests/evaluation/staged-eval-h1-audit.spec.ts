@@ -2,10 +2,17 @@ import { describe, expect, it } from 'vitest'
 
 import { auditH1HealthPrefixes } from '../../scripts/eval/audit-h1-health.mjs'
 
-function modelAttempt(input: { formatValid?: boolean; decisionResolved?: boolean; infrastructureFailures?: number } = {}) {
+type FixtureAttempt =
+  | { outcome: 'infrastructure-failure' }
+  | { outcome: 'model-outcome'; parsedApiClaims: Array<{ classification: 'UNKNOWN' }>; taskSuccess: 'SUCCESS' | 'UNKNOWN' }
+
+function modelAttempt(input: { formatValid?: boolean; decisionResolved?: boolean; infrastructureFailures?: number } = {}): FixtureAttempt[] {
   const formatValid = input.formatValid ?? true
   const decisionResolved = input.decisionResolved ?? true
-  const attempts = Array.from({ length: input.infrastructureFailures ?? 0 }, () => ({ outcome: 'infrastructure-failure' }))
+  const attempts: FixtureAttempt[] = Array.from(
+    { length: input.infrastructureFailures ?? 0 },
+    () => ({ outcome: 'infrastructure-failure' as const }),
+  )
   attempts.push({
     outcome: 'model-outcome',
     parsedApiClaims: formatValid ? [] : [{ classification: 'UNKNOWN' }],
@@ -14,8 +21,10 @@ function modelAttempt(input: { formatValid?: boolean; decisionResolved?: boolean
   return attempts
 }
 
+let nextTaskId = 0
 function run(arm: 'A' | 'B' | 'C', input: { formatValid?: boolean; decisionResolved?: boolean; infrastructureFailures?: number } = {}) {
-  return { taskId: `task-${arm}-${Math.random()}`, arm, trial: 1, attempts: modelAttempt(input) }
+  nextTaskId += 1
+  return { taskId: `task-${arm}-${nextTaskId}`, arm, trial: 1, attempts: modelAttempt(input) }
 }
 
 describe('H1 health prefix audit', () => {
