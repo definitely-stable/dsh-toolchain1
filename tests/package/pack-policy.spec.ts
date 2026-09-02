@@ -19,6 +19,7 @@ const validFiles = [
   'package/lib/frontends/cli/bin.js',
   'package/lib/frontends/mcp/bin.js',
   'package/spec/schemas/v1/toolchain-protocol.schema.json',
+  'package/skills/dsh-toolchain/SKILL.md',
 ]
 
 const validManifest = {
@@ -51,9 +52,19 @@ const validManifest = {
 }
 
 describe('packed artifact policy', () => {
-  it('accepts the minimal public package surface', () => {
+  it('accepts the minimal public package surface including the model-facing skill', () => {
     expect(checkPackFileList(validFiles)).toEqual([])
     expect(checkPackedManifest(validManifest, validFiles)).toEqual([])
+  })
+
+  it('requires the model-facing skill in every packed artifact', () => {
+    const withoutSkill = validFiles.filter(file => file !== 'package/skills/dsh-toolchain/SKILL.md')
+
+    expect(checkPackFileList(withoutSkill)).toContainEqual({
+      rule: 'required-pack-file',
+      path: 'package/skills/dsh-toolchain/SKILL.md',
+      message: 'required packed file is missing',
+    })
   })
 
   it('derives runtime requirements from packed exports and bins instead of a second hardcoded list', () => {
