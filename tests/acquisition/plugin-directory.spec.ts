@@ -133,6 +133,34 @@ describe('plugin directory acquisition', () => {
     })
   })
 
+  it.skipIf(process.platform === 'win32')('rejects package.json when a file symlink resolves outside the subject root', async () => {
+    const parent = await fixture()
+    const root = path.join(parent, 'plugin')
+    const outsideManifest = path.join(parent, 'outside-package.json')
+    await mkdir(root)
+    await writeFile(outsideManifest, JSON.stringify({
+      name: 'outside-plugin',
+      version: '1.0.0',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    }), 'utf8')
+    await symlink(outsideManifest, path.join(root, 'package.json'), 'file')
+
+    const acquired = await acquirePluginDirectory(root, createNodeSha256Port())
+
+    expect(acquired).toMatchObject({
+      completeness: 'invalid',
+      requirements: [],
+      evidence: [],
+      diagnostics: [{
+        code: 'PLUGIN_MANIFEST_OUTSIDE_ROOT',
+        domain: 'plugin',
+        severity: 'error',
+      }],
+    })
+    expect(acquired.packageName).toBeUndefined()
+    expect(acquired.packageVersion).toBeUndefined()
+  })
+
   it('distinguishes a malformed present dsh.bundle.patch from a missing declaration', async () => {
     const root = await fixture()
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
