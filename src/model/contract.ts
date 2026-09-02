@@ -462,6 +462,11 @@ function intentQueryTokens(query: string): readonly string[] {
   return Object.freeze(searchTokens(query).filter(token => !INTENT_STOP_WORDS.has(token)))
 }
 
+function isIntentFallbackQuery(query: string): boolean {
+  const trimmed = query.trim()
+  return /\s/u.test(trimmed) && intentQueryTokens(trimmed).length >= 2
+}
+
 function requiredIntentMatches(tokenCount: number): number {
   if (tokenCount <= 1) return tokenCount
   return Math.min(3, Math.max(2, Math.ceil(tokenCount * 0.4)))
@@ -549,13 +554,12 @@ function intentMatch(contract: ContractDefinition, query: string): LexicalMatch 
   if (matched < requiredIntentMatches(queryTokens.length)) return undefined
   const coverageBonus = Math.round((matched / queryTokens.length) * 50)
   return Object.freeze({
-    // Intent fallback deliberately remains below the legacy exact/fact score floor.
     score: Math.min(199, score + coverageBonus),
     evidenceIds: frozenEvidenceIds(evidenceIds),
   })
 }
 
-function lexicalMatch(contract: ContractDefinition, query: string): LexicalMatch | undefined {
+function strictLexicalMatch(contract: ContractDefinition, query: string): LexicalMatch | undefined {
   const normalizedQuery = query.trim().toLocaleLowerCase('en-US')
   if (normalizedQuery === '') return undefined
 
@@ -577,8 +581,7 @@ function lexicalMatch(contract: ContractDefinition, query: string): LexicalMatch
   }
 
   const evidenceIds = factOrSummaryWitness(contract, normalizedQuery, tokens)
-  if (evidenceIds !== undefined) return Object.freeze({ score: 200, evidenceIds })
-  return intentMatch(contract, query)
+  return evidenceIds === undefined ? undefined : Object.freeze({ score: 200, evidenceIds })
 }
 
 function reference(contract: ContractDefinition, match: LexicalMatch): ContractReference {
@@ -598,17 +601,15 @@ function evidenceSubset(index: ContractIndex, ids: ReadonlySet<string>): readonl
   return Object.freeze(index.evidence.filter(item => ids.has(item.id)))
 }
 
-export function searchContractIndex(
-  index: ContractIndex,
+function rankedMatches(
+  contracts: readonly ContractDefinition[],
   query: string,
-  kinds?: readonly ContractKind[],
-  limit = 10,
-): ContractSearchSelection {
-  const kindSet = kinds === undefined ? undefined : new Set(kinds)
-  const matches = index.contracts
-    .filter(contract => kindSet === undefined || kindSet.has(contract.kind))
+  matcher: (contract: ContractDefinition, query: string) => LexicalMatch | undefined,
+  limit: number,
+): ContractReference[] {
+  return contracts
     .map(contract => {
-      const match = lexicalMatch(contract, query)
+      const match = matcher(contract, query)
       return match === undefined ? undefined : reference(contract, match)
     })
     .filter((match): match is ContractReference => match !== undefined)
@@ -618,6 +619,20 @@ export function searchContractIndex(
       || compareCodePoints(left.id, right.id),
     )
     .slice(0, Math.max(0, limit))
+}
+
+export function searchContractIndex(
+  index: ContractIndex,
+  query: string,
+  kinds?: readonly ContractKind[],
+  limit = 10,
+): ContractSearchSelection {
+  const kindSet = kinds === undefined ? undefined : new Set(kinds)
+  const contracts = index.contracts.filter(contract => kindSet === undefined || kindSet.has(contract.kind))
+  const strictMatches = rankedMatches(contracts, query, strictLexicalMatch, limit)
+  const matches = strictMatches.length > 0 || !isIntentFallbackQuery(query)
+    ? strictMatches
+    : rankedMatches(contracts, query, intentMatch, limit)
 
   const evidenceIds = new Set(matches.flatMap(match => match.evidenceIds))
   return Object.freeze({
