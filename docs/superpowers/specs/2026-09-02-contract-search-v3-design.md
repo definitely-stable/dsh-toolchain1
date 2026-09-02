@@ -2,7 +2,7 @@
 
 Status: approved for implementation on 2026-09-02.
 
-Parent issue: #160. Phase 1 issue: #161.
+Parent issue: #160. Phase 1 issue: #161. Phase 2 issue: #164.
 
 Baseline: `dsh-contract-search-v2-intent` merged by PR #159 at merge commit `7f144f636cfa45edfd7233d5c7dbaab92a720c72`.
 
@@ -167,9 +167,29 @@ Phase 1 implements only:
 
 It explicitly does not enable IDF in production.
 
-## Phase 2: fielded IDF natural scorer
+## Phase 2: R2 development corpus
 
-After Phase 1 is merged and observable, natural fallback becomes term-centric.
+R1 is historical regression evidence after v2. It must not become the tuning set for v3.
+
+R2-dev must be frozen before any ranking-changing phase chooses or validates numeric parameters. It contains:
+
+- natural paraphrases of real DSH operations;
+- indirect intent queries;
+- long queries with generic filler and several discriminative terms;
+- sibling-package confusion (`dsh-subagent` variants, compaction variants, interface vs implementation packages);
+- fictional identifier negatives;
+- natural-language hard negatives where only generic terms occur;
+- version-drift negatives;
+- queries where the correct result is one rare term plus one supporting term;
+- queries where misleading terms are distributed across different facts.
+
+The development boundary also owns deterministic corpus identity and per-query baseline/candidate win/loss/tie diagnostics. It does not change the production ranker.
+
+A later R2 holdout is frozen before final evaluation and is not read during optimization.
+
+## Phase 3: fielded IDF natural scorer
+
+Only after the R2 development boundary is frozen does natural fallback become term-centric.
 
 For query term `t` over `N` contract documents:
 
@@ -185,35 +205,17 @@ For each term, use the strongest semantic placement instead of summing every fie
 identity > fact > summary >> kind
 ```
 
-Exact numeric weights are chosen on an R2 development corpus, not by continuing to tune R1. The scoring architecture is more important than any initial constants.
+Exact numeric weights are chosen and validated on R2-dev, not by continuing to tune R1. The scoring architecture is more important than any initial constants.
 
-## Phase 3: fact coherence
+## Phase 4: fact coherence
 
 The scorer computes how much matched IDF is explained by the strongest single fact. A candidate with three discriminative terms in one fact must outrank a candidate where the same terms are scattered across unrelated facts, all else equal.
 
 Coherence is a secondary rank signal after meaningful term coverage/rarity; it never fabricates evidence. The winning fact's existing evidence ids are returned/explained.
 
-## Phase 4: R2 development corpus
-
-R1 is historical regression evidence after v2. It must not become the tuning set for v3.
-
-R2-dev must contain:
-
-- natural paraphrases of real DSH operations;
-- indirect intent queries;
-- long queries with generic filler and several discriminative terms;
-- sibling-package confusion (`dsh-subagent` variants, compaction variants, interface vs implementation packages);
-- fictional identifier negatives;
-- natural-language hard negatives where only generic terms occur;
-- version-drift negatives;
-- queries where the correct result is one rare term plus one supporting term;
-- queries where misleading terms are distributed across different facts.
-
-A later R2 holdout is frozen before final tuning and is not read during optimization.
-
 ## Phase 5: acceptance and abstention
 
-Only after R2 exists, replace v2's `min(3, max(2, ceil(tokens*0.4)))` with query-length- and information-aware acceptance.
+After R2 evidence exists and the preceding scorer phases have per-query diagnostics, replace v2's `min(3, max(2, ceil(tokens*0.4)))` with query-length- and information-aware acceptance.
 
 Inputs include:
 
@@ -278,20 +280,20 @@ Phase 1 uses TDD and must prove:
 10. Protocol schema/generated files remain unchanged.
 11. Full Node 22/24/26, Linux/macOS/Windows CI remains green.
 
-Ranking-changing phases add per-query win/loss/tie diagnostics and cannot merge on aggregate improvement alone.
+Phase 2 adds RED→GREEN coverage for corpus validation, deterministic corpus identity and synthetic per-query comparison diagnostics without changing the production scorer. Ranking-changing phases add R1 invariant gates plus per-query R2 win/loss/tie diagnostics and cannot merge on aggregate improvement alone.
 
 ## Rollout
 
-Each ranking-changing phase is a separate PR. Phase 1 is deliberately behavior preserving so it can merge independently and provide observability for later changes.
+Each ranking-changing phase is a separate PR. Phase 1 is deliberately behavior preserving so it can merge independently and provide observability for later changes. Phase 2 is also behavior preserving: it freezes the development evidence boundary before any scorer parameters are selected.
 
 The canonical implementation sequence is:
 
 ```text
 v2 baseline
   -> Phase 1 SearchIndex/explain/cache
-  -> Phase 2 fielded IDF
-  -> Phase 3 fact coherence
-  -> R2-dev
+  -> Phase 2 R2-dev corpus/identity/diagnostics
+  -> Phase 3 fielded IDF
+  -> Phase 4 fact coherence
   -> Phase 5 abstention
   -> optional proximity
   -> optional identifier fuzzy
