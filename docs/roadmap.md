@@ -44,7 +44,7 @@ CLI, installed `ctx.toolchain`, native `toolchain_target_resolve`, and MCP `targ
 
 **Goal:** let an agent discover exact DSH capabilities progressively against the exact M1 target, with evidence and a content-addressed Contract Index rather than model-memory guesses.
 
-Parent Issue #28 remains open until all M2 slices meet their exit criteria, including controlled agent-level usefulness evidence.
+Parent Issue #28 remains open because the historical H1 experiment did not establish the preregistered PASS claim. That open milestone does not authorize an H1 rerun and does not block post-H1 product development.
 
 ### M2.1 — Offline target-bound Contract Index
 
@@ -87,7 +87,7 @@ Verification:
 - exact packed `dsh@0.1.1-rc.2` Web smoke creates a real registered Agent and proves Host Tool live evidence, offline/live Contract Index divergence, and native search→inspect continuity;
 - a real missing-Inspect probe proves offline fallback;
 - published `0.1.0-rc.8` remains an older target-resolution compatibility train;
-- upstream GitHub prerelease/source `dsh-v0.1.2-alpha.1` introduces `profile.patchReload`, while the public npm `@deepseek-ai/dsh` package remains `0.1.1-rc.2` at the M2.3 governance check; Issue #33 owns the target-identity compatibility decision before support claims change.
+- historical M2/H1 evidence remains frozen on `0.1.1-rc.2`; current upstream source has independently advanced to `0.1.2-alpha.5`, and Issue #33 owns later-train target/lifecycle compatibility without retroactively mutating the frozen experiment.
 
 M2.2 exit criteria:
 - [x] narrow Agent/AbortSignal boundary and no dummy/global Agent;
@@ -100,25 +100,26 @@ M2.2 exit criteria:
 - [x] Node 22/24/26 plus Windows/macOS lanes green on corrective implementation HEADs;
 - [x] PR #32 merged after exact final governance HEAD verification.
 
-### M2.3 — Frozen retrieval evaluation / milestone exit
+### M2.3 — Frozen retrieval evaluation / post-H1 development
 
-**Status:** R1, provider-backed P0, corrected measurement/readjudication, frozen H1 design, and durable H1 execution/preregistration infrastructure are implemented. The real private H1 finalization/public preregistration and controlled H1 outcome remain pending, so M2 is **not complete**.
+**Status:** controlled H1 execution is **COMPLETE: 864 / 864**. The canonical terminal result is **INCONCLUSIVE / IMMUTABLE** because the frozen measurement path left `227 / 576` B/C observations unresolved; the preregistered confirmatory estimates were therefore intentionally not computed. M2 remains open because H1 did not establish the preregistered PASS claim.
 
-The canonical current operational gate state is maintained in [`docs/evaluation/m2/status.md`](evaluation/m2/status.md). This roadmap keeps capability and exit semantics; the status file carries the fast-moving H1 readiness details.
+The canonical operational state is maintained in [`docs/evaluation/m2/status.md`](evaluation/m2/status.md). The durable terminal record is [`docs/evaluation/m2/h1-terminal-outcome-2026-09-02.md`](evaluation/m2/h1-terminal-outcome-2026-09-02.md).
 
-Implemented evaluation boundary:
-- artifact-grade frozen `@deepseek-ai/dsh@0.1.1-rc.2` Web target and complete normalized Contract Index are fixed before corpus/scoring;
-- R1 freezes 36 provenance-backed tasks across exact-symbol, package/API, natural-language, indirect, ambiguity/confusion and no-result/version-drift behavior;
-- all R1 tasks run only through production `searchContractIndex(..., limit=5)` and the real kernel `search -> inspect` loop is separately proven with target/index continuity and stale semantics;
-- evidence-sufficiency checks distinguish retrieval failures from acquisition gaps;
-- immutable first-run output records per-task ranking plus Success@1/3/5, MRR, no-result correctness, forbidden-hit rate and category/domain diagnostics;
-- a real provider-backed P0 calibration run executed the frozen 72-entry schedule and is retained as immutable historical evidence with canonical status `INCONCLUSIVE`;
-- post-P0 measurement defects were corrected through a separately versioned governance/adjudication path, and retained observations were re-adjudicated offline without relabeling the historical result or rerunning P0 merely to change a status string;
-- the H1 prospective design freezes MCID `0.10`, task-success non-inferiority margin `0.05`, 96 tasks, three trials per task/arm, 864 balanced schedule entries, and paired-task percentile bootstrap analysis with 10,000 resamples;
-- durable H1 readiness/commitment, ledger/store, single-attempt coordination, resumable scheduling, frozen execution definition, derived attempt inputs, and public preregistration receipt construction/validation are implemented and fail closed;
-- required CI stays offline/deterministic; no external model call is required to pass repository CI.
+Historical evaluation boundary:
+- artifact-grade frozen `@deepseek-ai/dsh@0.1.1-rc.2` Web target and complete normalized Contract Index were fixed before corpus/scoring;
+- R1 froze 36 provenance-backed tasks across exact-symbol, package/API, natural-language, indirect, ambiguity/confusion and no-result/version-drift behavior;
+- all R1 tasks ran only through production `searchContractIndex(..., limit=5)` and the real kernel `search -> inspect` loop was separately proven with target/index continuity and stale semantics;
+- evidence-sufficiency checks distinguished retrieval failures from acquisition gaps;
+- immutable first-run output recorded per-task ranking plus Success@1/3/5, MRR, no-result correctness, forbidden-hit rate and category/domain diagnostics;
+- provider-backed P0 remains immutable historical `INCONCLUSIVE` evidence and corrected offline readjudication remains separately versioned calibration evidence;
+- H1 froze MCID `0.10`, task-success non-inferiority margin `0.05`, 96 tasks, three trials per task/arm, 864 balanced schedule entries and paired-task percentile bootstrap analysis with 10,000 resamples;
+- H1 design, provider identity, preregistration, execution definition, ledger/store/coordinator, attempt inputs and resumable execution machinery were completed before the controlled run;
+- all 864 scheduled H1 outcomes were executed;
+- the frozen measurement-resolution path left 227/576 B/C observations unresolved, so terminal analysis correctly produced `INCONCLUSIVE` rather than computing invalid confirmatory estimates;
+- required repository CI remains offline/deterministic and does not require external model calls.
 
-Measured R1 baseline before any retrieval tuning:
+Measured historical R1 baseline before retrieval tuning:
 - Success@5: **56.25%**;
 - MRR: **54.6875%**;
 - exact-symbol: **100%**;
@@ -128,66 +129,80 @@ Measured R1 baseline before any retrieval tuning:
 - indirect: **0%**;
 - forbidden-hit rate@5: **20%**.
 
-The acquisition/evidence fixture contains the required authoritative facts for the answerable R1 tasks, so the natural-language/indirect failures are measured **retrieval gaps**, not missing-contract excuses. The frozen evaluation intentionally does not alter production ranking after observing this result.
+The acquisition/evidence fixture contains the required authoritative facts for the answerable R1 tasks, so the natural-language/indirect failures were retrieval gaps rather than missing-contract excuses.
 
-Agent-level exit protocol:
-- A = model memory reference;
-- B = conventional exact-target agent with ordinary file/search/docs access;
-- C = the same conventional exact-target agent plus Toolchain `contract.search` / `contract.inspect`; C is never forced to call Toolchain;
-- corrected `VALID | INVALID | UNKNOWN` measurement semantics are frozen separately from historical v1 artifacts; UNKNOWN is never automatically INVALID;
-- the historical provider-backed P0 remains `INCONCLUSIVE` and immutable; the corrected offline readjudication is calibration evidence, not a replacement run;
-- no further live P0 is required merely to obtain `CALIBRATED`; another provider-backed calibration would require a separately justified decision-relevant missing observation;
-- H1 uses the frozen MCID `0.10`, task-success non-inferiority margin `0.05`, 96 tasks, three trials per task/arm, 864-entry balanced schedule, task-level aggregation and paired-task percentile bootstrap;
-- model-outcome retries are forbidden; infrastructure retries remain bounded/content-addressed and all attempts are retained;
-- real H1 execution remains prohibited until the privately reviewed dataset and strong provider/backend identity are finalized, the real commitment/execution definition is READY, and the exact public preregistration receipt is committed to protected `main` and bound to an immutable ref/tag;
-- H1 result files are created only from an actual run, never synthesized to satisfy repository state.
+Post-H1 rules:
+- H1 is historical evidence and MUST NOT be rerun to obtain a preferred terminal label;
+- the disclosed H1 corpus is `DEVELOPMENT_ONLY` and MUST NOT become an unseen H2 holdout;
+- R1 is regression evidence only and MUST NOT be used to select v3 ranking constants;
+- Contract Search v2 is the merged production baseline; v3 uses a separately frozen R2 development corpus before any new ranking change;
+- future H2 requires a healthy structured measurement path, a frozen product candidate, a fresh hidden task set and prospective stopping/analysis rules.
 
-M2 exit criteria:
+Current M2/post-H1 exit state:
 - [x] M2.1 and M2.2 are merged and their exact artifact/native boundaries remain green;
 - [x] frozen real-target retrieval corpus/index and deterministic production-scoring report exist;
 - [x] real production search→inspect continuity/evidence/stale behavior is proven;
-- [x] real provider-backed P0 was executed and retained; its historical `INCONCLUSIVE` result remains immutable;
-- [x] corrected measurement semantics and offline readjudication of retained P0 observations are frozen without outcome-driven product tuning;
-- [x] MCID `0.10` and task-success non-inferiority margin `0.05` are frozen prospectively;
-- [x] 96-task / three-trial / 864-entry H1 schedule and paired-bootstrap analysis are frozen by the H1 design/finalization machinery;
-- [x] durable controlled-agent readiness/commitment, ledger/store, coordinator/schedule, execution-definition/attempt-input, and preregistration receipt infrastructure exists and fails closed;
-- [ ] real private 96-task H1 dataset is finalized and independently reviewed;
-- [ ] strong real provider/backend identity receipt is frozen without exposing H1 tasks/prompts;
-- [ ] real H1 commitment/execution definition is finalized READY and the public preregistration receipt is committed to protected `main` plus immutable ref/tag before any H1 outcome;
-- [ ] one valid controlled H1 result demonstrates the preregistered C-vs-B Invalid API Task Rate improvement while satisfying task-success non-inferiority;
-- [ ] parent #28 closes only after the evidence-based PASS rule is met. If it is not met, freeze `NEEDS-IMPROVEMENT`/`INCONCLUSIVE` and follow the separately allowed next path.
+- [x] provider-backed P0 is retained with immutable historical result;
+- [x] corrected measurement semantics and offline P0 readjudication are frozen without rewriting historical evidence;
+- [x] prospective H1 design, dataset, provider identity, preregistration and execution machinery were completed;
+- [x] the full 864-entry H1 schedule executed;
+- [x] terminal H1 result is frozen as `INCONCLUSIVE` with unresolved-measurement evidence retained;
+- [ ] parent #28 remains open because H1 did not establish the preregistered PASS claim;
+- [ ] a future confirmatory H2, if justified, is a new experiment with fresh hidden evidence and healthy transport, not an H1 rerun.
 
-No embeddings, semantic reranker, vector database or other retrieval layer is justified merely by architecture preference. The measured baseline and controlled H1 evidence decide whether a separate retrieval-improvement slice exists.
+### Contract Search v3 — deterministic post-H1 retrieval development
+
+**Status:** v2 and the behavior-preserving v3 SearchIndex/explain/cache foundation are merged. Phase 2 freezes R2-dev before any ranking-changing IDF/coherence/abstention phase.
+
+Canonical sequence:
+
+```text
+v2 baseline
+  -> v3 SearchIndex / explain / fingerprint cache
+  -> R2-dev corpus / identity / per-query diagnostics
+  -> fielded IDF
+  -> fact coherence
+  -> abstention
+  -> optional proximity / identifier fuzzy
+  -> fresh R2 holdout
+```
+
+R1 remains a hard regression/invariant corpus, not the tuning set. Embeddings, vector databases or model rerankers remain deferred until deterministic v3 reaches a measured plateau.
 
 ### First usable alpha gate — Exact Target Plugin Check
 
-After M2, ship the smallest source/artifact check path that proves the product loop before expanding architecture further:
+**Status:** may proceed now on the post-H1 path; it does not require an H1 rerun and does not need to wait for every Contract Search v3 ranking phase.
+
+Ship the smallest source-directory static check path that proves the product loop before expanding architecture further:
 
 ```text
-plugin subject + exact TargetSnapshot + contract evidence/index
+plugin subject + exact TargetSnapshot + target-bound ContractIndex
         ↓
-used contracts / availability / evidence-backed incompatibilities
+normalized static subject semantics
+        ↓
+evidence-backed compatibility items + diagnostics
 ```
 
-This gate may expose a narrow `check` surface before the full M3 rule catalog is complete. It MUST reuse M1/M1.1/M2 semantics rather than introducing a parallel Doctor-style implementation.
+The public static operation is `plugin.check`. It MUST reuse M1/M1.1/M2 semantics rather than introducing a parallel Doctor-style implementation. Static results distinguish `compatible-in-scope`, `incompatible`, and `unproven`; static compatibility is never represented as runtime verification.
 
 ## M3 — Plugin Analysis and Validation
 
-**Goal:** explain structural/dependency/contract defects before candidate execution.
+**Goal:** grow the internal static analysis/check pipeline behind `plugin.check` so structural/dependency/contract defects are explained before candidate execution.
 
 Capabilities:
 - plugin normalization for directory/packed subjects as real needs are proven;
 - stable diagnostic taxonomy driven by frozen failure fixtures;
-- structural, manifest, dependency, and contract validation passes;
+- structural, manifest, dependency, and contract analysis passes;
 - exact-target dependency/contract reasoning;
 - partial results for independently valid components;
 - broken-plugin corpus sourced from reproduced ecosystem failure classes.
 
 Exit criteria:
 - known fixture defects map to stable diagnostic codes and evidence;
-- expected plugin defects do not crash analysis;
-- no candidate code execution is required for static validation levels;
-- Toolchain diagnostics explain why a failure matters on this target rather than merely repeating a package-manager error.
+- expected plugin defects do not crash analysis or become transport failures merely because the subject is malformed;
+- no candidate code execution is required for static checks;
+- Toolchain diagnostics explain why a failure matters on this target rather than merely repeating a package-manager error;
+- internal normalize/analyze/validate passes do not create competing public operations unless a separately justified future use case requires one.
 
 ## M4 — Isolated Verification Alpha
 
