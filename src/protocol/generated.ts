@@ -134,7 +134,7 @@ export type ContractInspectResult = {
 }
 
 export type PluginSubjectRequest = {
-  readonly "kind": "directory"
+  readonly "kind": "directory" | "packed"
   readonly "path": string
 }
 
