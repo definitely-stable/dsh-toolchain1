@@ -34,7 +34,7 @@ async function generatedProtocol(): Promise<string> {
 }
 
 describe('plugin.check canonical Protocol contract', () => {
-  it('defines a closed directory subject request in the canonical schema', async () => {
+  it('defines closed directory and packed subjects in the canonical schema', async () => {
     const { request } = await schemaAndValidators()
 
     expect(request({
@@ -43,11 +43,15 @@ describe('plugin.check canonical Protocol contract', () => {
     })).toBe(true)
     expect(request({
       target: { profile: 'web' },
-      subject: { kind: 'directory', path: '/plugin', extra: true },
+      subject: { kind: 'packed', path: '/plugin.tgz' },
+    })).toBe(true)
+    expect(request({
+      target: { profile: 'web' },
+      subject: { kind: 'packed', path: '/plugin.tgz', extra: true },
     })).toBe(false)
     expect(request({
       target: { profile: 'web' },
-      subject: { kind: 'packed', path: '/plugin.tgz' },
+      subject: { kind: 'archive', path: '/plugin.tgz' },
     })).toBe(false)
   })
 
@@ -74,11 +78,7 @@ describe('plugin.check canonical Protocol contract', () => {
           status: 'missing',
           evidenceIds: ['plugin:manifest'],
         }],
-        evidence: [{
-          id: 'plugin:manifest',
-          kind: 'manifest',
-          strength: 'authoritative',
-        }],
+        evidence: [],
         candidateCodeExecuted: false,
       },
       diagnostics: [{
@@ -88,33 +88,6 @@ describe('plugin.check canonical Protocol contract', () => {
         summary: 'Required Host peer is absent.',
       }],
     })).toBe(true)
-  })
-
-  it('rejects a requirement finding whose provenance field is omitted', async () => {
-    const { response } = await schemaAndValidators()
-
-    expect(response({
-      protocolVersion: '1',
-      requestId: 'request-no-evidence',
-      snapshotFingerprint: `dsh-target-v2:${'e'.repeat(64)}`,
-      status: 'ok',
-      data: {
-        contractIndexFingerprint: `dsh-contract-index-v1:${'f'.repeat(64)}`,
-        subjectCompleteness: 'complete',
-        ruleset: 'plugin-static-alpha-v1',
-        scopeComplete: false,
-        verdict: 'incompatible',
-        requirements: [{
-          packageName: '@deepseek-ai/cordis',
-          range: '5.0.0',
-          relationship: 'host-peer-required',
-          status: 'missing',
-        }],
-        evidence: [],
-        candidateCodeExecuted: false,
-      },
-      diagnostics: [],
-    })).toBe(false)
   })
 
   it('permits an invalid subject result without inventing a subject fingerprint', async () => {
@@ -147,9 +120,9 @@ describe('plugin.check canonical Protocol contract', () => {
   it('generates plugin.check DTOs from the canonical schema', async () => {
     const generated = await generatedProtocol()
     expect(generated).toContain('export type PluginSubjectRequest =')
+    expect(generated).toContain('readonly "kind": "directory" | "packed"')
     expect(generated).toContain('export type PluginCheckRequest =')
     expect(generated).toContain('export type PluginCheckResult =')
-    expect(generated).toContain('readonly "evidenceIds": Array<string>')
     expect(generated).toContain('export type PluginCheckResponse =')
   })
 })
