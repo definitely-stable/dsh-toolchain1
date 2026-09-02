@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { M2_RETRIEVAL_R1 } from './m2-retrieval-corpus.js'
 import { createFrozenM2RetrievalIndex } from './m2-retrieval-index.js'
 import {
   R2_DEV_SCENARIOS,
@@ -29,6 +30,12 @@ describe('Contract Search R2 development corpus', () => {
     expect(() => validateR2RetrievalCorpus(R2_RETRIEVAL_DEV, knownContractIds)).not.toThrow()
     expect(new Set(R2_RETRIEVAL_DEV.map(task => task.scenario))).toEqual(new Set(R2_DEV_SCENARIOS))
     expect(R2_RETRIEVAL_DEV.length).toBeGreaterThanOrEqual(R2_DEV_SCENARIOS.length * 2)
+  })
+
+  it('keeps every R2 query newly authored rather than copying disclosed R1 query text', () => {
+    const r1Queries = new Set(M2_RETRIEVAL_R1.map(task => task.query))
+    const duplicates = R2_RETRIEVAL_DEV.filter(task => r1Queries.has(task.query)).map(task => task.id)
+    expect(duplicates).toEqual([])
   })
 
   it('rejects duplicate ids, missing scenarios, unknown contracts, overlap and contradictory no-result semantics', async () => {
