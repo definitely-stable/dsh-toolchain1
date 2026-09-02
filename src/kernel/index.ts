@@ -245,6 +245,29 @@ function contractIdsForEvidence(index: ContractIndex, evidenceId: string): reado
     .slice(0, MAX_CONTRACT_REPAIR_IDS))
 }
 
+function pluginCheckEvidence(
+  subjectEvidence: readonly Evidence[],
+  index: ContractIndex,
+  requirementEvidenceIds: readonly (readonly string[])[],
+): Evidence[] {
+  const evidence = subjectEvidence.map(freezeEvidence)
+  const included = new Set(evidence.map(item => item.id))
+  const targetEvidence = new Map(index.evidence.map(item => [item.id, item] as const))
+
+  for (const evidenceIds of requirementEvidenceIds) {
+    for (const evidenceId of evidenceIds) {
+      if (included.has(evidenceId)) continue
+      const item = targetEvidence.get(evidenceId)
+      if (item === undefined) {
+        throw new Error(`Plugin compatibility analysis referenced unknown evidence id: ${evidenceId}`)
+      }
+      evidence.push(freezeEvidence(item))
+      included.add(evidenceId)
+    }
+  }
+  return evidence
+}
+
 export async function resolveTargetResponse(
   kernel: ApplicationKernel,
   request: TargetResolveRequest,
@@ -564,7 +587,11 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
         scopeComplete: false,
         verdict: analysis.verdict,
         requirements: analysis.requirements.map(requirement => ({ ...requirement })),
-        evidence: subject.evidence.map(freezeEvidence),
+        evidence: pluginCheckEvidence(
+          subject.evidence,
+          index,
+          analysis.requirements.map(requirement => requirement.evidenceIds),
+        ),
         candidateCodeExecuted: false,
       }
 
