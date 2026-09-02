@@ -5,6 +5,16 @@ import type {
   TargetResolveRequest,
 } from './generated.js'
 
+export interface PluginSubjectRequest {
+  readonly kind: 'directory'
+  readonly path: string
+}
+
+export interface PluginCheckRequest {
+  readonly target: TargetResolveRequest
+  readonly subject: PluginSubjectRequest
+}
+
 export const CONTRACT_KINDS = Object.freeze([
   'service',
   'method',
@@ -30,6 +40,8 @@ const inspectKeys = new Set<keyof ContractInspectRequest>([
   'contractIndexFingerprint',
   'contractId',
 ])
+const pluginCheckKeys = new Set<keyof PluginCheckRequest>(['target', 'subject'])
+const pluginSubjectKeys = new Set<keyof PluginSubjectRequest>(['kind', 'path'])
 const profilePattern = /^(?!\.{1,2}$)(?!node_modules$)[^/\\]+$/u
 
 function invalid(message: string): never {
@@ -118,5 +130,25 @@ export function parseContractInspectRequest(value: unknown): ContractInspectRequ
     target: parsedTarget,
     contractIndexFingerprint,
     contractId,
+  }
+}
+
+export function parsePluginCheckRequest(value: unknown): PluginCheckRequest {
+  const message = 'Invalid plugin.check arguments'
+  if (!isRecord(value)) invalid(message)
+  if (Object.keys(value).some(key => !pluginCheckKeys.has(key as keyof PluginCheckRequest))) invalid(message)
+
+  const { target, subject } = value
+  const parsedTarget = parseTargetResolveRequestWithMessage(target, message)
+  if (!isRecord(subject)) invalid(message)
+  if (Object.keys(subject).some(key => !pluginSubjectKeys.has(key as keyof PluginSubjectRequest))) invalid(message)
+  if (subject.kind !== 'directory' || !nonEmptyString(subject.path)) invalid(message)
+
+  return {
+    target: parsedTarget,
+    subject: {
+      kind: 'directory',
+      path: subject.path,
+    },
   }
 }
