@@ -9,11 +9,11 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url)
 export const DEFAULT_HEALTH_THRESHOLDS = Object.freeze({
   minimumFormatComplianceRate: 0.98,
   minimumDecisionResolutionRate: 0.95,
-  maximumInfrastructureFailureRate: 0.02,
+  maximumUnrecoveredInfrastructureRate: 0.02,
   maximumArmResolutionGap: 0.05,
 })
 
-/** @typedef {'FORMAT_COMPLIANCE_BELOW_MINIMUM' | 'DECISION_RESOLUTION_BELOW_MINIMUM' | 'INFRASTRUCTURE_FAILURE_RATE_ABOVE_MAXIMUM' | 'ARM_RESOLUTION_GAP_ABOVE_MAXIMUM'} HealthStopReason */
+/** @typedef {'FORMAT_COMPLIANCE_BELOW_MINIMUM' | 'DECISION_RESOLUTION_BELOW_MINIMUM' | 'UNRECOVERED_INFRASTRUCTURE_RATE_ABOVE_MAXIMUM' | 'ARM_RESOLUTION_GAP_ABOVE_MAXIMUM'} HealthStopReason */
 
 /**
  * @typedef {object} MeasurementHealthObservation
@@ -23,12 +23,9 @@ export const DEFAULT_HEALTH_THRESHOLDS = Object.freeze({
  * @property {number} infrastructureFailures
  * @property {number} attemptCount
  * @property {boolean} [hasModelOutcome]
+ * @property {boolean} [unrecoveredInfrastructure]
  */
 
-/**
- * @param {unknown} value
- * @param {string} label
- */
 function requireNonNegativeInteger(value, label) {
   if (!Number.isSafeInteger(value) || Number(value) < 0) {
     throw new Error(`${label} must be a non-negative safe integer`)
@@ -36,20 +33,11 @@ function requireNonNegativeInteger(value, label) {
   return Number(value)
 }
 
-/**
- * @param {unknown} value
- * @param {string} label
- */
 function requireBoolean(value, label) {
   if (typeof value !== 'boolean') throw new Error(`${label} must be boolean`)
   return value
 }
 
-/**
- * @param {unknown} value
- * @param {number} index
- * @returns {MeasurementHealthObservation}
- */
 function validateObservation(value, index) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`observation[${index}] must be an object`)
@@ -61,15 +49,23 @@ function validateObservation(value, index) {
   if (attemptCount < infrastructureFailures) {
     throw new Error(`observation[${index}] attemptCount cannot be below infrastructureFailures`)
   }
+  const hasModelOutcome = record.hasModelOutcome === undefined
+    ? true
+    : requireBoolean(record.hasModelOutcome, `observation[${index}].hasModelOutcome`)
+  const unrecoveredInfrastructure = record.unrecoveredInfrastructure === undefined
+    ? (!hasModelOutcome && infrastructureFailures > 0)
+    : requireBoolean(record.unrecoveredInfrastructure, `observation[${index}].unrecoveredInfrastructure`)
+  if (unrecoveredInfrastructure && hasModelOutcome) {
+    throw new Error(`observation[${index}] cannot have a model outcome and unrecovered infrastructure`)
+  }
   return Object.freeze({
     arm: record.arm,
     formatValid: requireBoolean(record.formatValid, `observation[${index}].formatValid`),
     decisionResolved: requireBoolean(record.decisionResolved, `observation[${index}].decisionResolved`),
     infrastructureFailures,
     attemptCount,
-    hasModelOutcome: record.hasModelOutcome === undefined
-      ? true
-      : requireBoolean(record.hasModelOutcome, `observation[${index}].hasModelOutcome`),
+    hasModelOutcome,
+    unrecoveredInfrastructure,
   })
 }
 
@@ -82,10 +78,6 @@ function rounded(value) {
   return Number(value.toFixed(6))
 }
 
-/**
- * @param {readonly MeasurementHealthObservation[]} observations
- * @param {'B' | 'C'} arm
- */
 function armResolution(observations, arm) {
   const rows = observations.filter(value => value.arm === arm)
   if (rows.length === 0) throw new Error(`measurement health requires at least one ${arm} observation`)
@@ -119,6 +111,8 @@ export function evaluateMeasurementHealth(input) {
   const resolved = observations.filter(value => value.decisionResolved).length
   const infrastructureFailures = observations.reduce((sum, value) => sum + value.infrastructureFailures, 0)
   const attempts = observations.reduce((sum, value) => sum + value.attemptCount, 0)
+  const unrecovered = observations.filter(value => value.unrecoveredInfrastructure).length
+  const retryAttempts = Math.max(0, attempts - observations.length)
   const B = armResolution(observations, 'B')
   const C = armResolution(observations, 'C')
 
@@ -129,27 +123,24 @@ export function evaluateMeasurementHealth(input) {
     resolvedDecisionObservations: resolved,
     infrastructureFailures,
     attempts,
+    unrecoveredInfrastructureObservations: unrecovered,
+    retryAttempts,
     formatComplianceRate: rounded(ratio(formatValid, modelRows.length, 'format compliance')),
     decisionResolutionRate: rounded(ratio(resolved, observations.length, 'decision resolution')),
-    infrastructureFailureRate: rounded(ratio(infrastructureFailures, attempts, 'infrastructure failure rate')),
+    unrecoveredInfrastructureRate: rounded(ratio(unrecovered, observations.length, 'unrecovered infrastructure rate')),
+    retryAttemptRate: rounded(ratio(retryAttempts, attempts, 'retry attempt rate')),
     resolutionGap: rounded(Math.abs(B.resolutionRate - C.resolutionRate)),
     byArm: Object.freeze({ B, C }),
   })
 
   /** @type {HealthStopReason[]} */
   const reasons = []
-  if (metrics.formatComplianceRate < thresholds.minimumFormatComplianceRate) {
-    reasons.push('FORMAT_COMPLIANCE_BELOW_MINIMUM')
+  if (metrics.formatComplianceRate < thresholds.minimumFormatComplianceRate) reasons.push('FORMAT_COMPLIANCE_BELOW_MINIMUM')
+  if (metrics.decisionResolutionRate < thresholds.minimumDecisionResolutionRate) reasons.push('DECISION_RESOLUTION_BELOW_MINIMUM')
+  if (metrics.unrecoveredInfrastructureRate > thresholds.maximumUnrecoveredInfrastructureRate) {
+    reasons.push('UNRECOVERED_INFRASTRUCTURE_RATE_ABOVE_MAXIMUM')
   }
-  if (metrics.decisionResolutionRate < thresholds.minimumDecisionResolutionRate) {
-    reasons.push('DECISION_RESOLUTION_BELOW_MINIMUM')
-  }
-  if (metrics.infrastructureFailureRate > thresholds.maximumInfrastructureFailureRate) {
-    reasons.push('INFRASTRUCTURE_FAILURE_RATE_ABOVE_MAXIMUM')
-  }
-  if (metrics.resolutionGap > thresholds.maximumArmResolutionGap) {
-    reasons.push('ARM_RESOLUTION_GAP_ABOVE_MAXIMUM')
-  }
+  if (metrics.resolutionGap > thresholds.maximumArmResolutionGap) reasons.push('ARM_RESOLUTION_GAP_ABOVE_MAXIMUM')
 
   return Object.freeze({
     schema: 'dsh-toolchain-staged-eval-health-v1',
@@ -160,9 +151,6 @@ export function evaluateMeasurementHealth(input) {
   })
 }
 
-/**
- * @param {string[]} args
- */
 function parseArguments(args) {
   if (args.length !== 2 || args[0] !== '--input' || typeof args[1] !== 'string') {
     throw new Error('eval health gate requires --input <json-file>')
