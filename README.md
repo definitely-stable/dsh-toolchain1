@@ -18,7 +18,7 @@ normalized machine model
 contract intelligence / diagnostics / verification receipts / compatibility diff
 ```
 
-M1 establishes exact target identity. M1.1 projects the same target-resolution capability through the installed DSH Plugin and MCP. M2.1 adds an offline, target-bound Contract Index so agents can search and inspect installed package/declaration evidence without loading the complete DSH catalog or guessing from model memory. M2.2 enriches that same index inside real Agent-scoped native DSH tool calls with bounded official Host Inspect evidence. M2.3 remains the separate frozen retrieval evaluation required before M2 is complete.
+M1 establishes exact target identity. M1.1 projects the same target-resolution capability through the installed DSH Plugin and MCP. M2.1 adds an offline, target-bound Contract Index so agents can search and inspect installed package/declaration evidence without loading the complete DSH catalog or guessing from model memory. M2.2 enriches that same index inside real Agent-scoped native DSH tool calls with bounded official Host Inspect evidence. M2.3's controlled H1 execution is complete at 864/864 with immutable terminal result `INCONCLUSIVE`; M2 remains open because H1 did not establish the preregistered PASS claim, but no H1 rerun is authorized or required for normal product development. Contract Search v3, staged evaluation hardening, and Exact Target Plugin Check now proceed on the post-H1 path defined by `docs/evaluation/m2/status.md`.
 
 ## Installation model
 
@@ -145,7 +145,7 @@ This conservative guard closes the demonstrated long-running-process failure whe
 
 The exact packed-artifact smoke on published `dsh@0.1.1-rc.2` proves a real registered Agent, exact-target live Host Tool evidence, offline-vs-live Contract Index divergence, and live search→inspect fingerprint continuity. Published `0.1.0-rc.8` remains an older read-only target-resolution compatibility train.
 
-Upstream source commit `cd5ef814...` currently declares source version `0.1.2-alpha.1` and adds `dsh.profile.patchReload`, but that package version is not published in npm (CI registry installation returned no matching version). Its target-identity implications are tracked separately in Issue #33; PR #32 does not silently redefine `dsh-target-v2`.
+The historical M2/H1 evidence remains frozen on published `dsh@0.1.1-rc.2`. Current upstream source has advanced independently to `0.1.2-alpha.5`; later upstream trains are a separate compatibility track owned by Issue #33 and MUST NOT retroactively redefine `dsh-target-v2`, the frozen rc.2 experiment, or its Contract Index evidence.
 
 ### Evidence and Contract Index identity
 
@@ -191,7 +191,7 @@ Read in this order:
 5. [`docs/roadmap.md`](docs/roadmap.md)
 6. relevant ADRs under [`docs/decisions/`](docs/decisions/)
 
-Current target semantics are defined by [`ADR-0007`](docs/decisions/ADR-0007-complete-target-composition-fingerprint-v2.md). Contract Index identity is defined by [`ADR-0008`](docs/decisions/ADR-0008-contract-index-fingerprint-v1.md). M1.1 frontend parity is tracked by Issue #25; M2.1 by Issue #29; M2.2 by Issue #31; the new upstream `patchReload` compatibility decision is tracked by Issue #33.
+Current target semantics are defined by [`ADR-0007`](docs/decisions/ADR-0007-complete-target-composition-fingerprint-v2.md). Contract Index identity is defined by [`ADR-0008`](docs/decisions/ADR-0008-contract-index-fingerprint-v1.md). M1.1 frontend parity is tracked by Issue #25; M2.1 by Issue #29; M2.2 by Issue #31; the upstream lifecycle/`patchReload` compatibility decision is tracked by Issue #33.
 
 Development policy lives in [`docs/development.md`](docs/development.md). All contributors—human or automated—follow [`CONTRIBUTING.md`](CONTRIBUTING.md); coding agents also follow [`AGENTS.md`](AGENTS.md).
 
@@ -201,13 +201,13 @@ This repository is the development incubator. The future public project is a new
 
 M0 Foundation, M1 Target Intelligence, M1.1 Target Frontend Parity, M2.1 Offline Contract Index, and M2.2 Agent-scoped Host Inspect enrichment are implemented and merged.
 
-M2.3 is the remaining M2 exit slice. Its deterministic R1 baseline has been recorded; a real provider-backed P0 calibration run was executed and retained with immutable historical status `INCONCLUSIVE`; corrected measurement/readjudication semantics and the frozen H1 prospective design are in place; and durable H1 ledger/store/coordinator/schedule, execution-definition, attempt-input, and public preregistration receipt machinery are implemented. These implementation artifacts do **not** mean that the real H1 is authorized or complete.
+M2.3 H1 execution is complete: all `864 / 864` scheduled outcomes were executed. The canonical terminal result is immutable `INCONCLUSIVE` because the frozen measurement path left `227 / 576` B/C observations unresolved, so the preregistered confirmatory estimates were intentionally not computed. H1 MUST NOT be rerun merely to obtain another terminal label, and the disclosed H1 corpus is `DEVELOPMENT_ONLY`, not a future H2 holdout.
 
-The real private 96-task H1 dataset, strong provider/backend identity, finalized real commitment/execution definition, and real public preregistration receipt are still pending. Until the real receipt is committed to protected `main` and bound to an immutable ref/tag, H1 provider execution remains prohibited. The canonical current gate state and next permitted action are maintained in [`docs/evaluation/m2/status.md`](docs/evaluation/m2/status.md); capability sequencing remains in [`docs/roadmap.md`](docs/roadmap.md).
+M2 remains open because historical H1 did not establish the preregistered PASS claim. The permitted post-H1 path is Contract Search v3 development on a separate R2 corpus, staged measurement-health tooling before any future H2, and the first Exact Target Plugin Check product flow. The canonical current gate state is [`docs/evaluation/m2/status.md`](docs/evaluation/m2/status.md).
 
 The package root still exposes only stable public product/protocol identities. `createApplicationKernel()` remains an internal composition primitive; CLI, DSH Host, and MCP construct or receive the required runtime adapters internally.
 
-If the single preregistered H1 resolves `PASS`, M2 closes and the next product slice is the smallest Exact Target Plugin Check alpha path. `NEEDS-IMPROVEMENT` freezes the H1 result and moves retrieval changes to a separate bounded slice; `INCONCLUSIVE` permits only the preregistered extension path. Source/artifact plugin validation, isolated verification, and DSH Web remain later milestones.
+Exact Target Plugin Check may proceed without rerunning H1 and without waiting for every Contract Search v3 ranking phase. Runtime verification remains a later M4 boundary; static Plugin Check MUST NOT claim that candidate code has been executed or verified.
 
 ## License
 
