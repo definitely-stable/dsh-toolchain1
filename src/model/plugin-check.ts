@@ -1,5 +1,5 @@
-import type { Diagnostic } from '../protocol/index.js'
-import type { ContractDefinition, ContractIndex } from './contract.js'
+import type { ContractDefinition, Diagnostic } from '../protocol/index.js'
+import type { ContractIndex } from './contract.js'
 import type { AcquiredPluginRequirement, AcquiredPluginSubject } from './plugin.js'
 
 export type PluginCompatibilityVerdict =
@@ -73,7 +73,8 @@ function packageVersion(
   }
 
   if (versions.size !== 1) return { exists: true }
-  return { exists: true, version: [...versions][0] }
+  const version = versions.values().next().value
+  return version === undefined ? { exists: true } : { exists: true, version }
 }
 
 function pluginDiagnostic(
