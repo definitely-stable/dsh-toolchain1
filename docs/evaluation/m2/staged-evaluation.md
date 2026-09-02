@@ -59,18 +59,26 @@ The mode budget is a hard cap, not a chunk size. A `dev` run means at most 40 B/
 
 The report should include provider token usage when available. H1 showed that Contract Intelligence can materially increase context consumption, so quality and token overhead are both engineering metrics. A quality improvement that doubles context cost should be visible rather than hidden inside an aggregate success rate.
 
+## Product optimization lane before H2
+
+Passing measurement calibration is not a reason to immediately spend a fresh holdout. The disclosed development corpus is the place to optimize Contract Intelligence behavior first.
+
+The first optimization targets are derived from H1 operational evidence:
+
+1. **Search-to-inspect conversion** — reduce repeated broad `contract.search` calls and move confidently matched candidates to `contract.inspect` earlier.
+2. **Duplicate-query suppression** — canonicalize equivalent search intents and cache repeated exact-target results within one run.
+3. **Result compaction** — keep search results small and evidence-oriented; avoid copying large declaration surfaces before the agent has selected a candidate.
+4. **Per-task tool budget** — cap search/inspect rounds and stop when evidence confidence is sufficient instead of letting tool use grow until the model limit.
+5. **Token overhead guardrail** — always report C-vs-B input-token overhead. H1's C arm consumed materially more input context than B; a future dev change should not hide this cost.
+6. **Failure-cluster targeting** — run focused development subsets for `tool-runtime`, approval, session read/search and other observed failure clusters, but retain the balanced canary before any broader claim.
+
+These optimizations use `dev`/`release` evidence only. Once a candidate configuration is chosen, freeze it before generating the new H2 holdout.
+
 ## H1 historical boundary
 
 H1 remains `INCONCLUSIVE`. Canonical IDs/hashes are archived in `h1-terminal-outcome-2026-09-02.md`. The old one-shot H1 finalizer is retired. No staged-eval result changes H1 status.
 
-The H1 development corpus may be used to:
-
-- reproduce structured-output failures;
-- validate new evaluator/sidecar behavior;
-- test retrieval/tool-use changes;
-- build regression cases from observed failure clusters.
-
-It may not be used to claim fresh confirmatory evidence.
+The H1 development corpus may be used to reproduce structured-output failures, validate new evaluator/sidecar behavior, test retrieval/tool-use changes and build regression cases from observed failure clusters. It may not be used to claim fresh confirmatory evidence.
 
 ## Future H2 entry gate
 
@@ -80,8 +88,9 @@ Do not create or execute H2 until all of these are true:
 2. the 16-call canary passes the health thresholds repeatedly on development/calibration data;
 3. recovered vs unrecovered infrastructure semantics are tested;
 4. token/call budgets are measured and bounded;
-5. task selection and repetition policy are frozen before seeing the H2 holdout;
-6. a fresh H2 task set is generated, hidden and committed by hash;
-7. any sequential stopping boundaries are preregistered before provider outcomes exist.
+5. the product candidate has completed the development optimization lane and is frozen;
+6. task selection and repetition policy are frozen before seeing the H2 holdout;
+7. a fresh H2 task set is generated, hidden and committed by hash;
+8. any sequential stopping boundaries are preregistered before provider outcomes exist.
 
 H2 is then a separate confirmatory experiment. The staged dev/release modes remain fast engineering feedback, not substitutes for that experiment.
