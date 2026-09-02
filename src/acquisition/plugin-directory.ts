@@ -227,7 +227,36 @@ export async function acquirePluginDirectory(
     })
   }
 
-  const manifestLocation = path.join(canonicalRoot, 'package.json')
+  const lexicalManifestLocation = path.join(canonicalRoot, 'package.json')
+  let manifestLocation: string
+  try {
+    manifestLocation = await realpath(lexicalManifestLocation)
+  } catch {
+    return Object.freeze({
+      completeness: 'invalid' as const,
+      requirements: Object.freeze([]),
+      evidence: Object.freeze([]),
+      diagnostics: Object.freeze([diagnostic(
+        'PLUGIN_MANIFEST_READ_FAILED',
+        'Plugin package.json could not be acquired.',
+        [lexicalManifestLocation],
+      )]),
+    })
+  }
+
+  if (!pathIsWithin(canonicalRoot, manifestLocation)) {
+    return Object.freeze({
+      completeness: 'invalid' as const,
+      requirements: Object.freeze([]),
+      evidence: Object.freeze([]),
+      diagnostics: Object.freeze([diagnostic(
+        'PLUGIN_MANIFEST_OUTSIDE_ROOT',
+        'Resolved plugin package.json escapes the plugin subject root.',
+        [manifestLocation],
+      )]),
+    })
+  }
+
   let manifestContent: string
   try {
     manifestContent = await readBoundedUtf8(manifestLocation, MAX_PLUGIN_MANIFEST_BYTES)
