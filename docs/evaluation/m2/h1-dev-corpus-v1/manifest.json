@@ -1,0 +1,22 @@
+{
+  "schema": "dsh-toolchain-m2-h1-development-corpus-manifest-v1",
+  "status": "DEVELOPMENT_ONLY",
+  "purpose": "DISCLOSED_CALIBRATION_AND_REGRESSION_ONLY",
+  "source": {
+    "datasetId": "H1",
+    "executionRunId": "33533666686",
+    "terminalRunId": "33541873817",
+    "postAnalysisRunId": "33541936135",
+    "terminalResultSha256": "cee3e20d2d8e522f434bc2ed545ced4eeccf5278633966828b2cf2dc1bf630e7",
+    "terminalAnalysisSha256": "9e100044097dca00b4394fcd93fc1a3bd9a9173125c8f91d01736031c4c0a89a"
+  },
+  "taskCount": 96,
+  "futureHoldoutAllowed": false,
+  "shards": [
+    { "path": "shard-01.json", "taskCount": 24, "sha256": "b5b90118a19a2e9074ca1860c579c5837ede6bb635217fb53739edd38a01d787" },
+    { "path": "shard-02.json", "taskCount": 24, "sha256": "8a1ba794c987c99b6a02b4ab017bd3d27ee7faf8932966f1e221a304d795edb4" },
+    { "path": "shard-03.json", "taskCount": 24, "sha256": "8d31fdce3e5147f08d04ac3e70f18fe4800e563de28294fff72684462e207525" },
+    { "path": "shard-04.json", "taskCount": 24, "sha256": "5dd5030b7704d6be53d0db9ab346aa246b9bb5c9213bd588a1c36799088ebc3f" }
+  ],
+  "warning": "This corpus was disclosed after terminal H1 and MUST NOT be used as a confirmatory H2 holdout or described as unseen evidence after tuning."
+}
