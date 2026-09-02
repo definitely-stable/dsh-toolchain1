@@ -27,6 +27,11 @@ class SubjectReadError extends Error {
   }
 }
 
+type BundlePatchDeclaration =
+  | { readonly state: 'missing' }
+  | { readonly state: 'invalid' }
+  | { readonly state: 'present'; readonly value: string }
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -171,12 +176,19 @@ function deepseekRequirements(
   return requirements
 }
 
-function bundlePatchSpecifier(manifest: Record<string, unknown>): string | undefined {
+function bundlePatchDeclaration(manifest: Record<string, unknown>): BundlePatchDeclaration {
   const dsh = manifest.dsh
-  if (!isRecord(dsh)) return undefined
+  if (dsh === undefined) return { state: 'missing' }
+  if (!isRecord(dsh)) return { state: 'invalid' }
+
   const bundle = dsh.bundle
-  if (!isRecord(bundle)) return undefined
-  return typeof bundle.patch === 'string' && bundle.patch.length > 0 ? bundle.patch : undefined
+  if (bundle === undefined) return { state: 'missing' }
+  if (!isRecord(bundle)) return { state: 'invalid' }
+
+  const patch = bundle.patch
+  if (patch === undefined) return { state: 'missing' }
+  if (typeof patch !== 'string' || patch.length === 0) return { state: 'invalid' }
+  return { state: 'present', value: patch }
 }
 
 function completenessForIdentity(
@@ -269,22 +281,28 @@ export async function acquirePluginDirectory(
   const requirements = deepseekRequirements(manifest, diagnostics, manifestLocation)
   const evidence: Evidence[] = [manifestEvidence]
   let bundlePatchHash: string | undefined
-  const patchSpecifier = bundlePatchSpecifier(manifest)
+  const patch = bundlePatchDeclaration(manifest)
 
-  if (patchSpecifier === undefined) {
+  if (patch.state === 'missing') {
     diagnostics.push(diagnostic(
       'PLUGIN_BUNDLE_PATCH_MISSING',
       'Plugin manifest does not declare dsh.bundle.patch.',
       [manifestLocation],
     ))
-  } else if (path.isAbsolute(patchSpecifier)) {
+  } else if (patch.state === 'invalid') {
+    diagnostics.push(diagnostic(
+      'PLUGIN_MANIFEST_INVALID',
+      'dsh.bundle.patch must be a non-empty string when present.',
+      [manifestLocation],
+    ))
+  } else if (path.isAbsolute(patch.value)) {
     diagnostics.push(diagnostic(
       'PLUGIN_BUNDLE_PATCH_OUTSIDE_ROOT',
       'dsh.bundle.patch must resolve inside the plugin subject root.',
-      [patchSpecifier],
+      [patch.value],
     ))
   } else {
-    const lexicalPatch = path.resolve(canonicalRoot, patchSpecifier)
+    const lexicalPatch = path.resolve(canonicalRoot, patch.value)
     if (!pathIsWithin(canonicalRoot, lexicalPatch)) {
       diagnostics.push(diagnostic(
         'PLUGIN_BUNDLE_PATCH_OUTSIDE_ROOT',
