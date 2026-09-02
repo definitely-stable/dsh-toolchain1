@@ -74,6 +74,32 @@ export interface ContractInspectSelection {
   readonly evidence: readonly Evidence[]
 }
 
+export type ContractSearchLane = 'strict' | 'intent' | 'none'
+export type ContractSearchField = 'identity' | 'fact' | 'summary' | 'kind'
+
+export interface ContractSearchTermExplanation {
+  readonly token: string
+  readonly documentFrequency: number
+  readonly field: ContractSearchField
+  readonly factIndexes: readonly number[]
+  readonly evidenceIds: readonly string[]
+}
+
+export interface ContractSearchResultExplanation {
+  readonly contractId: string
+  readonly score: number
+  readonly terms: readonly ContractSearchTermExplanation[]
+}
+
+export interface ContractSearchExplanation {
+  readonly rankerVersion: string
+  readonly contractIndexFingerprint: string
+  readonly query: string
+  readonly queryTokens: readonly string[]
+  readonly lane: ContractSearchLane
+  readonly results: readonly ContractSearchResultExplanation[]
+}
+
 interface ContractIndexEvidenceProjection {
   readonly id: string
   readonly kind: Evidence['kind']
@@ -97,6 +123,14 @@ interface LexicalMatch {
 interface IntentTokenMatch {
   readonly score: number
   readonly evidenceIds: readonly string[]
+  readonly field: ContractSearchField
+  readonly factIndexes: readonly number[]
+}
+
+interface RankedContractSearch {
+  readonly lane: ContractSearchLane
+  readonly matches: readonly ContractReference[]
+  readonly intentIndex?: ContractSearchIndex
 }
 
 type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue }
@@ -404,14 +438,16 @@ function requiredIntentMatches(tokenCount: number): number {
   return Math.min(3, Math.max(2, Math.ceil(tokenCount * 0.4)))
 }
 
-function factEvidenceForToken(
+function factTokenMatch(
   document: ContractSearchDocument,
   token: string,
-): readonly string[] | undefined {
-  const evidenceIds = document.facts
-    .filter(fact => fact.uniqueTokens.has(token))
-    .flatMap(fact => fact.evidenceIds)
-  return evidenceIds.length === 0 ? undefined : frozenEvidenceIds(evidenceIds)
+): { readonly evidenceIds: readonly string[]; readonly factIndexes: readonly number[] } | undefined {
+  const facts = document.facts.filter(fact => fact.uniqueTokens.has(token))
+  if (facts.length === 0) return undefined
+  return Object.freeze({
+    evidenceIds: frozenEvidenceIds(facts.flatMap(fact => fact.evidenceIds)),
+    factIndexes: Object.freeze(facts.map(fact => fact.index)),
+  })
 }
 
 function intentTokenMatch(
@@ -420,19 +456,39 @@ function intentTokenMatch(
   document: ContractSearchDocument,
 ): IntentTokenMatch | undefined {
   if (document.identity.uniqueTokens.has(token)) {
-    return Object.freeze({ score: 45, evidenceIds: contractExistenceWitness(contract) })
+    return Object.freeze({
+      score: 45,
+      evidenceIds: contractExistenceWitness(contract),
+      field: 'identity' as const,
+      factIndexes: Object.freeze([]),
+    })
   }
 
-  const factEvidenceIds = factEvidenceForToken(document, token)
-  if (factEvidenceIds !== undefined) {
-    return Object.freeze({ score: 35, evidenceIds: factEvidenceIds })
+  const factMatch = factTokenMatch(document, token)
+  if (factMatch !== undefined) {
+    return Object.freeze({
+      score: 35,
+      evidenceIds: factMatch.evidenceIds,
+      field: 'fact' as const,
+      factIndexes: factMatch.factIndexes,
+    })
   }
 
   if (document.summary.uniqueTokens.has(token)) {
-    return Object.freeze({ score: 20, evidenceIds: contractExistenceWitness(contract) })
+    return Object.freeze({
+      score: 20,
+      evidenceIds: contractExistenceWitness(contract),
+      field: 'summary' as const,
+      factIndexes: Object.freeze([]),
+    })
   }
   if (document.kind.uniqueTokens.has(token)) {
-    return Object.freeze({ score: 15, evidenceIds: contractExistenceWitness(contract) })
+    return Object.freeze({
+      score: 15,
+      evidenceIds: contractExistenceWitness(contract),
+      field: 'kind' as const,
+      factIndexes: Object.freeze([]),
+    })
   }
   return undefined
 }
@@ -545,24 +601,23 @@ function validateDerivedSearchIndex(index: ContractIndex, derived: ContractSearc
   }
 }
 
-export function searchContractIndex(
+function rankContractSearch(
   index: ContractIndex,
   query: string,
-  kinds?: readonly ContractKind[],
-  limit = 10,
-  derived?: ContractSearchIndex,
-): ContractSearchSelection {
+  kinds: readonly ContractKind[] | undefined,
+  limit: number,
+  derived: ContractSearchIndex | undefined,
+): RankedContractSearch {
   if (derived !== undefined) validateDerivedSearchIndex(index, derived)
 
   const kindSet = kinds === undefined ? undefined : new Set(kinds)
   const contracts = index.contracts.filter(contract => kindSet === undefined || kindSet.has(contract.kind))
   const strictMatches = rankedMatches(contracts, query, strictLexicalMatch, limit)
-  if (strictMatches.length > 0 || !isIntentFallbackQuery(query)) {
-    const evidenceIds = new Set(strictMatches.flatMap(match => match.evidenceIds))
-    return Object.freeze({
-      matches: Object.freeze(strictMatches),
-      evidence: evidenceSubset(index, evidenceIds),
-    })
+  if (strictMatches.length > 0) {
+    return Object.freeze({ lane: 'strict' as const, matches: Object.freeze(strictMatches) })
+  }
+  if (!isIntentFallbackQuery(query)) {
+    return Object.freeze({ lane: 'none' as const, matches: Object.freeze([]) })
   }
 
   const intentIndex = derived ?? createContractSearchIndex(index)
@@ -572,10 +627,79 @@ export function searchContractIndex(
     (contract, intentQuery) => intentMatch(contract, intentQuery, intentIndex),
     Math.min(limit, 1),
   )
-  const evidenceIds = new Set(matches.flatMap(match => match.evidenceIds))
   return Object.freeze({
+    lane: matches.length === 0 ? 'none' as const : 'intent' as const,
     matches: Object.freeze(matches),
+    intentIndex,
+  })
+}
+
+export function searchContractIndex(
+  index: ContractIndex,
+  query: string,
+  kinds?: readonly ContractKind[],
+  limit = 10,
+  derived?: ContractSearchIndex,
+): ContractSearchSelection {
+  const ranked = rankContractSearch(index, query, kinds, limit, derived)
+  const evidenceIds = new Set(ranked.matches.flatMap(match => match.evidenceIds))
+  return Object.freeze({
+    matches: ranked.matches,
     evidence: evidenceSubset(index, evidenceIds),
+  })
+}
+
+export function explainContractSearch(
+  index: ContractIndex,
+  query: string,
+  kinds?: readonly ContractKind[],
+  limit = 10,
+  derived?: ContractSearchIndex,
+): ContractSearchExplanation {
+  const ranked = rankContractSearch(index, query, kinds, limit, derived)
+  const queryTokens = intentQueryTokens(query)
+
+  const results = ranked.matches.map(match => {
+    if (ranked.lane !== 'intent' || ranked.intentIndex === undefined) {
+      return Object.freeze({
+        contractId: match.id,
+        score: match.score,
+        terms: Object.freeze([]),
+      })
+    }
+
+    const contract = index.contracts.find(candidate => candidate.id === match.id)
+    const document = ranked.intentIndex.documents.get(match.id)
+    if (contract === undefined || document === undefined) {
+      throw new Error(`ContractSearchIndex explanation is missing contract ${match.id}`)
+    }
+
+    const terms = queryTokens.flatMap(token => {
+      const tokenMatch = intentTokenMatch(token, contract, document)
+      if (tokenMatch === undefined) return []
+      const term: ContractSearchTermExplanation = Object.freeze({
+        token,
+        documentFrequency: ranked.intentIndex!.documentFrequency.get(token) ?? 0,
+        field: tokenMatch.field,
+        factIndexes: Object.freeze([...tokenMatch.factIndexes]),
+        evidenceIds: Object.freeze([...tokenMatch.evidenceIds]),
+      })
+      return [term]
+    })
+    return Object.freeze({
+      contractId: match.id,
+      score: match.score,
+      terms: Object.freeze(terms),
+    })
+  })
+
+  return Object.freeze({
+    rankerVersion: CONTRACT_SEARCH_RANKER_VERSION,
+    contractIndexFingerprint: index.fingerprint,
+    query,
+    queryTokens: Object.freeze([...queryTokens]),
+    lane: ranked.lane,
+    results: Object.freeze(results),
   })
 }
 
