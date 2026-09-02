@@ -19,6 +19,7 @@ export interface PluginRequirementAnalysis {
   readonly relationship: AcquiredPluginRequirement['relationship']
   readonly status: PluginRequirementStatus
   readonly targetVersion?: string
+  readonly evidenceIds: readonly string[]
 }
 
 export interface PluginCompatibilityAnalysis {
@@ -51,6 +52,10 @@ function normalizedRequirements(
   return [...byKey.values()].toSorted(compareRequirements)
 }
 
+function sortedUnique(values: Iterable<string>): readonly string[] {
+  return [...new Set(values)].toSorted(compareCodePoints)
+}
+
 function packageContracts(index: ContractIndex, packageName: string): readonly ContractDefinition[] {
   return index.contracts.filter(contract =>
     contract.kind === 'package'
@@ -58,23 +63,52 @@ function packageContracts(index: ContractIndex, packageName: string): readonly C
   )
 }
 
+interface PackageVersionObservation {
+  readonly exists: boolean
+  readonly version?: string
+  readonly evidenceIds: readonly string[]
+}
+
 function packageVersion(
   index: ContractIndex,
   packageName: string,
-): { readonly exists: boolean; readonly version?: string } {
+): PackageVersionObservation {
   const contracts = packageContracts(index, packageName)
-  if (contracts.length === 0) return { exists: false }
+  if (contracts.length === 0) return { exists: false, evidenceIds: [] }
 
   const versions = new Set<string>()
+  const evidenceIds = new Set<string>()
   for (const contract of contracts) {
+    for (const evidenceId of contract.evidenceIds) evidenceIds.add(evidenceId)
     for (const fact of contract.facts) {
-      if (fact.key === 'version' && fact.value.length > 0) versions.add(fact.value)
+      if (fact.key !== 'version' || fact.value.length === 0) continue
+      versions.add(fact.value)
+      for (const evidenceId of fact.evidenceIds) evidenceIds.add(evidenceId)
     }
   }
 
-  if (versions.size !== 1) return { exists: true }
+  const normalizedEvidenceIds = sortedUnique(evidenceIds)
+  if (versions.size !== 1) return { exists: true, evidenceIds: normalizedEvidenceIds }
   const version = versions.values().next().value
-  return version === undefined ? { exists: true } : { exists: true, version }
+  return version === undefined
+    ? { exists: true, evidenceIds: normalizedEvidenceIds }
+    : { exists: true, version, evidenceIds: normalizedEvidenceIds }
+}
+
+function subjectRequirementEvidenceIds(subject: AcquiredPluginSubject): readonly string[] {
+  return sortedUnique(
+    subject.evidence
+      .filter(item => item.kind === 'manifest')
+      .map(item => item.id),
+  )
+}
+
+function combinedEvidenceIds(
+  subjectEvidenceIds: readonly string[],
+  targetEvidenceIds: readonly string[] = [],
+): readonly string[] {
+  const targetOnly = targetEvidenceIds.filter(id => !subjectEvidenceIds.includes(id))
+  return Object.freeze([...subjectEvidenceIds, ...targetOnly])
 }
 
 function pluginDiagnostic(
@@ -103,6 +137,7 @@ export function analyzePluginCompatibility(
 ): PluginCompatibilityAnalysis {
   const diagnostics: Diagnostic[] = [...subject.diagnostics]
   const requirements: PluginRequirementAnalysis[] = []
+  const subjectEvidenceIds = subjectRequirementEvidenceIds(subject)
   let provenIncompatible = false
   let unproven = subject.completeness !== 'complete'
 
@@ -113,6 +148,7 @@ export function analyzePluginCompatibility(
         range: requirement.range,
         relationship: requirement.relationship,
         status: 'not-required-from-host' as const,
+        evidenceIds: subjectEvidenceIds,
       }))
       continue
     }
@@ -125,6 +161,7 @@ export function analyzePluginCompatibility(
           range: requirement.range,
           relationship: requirement.relationship,
           status: 'not-required-from-host' as const,
+          evidenceIds: subjectEvidenceIds,
         }))
         continue
       }
@@ -135,6 +172,7 @@ export function analyzePluginCompatibility(
         range: requirement.range,
         relationship: requirement.relationship,
         status: 'missing' as const,
+        evidenceIds: subjectEvidenceIds,
       }))
       diagnostics.push(pluginDiagnostic(
         'PLUGIN_DSH_PACKAGE_MISSING',
@@ -144,6 +182,7 @@ export function analyzePluginCompatibility(
       continue
     }
 
+    const evidenceIds = combinedEvidenceIds(subjectEvidenceIds, installed.evidenceIds)
     if (installed.version !== undefined && installed.version === requirement.range) {
       requirements.push(Object.freeze({
         packageName: requirement.packageName,
@@ -151,6 +190,7 @@ export function analyzePluginCompatibility(
         relationship: requirement.relationship,
         status: 'satisfied' as const,
         targetVersion: installed.version,
+        evidenceIds,
       }))
       continue
     }
@@ -162,6 +202,7 @@ export function analyzePluginCompatibility(
       relationship: requirement.relationship,
       status: 'unproven' as const,
       ...(installed.version === undefined ? {} : { targetVersion: installed.version }),
+      evidenceIds,
     }))
     const peerKind = requirement.relationship === 'host-peer-optional'
       ? 'optional Host peer'
