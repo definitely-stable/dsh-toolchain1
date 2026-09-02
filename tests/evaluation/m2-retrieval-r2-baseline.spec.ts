@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { createContractSearchIndex } from '../../src/model/contract-search-index.js'
 import { searchContractIndex } from '../../src/model/contract.js'
 import { createFrozenM2RetrievalIndex } from './m2-retrieval-index.js'
 import {
@@ -34,6 +35,7 @@ describe('Contract Search R2 development baseline observation', () => {
     const index = await createFrozenM2RetrievalIndex()
     const knownContractIds = new Set(index.contracts.map(contract => contract.id))
     validateR2RetrievalCorpus(R2_RETRIEVAL_DEV, knownContractIds)
+    const derived = createContractSearchIndex(index)
 
     const byScenario = Object.fromEntries(
       R2_DEV_SCENARIOS.map(scenario => [scenario, emptyScenarioBaseline()]),
@@ -46,7 +48,7 @@ describe('Contract Search R2 development baseline observation', () => {
     let forbiddenHitAt5 = 0
 
     for (const task of R2_RETRIEVAL_DEV) {
-      const selection = searchContractIndex(index, task.query, undefined, 5)
+      const selection = searchContractIndex(index, task.query, undefined, 5, derived)
       const ranked = selection.matches.map(match => match.id)
       const expected = new Set(task.expectedContractIds)
       const forbidden = new Set(task.forbiddenContractIds ?? [])
@@ -86,7 +88,7 @@ describe('Contract Search R2 development baseline observation', () => {
       schema: 'dsh-contract-search-r2-dev-baseline-v1',
       corpusFingerprint: fingerprintR2RetrievalCorpus(R2_RETRIEVAL_DEV, index.fingerprint),
       contractIndexFingerprint: index.fingerprint,
-      productionRankerVersion: 'dsh-contract-search-v2-intent',
+      productionRankerVersion: derived.rankerVersion,
       taskCount: R2_RETRIEVAL_DEV.length,
       answerableCount,
       noResultCount: R2_RETRIEVAL_DEV.length - answerableCount,
