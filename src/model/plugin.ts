@@ -1,4 +1,4 @@
-import type { Diagnostic, Evidence } from '../protocol/index.js'
+import type { Diagnostic, Evidence, PluginSubjectRequest } from '../protocol/index.js'
 import type { Sha256Port } from './digest.js'
 
 export type PluginPackageRelationship =
@@ -22,6 +22,10 @@ export interface AcquiredPluginSubject {
   readonly requirements: readonly AcquiredPluginRequirement[]
   readonly evidence: readonly Evidence[]
   readonly diagnostics: readonly Diagnostic[]
+}
+
+export interface PluginSubjectAcquisitionPort {
+  acquire(subject: PluginSubjectRequest): Promise<AcquiredPluginSubject>
 }
 
 export interface PluginSubjectSemanticProjectionV1 {
