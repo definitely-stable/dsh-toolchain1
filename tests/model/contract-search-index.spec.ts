@@ -35,45 +35,46 @@ type ContractModelWithSearchIndex = typeof contractModel & {
   }) => DerivedIndexShape
 }
 
-const contracts: readonly ContractDefinition[] = Object.freeze([
-  Object.freeze({
-    id: 'package:tools',
-    kind: 'package' as const,
-    name: '@deepseek-ai/dsh-tools',
-    qualifiedName: 'package:@deepseek-ai/dsh-tools',
-    availability: 'unknown' as const,
-    summary: 'Tool schema helpers and tool validation.',
-    facts: Object.freeze([
-      Object.freeze({
-        key: 'declaration-export',
-        value: 'validateArgs',
-        evidenceIds: ['e:validate'] as [string],
-      }),
-      Object.freeze({
-        key: 'declaration-export',
-        value: 'ToolSchema',
-        evidenceIds: ['e:schema'] as [string],
-      }),
-    ]),
-    evidenceIds: Object.freeze(['e:validate', 'e:schema']),
-  }),
-  Object.freeze({
-    id: 'package:other',
-    kind: 'package' as const,
-    name: '@deepseek-ai/dsh-other',
-    qualifiedName: 'package:@deepseek-ai/dsh-other',
-    availability: 'unknown' as const,
-    summary: 'Tool runtime support.',
-    facts: Object.freeze([
-      Object.freeze({
-        key: 'declaration-export',
-        value: 'OtherRuntime',
-        evidenceIds: ['e:other'] as [string],
-      }),
-    ]),
-    evidenceIds: Object.freeze(['e:other']),
-  }),
-])
+const toolsContract: ContractDefinition = {
+  id: 'package:tools',
+  kind: 'package',
+  name: '@deepseek-ai/dsh-tools',
+  qualifiedName: 'package:@deepseek-ai/dsh-tools',
+  availability: 'unknown',
+  summary: 'Tool schema helpers and tool validation.',
+  facts: [
+    {
+      key: 'declaration-export',
+      value: 'validateArgs',
+      evidenceIds: ['e:validate'],
+    },
+    {
+      key: 'declaration-export',
+      value: 'ToolSchema',
+      evidenceIds: ['e:schema'],
+    },
+  ],
+  evidenceIds: ['e:validate', 'e:schema'],
+}
+
+const otherContract: ContractDefinition = {
+  id: 'package:other',
+  kind: 'package',
+  name: '@deepseek-ai/dsh-other',
+  qualifiedName: 'package:@deepseek-ai/dsh-other',
+  availability: 'unknown',
+  summary: 'Tool runtime support.',
+  facts: [
+    {
+      key: 'declaration-export',
+      value: 'OtherRuntime',
+      evidenceIds: ['e:other'],
+    },
+  ],
+  evidenceIds: ['e:other'],
+}
+
+const contracts: readonly ContractDefinition[] = Object.freeze([toolsContract, otherContract])
 
 function builder() {
   return (contractModel as ContractModelWithSearchIndex).createContractSearchIndex
@@ -134,7 +135,7 @@ describe('ContractSearchIndex derived state', () => {
 
     const derived = createContractSearchIndex({
       fingerprint: `dsh-contract-index-v1:${'b'.repeat(64)}`,
-      contracts: [contracts[0]!],
+      contracts: [toolsContract],
     })
 
     expect(derived.documentFrequency.get('tool')).toBe(1)
