@@ -51,6 +51,7 @@ function mockKernel(): ApplicationKernel {
         evidence: [],
       },
     })),
+    checkPlugin: vi.fn(async () => { throw new Error('plugin check is not used by contract MCP tests') }),
   }
 }
 
