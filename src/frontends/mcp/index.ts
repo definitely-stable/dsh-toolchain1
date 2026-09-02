@@ -7,7 +7,7 @@ import protocolSchema from '../../../spec/schemas/v1/toolchain-protocol.schema.j
 import { createDshContractFilesystemAcquisition } from '../../acquisition/dsh-contract-filesystem.js'
 import { createDshFilesystemTargetAcquisition } from '../../acquisition/dsh-filesystem.js'
 import { createNodeSha256Port } from '../../acquisition/node-sha256.js'
-import { createPluginDirectoryAcquisition } from '../../acquisition/plugin-directory.js'
+import { createPluginSubjectAcquisition } from '../../acquisition/plugin-subject.js'
 import {
   checkPluginResponse,
   createApplicationKernel,
@@ -96,7 +96,7 @@ function createNodeKernel(): ApplicationKernel {
   return createApplicationKernel({
     targetAcquisition: createDshFilesystemTargetAcquisition({ digest }),
     contractAcquisition: createDshContractFilesystemAcquisition({ digest }),
-    pluginSubjectAcquisition: createPluginDirectoryAcquisition(digest),
+    pluginSubjectAcquisition: createPluginSubjectAcquisition(digest),
     digest,
   })
 }
