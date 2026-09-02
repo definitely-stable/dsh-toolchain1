@@ -26,109 +26,102 @@
 
 **Files:**
 - Create: `docs/evaluation/m2/h1-terminal-outcome-2026-09-02.md`
-- Create: `docs/evaluation/m2/h1-dev-corpus-v1.json`
+- Create: `docs/evaluation/m2/h1-dev-corpus-v1/manifest.json` and four 24-task shards
 - Delete: `.github/workflows/m2-h1-finalize-once.yml`
 
-**Interfaces:**
-- Consumes: terminal run `33541873817`, post-analysis run `33541936135`, H1 execution run `33533666686`.
-- Produces: durable historical receipt and a dataset explicitly labeled `DEVELOPMENT_ONLY`.
-
-- [ ] Record terminal status, run IDs, result/analysis hashes, terminal source revision, and the reason H1 was inconclusive.
-- [ ] Commit the disclosed 96 H1 tasks as a development-only corpus with an explicit prohibition on H2 holdout use.
-- [ ] Delete the hardcoded one-shot finalization workflow after its completion chain is durably recorded.
-- [ ] Verify JSON parses and workflow is absent.
+- [x] Record terminal status, run IDs, result/analysis hashes, terminal source revision, and the reason H1 was inconclusive.
+- [x] Archive all 96 disclosed H1 tasks as `DEVELOPMENT_ONLY`, with `futureHoldoutAllowed=false` and source evidence identities.
+- [x] Split the corpus into SHA-addressed shards so normal small evals do not require hand-curated copies.
+- [x] Delete the hardcoded one-shot finalization workflow after its completion chain is durably recorded.
+- [ ] Verify every shard hash and policy test in exact-head CI.
 
 ### Task 2: Add deterministic evaluation budget planner with TDD
 
 **Files:**
 - Create: `scripts/eval/budget-plan.mjs`
-- Create: `tests/evaluation/staged-eval-budget-plan.test.ts`
+- Create: `tests/evaluation/staged-eval-budget-plan.spec.ts`
 - Modify: `package.json`
 
-**Interfaces:**
-- Produces: `getEvalMode(name)`, `planEvalBudget(input)`, CLI JSON output.
-- Mode defaults: deterministic=0, canary=8 tasks/16 calls, dev=20/40, release=32/64, research=48/96; B/C only and one repetition for model modes.
-
-- [ ] Write failing tests for all mode defaults, unknown mode rejection, cap overflow, repetition overflow, and no implicit arm A.
-- [ ] Run focused test and verify RED.
-- [ ] Implement immutable mode definitions and fail-closed planner.
-- [ ] Add `eval:plan` package script.
-- [ ] Run focused test and `pnpm run check:scripts` and verify GREEN.
+- [x] Write RED tests for all mode defaults, unknown mode rejection, cap overflow, repetition overflow, and deterministic zero-call mode.
+- [x] Observe the intended RED CI before implementation.
+- [x] Implement immutable mode definitions and fail-closed planner.
+- [x] Add `eval:plan` package script.
+- [ ] Verify GREEN on exact-head CI.
 
 ### Task 3: Add measurement health gate with TDD
 
 **Files:**
 - Create: `scripts/eval/health-gate.mjs`
-- Create: `tests/evaluation/staged-eval-health-gate.test.ts`
+- Create: `tests/evaluation/staged-eval-health-gate.spec.ts`
 - Modify: `package.json`
 
-**Interfaces:**
-- Produces: `evaluateMeasurementHealth(input)` and CLI JSON output.
-- Input observations contain `arm`, `formatValid`, `decisionResolved`, `infrastructureFailures`, `attemptCount`.
-- Thresholds: format >= .98, resolution >= .95, infra <= .02, B/C resolution gap <= .05.
+**Thresholds:** format >= .98, decision resolution >= .95, unrecovered infrastructure missingness <= .02, B/C resolution gap <= .05.
 
-- [ ] Write failing tests for healthy input, low format compliance, low decision resolution, excess infra failures, asymmetric B/C missingness, malformed input, and zero denominators.
-- [ ] Run focused test and verify RED.
-- [ ] Implement deterministic metrics and explicit `PASS`/`STOP` reason codes.
-- [ ] Add `eval:health` package script.
-- [ ] Run focused test and script check and verify GREEN.
+- [x] Write RED tests for healthy input, low format compliance, low decision resolution, unrecovered infrastructure, recovered retry behavior, asymmetric B/C missingness and malformed input.
+- [x] Implement deterministic metrics and explicit `PASS`/`STOP` reason codes.
+- [x] Separate recovered retry cost from unrecovered infrastructure missingness so successful retry does not invalidate measurement.
+- [x] Add `eval:health` package script.
+- [ ] Verify GREEN on exact-head CI.
 
 ### Task 4: Add H1 prefix-health audit utility
 
 **Files:**
 - Create: `scripts/eval/audit-h1-health.mjs`
-- Create: `tests/evaluation/staged-eval-h1-audit.test.ts`
+- Create: `tests/evaluation/staged-eval-h1-audit.spec.ts`
 
-**Interfaces:**
-- Consumes: terminal `h1-result-v2.json`.
-- Produces: health snapshots for prefixes 12/24/48/96/all without changing H1 status.
+- [x] Add a synthetic fixture proving an unhealthy early prefix returns `STOP` while original scientific status is preserved.
+- [x] Implement 12/24/48/96/all historical health snapshots from terminal run evidence.
+- [x] Explicitly prohibit replacement H1 PASS/FAIL computation in this utility.
+- [x] Add `eval:audit-h1` package script.
+- [ ] Verify GREEN on exact-head CI.
 
-- [ ] Write a synthetic fixture test proving an unhealthy early prefix returns STOP while the utility remains exploratory.
-- [ ] Implement extraction of format/resolution/infra observations from terminal run evidence.
-- [ ] Verify the utility never computes or changes H1 PASS/FAIL.
-- [ ] Run focused tests.
+### Task 5: Add verified development-corpus selection
 
-### Task 5: Add repository `dsh-eval` skill
+**Files:**
+- Create: `scripts/eval/development-corpus.mjs`
+- Create: `tests/evaluation/staged-eval-corpus.spec.ts`
+- Modify: `package.json`
+
+- [x] Verify manifest/shard identities and SHA-256 before selection.
+- [x] Reject corpus use when not marked `DEVELOPMENT_ONLY` or when future holdout use is allowed.
+- [x] Select tasks deterministically and domain-balanced so an 8-task canary spans all eight H1 domains.
+- [x] Add `eval:select` package script.
+- [ ] Verify GREEN on exact-head CI.
+
+### Task 6: Add repository `dsh-eval` skill and runbook
 
 **Files:**
 - Create: `.agents/skills/dsh-eval/SKILL.md`
-
-**Interfaces:**
-- Consumes: change intent, deterministic scripts, GitHub workflow evidence when available.
-- Produces: one operator flow selecting the cheapest sufficient mode and stopping on health failure.
-
-- [ ] Document mode selection rules and explicit model-call caps.
-- [ ] Require deterministic checks before model calls.
-- [ ] Require canary for changed evaluator/measurement paths before larger modes.
-- [ ] Forbid H1 reruns and H1 corpus use as future holdout.
-- [ ] Require report sections: measurement health, product signal, cost, next action.
-
-### Task 6: Add control-plane documentation and workflow policy tests
-
-**Files:**
 - Create: `docs/evaluation/m2/staged-evaluation.md`
-- Create or modify relevant repository policy tests to assert the one-shot H1 workflow is absent and the skill/scripts are retained.
+- Create: `tests/evaluation/staged-eval-policy.spec.ts`
 
-**Interfaces:**
-- Produces: maintainer runbook and durable H2 entry conditions.
-
-- [ ] Document `deterministic -> canary -> dev -> release/research` lifecycle.
-- [ ] Document that workflow success is not product PASS.
-- [ ] Document H2 prerequisites and fresh-holdout rule.
-- [ ] Add policy coverage only where an existing policy suite already owns this boundary; do not create unrelated architecture rules.
+- [x] Document deterministic/canary/dev/release/research modes and exact hard caps.
+- [x] Require deterministic checks before model calls and 16-call canary before spending a larger changed-measurement budget.
+- [x] Forbid H1 reruns, H1 corpus use as future holdout, arm-A/repetition creep and manual 12/24/48 chunk loops.
+- [x] Require reports to separate measurement health, product signal, cost and next action.
+- [x] Document the pre-H2 product-optimization lane: search-to-inspect conversion, duplicate-query suppression, result compaction, tool budget and token overhead.
+- [ ] Verify skill/policy tests on exact-head CI.
 
 ### Task 7: Full verification, PR, and governance update
 
-**Files:**
-- Update Issue #149 and Issue #34 comments only; no scientific contract edits.
-
-**Interfaces:**
-- Produces: reviewed PR with exact verification evidence.
-
-- [ ] Run focused eval tests.
-- [ ] Run `pnpm run check` through CI on the exact PR head.
+- [ ] Run the full repository CI on the exact PR head.
 - [ ] Review changed-file list for unrelated edits and frozen H1 drift.
-- [ ] Open PR with Why/What/Contract impact/Verification/Risks/Related sections.
+- [ ] Update PR from draft/WIP text to final implementation evidence.
 - [ ] Merge only an exact CI-green head.
+- [ ] Confirm post-merge CI on `main`.
 - [ ] Comment on #149 with the merged commit and close it when acceptance criteria are met.
 - [ ] Comment on #34 recording that H1 remains `INCONCLUSIVE` and future work proceeds through calibration/new H2 rather than H1 reruns.
+
+---
+
+## Follow-up implementation (separate PR after this control plane is green)
+
+The next PR turns these deterministic controls into the actual one-dispatch model runner:
+
+- structured measurement sidecar replacing the fragile free-text `API_CLAIM` transport for development calibration;
+- B/C-only runner over the verified development corpus;
+- one dispatch: plan -> first 16 calls -> health gate -> STOP or bounded remainder;
+- one evidence artifact containing health/product/cost data;
+- a real 16-call canary execution before any 40/64/96-call development run is allowed.
+
+This is deliberately separate from the control-plane PR so measurement transport can be calibrated without coupling its provider/runtime risks to the archival/budget/policy foundation.
