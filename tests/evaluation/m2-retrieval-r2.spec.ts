@@ -11,6 +11,9 @@ import {
   type R2RetrievalTask,
 } from './m2-retrieval-r2.js'
 
+const R2_DEV_FINGERPRINT =
+  'dsh-contract-search-r2-dev-v1:f2ba02022f1567a3ab748d8182e113d63773556020ab70f3738299645ef4e1b4'
+
 function cloneTask(task: R2RetrievalTask): R2RetrievalTask {
   return {
     ...task,
@@ -73,7 +76,7 @@ describe('Contract Search R2 development corpus', () => {
       .toThrow(/No-result R2 task/u)
   })
 
-  it('canonicalizes task order and set-like contract ids without erasing semantic query changes', async () => {
+  it('locks canonical identity while remaining insensitive to task and set-like id ordering', async () => {
     const index = await createFrozenM2RetrievalIndex()
     const reordered = [...R2_RETRIEVAL_DEV]
       .toReversed()
@@ -89,12 +92,12 @@ describe('Contract Search R2 development corpus', () => {
     expect(canonicalizeR2RetrievalCorpus(reordered, index.fingerprint)).toBe(canonical)
 
     const fingerprint = fingerprintR2RetrievalCorpus(R2_RETRIEVAL_DEV, index.fingerprint)
-    expect(fingerprint).toMatch(/^dsh-contract-search-r2-dev-v1:[0-9a-f]{64}$/u)
-    expect(fingerprintR2RetrievalCorpus(reordered, index.fingerprint)).toBe(fingerprint)
+    expect(fingerprint).toBe(R2_DEV_FINGERPRINT)
+    expect(fingerprintR2RetrievalCorpus(reordered, index.fingerprint)).toBe(R2_DEV_FINGERPRINT)
 
     const changed = R2_RETRIEVAL_DEV.map((task, taskIndex) => taskIndex === 0
       ? { ...cloneTask(task), query: `${task.query} changed-semantics` }
       : task)
-    expect(fingerprintR2RetrievalCorpus(changed, index.fingerprint)).not.toBe(fingerprint)
+    expect(fingerprintR2RetrievalCorpus(changed, index.fingerprint)).not.toBe(R2_DEV_FINGERPRINT)
   })
 })
