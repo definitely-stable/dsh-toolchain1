@@ -4,7 +4,9 @@ import { parseArgs } from 'node:util'
 import { createDshContractFilesystemAcquisition } from '../../acquisition/dsh-contract-filesystem.js'
 import { createDshFilesystemTargetAcquisition } from '../../acquisition/dsh-filesystem.js'
 import { createNodeSha256Port } from '../../acquisition/node-sha256.js'
+import { createPluginDirectoryAcquisition } from '../../acquisition/plugin-directory.js'
 import {
+  checkPluginResponse,
   createApplicationKernel,
   inspectContractResponse,
   resolveTargetResponse,
@@ -16,10 +18,12 @@ import {
   CONTRACT_KINDS,
   parseContractInspectRequest,
   parseContractSearchRequest,
+  parsePluginCheckRequest,
   parseTargetResolveRequest,
   type ContractInspectRequest,
   type ContractKind,
   type ContractSearchRequest,
+  type PluginCheckRequest,
   type TargetResolveRequest,
 } from '../../protocol/index.js'
 
@@ -48,12 +52,14 @@ Usage:
   dsh-toolchain target resolve --profile <name> [--dsh-home <path>] [--dsh-package-root <path>] [--patch <path> ...]
   dsh-toolchain contract search --profile <name> --query <text> [--kind <kind> ...] [--limit <1-25>] [target hints]
   dsh-toolchain contract inspect --profile <name> --contract-index <fingerprint> --contract-id <id> [target hints]
+  dsh-toolchain plugin check --profile <name> --subject <directory> [target hints]
 
 Commands:
   mcp                Serve DSH Toolchain over MCP stdio
   target resolve     Resolve one exact installed DSH target as Protocol v1 JSON
   contract search    Search deterministic contracts for one exact installed target
   contract inspect   Inspect one contract against an exact contract-index fingerprint
+  plugin check       Check one plugin directory against an exact installed DSH target
 
 Options:
   -h, --help                 Show help
@@ -69,6 +75,7 @@ Options:
       --contract-index <fingerprint>
                              Contract index fingerprint required by inspect
       --contract-id <id>     Contract id required by inspect
+      --subject <directory>  Plugin directory to check without executing candidate code
 `
 
 function createNodeKernel(): ApplicationKernel {
@@ -76,6 +83,7 @@ function createNodeKernel(): ApplicationKernel {
   return createApplicationKernel({
     targetAcquisition: createDshFilesystemTargetAcquisition({ digest }),
     contractAcquisition: createDshContractFilesystemAcquisition({ digest }),
+    pluginSubjectAcquisition: createPluginDirectoryAcquisition(digest),
     digest,
   })
 }
@@ -128,8 +136,15 @@ function hasInspectOption(values: CliOptionValues): boolean {
   return values['contract-index'] !== undefined || values['contract-id'] !== undefined
 }
 
+function hasPluginOption(values: CliOptionValues): boolean {
+  return values.subject !== undefined
+}
+
 function hasOperationOption(values: CliOptionValues): boolean {
-  return hasTargetHint(values) || hasSearchOption(values) || hasInspectOption(values)
+  return hasTargetHint(values)
+    || hasSearchOption(values)
+    || hasInspectOption(values)
+    || hasPluginOption(values)
 }
 
 function contractKinds(values: CliOptionValues): readonly ContractKind[] | undefined {
@@ -186,6 +201,20 @@ function contractInspectRequest(values: CliOptionValues): ContractInspectRequest
   }
 }
 
+function pluginCheckRequest(values: CliOptionValues): PluginCheckRequest | undefined {
+  const target = targetRequest(values)
+  const subject = values.subject
+  if (target === undefined || typeof subject !== 'string' || subject.trim().length === 0) return undefined
+  try {
+    return parsePluginCheckRequest({
+      target,
+      subject: { kind: 'directory', path: subject },
+    })
+  } catch {
+    return undefined
+  }
+}
+
 export async function runCli(
   args: readonly string[],
   io: CliIo,
@@ -210,6 +239,7 @@ export async function runCli(
         limit: { type: 'string' },
         'contract-index': { type: 'string' },
         'contract-id': { type: 'string' },
+        subject: { type: 'string' },
       },
     })
   } catch (error) {
@@ -224,12 +254,17 @@ export async function runCli(
   }
 
   if (parsed.values.version && parsed.positionals.length === 0) {
-    if (hasTargetHint(parsed.values) && !hasSearchOption(parsed.values) && !hasInspectOption(parsed.values)) {
+    if (
+      hasTargetHint(parsed.values)
+      && !hasSearchOption(parsed.values)
+      && !hasInspectOption(parsed.values)
+      && !hasPluginOption(parsed.values)
+    ) {
       io.stderr.write('Error: target options require the target resolve command\n')
       return 2
     }
     if (hasOperationOption(parsed.values)) {
-      io.stderr.write('Error: operation options require a target or contract command\n')
+      io.stderr.write('Error: operation options require a target, contract, or plugin command\n')
       return 2
     }
     io.stdout.write(`${(dependencies.kernel ?? createNodeKernel()).describe().version}\n`)
@@ -250,8 +285,13 @@ export async function runCli(
     && parsed.positionals[0] === 'target'
     && parsed.positionals[1] === 'resolve'
   ) {
-    if (parsed.values.version || hasSearchOption(parsed.values) || hasInspectOption(parsed.values)) {
-      io.stderr.write('Error: target resolve cannot be combined with contract options\n')
+    if (
+      parsed.values.version
+      || hasSearchOption(parsed.values)
+      || hasInspectOption(parsed.values)
+      || hasPluginOption(parsed.values)
+    ) {
+      io.stderr.write('Error: target resolve cannot be combined with contract or plugin options\n')
       return 2
     }
 
@@ -273,8 +313,8 @@ export async function runCli(
     && parsed.positionals[0] === 'contract'
     && parsed.positionals[1] === 'search'
   ) {
-    if (parsed.values.version || hasInspectOption(parsed.values)) {
-      io.stderr.write('Error: contract search cannot be combined with --version or inspect options\n')
+    if (parsed.values.version || hasInspectOption(parsed.values) || hasPluginOption(parsed.values)) {
+      io.stderr.write('Error: contract search cannot be combined with --version, inspect, or plugin options\n')
       return 2
     }
     if (targetRequest(parsed.values) === undefined) {
@@ -311,8 +351,8 @@ export async function runCli(
     && parsed.positionals[0] === 'contract'
     && parsed.positionals[1] === 'inspect'
   ) {
-    if (parsed.values.version || hasSearchOption(parsed.values)) {
-      io.stderr.write('Error: contract inspect cannot be combined with --version or search options\n')
+    if (parsed.values.version || hasSearchOption(parsed.values) || hasPluginOption(parsed.values)) {
+      io.stderr.write('Error: contract inspect cannot be combined with --version, search, or plugin options\n')
       return 2
     }
     if (targetRequest(parsed.values) === undefined) {
@@ -342,6 +382,36 @@ export async function runCli(
     const response = await inspectContractResponse(kernel, request, requestId)
     writeJson(io, response)
     return response.status === 'ok' ? 0 : 1
+  }
+
+  if (
+    parsed.positionals.length === 2
+    && parsed.positionals[0] === 'plugin'
+    && parsed.positionals[1] === 'check'
+  ) {
+    if (parsed.values.version || hasSearchOption(parsed.values) || hasInspectOption(parsed.values)) {
+      io.stderr.write('Error: plugin check cannot be combined with --version or contract options\n')
+      return 2
+    }
+    if (targetRequest(parsed.values) === undefined) {
+      io.stderr.write('Error: --profile must be a valid profile for plugin check\n')
+      return 2
+    }
+    if (typeof parsed.values.subject !== 'string' || parsed.values.subject.trim().length === 0) {
+      io.stderr.write('Error: --subject is required for plugin check\n')
+      return 2
+    }
+
+    const request = pluginCheckRequest(parsed.values)
+    if (request === undefined) {
+      io.stderr.write('Error: invalid plugin check request\n')
+      return 2
+    }
+    const requestId = (dependencies.requestId ?? randomUUID)()
+    const kernel = dependencies.kernel ?? createNodeKernel()
+    const response = await checkPluginResponse(kernel, request, requestId)
+    writeJson(io, response)
+    return response.status === 'ok' && response.data.verdict === 'compatible-in-scope' ? 0 : 1
   }
 
   const command = parsed.positionals.join(' ') || ''
