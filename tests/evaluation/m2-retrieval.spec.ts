@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import { searchContractIndex } from '../../src/model/contract.js'
+import {
+  createContractSearchIndex,
+  type ContractSearchIndex,
+} from '../../src/model/contract-search-index.js'
 import { M2_RETRIEVAL_R1 } from './m2-retrieval-corpus.js'
 import { createFrozenM2RetrievalIndex, M2_RETRIEVAL_TARGET } from './m2-retrieval-index.js'
 import {
@@ -12,10 +16,11 @@ import {
 
 function score(
   index: Awaited<ReturnType<typeof createFrozenM2RetrievalIndex>>,
+  derived: ContractSearchIndex,
   tasks: readonly M2RetrievalTask[] = M2_RETRIEVAL_R1,
 ): M2RankedTaskResult[] {
   return tasks.map(task => {
-    const selection = searchContractIndex(index, task.query, undefined, 5)
+    const selection = searchContractIndex(index, task.query, undefined, 5, derived)
     return Object.freeze({
       task,
       rankedContractIds: Object.freeze(selection.matches.map(match => match.id)),
@@ -52,11 +57,12 @@ describe('M2.3 frozen R1 production retrieval', () => {
     expect(index.targetFingerprint).toBe(M2_RETRIEVAL_TARGET.targetFingerprint)
     expect(index.fingerprint).toBe(M2_RETRIEVAL_TARGET.contractIndexFingerprint)
 
-    const first = score(index)
-    const second = score(index)
+    const derived = createContractSearchIndex(index)
+    const first = score(index, derived)
+    const second = score(index, derived)
     expect(rankedByTask(second)).toEqual(rankedByTask(first))
 
-    const reversed = score(index, [...M2_RETRIEVAL_R1].reverse())
+    const reversed = score(index, derived, [...M2_RETRIEVAL_R1].reverse())
     expect(rankedByTask(reversed)).toEqual(rankedByTask(first))
 
     for (const result of first) {
