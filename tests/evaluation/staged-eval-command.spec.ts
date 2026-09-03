@@ -97,7 +97,7 @@ describe('one-command staged evaluation runner', () => {
 
     await expect(runStagedCommand({
       args: ['--mode', 'canary', '--manifest', manifestPath, '--output', outputPath],
-      execute: async call => {
+      execute: async (call: { taskId: string; arm: 'B' | 'C' }) => {
         calls += 1
         return successfulExecutor(call)
       },
