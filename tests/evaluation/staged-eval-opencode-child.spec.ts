@@ -145,7 +145,9 @@ describe('staged OpenCode Go child process boundary', () => {
         ])
         expect(request.tools[1].function.strict).toBe(true)
       }
-      expect(requests[1].messages).toContainEqual({
+      const secondRequest = requests[1]
+      if (secondRequest === undefined) throw new Error('expected second provider request')
+      expect(secondRequest.messages).toContainEqual({
         role: 'tool',
         tool_call_id: 'completion-1-tool',
         content: JSON.stringify({ text: 'exact evidence' }),
