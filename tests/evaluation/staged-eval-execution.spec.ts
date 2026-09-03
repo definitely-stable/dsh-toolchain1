@@ -2,17 +2,25 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { executeStagedCall } from '../../scripts/eval/staged-execution.mjs'
 
-const call = Object.freeze({ ordinal: 1, taskId: 'tool-basic-001', arm: 'B' as const, repetition: 1 as const })
+const call = Object.freeze({ ordinal: 1, taskId: 'h1-approval-policy-p01', arm: 'B' as const, repetition: 1 as const })
+const task = Object.freeze({
+  id: 'h1-approval-policy-p01',
+  domain: 'approval-policy',
+  prompt: 'Which public API should I use?',
+  successRule: Object.freeze({
+    kind: 'api-exists-any',
+    package: '@deepseek-ai/dsh-user-approval',
+    symbols: Object.freeze(['ApprovalPolicy']),
+  }),
+})
 const structuredContent = {
   schema: 'dsh-toolchain-staged-eval-result-v1',
-  taskId: 'tool-basic-001',
-  apiValid: true,
-  taskSuccess: true,
-  claims: [{ kind: 'tool', name: 'tools.register' }],
+  taskId: 'h1-approval-policy-p01',
+  claims: [{ package: '@deepseek-ai/dsh-user-approval', symbol: 'ApprovalPolicy', assertion: 'exists' }],
 }
 
 describe('staged evaluation execution boundary', () => {
-  it('normalizes a valid structured model outcome into resolved measurement and cost evidence', async () => {
+  it('normalizes a valid structured claim through deterministic task adjudication', async () => {
     const execute = vi.fn(async () => ({
       transportStatus: 'ok' as const,
       structuredContent,
@@ -23,10 +31,10 @@ describe('staged evaluation execution boundary', () => {
       toolUsage: { calls: 3 },
     }))
 
-    const result = await executeStagedCall(call, execute)
+    const result = await executeStagedCall(call, task, execute)
 
     expect(execute).toHaveBeenCalledOnce()
-    expect(execute).toHaveBeenCalledWith(call)
+    expect(execute).toHaveBeenCalledWith(call, task)
     expect(result.measurement).toEqual({
       arm: 'B',
       formatValid: true,
@@ -36,7 +44,7 @@ describe('staged evaluation execution boundary', () => {
       hasModelOutcome: true,
       unrecoveredInfrastructure: false,
     })
-    expect(result.decision).toMatchObject({ apiValid: true, taskSuccess: true })
+    expect(result.decision).toEqual({ apiValid: true, taskSuccess: true })
     expect(result.cost).toEqual({
       attempts: 1,
       infrastructureFailures: 0,
@@ -46,8 +54,30 @@ describe('staged evaluation execution boundary', () => {
     })
   })
 
+  it('classifies an unrelated but schema-valid claim as unresolved adjudication', async () => {
+    const result = await executeStagedCall(call, task, async () => ({
+      transportStatus: 'ok',
+      structuredContent: {
+        ...structuredContent,
+        claims: [{ package: '@deepseek-ai/dsh-scope', symbol: 'Scope', assertion: 'exists' }],
+      },
+      attempts: 1,
+      infrastructureFailures: 0,
+      wallTimeMs: 40,
+    }))
+
+    expect(result.measurement).toMatchObject({
+      formatValid: true,
+      decisionResolved: false,
+      hasModelOutcome: true,
+      unrecoveredInfrastructure: false,
+    })
+    expect(result.failure).toMatchObject({ code: 'TASK_ADJUDICATION_UNRESOLVED' })
+    expect(result).not.toHaveProperty('decision')
+  })
+
   it('classifies unsupported structured transport as unresolved model evidence without prose fallback', async () => {
-    const result = await executeStagedCall(call, async () => ({
+    const result = await executeStagedCall(call, task, async () => ({
       transportStatus: 'unsupported',
       attempts: 1,
       infrastructureFailures: 0,
@@ -65,9 +95,9 @@ describe('staged evaluation execution boundary', () => {
   })
 
   it('classifies malformed or task-mismatched structured content as invalid measurement', async () => {
-    const malformed = await executeStagedCall(call, async () => ({
+    const malformed = await executeStagedCall(call, task, async () => ({
       transportStatus: 'ok',
-      structuredContent: { text: 'API_CLAIM tools.register' },
+      structuredContent: { text: 'API_CLAIM package=@deepseek-ai/dsh-user-approval symbol=ApprovalPolicy assertion=exists' },
       attempts: 1,
       infrastructureFailures: 0,
       wallTimeMs: 60,
@@ -75,7 +105,7 @@ describe('staged evaluation execution boundary', () => {
     expect(malformed.failure).toMatchObject({ code: 'STRUCTURED_RESULT_INVALID' })
     expect(malformed.measurement).toMatchObject({ formatValid: false, decisionResolved: false, hasModelOutcome: true })
 
-    const mismatched = await executeStagedCall(call, async () => ({
+    const mismatched = await executeStagedCall(call, task, async () => ({
       transportStatus: 'ok',
       structuredContent: { ...structuredContent, taskId: 'different-task' },
       attempts: 1,
@@ -87,7 +117,7 @@ describe('staged evaluation execution boundary', () => {
   })
 
   it('reports a recovered infrastructure retry as cost without unrecovered missingness', async () => {
-    const result = await executeStagedCall(call, async () => ({
+    const result = await executeStagedCall(call, task, async () => ({
       transportStatus: 'ok',
       structuredContent,
       attempts: 2,
@@ -106,7 +136,7 @@ describe('staged evaluation execution boundary', () => {
   })
 
   it('reports unrecovered infrastructure without inventing a model outcome or decision', async () => {
-    const result = await executeStagedCall(call, async () => ({
+    const result = await executeStagedCall(call, task, async () => ({
       transportStatus: 'infrastructure-failure',
       attempts: 2,
       infrastructureFailures: 2,
