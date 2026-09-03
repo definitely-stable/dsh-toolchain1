@@ -55,7 +55,7 @@ export async function runStagedCommand(input = {}) {
   const corpus = await loadDevelopmentCorpus(parsed.manifestPath)
   const run = await runStagedEvaluation({
     mode: parsed.mode,
-    tasks: corpus.tasks,
+    tasks: [...corpus.tasks],
     execute: input.execute,
   })
   const report = buildStagedEvaluationReport(run)
