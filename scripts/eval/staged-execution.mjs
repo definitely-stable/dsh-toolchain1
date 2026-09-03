@@ -1,5 +1,14 @@
 import { parseDevelopmentStructuredResult } from './structured-result.mjs'
 
+/**
+ * @typedef {{ ordinal: number; taskId: string; arm: 'B'|'C'; repetition: 1 }} StagedCall
+ * @typedef {{ arm: 'B'|'C'; formatValid: boolean; decisionResolved: boolean; infrastructureFailures: number; attemptCount: number; hasModelOutcome: boolean; unrecoveredInfrastructure: boolean }} StagedMeasurement
+ * @typedef {{ attempts: number; infrastructureFailures: number; wallTimeMs: number; usage?: Readonly<Record<string, unknown>>; toolUsage?: Readonly<Record<string, unknown>> }} StagedCost
+ * @typedef {{ code: string; summary: string }} StagedFailure
+ * @typedef {{ schema: string; taskId: string; apiValid: boolean; taskSuccess: boolean; claims: readonly Readonly<{kind:string;name:string}>[] }} StagedDecision
+ * @typedef {{ call: StagedCall; measurement: StagedMeasurement; cost: StagedCost; decision?: StagedDecision; failure?: StagedFailure }} StagedExecutionResult
+ */
+
 function requirePositiveInteger(value, label) {
   if (!Number.isSafeInteger(value) || Number(value) < 1) throw new Error(`${label} must be a positive safe integer`)
   return Number(value)
@@ -15,6 +24,7 @@ function requireNonNegativeNumber(value, label) {
   return value
 }
 
+/** @returns {Readonly<StagedMeasurement>} */
 function measurement(call, fields) {
   return Object.freeze({
     arm: call.arm,
@@ -27,6 +37,7 @@ function measurement(call, fields) {
   })
 }
 
+/** @returns {Readonly<StagedCost>} */
 function cost(result, attempts, infrastructureFailures, wallTimeMs) {
   return Object.freeze({
     attempts,
@@ -37,13 +48,20 @@ function cost(result, attempts, infrastructureFailures, wallTimeMs) {
   })
 }
 
+/** @returns {Readonly<StagedFailure>} */
 function failure(code, summary) {
   return Object.freeze({ code, summary })
 }
 
+/** @param {StagedExecutionResult} value @returns {Readonly<StagedExecutionResult>} */
+function freezeResult(value) {
+  return Object.freeze(value)
+}
+
 /**
- * @param {{ ordinal: number; taskId: string; arm: 'B'|'C'; repetition: 1 }} call
- * @param {(call: { ordinal: number; taskId: string; arm: 'B'|'C'; repetition: 1 }) => Promise<Record<string, unknown>>} execute
+ * @param {StagedCall} call
+ * @param {(call: StagedCall) => Promise<Record<string, unknown>>} execute
+ * @returns {Promise<Readonly<StagedExecutionResult>>}
  */
 export async function executeStagedCall(call, execute) {
   if (typeof execute !== 'function') throw new Error('staged execution requires an executor function')
@@ -57,7 +75,7 @@ export async function executeStagedCall(call, execute) {
   const resultCost = cost(raw, attempts, infrastructureFailures, wallTimeMs)
 
   if (raw.transportStatus === 'infrastructure-failure') {
-    return Object.freeze({
+    return freezeResult({
       call,
       measurement: measurement(call, {
         formatValid: false,
@@ -73,7 +91,7 @@ export async function executeStagedCall(call, execute) {
   }
 
   if (raw.transportStatus === 'unsupported') {
-    return Object.freeze({
+    return freezeResult({
       call,
       measurement: measurement(call, {
         formatValid: false,
@@ -94,7 +112,7 @@ export async function executeStagedCall(call, execute) {
   try {
     decision = parseDevelopmentStructuredResult(raw.structuredContent)
   } catch (error) {
-    return Object.freeze({
+    return freezeResult({
       call,
       measurement: measurement(call, {
         formatValid: false,
@@ -110,7 +128,7 @@ export async function executeStagedCall(call, execute) {
   }
 
   if (decision.taskId !== call.taskId) {
-    return Object.freeze({
+    return freezeResult({
       call,
       measurement: measurement(call, {
         formatValid: false,
@@ -125,7 +143,7 @@ export async function executeStagedCall(call, execute) {
     })
   }
 
-  return Object.freeze({
+  return freezeResult({
     call,
     measurement: measurement(call, {
       formatValid: true,
