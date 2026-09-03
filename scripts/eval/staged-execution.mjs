@@ -1,10 +1,12 @@
 import { adjudicateDevelopmentClaim } from './staged-adjudication.mjs'
 import { parseDevelopmentStructuredResult } from './structured-result.mjs'
 
+const TERMINAL_REASON_PATTERN = /^[a-z0-9_-]{1,64}$/u
+
 /**
  * @typedef {{ ordinal: number; taskId: string; arm: 'B'|'C'; repetition: 1 }} StagedCall
  * @typedef {{ id: string; domain: string; prompt: string; successRule: Readonly<Record<string, unknown>> }} StagedTask
- * @typedef {{ arm: 'B'|'C'; formatValid: boolean; decisionResolved: boolean; infrastructureFailures: number; attemptCount: number; hasModelOutcome: boolean; unrecoveredInfrastructure: boolean }} StagedMeasurement
+ * @typedef {{ arm: 'B'|'C'; formatValid: boolean; decisionResolved: boolean; infrastructureFailures: number; attemptCount: number; hasModelOutcome: boolean; unrecoveredInfrastructure: boolean; terminalTransportReason?: string }} StagedMeasurement
  * @typedef {{ attempts: number; infrastructureFailures: number; wallTimeMs: number; usage?: Readonly<Record<string, unknown>>; toolUsage?: Readonly<Record<string, unknown>> }} StagedCost
  * @typedef {{ code: string; summary: string }} StagedFailure
  * @typedef {{ apiValid: boolean; taskSuccess: boolean }} StagedDecision
@@ -26,6 +28,14 @@ function requireNonNegativeNumber(value, label) {
   return value
 }
 
+function optionalTerminalTransportReason(value) {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || !TERMINAL_REASON_PATTERN.test(value)) {
+    throw new Error('terminalTransportReason must use the closed staged transport reason format')
+  }
+  return value
+}
+
 /** @returns {Readonly<StagedMeasurement>} */
 function measurement(call, fields) {
   return Object.freeze({
@@ -36,6 +46,7 @@ function measurement(call, fields) {
     attemptCount: fields.attemptCount,
     hasModelOutcome: fields.hasModelOutcome,
     unrecoveredInfrastructure: fields.unrecoveredInfrastructure,
+    ...(fields.terminalTransportReason === undefined ? {} : { terminalTransportReason: fields.terminalTransportReason }),
   })
 }
 
@@ -96,6 +107,8 @@ export async function executeStagedCall(call, task, execute) {
     })
   }
 
+  const terminalTransportReason = optionalTerminalTransportReason(raw.terminalTransportReason)
+
   if (raw.transportStatus === 'unsupported') {
     return freezeResult({
       call,
@@ -106,6 +119,7 @@ export async function executeStagedCall(call, task, execute) {
         attemptCount: attempts,
         hasModelOutcome: true,
         unrecoveredInfrastructure: false,
+        terminalTransportReason,
       }),
       cost: resultCost,
       failure: failure('STRUCTURED_TRANSPORT_UNSUPPORTED', 'Provider did not support the required structured-result transport.'),
@@ -127,6 +141,7 @@ export async function executeStagedCall(call, task, execute) {
         attemptCount: attempts,
         hasModelOutcome: true,
         unrecoveredInfrastructure: false,
+        terminalTransportReason,
       }),
       cost: resultCost,
       failure: failure('STRUCTURED_RESULT_INVALID', error instanceof Error ? error.message : String(error)),
@@ -143,6 +158,7 @@ export async function executeStagedCall(call, task, execute) {
         attemptCount: attempts,
         hasModelOutcome: true,
         unrecoveredInfrastructure: false,
+        terminalTransportReason,
       }),
       cost: resultCost,
       failure: failure('STRUCTURED_RESULT_TASK_MISMATCH', `Structured result taskId ${structured.taskId} does not match scheduled task ${call.taskId}.`),
@@ -160,6 +176,7 @@ export async function executeStagedCall(call, task, execute) {
         attemptCount: attempts,
         hasModelOutcome: true,
         unrecoveredInfrastructure: false,
+        terminalTransportReason,
       }),
       cost: resultCost,
       failure: failure(
@@ -178,6 +195,7 @@ export async function executeStagedCall(call, task, execute) {
       attemptCount: attempts,
       hasModelOutcome: true,
       unrecoveredInfrastructure: false,
+      terminalTransportReason,
     }),
     decision: adjudicated.decision,
     cost: resultCost,
