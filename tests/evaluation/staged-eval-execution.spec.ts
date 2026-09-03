@@ -79,6 +79,7 @@ describe('staged evaluation execution boundary', () => {
   it('classifies unsupported structured transport as unresolved model evidence without prose fallback', async () => {
     const result = await executeStagedCall(call, task, async () => ({
       transportStatus: 'unsupported',
+      terminalTransportReason: 'structured_transport_unsupported',
       attempts: 1,
       infrastructureFailures: 0,
       wallTimeMs: 50,
@@ -89,6 +90,7 @@ describe('staged evaluation execution boundary', () => {
       decisionResolved: false,
       hasModelOutcome: true,
       unrecoveredInfrastructure: false,
+      terminalTransportReason: 'structured_transport_unsupported',
     })
     expect(result.failure).toMatchObject({ code: 'STRUCTURED_TRANSPORT_UNSUPPORTED' })
     expect(result).not.toHaveProperty('decision')
