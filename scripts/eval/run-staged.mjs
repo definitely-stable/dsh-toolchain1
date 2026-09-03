@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { loadDevelopmentCorpus } from './development-corpus.mjs'
+import { createDevelopmentExecutor } from './m2-development-executor.mjs'
 import { buildStagedEvaluationReport } from './staged-report.mjs'
 import { runStagedEvaluation } from './staged-runner.mjs'
 
@@ -45,10 +46,6 @@ export function parseStagedRunArguments(args) {
   })
 }
 
-async function missingDefaultExecutor() {
-  throw new Error('development executor is not configured')
-}
-
 /**
  * @param {{
  *   args?: string[];
@@ -64,7 +61,7 @@ export async function runStagedCommand(input = {}) {
   let execute = input.execute
   let ownedExecutor
   if (typeof execute !== 'function') {
-    const createExecutor = typeof input.createExecutor === 'function' ? input.createExecutor : missingDefaultExecutor
+    const createExecutor = typeof input.createExecutor === 'function' ? input.createExecutor : createDevelopmentExecutor
     ownedExecutor = await createExecutor({ environment: input.environment ?? process.env })
     if (
       ownedExecutor === null
