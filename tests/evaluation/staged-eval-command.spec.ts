@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { parseStagedRunArguments, runStagedCommand } from '../../scripts/eval/run-staged.mjs'
 
@@ -101,7 +101,27 @@ describe('one-command staged evaluation runner', () => {
     expect(serialized).toEqual(report)
   })
 
-  it('rejects a corpus that is not DEVELOPMENT_ONLY before any executor call', async () => {
+  it('creates and always disposes the provider executor when no executor is injected', async () => {
+    const directory = await tempDirectory()
+    const outputPath = path.join(directory, 'report.json')
+    const dispose = vi.fn(async () => undefined)
+    const createExecutor = vi.fn(async () => ({ execute: successfulExecutor, dispose }))
+
+    const report = await runStagedCommand({
+      args: ['--mode', 'canary', '--manifest', developmentManifest, '--output', outputPath],
+      environment: { M2_STAGED_PROVIDER_PROBE: 'probe.json', OPENCODE_API_KEY: 'test-only' },
+      createExecutor,
+    })
+
+    expect(report.measurement.status).toBe('PASS')
+    expect(createExecutor).toHaveBeenCalledOnce()
+    expect(createExecutor).toHaveBeenCalledWith({
+      environment: { M2_STAGED_PROVIDER_PROBE: 'probe.json', OPENCODE_API_KEY: 'test-only' },
+    })
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  it('rejects a corpus that is not DEVELOPMENT_ONLY before creating or calling any executor', async () => {
     const directory = await tempDirectory()
     const manifestPath = path.join(directory, 'manifest.json')
     const outputPath = path.join(directory, 'report.json')
@@ -113,6 +133,7 @@ describe('one-command staged evaluation runner', () => {
       shards: [],
     }), 'utf8')
     let calls = 0
+    const createExecutor = vi.fn(async () => ({ execute: successfulExecutor, dispose: async () => undefined }))
 
     await expect(runStagedCommand({
       args: ['--mode', 'canary', '--manifest', manifestPath, '--output', outputPath],
@@ -120,13 +141,17 @@ describe('one-command staged evaluation runner', () => {
         calls += 1
         return successfulExecutor(call, task)
       },
+      createExecutor,
     })).rejects.toThrow(/development corpus must be DEVELOPMENT_ONLY/i)
     expect(calls).toBe(0)
+    expect(createExecutor).not.toHaveBeenCalled()
   })
 
-  it('fails closed when no executor is configured', async () => {
+  it('fails closed when the default provider executor is not configured', async () => {
     await expect(runStagedCommand({
       args: ['--mode', 'canary', '--manifest', developmentManifest, '--output', 'report.json'],
-    })).rejects.toThrow(/development executor is not configured/i)
+      environment: {},
+      createExecutor: async () => { throw new Error('Missing required staged provider configuration: M2_STAGED_PROVIDER_PROBE') },
+    })).rejects.toThrow(/M2_STAGED_PROVIDER_PROBE/i)
   })
 })
