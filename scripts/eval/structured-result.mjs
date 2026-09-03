@@ -1,7 +1,9 @@
 export const STRUCTURED_RESULT_SCHEMA = 'dsh-toolchain-staged-eval-result-v1'
 
-const RESULT_KEYS = new Set(['schema', 'taskId', 'apiValid', 'taskSuccess', 'claims'])
-const CLAIM_KEYS = new Set(['kind', 'name'])
+const RESULT_KEYS = new Set(['schema', 'taskId', 'claims'])
+const CLAIM_KEYS = new Set(['package', 'symbol', 'assertion'])
+const PACKAGE_PATTERN = /^@?[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)?$/u
+const SYMBOL_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/u
 
 function requireRecord(value, label) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -23,8 +25,22 @@ function requireNonBlankString(value, label) {
   return value
 }
 
-function requireBoolean(value, label) {
-  if (typeof value !== 'boolean') throw new Error(`${label} must be a boolean`)
+function requirePackage(value, label) {
+  const packageName = requireNonBlankString(value, label)
+  if (packageName !== '*' && !PACKAGE_PATTERN.test(packageName)) {
+    throw new Error(`${label} must be a package name or *`)
+  }
+  return packageName
+}
+
+function requireSymbol(value, label) {
+  const symbol = requireNonBlankString(value, label)
+  if (!SYMBOL_PATTERN.test(symbol)) throw new Error(`${label} must be a dotted API identifier`)
+  return symbol
+}
+
+function requireAssertion(value, label) {
+  if (value !== 'exists' && value !== 'absent') throw new Error(`${label} must be exists or absent`)
   return value
 }
 
@@ -33,16 +49,17 @@ function parseClaim(value, index) {
   const claim = requireRecord(value, label)
   rejectUnknownKeys(claim, CLAIM_KEYS, label)
   return Object.freeze({
-    kind: requireNonBlankString(claim.kind, `${label}.kind`),
-    name: requireNonBlankString(claim.name, `${label}.name`),
+    package: requirePackage(claim.package, `${label}.package`),
+    symbol: requireSymbol(claim.symbol, `${label}.symbol`),
+    assertion: requireAssertion(claim.assertion, `${label}.assertion`),
   })
 }
 
 /**
  * Parse the explicit development-only measurement transport.
- * Free text is intentionally not accepted or recovered here: a provider that
- * cannot return this structure is a measurement capability failure for the
- * staged canary and must be handled by the execution boundary as STOP evidence.
+ * Free text and model-supplied verdicts are intentionally not accepted here.
+ * The provider reports one explicit API claim; deterministic exact-target
+ * adjudication decides API validity and task success downstream.
  *
  * @param {unknown} value
  */
@@ -55,23 +72,13 @@ export function parseDevelopmentStructuredResult(value) {
   }
 
   const taskId = requireNonBlankString(result.taskId, 'taskId')
-  const apiValid = requireBoolean(result.apiValid, 'apiValid')
-  const taskSuccess = requireBoolean(result.taskSuccess, 'taskSuccess')
-  if (!Array.isArray(result.claims)) throw new Error('claims must be an array')
-
-  const claims = result.claims.map(parseClaim)
-  const identities = new Set()
-  for (const claim of claims) {
-    const identity = `${claim.kind}\u0000${claim.name}`
-    if (identities.has(identity)) throw new Error(`duplicate claim: ${claim.kind}:${claim.name}`)
-    identities.add(identity)
+  if (!Array.isArray(result.claims) || result.claims.length !== 1) {
+    throw new Error('claims must contain exactly one claim')
   }
 
   return Object.freeze({
     schema: STRUCTURED_RESULT_SCHEMA,
     taskId,
-    apiValid,
-    taskSuccess,
-    claims: Object.freeze(claims),
+    claims: Object.freeze(result.claims.map(parseClaim)),
   })
 }
