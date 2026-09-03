@@ -67,6 +67,17 @@ describe('one-command staged evaluation runner', () => {
       outputPath: 'result/report.json',
     })
 
+    expect(parseStagedRunArguments([
+      '--',
+      '--mode', 'canary',
+      '--manifest', 'corpus/manifest.json',
+      '--output', 'result/report.json',
+    ])).toEqual({
+      mode: 'canary',
+      manifestPath: 'corpus/manifest.json',
+      outputPath: 'result/report.json',
+    })
+
     expect(() => parseStagedRunArguments([
       '--mode', 'dev', '--manifest', 'manifest.json', '--output', 'report.json', '--chunk-size', '48',
     ])).toThrow(/unknown staged evaluation option --chunk-size/i)
