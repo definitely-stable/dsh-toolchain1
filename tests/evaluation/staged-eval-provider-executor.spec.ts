@@ -145,6 +145,7 @@ describe('staged real provider executor adapter', () => {
       usage: { inputTokens: 120, outputTokens: 30, turns: 2 },
       toolUsage: { calls: 1, structuredTransportCalls: 1 },
     })
+    if (result.transportStatus !== 'ok') throw new Error('expected structured transport success')
     expect(result.structuredContent).toMatchObject({ taskId: 'task-01' })
     expect(runtime.envelopes).toEqual([{
       systemPrompt: STAGED_DEVELOPMENT_SYSTEM_PROMPT,
