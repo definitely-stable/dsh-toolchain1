@@ -1,0 +1,111 @@
+import { describe, expect, it } from 'vitest'
+
+import { buildStagedEvaluationReport } from '../../scripts/eval/staged-report.mjs'
+
+function result(arm: 'B' | 'C', taskId: string, decision?: { apiValid: boolean; taskSuccess: boolean }) {
+  return {
+    call: { ordinal: 1, taskId, arm, repetition: 1 },
+    measurement: {
+      arm,
+      formatValid: decision !== undefined,
+      decisionResolved: decision !== undefined,
+      infrastructureFailures: 0,
+      attemptCount: 1,
+      hasModelOutcome: true,
+      unrecoveredInfrastructure: false,
+    },
+    ...(decision === undefined ? {} : {
+      decision: {
+        schema: 'dsh-toolchain-staged-eval-result-v1',
+        taskId,
+        ...decision,
+        claims: [],
+      },
+    }),
+    cost: {
+      attempts: 1,
+      infrastructureFailures: 0,
+      wallTimeMs: 10,
+      usage: { inputTokens: 100, outputTokens: 20, turns: 2 },
+      toolUsage: { calls: 3 },
+    },
+  }
+}
+
+function run(status: 'PASS' | 'STOP') {
+  const canaryResults = [
+    result('B', 'task-1', { apiValid: true, taskSuccess: false }),
+    result('C', 'task-1', { apiValid: true, taskSuccess: true }),
+    result('B', 'task-2', { apiValid: false, taskSuccess: false }),
+    result('C', 'task-2', status === 'PASS' ? { apiValid: true, taskSuccess: false } : undefined),
+  ]
+  return {
+    mode: 'dev',
+    measurementStatus: status,
+    canaryResults,
+    remainderResults: [],
+    health: {
+      status,
+      reasons: status === 'STOP' ? ['FORMAT_COMPLIANCE_BELOW_MINIMUM'] : [],
+      metrics: { scheduledObservations: 4, formatComplianceRate: status === 'STOP' ? 0.75 : 1 },
+    },
+    authorization: {
+      plannedCalls: 40,
+      canaryCalls: 16,
+      remainderPlanned: 24,
+      remainderAuthorized: status === 'STOP' ? 0 : 24,
+      executedCalls: 4,
+    },
+  }
+}
+
+describe('staged evaluation report', () => {
+  it('separates measurement, product and cost evidence and computes paired C-minus-B deltas only from resolved pairs', () => {
+    const report = buildStagedEvaluationReport(run('PASS'))
+
+    expect(report.schema).toBe('dsh-toolchain-staged-eval-report-v1')
+    expect(report.measurement).toMatchObject({ status: 'PASS', reasons: [] })
+    expect(report.product).toMatchObject({
+      resolvedObservations: 4,
+      apiValidObservations: 3,
+      taskSuccessObservations: 1,
+      byArm: {
+        B: { resolved: 2, apiValid: 1, taskSuccess: 0 },
+        C: { resolved: 2, apiValid: 2, taskSuccess: 1 },
+      },
+      pairedTasks: {
+        count: 2,
+        apiValidityDeltaCMinusB: 1,
+        taskSuccessDeltaCMinusB: 1,
+      },
+    })
+    expect(report.cost).toEqual({
+      modelCalls: 4,
+      attempts: 4,
+      retries: 0,
+      infrastructureFailures: 0,
+      wallTimeMs: 40,
+      inputTokens: 400,
+      outputTokens: 80,
+      turns: 8,
+      toolCalls: 12,
+    })
+  })
+
+  it('emits a valid STOP report with zero authorized remainder and excludes unresolved observations from paired deltas', () => {
+    const report = buildStagedEvaluationReport(run('STOP'))
+
+    expect(report.measurement).toMatchObject({
+      status: 'STOP',
+      reasons: ['FORMAT_COMPLIANCE_BELOW_MINIMUM'],
+    })
+    expect(report.authorization).toMatchObject({ remainderAuthorized: 0 })
+    expect(report.product.resolvedObservations).toBe(3)
+    expect(report.product.pairedTasks).toEqual({
+      count: 1,
+      apiValidityDeltaCMinusB: 0,
+      taskSuccessDeltaCMinusB: 1,
+    })
+    expect(Object.isFrozen(report)).toBe(true)
+  })
+})
