@@ -80,7 +80,7 @@
     "@types/node": "^22.20.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
-    "oxlint": "1.76.0",
-    "vitest": "4.1.8"
+    "oxlint": "1.80.0",
+    "vitest": "4.1.11"
   }
 }
