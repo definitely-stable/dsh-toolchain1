@@ -34,6 +34,7 @@ Later upstream DSH trains are a separate compatibility track. They MUST NOT retr
 | Contract Search v3 R2-dev boundary | **COMPLETE / FIXED** | Issue #164 / PR #165 established and merged the development corpus before ranking-changing v3 work. |
 | Staged evaluation control plane | **COMPLETE** | Issue #149 / PR #150 merged bounded modes, hard budgets, DEVELOPMENT_ONLY corpus tooling and measurement-health gating. |
 | One-dispatch staged runner | **COMPLETE / ACCEPTANCE STOP** | Issue #151 / PR #175 implement the closed B/C canary-first runner and manual workflow. Real acceptance run `33763657085` completed 16 / 16 calls and correctly stopped with zero remainder because structured measurement health failed. |
+| Structured staged measurement transport | **OPEN / BLOCKING** | Issue #176 owns repair of the provider structured-result channel after the accepted canary produced 0 / 16 format-valid observations. |
 | Exact Target Plugin Check alpha | **COMPLETE** | Issue #154 / PR #173 implement the first one-call product flow for directory and packed subjects across CLI/native/MCP with evidence-backed static verdicts and real packed-DSH smoke. |
 | Parent M2 exit | **OPEN** | Historical H1 did not establish the preregistered PASS claim, and the new staged acceptance proves the structured measurement path still needs repair before future confirmation. |
 
@@ -87,7 +88,7 @@ The real acceptance event is recorded in [`staged-canary-acceptance-2026-09-03.m
 - remainder authorized/executed: 0 / 0;
 - input/output tokens: 541734 / 33595.
 
-This is a successful acceptance of the **fail-closed runner**, not a successful measurement result. Product B/C metrics are not interpretable from this canary. No larger staged mode is authorized until the structured measurement path is diagnosed and a later bounded canary passes health.
+This is a successful acceptance of the **fail-closed runner**, not a successful measurement result. Product B/C metrics are not interpretable from this canary. Issue #176 must repair the structured measurement transport and obtain a later healthy bounded canary before any larger staged mode is authorized.
 
 The disclosed H1 tasks remain `DEVELOPMENT_ONLY` calibration/regression data. They are not confirmatory evidence after disclosure. H1 remains immutable and MUST NOT be rerun.
 
@@ -126,7 +127,7 @@ The shipped Agent Skill prefers `plugin.check` as the default post-edit/static-r
 The current implementation order is:
 
 1. merge PR #175 after final provider-free CI and diff/review verification; no additional provider canary is required for #151 acceptance;
-2. diagnose the staged structured-result measurement failure that produced 0 / 16 format-valid observations, using bounded development work only;
+2. resolve Issue #176 with bounded DEVELOPMENT_ONLY work and a healthy 16-call measurement canary before authorizing larger staged modes;
 3. continue Contract Search v3 ranking work against the fixed R2-dev corpus while retaining R1 invariants;
 4. grow M3 diagnostics only from reproduced plugin failure fixtures while preserving shared `plugin.check` semantics and the static/read-only boundary;
 5. freeze a fresh R2 holdout and later H2 only after measurement transport and the product candidate are stable.
