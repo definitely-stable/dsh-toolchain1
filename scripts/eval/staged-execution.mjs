@@ -1,11 +1,13 @@
+import { adjudicateDevelopmentClaim } from './staged-adjudication.mjs'
 import { parseDevelopmentStructuredResult } from './structured-result.mjs'
 
 /**
  * @typedef {{ ordinal: number; taskId: string; arm: 'B'|'C'; repetition: 1 }} StagedCall
+ * @typedef {{ id: string; domain: string; prompt: string; successRule: Readonly<Record<string, unknown>> }} StagedTask
  * @typedef {{ arm: 'B'|'C'; formatValid: boolean; decisionResolved: boolean; infrastructureFailures: number; attemptCount: number; hasModelOutcome: boolean; unrecoveredInfrastructure: boolean }} StagedMeasurement
  * @typedef {{ attempts: number; infrastructureFailures: number; wallTimeMs: number; usage?: Readonly<Record<string, unknown>>; toolUsage?: Readonly<Record<string, unknown>> }} StagedCost
  * @typedef {{ code: string; summary: string }} StagedFailure
- * @typedef {{ schema: string; taskId: string; apiValid: boolean; taskSuccess: boolean; claims: readonly Readonly<{kind:string;name:string}>[] }} StagedDecision
+ * @typedef {{ apiValid: boolean; taskSuccess: boolean }} StagedDecision
  * @typedef {{ call: StagedCall; measurement: StagedMeasurement; cost: StagedCost; decision?: StagedDecision; failure?: StagedFailure }} StagedExecutionResult
  */
 
@@ -60,12 +62,16 @@ function freezeResult(value) {
 
 /**
  * @param {StagedCall} call
- * @param {(call: StagedCall) => Promise<Record<string, unknown>>} execute
+ * @param {StagedTask} task
+ * @param {(call: StagedCall, task: StagedTask) => Promise<Record<string, unknown>>} execute
  * @returns {Promise<Readonly<StagedExecutionResult>>}
  */
-export async function executeStagedCall(call, execute) {
+export async function executeStagedCall(call, task, execute) {
   if (typeof execute !== 'function') throw new Error('staged execution requires an executor function')
-  const raw = await execute(call)
+  if (task === null || typeof task !== 'object' || task.id !== call.taskId) {
+    throw new Error(`staged execution task invariant failed for ${call.taskId}`)
+  }
+  const raw = await execute(call, task)
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('executor result must be an object')
 
   const attempts = requirePositiveInteger(raw.attempts, 'attempts')
@@ -108,9 +114,9 @@ export async function executeStagedCall(call, execute) {
 
   if (raw.transportStatus !== 'ok') throw new Error(`Unknown staged transport status: ${String(raw.transportStatus)}`)
 
-  let decision
+  let structured
   try {
-    decision = parseDevelopmentStructuredResult(raw.structuredContent)
+    structured = parseDevelopmentStructuredResult(raw.structuredContent)
   } catch (error) {
     return freezeResult({
       call,
@@ -127,7 +133,7 @@ export async function executeStagedCall(call, execute) {
     })
   }
 
-  if (decision.taskId !== call.taskId) {
+  if (structured.taskId !== call.taskId) {
     return freezeResult({
       call,
       measurement: measurement(call, {
@@ -139,7 +145,27 @@ export async function executeStagedCall(call, execute) {
         unrecoveredInfrastructure: false,
       }),
       cost: resultCost,
-      failure: failure('STRUCTURED_RESULT_TASK_MISMATCH', `Structured result taskId ${decision.taskId} does not match scheduled task ${call.taskId}.`),
+      failure: failure('STRUCTURED_RESULT_TASK_MISMATCH', `Structured result taskId ${structured.taskId} does not match scheduled task ${call.taskId}.`),
+    })
+  }
+
+  const adjudicated = adjudicateDevelopmentClaim(task, structured)
+  if (adjudicated.status === 'unresolved') {
+    return freezeResult({
+      call,
+      measurement: measurement(call, {
+        formatValid: true,
+        decisionResolved: false,
+        infrastructureFailures,
+        attemptCount: attempts,
+        hasModelOutcome: true,
+        unrecoveredInfrastructure: false,
+      }),
+      cost: resultCost,
+      failure: failure(
+        'TASK_ADJUDICATION_UNRESOLVED',
+        `Structured claim could not be resolved against the deterministic task oracle: ${adjudicated.reason}.`,
+      ),
     })
   }
 
@@ -153,7 +179,7 @@ export async function executeStagedCall(call, execute) {
       hasModelOutcome: true,
       unrecoveredInfrastructure: false,
     }),
-    decision,
+    decision: adjudicated.decision,
     cost: resultCost,
   })
 }
