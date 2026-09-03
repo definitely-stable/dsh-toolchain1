@@ -29,12 +29,25 @@ const manifestC = Object.freeze({
     { family: 'toolchain', name: 'toolchain_contract_inspect', description: 'inspect', inputSchema: { type: 'object' } },
   ]),
 })
+const exactWorkspace = Object.freeze({ workspaceSnapshotSha256: 'workspace', documentationSha256: 'docs' })
+const frozenRuntime = Object.freeze({
+  workspace: exactWorkspace,
+  capabilityManifests: Object.freeze({ B: manifestB, C: manifestC }),
+})
 
-function frozen() {
-  return {
-    workspace: Object.freeze({ workspaceSnapshotSha256: 'workspace', documentationSha256: 'docs' }),
-    capabilityManifests: Object.freeze({ B: manifestB, C: manifestC }),
-  }
+type ProcessResult =
+  | ReturnType<typeof providerOutcome>
+  | { kind: 'infrastructure-failure'; reason: string; detail: string }
+
+type ProcessInput = {
+  dispatchToolCall(request: { id: string; name: string; input: unknown }): Promise<unknown>
+}
+
+type EnvelopeInput = {
+  systemPrompt: string
+  task: { id: string; prompt: string }
+  staticContext: readonly unknown[]
+  capabilityManifest: typeof manifestB | typeof manifestC
 }
 
 function providerOutcome(taskId = task.id) {
@@ -55,29 +68,55 @@ function providerOutcome(taskId = task.id) {
   }
 }
 
-function runtimeWith(results: Array<Record<string, unknown>>) {
-  const executeProcessModelAttempt = vi.fn(async () => {
+function runtimeWith(sourceResults: ProcessResult[]) {
+  const results = [...sourceResults]
+  const runtimeSeeds: string[] = []
+  const runtimeWorkspaces: unknown[] = []
+  const envelopes: EnvelopeInput[] = []
+
+  const executeProcessModelAttempt = vi.fn(async (input: ProcessInput) => {
     const next = results.shift()
     if (next === undefined) throw new Error('unexpected extra process attempt')
+    if (next.kind === 'model-outcome') {
+      await input.dispatchToolCall({ id: 'tool-1', name: 'ordinary_read', input: {} })
+    }
     return next
   })
-  const createFrozenP0ToolRuntime = vi.fn(async () => ({
-    dispatchToolCall: vi.fn(async () => ({ ok: true })),
-    traceReceipt: vi.fn(async () => ({ entries: [{ name: 'ordinary_read' }] })),
-  }))
-  const createModelEnvelope = vi.fn((input: Record<string, any>) => ({
-    schema: 'dsh-toolchain-m2-model-envelope-v1',
-    systemPrompt: input.systemPrompt,
-    task: input.task,
-    staticContext: input.staticContext,
-    tools: input.capabilityManifest.tools,
-  }))
-  return { executeProcessModelAttempt, createFrozenP0ToolRuntime, createModelEnvelope }
+  const createFrozenP0ToolRuntime = vi.fn(async (seed: string, workspace: unknown) => {
+    runtimeSeeds.push(seed)
+    runtimeWorkspaces.push(workspace)
+    const entries: Array<{ name: string }> = []
+    return {
+      dispatchToolCall: async (request: { name: string }) => {
+        entries.push({ name: request.name })
+        return { ok: true }
+      },
+      traceReceipt: async () => ({ entries: [...entries] }),
+    }
+  })
+  const createModelEnvelope = vi.fn((input: EnvelopeInput) => {
+    envelopes.push(input)
+    return {
+      schema: 'dsh-toolchain-m2-model-envelope-v1',
+      systemPrompt: input.systemPrompt,
+      task: input.task,
+      staticContext: input.staticContext,
+      tools: input.capabilityManifest.tools,
+    }
+  })
+  return {
+    executeProcessModelAttempt,
+    createFrozenP0ToolRuntime,
+    createModelEnvelope,
+    runtimeSeeds,
+    runtimeWorkspaces,
+    envelopes,
+  }
 }
 
 function executor(runtime: ReturnType<typeof runtimeWith>) {
   return createStagedProviderExecutor({
-    frozen: frozen(),
+    frozen: frozenRuntime,
     runtime,
     processConfiguration: {
       command: process.execPath,
@@ -88,7 +127,7 @@ function executor(runtime: ReturnType<typeof runtimeWith>) {
       maxStdoutBytes: 512 * 1024,
       maxStderrBytes: 64 * 1024,
     },
-    sha256Utf8: async value => `sha:${value}`,
+    sha256Utf8: async (value: string) => `sha:${value}`,
   })
 }
 
@@ -107,14 +146,13 @@ describe('staged real provider executor adapter', () => {
       toolUsage: { calls: 1, structuredTransportCalls: 1 },
     })
     expect(result.structuredContent).toMatchObject({ taskId: 'task-01' })
-    expect(runtime.createModelEnvelope).toHaveBeenCalledWith({
+    expect(runtime.envelopes).toEqual([{
       systemPrompt: STAGED_DEVELOPMENT_SYSTEM_PROMPT,
       task: { id: 'task-01', prompt: task.prompt },
       staticContext: [],
       capabilityManifest: manifestB,
-    })
-    expect(runtime.createFrozenP0ToolRuntime).toHaveBeenCalledTimes(1)
-    expect(runtime.createFrozenP0ToolRuntime.mock.calls[0]?.[1]).toBe(frozen().workspace)
+    }])
+    expect(runtime.runtimeWorkspaces).toEqual([exactWorkspace])
   })
 
   it('retries one quality-independent infrastructure failure and reports it as cost', async () => {
@@ -133,14 +171,15 @@ describe('staged real provider executor adapter', () => {
       usage: { inputTokens: 120, outputTokens: 30, turns: 2 },
     })
     expect(runtime.executeProcessModelAttempt).toHaveBeenCalledTimes(2)
-    expect(runtime.createFrozenP0ToolRuntime).toHaveBeenCalledTimes(2)
-    expect(runtime.createFrozenP0ToolRuntime.mock.calls[0]?.[0]).not.toBe(runtime.createFrozenP0ToolRuntime.mock.calls[1]?.[0])
+    expect(runtime.runtimeSeeds).toHaveLength(2)
+    expect(runtime.runtimeSeeds[0]).not.toBe(runtime.runtimeSeeds[1])
+    expect(runtime.runtimeWorkspaces).toEqual([exactWorkspace, exactWorkspace])
   })
 
   it('fails closed after the one authorized infrastructure retry', async () => {
     const runtime = runtimeWith([
       { kind: 'infrastructure-failure', reason: 'provider-transport', detail: 'temporary-1' },
-      { kind: 'infrastructure-failure', reason: 'timeout', detail: 'temporary-2' },
+      { kind: 'infrastructure-failure', reason: 'tool-transport', detail: 'temporary-2' },
     ])
     const execute = executor(runtime)
 
