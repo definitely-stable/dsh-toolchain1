@@ -2,6 +2,7 @@ import { decodeStagedFinalAnswer } from './staged-provider-transport.mjs'
 
 const MAX_ATTEMPTS = 2
 const RETRYABLE_INFRASTRUCTURE = Object.freeze(new Set(['provider-transport', 'tool-transport']))
+const TERMINAL_REASON_PATTERN = /^[a-z0-9_-]{1,64}$/u
 
 export const STAGED_DEVELOPMENT_SYSTEM_PROMPT = `You are evaluating public APIs on one exact installed DeepSeek Harness target. Use only evidence and tools available in this run; do not rely on newer-version knowledge. Answer the task by making exactly one concrete public-API existence or absence claim. When you have enough evidence, call submit_staged_result exactly once with the task id and claim. The structured result function is the only accepted final answer; do not finish with prose.`
 
@@ -25,6 +26,12 @@ function providerUsage(metadata) {
     inputTokens: nonNegativeInteger(metadata.inputTokens),
     outputTokens: nonNegativeInteger(metadata.outputTokens),
   }
+}
+
+function terminalTransportReason(metadata) {
+  if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) return 'unknown'
+  const value = metadata.finishReason
+  return typeof value === 'string' && TERMINAL_REASON_PATTERN.test(value) ? value : 'unknown'
 }
 
 function exactManifest(frozen, arm) {
@@ -139,6 +146,7 @@ export function createStagedProviderExecutor(input) {
         const decoded = decodeStagedFinalAnswer(result.finalAnswer)
         return Object.freeze({
           ...decoded,
+          terminalTransportReason: terminalTransportReason(result.providerMetadata),
           attempts,
           infrastructureFailures,
           wallTimeMs,
