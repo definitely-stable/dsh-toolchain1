@@ -1,9 +1,15 @@
 import readline from 'node:readline'
 
-import { appendStagedResultTool, routeStagedProviderToolCalls } from './eval/staged-provider-transport.mjs'
+import {
+  appendStagedResultTool,
+  createStagedResultToolDefinition,
+  routeStagedProviderToolCalls,
+  STAGED_RESULT_TOOL_NAME,
+} from './eval/staged-provider-transport.mjs'
 
 const MAX_PRODUCT_TOOL_CALLS = 31
 const MAX_TOOL_RESULT_BYTES = 512 * 1024
+const STAGED_FINALIZATION_PROMPT = `Submit the required structured measurement result now by calling ${STAGED_RESULT_TOOL_NAME} exactly once. Do not call product tools and do not answer with prose.`
 
 const emit = value => process.stdout.write(`${JSON.stringify(value)}\n`)
 const infrastructure = detail => emit({ type: 'infrastructure_error', reason: 'provider-transport', detail })
@@ -84,7 +90,7 @@ function usageInteger(value, label) {
   return value
 }
 
-async function completion(cfg, messages, tools) {
+async function completion(cfg, messages, tools, toolChoice) {
   let response
   try {
     response = await fetch(cfg.endpoint, {
@@ -97,6 +103,7 @@ async function completion(cfg, messages, tools) {
         reasoning_effort: cfg.reasoningEffort,
         max_tokens: cfg.maxOutputTokens,
         tools,
+        ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
       }),
       signal: AbortSignal.timeout(180_000),
     })
@@ -155,7 +162,7 @@ function assistant(message) {
     role: 'assistant',
     content: message.content == null ? null : text(message.content, 'provider assistant content', true),
     ...(message.reasoning_content == null ? {} : { reasoning_content: text(message.reasoning_content, 'provider reasoning content', true) }),
-    tool_calls: message.tool_calls,
+    ...(message.tool_calls === undefined ? {} : { tool_calls: message.tool_calls }),
   }
 }
 
@@ -179,6 +186,42 @@ function unsupported(value, inputTokens, outputTokens, complete, reason) {
   emit({ type: 'final', finalAnswer: '', providerMetadata: metadata(value, inputTokens, outputTokens, complete, reason) })
 }
 
+function addUsage(result, totals) {
+  if (result.inputTokens === undefined || result.outputTokens === undefined) totals.complete = false
+  else {
+    totals.inputTokens += result.inputTokens
+    totals.outputTokens += result.outputTokens
+  }
+}
+
+async function forcedFinalization(cfg, messages, totals) {
+  messages.push({ role: 'user', content: STAGED_FINALIZATION_PROMPT })
+  const result = await completion(
+    cfg,
+    messages,
+    [createStagedResultToolDefinition()],
+    { type: 'function', function: { name: STAGED_RESULT_TOOL_NAME } },
+  )
+  addUsage(result, totals)
+
+  if (!Array.isArray(result.message.tool_calls) || result.message.tool_calls.length === 0) {
+    unsupported(result, totals.inputTokens, totals.outputTokens, totals.complete, 'forced_measurement_missing')
+    return
+  }
+
+  const routed = routeStagedProviderToolCalls(calls(result.message))
+  if (routed.kind !== 'final') {
+    unsupported(result, totals.inputTokens, totals.outputTokens, totals.complete, 'forced_measurement_invalid')
+    return
+  }
+
+  emit({
+    type: 'final',
+    finalAnswer: routed.finalAnswer,
+    providerMetadata: metadata(result, totals.inputTokens, totals.outputTokens, totals.complete, 'structured_measurement_forced'),
+  })
+}
+
 async function execute() {
   const iterator = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })[Symbol.asyncIterator]()
   const start = await next(iterator, 'start message')
@@ -190,41 +233,40 @@ async function execute() {
     { role: 'system', content: modelEnvelope.systemPrompt },
     { role: 'user', content: modelEnvelope.task.prompt },
   ]
-  let totalInputTokens = 0
-  let totalOutputTokens = 0
-  let tokenMeasurementComplete = true
+  const totals = { inputTokens: 0, outputTokens: 0, complete: true }
   let productToolCalls = 0
 
   while (true) {
     const result = await completion(cfg, messages, tools)
-    if (result.inputTokens === undefined || result.outputTokens === undefined) tokenMeasurementComplete = false
-    else {
-      totalInputTokens += result.inputTokens
-      totalOutputTokens += result.outputTokens
-    }
+    addUsage(result, totals)
 
     if (!Array.isArray(result.message.tool_calls) || result.message.tool_calls.length === 0) {
-      unsupported(result, totalInputTokens, totalOutputTokens, tokenMeasurementComplete, 'structured_transport_unsupported')
+      messages.push(assistant(result.message))
+      await forcedFinalization(cfg, messages, totals)
       return
     }
 
     const routed = routeStagedProviderToolCalls(calls(result.message))
     if (routed.kind === 'final') {
-      emit({ type: 'final', finalAnswer: routed.finalAnswer, providerMetadata: metadata(result, totalInputTokens, totalOutputTokens, tokenMeasurementComplete) })
+      emit({
+        type: 'final',
+        finalAnswer: routed.finalAnswer,
+        providerMetadata: metadata(result, totals.inputTokens, totals.outputTokens, totals.complete),
+      })
       return
     }
     if (routed.kind === 'unsupported') {
-      unsupported(result, totalInputTokens, totalOutputTokens, tokenMeasurementComplete, 'structured_transport_unsupported')
+      unsupported(result, totals.inputTokens, totals.outputTokens, totals.complete, 'structured_transport_unsupported')
       return
     }
     if (routed.calls.some(call => call.kind === 'invalid-arguments')) {
-      unsupported(result, totalInputTokens, totalOutputTokens, tokenMeasurementComplete, 'invalid_tool_arguments')
+      unsupported(result, totals.inputTokens, totals.outputTokens, totals.complete, 'invalid_tool_arguments')
       return
     }
 
     productToolCalls += routed.calls.length
     if (productToolCalls > MAX_PRODUCT_TOOL_CALLS) {
-      unsupported(result, totalInputTokens, totalOutputTokens, tokenMeasurementComplete, 'tool_call_limit')
+      unsupported(result, totals.inputTokens, totals.outputTokens, totals.complete, 'tool_call_limit')
       return
     }
     messages.push(assistant(result.message))
