@@ -44,6 +44,35 @@ function productSummary(results) {
   })
 }
 
+function transportDiagnostics(results) {
+  const counts = new Map()
+  let observedTerminalReasons = 0
+
+  for (const result of results) {
+    const reason = result.measurement?.terminalTransportReason
+    if (typeof reason !== 'string') continue
+    observedTerminalReasons += 1
+    const current = counts.get(reason) ?? { count: 0, B: 0, C: 0 }
+    current.count += 1
+    current[result.call.arm] += 1
+    counts.set(reason, current)
+  }
+
+  const terminalReasons = [...counts.entries()]
+    .toSorted(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+    .map(([reason, value]) => Object.freeze({
+      reason,
+      count: value.count,
+      byArm: Object.freeze({ B: value.B, C: value.C }),
+    }))
+
+  return Object.freeze({
+    observedTerminalReasons,
+    missingTerminalReasons: Math.max(0, results.length - observedTerminalReasons),
+    terminalReasons: Object.freeze(terminalReasons),
+  })
+}
+
 function numberOrZero(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
@@ -90,6 +119,7 @@ export function buildStagedEvaluationReport(run) {
       status: run.measurementStatus,
       reasons: Object.freeze([...run.health.reasons]),
       metrics: Object.freeze({ ...run.health.metrics }),
+      transportDiagnostics: transportDiagnostics(results),
     }),
     product: productSummary(results),
     cost: costSummary(results),
