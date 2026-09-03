@@ -54,6 +54,7 @@
     "eval:select": "node scripts/eval/development-corpus.mjs",
     "eval:health": "node scripts/eval/health-gate.mjs",
     "eval:audit-h1": "node scripts/eval/audit-h1-health.mjs",
+    "eval:run": "node scripts/eval/run-staged.mjs",
     "check:generated": "node scripts/generate-protocol.mjs --check",
     "check:protocol": "node scripts/check-protocol.mjs",
     "check:architecture": "node scripts/check-architecture.mjs",

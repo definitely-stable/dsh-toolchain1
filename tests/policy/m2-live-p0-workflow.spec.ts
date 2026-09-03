@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 const root = new URL('../../', import.meta.url)
 const workflowsDir = new URL('.github/workflows/', root)
 const h1ProviderProbeWorkflow = 'm2-h1-provider-probe.yml'
+const stagedWorkflow = 'm2-staged-eval.yml'
 
 async function activeWorkflowSources(excluded: readonly string[] = []): Promise<readonly string[]> {
   const entries = await readdir(workflowsDir)
@@ -20,15 +21,19 @@ describe('M2.3 retired live P0 workflow policy', () => {
     const entries = await readdir(workflowsDir)
     expect(entries).not.toContain('m2-p0-live.yml')
 
-    const nonH1ProbeWorkflows = (await activeWorkflowSources([h1ProviderProbeWorkflow]))
-      .join('\n--- workflow boundary ---\n')
-    expect(nonH1ProbeWorkflows).not.toContain('/run-m2-p0-opencode-go')
-    expect(nonH1ProbeWorkflows).not.toContain('run-m2-p0-opencode-go.mjs')
-    expect(nonH1ProbeWorkflows).not.toContain('probe-m2-opencode-go.mjs')
+    const allWorkflows = (await activeWorkflowSources()).join('\n--- workflow boundary ---\n')
+    expect(allWorkflows).not.toContain('/run-m2-p0-opencode-go')
+    expect(allWorkflows).not.toContain('run-m2-p0-opencode-go.mjs')
 
-    const h1Probe = await readFile(new URL(h1ProviderProbeWorkflow, workflowsDir), 'utf8')
-    expect(h1Probe).not.toContain('/run-m2-p0-opencode-go')
-    expect(h1Probe).not.toContain('run-m2-p0-opencode-go.mjs')
+    const nonProviderProbeWorkflows = (await activeWorkflowSources([h1ProviderProbeWorkflow, stagedWorkflow]))
+      .join('\n--- workflow boundary ---\n')
+    expect(nonProviderProbeWorkflows).not.toContain('probe-m2-opencode-go.mjs')
+
+    for (const providerProbeWorkflow of [h1ProviderProbeWorkflow, stagedWorkflow]) {
+      const source = await readFile(new URL(providerProbeWorkflow, workflowsDir), 'utf8')
+      expect(source).not.toContain('/run-m2-p0-opencode-go')
+      expect(source).not.toContain('run-m2-p0-opencode-go.mjs')
+    }
   })
 
   it('keeps the required CI workflow free of P0 provider credentials and live execution', async () => {
