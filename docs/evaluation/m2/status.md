@@ -33,7 +33,7 @@ Later upstream DSH trains are a separate compatibility track. They MUST NOT retr
 | Contract Search v3 foundation | **MERGED** | Derived SearchIndex, explainability and bounded fingerprint cache preserve v2 rank/score/evidence behavior. |
 | Contract Search v3 R2-dev boundary | **IN DEVELOPMENT** | Issue #164 / PR #165 establish a new development corpus before any v3 ranking change. |
 | Staged evaluation control plane | **IN DEVELOPMENT** | Issue #149 / PR #150 replace H1-scale manual development runs with bounded canary-first evaluation. |
-| One-dispatch staged runner | **PENDING** | Issue #151 owns structured-result transport and automatic STOP/PASS execution. |
+| One-dispatch staged runner | **IMPLEMENTED / CANARY PENDING** | Issue #151 / PR #175 provide the closed B/C canary-first runner, real OpenCode Go executor and manual workflow; acceptance still requires inspection of a real 16-call provider canary. |
 | Exact Target Plugin Check alpha | **COMPLETE** | Issue #154 / PR #173 implement the first one-call product flow for directory and packed subjects across CLI/native/MCP with evidence-backed static verdicts and real packed-DSH smoke. |
 | Parent M2 exit | **OPEN** | Historical H1 did not establish the preregistered PASS claim; M2 therefore remains open without authorizing a rerun of H1. |
 
@@ -65,18 +65,23 @@ R1 is regression evidence only. It MUST NOT be used to select v3 IDF/field/coher
 
 H1 demonstrated that development evaluation needs to validate measurement health before spending a large provider budget. Issue #149 therefore replaces ordinary H1-style manual chunking with bounded modes and an early health gate.
 
-The intended development lifecycle is:
+The implemented development lifecycle is:
 
 ```text
 deterministic checks
-    -> bounded mode
+    -> one bounded mode
+    -> fresh managed-provider probe
     -> 16-call B/C canary
     -> measurement-health STOP or PASS
     -> only the pre-authorized remainder
     -> product + cost report
 ```
 
-The disclosed H1 tasks may be used as `DEVELOPMENT_ONLY` calibration/regression data for this work. They are not confirmatory evidence after disclosure.
+PR #175 now contains the deterministic schedule, structured-result transport, exact B/C development executor, fresh process/retry boundary, one-command runner and manual **M2 Staged Development Evaluation** workflow. Required repository CI remains provider-free. The implementation is not yet accepted as provider-ready until a real 16-call provider canary is executed and its run-local evidence is inspected.
+
+If that canary returns `STOP`, zero remainder calls are authorized. A `PASS` only validates the development measurement path and may authorize the remainder of the already selected bounded mode; it is not an H2 result.
+
+The disclosed H1 tasks may be used as `DEVELOPMENT_ONLY` calibration/regression data for this work. They are not confirmatory evidence after disclosure. H1 remains immutable and MUST NOT be rerun.
 
 A future H2 is permitted only after the structured measurement path is healthy, the product candidate is frozen, and a fresh hidden task set plus stopping/analysis rules are preregistered before outcomes exist.
 
@@ -111,9 +116,9 @@ The shipped Agent Skill now prefers `plugin.check` as the default post-edit/stat
 
 The current implementation order is:
 
-1. finish and merge the R2 development boundary in #164 / PR #165 without production ranking changes;
-2. continue Contract Search v3 through separately reviewed ranking-changing PRs using R2-dev while retaining R1 invariants;
-3. finish the staged evaluation control plane (#149) and one-dispatch structured canary runner (#151) before any future confirmatory H2;
+1. complete PR #175 acceptance with exactly one real 16-call staged provider canary and inspect its report before authorizing any larger staged mode;
+2. finish and merge the R2 development boundary in #164 / PR #165 without production ranking changes;
+3. continue Contract Search v3 through separately reviewed ranking-changing PRs using R2-dev while retaining R1 invariants;
 4. grow M3 diagnostics only from reproduced plugin failure fixtures while preserving the shared `plugin.check` semantics and static/read-only boundary;
 5. freeze a fresh R2 holdout and later H2 only after measurement transport and the product candidate are stable.
 
