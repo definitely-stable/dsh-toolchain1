@@ -37,11 +37,65 @@ export function createStagedResultToolDefinition() {
   })
 }
 
+function providerToolName(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const fn = value.function
+  if (fn === null || typeof fn !== 'object' || Array.isArray(fn)) return undefined
+  return typeof fn.name === 'string' ? fn.name : undefined
+}
+
+export function appendStagedResultTool(productTools) {
+  if (!Array.isArray(productTools)) throw new Error('staged product tools must be an array')
+  if (productTools.some(tool => providerToolName(tool) === STAGED_RESULT_TOOL_NAME)) {
+    throw new Error(`product capability manifest uses reserved measurement tool ${STAGED_RESULT_TOOL_NAME}`)
+  }
+  return Object.freeze([...productTools, createStagedResultToolDefinition()])
+}
+
 export function encodeStagedToolResult(value) {
   return JSON.stringify({
     schema: TRANSPORT_SCHEMA,
     kind: 'structured-tool',
     payload: value,
+  })
+}
+
+export function routeStagedProviderToolCalls(calls) {
+  if (!Array.isArray(calls) || calls.length === 0) throw new Error('staged provider tool calls must be a non-empty array')
+  const measurementCalls = calls.filter(call => (
+    call !== null
+    && typeof call === 'object'
+    && !Array.isArray(call)
+    && call.name === STAGED_RESULT_TOOL_NAME
+  ))
+
+  if (measurementCalls.length === 0) {
+    return Object.freeze({ kind: 'product', calls })
+  }
+  if (calls.length !== 1 || measurementCalls.length !== 1) {
+    return Object.freeze({
+      kind: 'unsupported',
+      reason: 'measurement call must be the only tool call in its provider turn',
+    })
+  }
+
+  const measurement = measurementCalls[0]
+  if (measurement.kind === 'invalid-arguments') {
+    return Object.freeze({
+      kind: 'unsupported',
+      reason: 'measurement call arguments were not valid JSON',
+    })
+  }
+  if (measurement.kind !== 'call' || !Object.hasOwn(measurement, 'input')) {
+    return Object.freeze({
+      kind: 'unsupported',
+      reason: 'measurement call did not use the expected function-call shape',
+    })
+  }
+
+  return Object.freeze({
+    kind: 'final',
+    finalAnswer: encodeStagedToolResult(measurement.input),
   })
 }
 
