@@ -45,25 +45,53 @@ export function parseStagedRunArguments(args) {
   })
 }
 
+async function missingDefaultExecutor() {
+  throw new Error('development executor is not configured')
+}
+
 /**
- * @param {{ args?: string[]; execute?: Function }} [input]
+ * @param {{
+ *   args?: string[];
+ *   execute?: Function;
+ *   environment?: Record<string, string | undefined>;
+ *   createExecutor?: Function;
+ * }} [input]
  */
 export async function runStagedCommand(input = {}) {
   const parsed = parseStagedRunArguments(input.args ?? process.argv.slice(2))
-  if (typeof input.execute !== 'function') throw new Error('development executor is not configured')
-
   const corpus = await loadDevelopmentCorpus(parsed.manifestPath)
-  const run = await runStagedEvaluation({
-    mode: parsed.mode,
-    tasks: [...corpus.tasks],
-    execute: input.execute,
-  })
-  const report = buildStagedEvaluationReport(run)
 
-  const resolvedOutput = path.resolve(parsed.outputPath)
-  await mkdir(path.dirname(resolvedOutput), { recursive: true })
-  await writeFile(resolvedOutput, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
-  return report
+  let execute = input.execute
+  let ownedExecutor
+  if (typeof execute !== 'function') {
+    const createExecutor = typeof input.createExecutor === 'function' ? input.createExecutor : missingDefaultExecutor
+    ownedExecutor = await createExecutor({ environment: input.environment ?? process.env })
+    if (
+      ownedExecutor === null
+      || typeof ownedExecutor !== 'object'
+      || typeof ownedExecutor.execute !== 'function'
+      || typeof ownedExecutor.dispose !== 'function'
+    ) {
+      throw new Error('development executor factory returned an incomplete executor')
+    }
+    execute = ownedExecutor.execute
+  }
+
+  try {
+    const run = await runStagedEvaluation({
+      mode: parsed.mode,
+      tasks: [...corpus.tasks],
+      execute,
+    })
+    const report = buildStagedEvaluationReport(run)
+
+    const resolvedOutput = path.resolve(parsed.outputPath)
+    await mkdir(path.dirname(resolvedOutput), { recursive: true })
+    await writeFile(resolvedOutput, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
+    return report
+  } finally {
+    if (ownedExecutor !== undefined) await ownedExecutor.dispose()
+  }
 }
 
 async function main() {
