@@ -147,6 +147,12 @@ describe('one-command staged evaluation runner', () => {
     expect(createExecutor).not.toHaveBeenCalled()
   })
 
+  it('binds the default operator path to the real development executor factory', async () => {
+    const source = await readFile(path.join(repoRoot, 'scripts/eval/run-staged.mjs'), 'utf8')
+    expect(source).toContain("import { createDevelopmentExecutor } from './m2-development-executor.mjs'")
+    expect(source).toContain("input.createExecutor === 'function' ? input.createExecutor : createDevelopmentExecutor")
+  })
+
   it('fails closed when the default provider executor is not configured', async () => {
     await expect(runStagedCommand({
       args: ['--mode', 'canary', '--manifest', developmentManifest, '--output', 'report.json'],
