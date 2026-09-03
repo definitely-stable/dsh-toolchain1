@@ -1,12 +1,12 @@
 # Staged evaluation runbook
 
-Status: **ACTIVE DEVELOPMENT CONTROL PLANE — IMPLEMENTED, REAL CANARY ACCEPTANCE PENDING**
+Status: **ACTIVE DEVELOPMENT CONTROL PLANE — RUNNER ACCEPTED / MEASUREMENT STOP**
 
 This runbook replaces H1-style manual chunking for ordinary engineering evaluation. H1 is immutable: staged evaluation does not alter, extend, or rerun it. The disclosed corpus is `DEVELOPMENT_ONLY`; staged results are engineering evidence, not H2 confirmatory evidence.
 
 ## Operator surface
 
-The supported GitHub Actions entry point is **M2 Staged Development Evaluation**. The operator selects only one bounded mode: `canary`, `dev`, `release`, or `research`. The workflow creates a fresh managed OpenCode Go provider probe, binds the evaluation to that receipt, invokes the staged runner once, and uploads the run-local probe/report evidence.
+The supported GitHub Actions entry point is **M2 Staged Development Evaluation**. The operator selects only one bounded mode: `canary`, `dev`, `release`, or `research`. The workflow creates a fresh managed OpenCode Go provider probe, binds the evaluation to that receipt, invokes the staged runner once, and uploads run-local probe/report evidence.
 
 The equivalent authorized local/provider command is:
 
@@ -14,9 +14,9 @@ The equivalent authorized local/provider command is:
 pnpm eval:run -- --mode <mode> --manifest docs/evaluation/m2/h1-dev-corpus-v1/manifest.json --output <report.json>
 ```
 
-Before the local command, provide `OPENCODE_API_KEY` and set `M2_STAGED_PROVIDER_PROBE` to the path of a fresh verified OpenCode Go probe receipt. Do not reuse historical H1 provider evidence as that receipt.
+Before the local command, provide `OPENCODE_API_KEY` and set `M2_STAGED_PROVIDER_PROBE` to a fresh verified OpenCode Go probe receipt. Do not reuse historical H1 provider evidence.
 
-There is no operator-facing chunk size, arm selector, repetition count, or continuation count. Arm B/C parity, one repetition, canary size and hard budget are deterministic policy.
+There is no operator-facing chunk size, arm selector, repetition count, or continuation count. B/C parity, one repetition, canary size and hard budget are deterministic policy.
 
 ## Lifecycle
 
@@ -38,31 +38,29 @@ measurement health PASS?
 
 Modes are fixed by `scripts/eval/budget-plan.mjs`:
 
-- `deterministic`: 0 model calls and repository tests only; it is not an `eval:run` mode;
+- `deterministic`: 0 model calls; repository checks only;
 - `canary`: 8 B/C tasks, 16 calls;
-- `dev`: 20 B/C tasks, 40 calls, normal default;
+- `dev`: 20 B/C tasks, 40 calls;
 - `release`: 32 B/C tasks, 64 calls;
-- `research`: 48 B/C tasks, 96 calls, explicit exploratory use only.
+- `research`: 48 B/C tasks, 96 calls.
 
-All model-backed modes use one repetition. The one-dispatch runner always consumes the same 16-call B/C canary first. If the health gate returns `STOP`, the authorized remainder is zero remainder and the run terminates without spending a larger mode's remaining calls.
+All model-backed modes use one repetition. Every larger mode consumes the same 16-call canary first. A `STOP` terminates immediately and authorizes zero remainder.
 
 ## Development corpus
 
-`h1-dev-corpus-v1/manifest.json` references four SHA-verified shards containing all 96 disclosed H1 tasks. The corpus is `DEVELOPMENT_ONLY` and must never become the H2 holdout.
-
-`development-corpus.mjs` verifies every shard hash and selects tasks deterministically. Selection is domain-balanced: the first selection pass takes one task from each domain before taking a second task from any domain. This prevents small canaries from accidentally measuring only one easy surface.
+`h1-dev-corpus-v1/manifest.json` references SHA-verified disclosed H1 task shards. The corpus is `DEVELOPMENT_ONLY` and must never become the H2 holdout. `development-corpus.mjs` verifies hashes and selects tasks deterministically with domain balancing.
 
 ## Execution boundary
 
-The staged development executor reuses the exact P0 evaluation substrate for the frozen target: capability manifests B/C, ordinary evidence workspace, Toolchain search/inspect runtime and the existing process-executor boundary. It does not import or write the historical H1 run-store.
+The staged development executor reuses the exact P0 evaluation substrate for the frozen target: B/C capability manifests, ordinary evidence workspace, Toolchain search/inspect runtime and the existing process-executor boundary. It does not import or write the historical H1 run-store.
 
-Each provider attempt receives a fresh process/session. The staged OpenCode Go child adds the common `submit_staged_result` measurement function to both B and C at the provider boundary. That function is intercepted inside the child and is never dispatched as a product tool call. Only preregistered provider/tool transport failures receive the single permitted infrastructure retry; model outcomes are not retried for quality.
+Each provider attempt receives a fresh process/session. The staged OpenCode Go child adds the common `submit_staged_result` measurement function to both B and C. That function is intercepted inside the child and never dispatched as a product tool call. Only preregistered provider/tool transport failures receive the single permitted infrastructure retry; model outcomes are not retried for quality.
 
-Required repository CI remains provider-free. Real provider execution exists only behind the explicit operator command/manual workflow and requires the managed-provider credential plus a fresh probe receipt.
+Required repository CI remains provider-free. Real provider execution requires the managed-provider credential and a fresh probe receipt.
 
 ## Measurement validity before product metrics
 
-`health-gate.mjs` has four fail-closed development thresholds:
+`health-gate.mjs` is fail-closed:
 
 | Metric | Requirement |
 | --- | ---: |
@@ -71,50 +69,57 @@ Required repository CI remains provider-free. Real provider execution exists onl
 | unrecovered infrastructure missingness | <= 2% |
 | B/C decision-resolution gap | <= 5 pp |
 
-A transient infrastructure failure that is successfully recovered is not the same as missing evidence. Retry attempts are reported separately as operational cost; only unrecovered infrastructure contributes to the validity threshold.
+Recovered infrastructure retries are reported as cost, not missing evidence. If the gate returns `STOP`, do not continue to a larger task count and do not interpret B/C quality differences as a product or release verdict.
 
-If the gate returns `STOP`, do not continue to a larger task count and do not interpret B/C quality differences as a release/product verdict.
+## Real provider acceptance — 2026-09-03
+
+The runner acceptance is complete and recorded in [`staged-canary-acceptance-2026-09-03.md`](staged-canary-acceptance-2026-09-03.md).
+
+Actions run `33763657085` executed exactly `16 / 16` B/C calls after a successful managed-provider probe. The run completed without infrastructure loss or retries, but measurement health returned `STOP`:
+
+- structured-format valid: `0 / 16`;
+- resolved decisions: `0 / 16`;
+- reasons: `FORMAT_COMPLIANCE_BELOW_MINIMUM`, `DECISION_RESOLUTION_BELOW_MINIMUM`;
+- infrastructure failures: `0`;
+- retries: `0`;
+- remainder authorized/executed: `0 / 0`;
+- input/output tokens: `541734 / 33595`;
+- turns: `201`;
+- product tool calls: `185`.
+
+This is a successful acceptance of the **canary-first fail-closed runner**, not a successful measurement result. It proves the control plane stopped before spending a larger remainder or manufacturing B/C conclusions. Issue #176 owns repair of the staged structured-result transport.
+
+Until #176 produces a healthy bounded canary, `dev`, `release` and `research` must not be used to make product comparisons or authorize larger spending.
 
 ## Cost discipline
 
-The mode budget is a hard cap, not a chunk size. A `dev` run means at most 40 B/C model outcomes total. The first 16 outcomes are the measurement canary; passing it permits at most 24 additional outcomes. There is no manual continuation loop.
+The mode budget is a hard cap, not a chunk size. A `dev` run means at most 40 B/C model outcomes total: the first 16 are the health canary and only a PASS may authorize the remaining 24. There is no manual continuation loop.
 
-The report includes provider token usage when available. H1 showed that Contract Intelligence can materially increase context consumption, so quality and token overhead are both engineering metrics. A quality improvement that materially increases context cost must remain visible rather than being hidden inside an aggregate success rate.
+Token overhead is a first-class engineering metric. The accepted STOP canary itself consumed `541734` input and `33595` output tokens, so future measurement repair must preserve explicit cost reporting.
 
 ## Product optimization lane before H2
 
-Passing measurement calibration is not a reason to immediately spend a fresh holdout. The disclosed development corpus is the place to optimize Contract Intelligence behavior first.
+Once #176 establishes healthy structured measurement, disclosed DEVELOPMENT_ONLY data can support product optimization such as search-to-inspect conversion, duplicate-query suppression, result compaction, per-task tool budgets, token-overhead guardrails and failure-cluster targeting.
 
-The first optimization targets are derived from H1 operational evidence:
-
-1. **Search-to-inspect conversion** — reduce repeated broad `contract.search` calls and move confidently matched candidates to `contract.inspect` earlier.
-2. **Duplicate-query suppression** — canonicalize equivalent search intents and cache repeated exact-target results within one run.
-3. **Result compaction** — keep search results small and evidence-oriented; avoid copying large declaration surfaces before the agent has selected a candidate.
-4. **Per-task tool budget** — cap search/inspect rounds and stop when evidence confidence is sufficient instead of letting tool use grow until the model limit.
-5. **Token overhead guardrail** — always report C-vs-B input-token overhead. H1's C arm consumed materially more input context than B; a future dev change should not hide this cost.
-6. **Failure-cluster targeting** — run focused development subsets for `tool-runtime`, approval, session read/search and other observed failure clusters, but retain the balanced canary before any broader claim.
-
-These optimizations use `dev`/`release` evidence only. Once a candidate configuration is chosen, freeze it before generating the new H2 holdout.
+Do not use `dev` or `release` product deltas while measurement remains STOP. Freeze any selected product candidate before creating a fresh H2 holdout.
 
 ## H1 historical boundary
 
-H1 remains `INCONCLUSIVE`. Canonical IDs/hashes are archived in `h1-terminal-outcome-2026-09-02.md`. The old one-shot H1 finalizer is retired. H1 is immutable and MUST NOT be rerun; no staged-eval result changes its status.
+H1 remains `INCONCLUSIVE`. Canonical IDs/hashes are archived in `h1-terminal-outcome-2026-09-02.md`. H1 is immutable and MUST NOT be rerun; no staged-eval result changes its status.
 
-The H1 development corpus may be used to reproduce structured-output failures, validate new evaluator/sidecar behavior, test retrieval/tool-use changes and build regression cases from observed failure clusters. It may not be used to claim fresh confirmatory evidence.
+The disclosed H1 corpus may reproduce measurement failures and support development regression work, but it cannot become fresh confirmatory evidence.
 
-## Acceptance state and future H2
-
-The deterministic implementation and provider-free CI path are complete. Acceptance remains pending until a real 16-call provider canary from the manual workflow is inspected. A passing canary proves the staged measurement transport is usable for development; it still does not create confirmatory evidence.
+## Future H2
 
 Do not create or execute H2 until all of these are true:
 
 1. structured result transport is deterministic and covered by end-to-end fixtures;
-2. the 16-call canary passes the health thresholds repeatedly on development/calibration data;
-3. recovered vs unrecovered infrastructure semantics are tested;
+2. the 16-call DEVELOPMENT_ONLY canary passes the health thresholds;
+3. recovered vs unrecovered infrastructure semantics remain tested;
 4. token/call budgets are measured and bounded;
-5. the product candidate has completed the development optimization lane and is frozen;
-6. task selection and repetition policy are frozen before seeing the H2 holdout;
+5. the product candidate is frozen;
+6. task selection and repetition policy are frozen before seeing H2 outcomes;
 7. a fresh H2 task set is generated, hidden and committed by hash;
-8. any sequential stopping boundaries are preregistered before provider outcomes exist.
+8. stopping and analysis rules are preregistered before provider outcomes exist.
 
-H2 is then a separate confirmatory experiment. The staged dev/release modes remain fast engineering feedback, not substitutes for that experiment.
+H2 is a separate confirmatory experiment. The staged modes remain engineering feedback, not substitutes for it.
