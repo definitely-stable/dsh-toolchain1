@@ -113,7 +113,6 @@ describe('staged development executor factory', () => {
     expect(captured).toHaveLength(1)
     expect(captured[0]).toMatchObject({
       command: process.execPath,
-      cwd: path.resolve(import.meta.dirname, '../..'),
       environment: expect.objectContaining({
         OPENCODE_API_KEY: 'test-only',
         OPENCODE_GO_BASE_URL: 'https://opencode.ai/zen/go/v1',
@@ -124,6 +123,7 @@ describe('staged development executor factory', () => {
         OPENCODE_GO_REASONING_EFFORT: 'high',
       }),
     })
+    expect(path.resolve(String(captured[0]!.cwd))).toBe(path.resolve(import.meta.dirname, '../..'))
     expect((captured[0]!.args as string[]).at(-1)).toMatch(/m2-opencode-go-staged-child\.mjs$/u)
 
     await owned.dispose()
