@@ -9,21 +9,40 @@ const cleanupPaths: string[] = []
 const repoRoot = path.resolve(import.meta.dirname, '../..')
 const developmentManifest = path.join(repoRoot, 'docs/evaluation/m2/h1-dev-corpus-v1/manifest.json')
 
+type DevelopmentTask = {
+  id: string
+  domain: string
+  prompt: string
+  successRule:
+    | { kind: 'api-exists-any'; package: string; symbols: readonly string[] }
+    | { kind: 'api-absent'; symbols: readonly string[]; proofScope: { kind: 'package'; package: string } | { kind: 'target' } }
+}
+
 async function tempDirectory() {
   const directory = await mkdtemp(path.join(tmpdir(), 'dsh-staged-command-'))
   cleanupPaths.push(directory)
   return directory
 }
 
-function successfulExecutor(call: { taskId: string; arm: 'B' | 'C' }) {
+function successfulExecutor(call: { taskId: string; arm: 'B' | 'C' }, task: DevelopmentTask) {
+  const claim = task.successRule.kind === 'api-exists-any'
+    ? {
+        package: task.successRule.package,
+        symbol: task.successRule.symbols[0],
+        assertion: 'exists' as const,
+      }
+    : {
+        package: task.successRule.proofScope.kind === 'package' ? task.successRule.proofScope.package : '*',
+        symbol: task.successRule.symbols[0],
+        assertion: 'absent' as const,
+      }
+
   return Promise.resolve({
-    transportStatus: 'ok',
+    transportStatus: 'ok' as const,
     structuredContent: {
       schema: 'dsh-toolchain-staged-eval-result-v1',
       taskId: call.taskId,
-      apiValid: true,
-      taskSuccess: true,
-      claims: [],
+      claims: [claim],
     },
     attempts: 1,
     infrastructureFailures: 0,
@@ -97,9 +116,9 @@ describe('one-command staged evaluation runner', () => {
 
     await expect(runStagedCommand({
       args: ['--mode', 'canary', '--manifest', manifestPath, '--output', outputPath],
-      execute: async (call: { taskId: string; arm: 'B' | 'C' }) => {
+      execute: async (call: { taskId: string; arm: 'B' | 'C' }, task: DevelopmentTask) => {
         calls += 1
-        return successfulExecutor(call)
+        return successfulExecutor(call, task)
       },
     })).rejects.toThrow(/development corpus must be DEVELOPMENT_ONLY/i)
     expect(calls).toBe(0)
