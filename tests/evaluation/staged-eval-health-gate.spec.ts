@@ -35,8 +35,8 @@ describe('staged evaluation measurement health gate', () => {
 
   it('stops when format compliance is below 98 percent', () => {
     const observations = [
-      ...Array.from({ length: 49 }, () => row({ arm: 'B' })),
-      row({ arm: 'B', formatValid: false }),
+      ...Array.from({ length: 47 }, () => row({ arm: 'B' })),
+      ...Array.from({ length: 3 }, () => row({ arm: 'B', formatValid: false })),
       ...Array.from({ length: 50 }, () => row({ arm: 'C' })),
     ]
     expect(evaluateMeasurementHealth({ observations })).toMatchObject({
@@ -49,11 +49,13 @@ describe('staged evaluation measurement health gate', () => {
     const observations = [
       ...Array.from({ length: 47 }, () => row({ arm: 'B' })),
       ...Array.from({ length: 3 }, () => row({ arm: 'B', decisionResolved: false })),
-      ...Array.from({ length: 50 }, () => row({ arm: 'C' })),
+      ...Array.from({ length: 47 }, () => row({ arm: 'C' })),
+      ...Array.from({ length: 3 }, () => row({ arm: 'C', decisionResolved: false })),
     ]
     const result = evaluateMeasurementHealth({ observations })
     expect(result.status).toBe('STOP')
     expect(result.reasons).toContain('DECISION_RESOLUTION_BELOW_MINIMUM')
+    expect(result.metrics.resolutionGap).toBe(0)
   })
 
   it('stops on unrecovered infrastructure missingness above two percent', () => {
