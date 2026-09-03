@@ -31,11 +31,25 @@ describe('staged evaluation repository policy', () => {
     expect(guide).toMatch(/H1.*immutable|immutable.*H1/i)
   })
 
-  it('marks the implementation complete but the real canary acceptance as pending until evidence exists', async () => {
+  it('records the real provider canary as an accepted fail-closed STOP', async () => {
     const status = await readFile('docs/evaluation/m2/status.md', 'utf8')
-    expect(status).toContain('| One-dispatch staged runner | **IMPLEMENTED / CANARY PENDING** |')
-    expect(status).toMatch(/real 16-call provider canary/i)
+    expect(status).toContain('| One-dispatch staged runner | **COMPLETE / ACCEPTANCE STOP** |')
+    expect(status).toContain('33763657085')
+    expect(status).toMatch(/FORMAT_COMPLIANCE_BELOW_MINIMUM/i)
+    expect(status).toMatch(/DECISION_RESOLUTION_BELOW_MINIMUM/i)
     expect(status).toMatch(/H1.*MUST NOT.*rerun|MUST NOT.*rerun.*H1/i)
+
+    const receipt = await readFile('docs/evaluation/m2/staged-canary-acceptance-2026-09-03.md', 'utf8')
+    expect(receipt).toContain('33763657085')
+    expect(receipt).toContain('9896788535')
+    expect(receipt).toContain('db6e85812c8a4d6bd884d0ab70f14ac0bbabb2cd')
+    expect(receipt).toContain('Status: **STOP**')
+    expect(receipt).toContain('16 / 16')
+    expect(receipt).toContain('541734')
+    expect(receipt).toContain('33595')
+    expect(receipt).toMatch(/remainder.*0/i)
+    expect(receipt).toMatch(/DEVELOPMENT_ONLY/i)
+    expect(receipt).toMatch(/H1.*immutable|immutable.*H1/i)
   })
 
   it('retires the hardcoded one-shot H1 finalization workflow', async () => {
