@@ -20,12 +20,13 @@ function requireNonEmpty(value, label) {
 
 export function parseStagedRunArguments(args) {
   if (!Array.isArray(args)) throw new Error('staged evaluation arguments must be an array')
-  if (args.length % 2 !== 0) throw new Error('staged evaluation options require explicit values')
+  const normalizedArgs = args[0] === '--' ? args.slice(1) : args
+  if (normalizedArgs.length % 2 !== 0) throw new Error('staged evaluation options require explicit values')
 
   const values = new Map()
-  for (let index = 0; index < args.length; index += 2) {
-    const option = args[index]
-    const value = args[index + 1]
+  for (let index = 0; index < normalizedArgs.length; index += 2) {
+    const option = normalizedArgs[index]
+    const value = normalizedArgs[index + 1]
     if (typeof option !== 'string' || !option.startsWith('--')) throw new Error(`invalid staged evaluation option ${String(option)}`)
     if (!ALLOWED_OPTIONS.has(option)) throw new Error(`unknown staged evaluation option ${option}`)
     if (values.has(option)) throw new Error(`duplicate staged evaluation option ${option}`)
