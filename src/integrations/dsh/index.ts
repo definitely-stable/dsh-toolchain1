@@ -5,7 +5,9 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import { createDshContractFilesystemAcquisition } from '../../acquisition/dsh-contract-filesystem.js'
 import { createDshFilesystemTargetAcquisition } from '../../acquisition/dsh-filesystem.js'
 import { createNodeSha256Port } from '../../acquisition/node-sha256.js'
+import { createPluginSubjectAcquisition } from '../../acquisition/plugin-subject.js'
 import {
+  checkPluginResponse,
   createApplicationKernel,
   inspectContractResponse,
   resolveTargetResponse,
@@ -19,6 +21,8 @@ import type {
   ContractInspectResponse,
   ContractSearchRequest,
   ContractSearchResponse,
+  PluginCheckRequest,
+  PluginCheckResponse,
   TargetResolveRequest,
   TargetResolveResponse,
 } from '../../protocol/index.js'
@@ -31,6 +35,7 @@ import {
   createDshLiveContractEnrichment,
   type DshCordisInspectRegistryPort,
 } from './live-inspect.js'
+import { createPluginCheckToolDefinition } from './plugin-check-tool.js'
 import {
   bindContractEnrichmentToRuntimeTarget,
   createDshRuntimeTargetBinding,
@@ -46,6 +51,7 @@ function createNodeKernel(digest: Sha256Port) {
   return createApplicationKernel({
     targetAcquisition: createDshFilesystemTargetAcquisition({ digest }),
     contractAcquisition: createDshContractFilesystemAcquisition({ digest }),
+    pluginSubjectAcquisition: createPluginSubjectAcquisition(digest),
     digest,
   })
 }
@@ -150,6 +156,9 @@ function registerNativeTools(
     )))
     disposers.push(tools.register(createContractSearchToolDefinition(contracts.search)))
     disposers.push(tools.register(createContractInspectToolDefinition(contracts.inspect)))
+    disposers.push(tools.register(createPluginCheckToolDefinition(
+      request => ctx.toolchain.checkPlugin(request),
+    )))
   } catch (error) {
     for (const dispose of disposers.toReversed()) dispose()
     throw error
@@ -205,6 +214,13 @@ export class ToolchainService extends Service {
     requestId: string = randomUUID(),
   ): Promise<ContractInspectResponse> {
     return inspectContractResponse(this.kernel, request, requestId)
+  }
+
+  checkPlugin(
+    request: PluginCheckRequest,
+    requestId: string = randomUUID(),
+  ): Promise<PluginCheckResponse> {
+    return checkPluginResponse(this.kernel, request, requestId)
   }
 
   private liveEnrichment(

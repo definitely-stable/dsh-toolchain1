@@ -1,0 +1,230 @@
+import type { ContractDefinition, Diagnostic } from '../protocol/index.js'
+import type { ContractIndex } from './contract.js'
+import type { AcquiredPluginRequirement, AcquiredPluginSubject } from './plugin.js'
+
+export type PluginCompatibilityVerdict =
+  | 'compatible-in-scope'
+  | 'incompatible'
+  | 'unproven'
+
+export type PluginRequirementStatus =
+  | 'satisfied'
+  | 'not-required-from-host'
+  | 'missing'
+  | 'unproven'
+
+export interface PluginRequirementAnalysis {
+  readonly packageName: string
+  readonly range: string
+  readonly relationship: AcquiredPluginRequirement['relationship']
+  readonly status: PluginRequirementStatus
+  readonly targetVersion?: string
+  readonly evidenceIds: readonly string[]
+}
+
+export interface PluginCompatibilityAnalysis {
+  readonly verdict: PluginCompatibilityVerdict
+  readonly requirements: readonly PluginRequirementAnalysis[]
+  readonly diagnostics: readonly Diagnostic[]
+}
+
+function compareCodePoints(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function compareRequirements(
+  left: AcquiredPluginRequirement,
+  right: AcquiredPluginRequirement,
+): number {
+  return compareCodePoints(left.relationship, right.relationship)
+    || compareCodePoints(left.packageName, right.packageName)
+    || compareCodePoints(left.range, right.range)
+}
+
+function normalizedRequirements(
+  requirements: readonly AcquiredPluginRequirement[],
+): readonly AcquiredPluginRequirement[] {
+  const byKey = new Map<string, AcquiredPluginRequirement>()
+  for (const requirement of requirements) {
+    const key = `${requirement.relationship}\u0000${requirement.packageName}\u0000${requirement.range}`
+    byKey.set(key, requirement)
+  }
+  return [...byKey.values()].toSorted(compareRequirements)
+}
+
+function sortedUnique(values: Iterable<string>): readonly string[] {
+  return [...new Set(values)].toSorted(compareCodePoints)
+}
+
+function packageContracts(index: ContractIndex, packageName: string): readonly ContractDefinition[] {
+  return index.contracts.filter(contract =>
+    contract.kind === 'package'
+    && (contract.name === packageName || contract.id === `package:${packageName}`),
+  )
+}
+
+interface PackageVersionObservation {
+  readonly exists: boolean
+  readonly version?: string
+  readonly evidenceIds: readonly string[]
+}
+
+function packageVersion(
+  index: ContractIndex,
+  packageName: string,
+): PackageVersionObservation {
+  const contracts = packageContracts(index, packageName)
+  if (contracts.length === 0) return { exists: false, evidenceIds: [] }
+
+  const versions = new Set<string>()
+  const evidenceIds = new Set<string>()
+  for (const contract of contracts) {
+    for (const evidenceId of contract.evidenceIds) evidenceIds.add(evidenceId)
+    for (const fact of contract.facts) {
+      if (fact.key !== 'version' || fact.value.length === 0) continue
+      versions.add(fact.value)
+      for (const evidenceId of fact.evidenceIds) evidenceIds.add(evidenceId)
+    }
+  }
+
+  const normalizedEvidenceIds = sortedUnique(evidenceIds)
+  if (versions.size !== 1) return { exists: true, evidenceIds: normalizedEvidenceIds }
+  const version = versions.values().next().value
+  return version === undefined
+    ? { exists: true, evidenceIds: normalizedEvidenceIds }
+    : { exists: true, version, evidenceIds: normalizedEvidenceIds }
+}
+
+function subjectRequirementEvidenceIds(subject: AcquiredPluginSubject): readonly string[] {
+  return sortedUnique(
+    subject.evidence
+      .filter(item => item.kind === 'manifest')
+      .map(item => item.id),
+  )
+}
+
+function combinedEvidenceIds(
+  subjectEvidenceIds: readonly string[],
+  targetEvidenceIds: readonly string[] = [],
+): readonly string[] {
+  const targetOnly = targetEvidenceIds.filter(id => !subjectEvidenceIds.includes(id))
+  return Object.freeze([...subjectEvidenceIds, ...targetOnly])
+}
+
+function pluginDiagnostic(
+  code: string,
+  severity: Diagnostic['severity'],
+  summary: string,
+): Diagnostic {
+  return Object.freeze({
+    code,
+    severity,
+    domain: 'plugin',
+    summary,
+  })
+}
+
+function compareDiagnostics(left: Diagnostic, right: Diagnostic): number {
+  return compareCodePoints(left.code, right.code)
+    || compareCodePoints(left.severity, right.severity)
+    || compareCodePoints(left.summary, right.summary)
+    || compareCodePoints((left.locations ?? []).join('\u0000'), (right.locations ?? []).join('\u0000'))
+}
+
+export function analyzePluginCompatibility(
+  subject: AcquiredPluginSubject,
+  index: ContractIndex,
+): PluginCompatibilityAnalysis {
+  const diagnostics: Diagnostic[] = [...subject.diagnostics]
+  const requirements: PluginRequirementAnalysis[] = []
+  const subjectEvidenceIds = subjectRequirementEvidenceIds(subject)
+  let provenIncompatible = false
+  let unproven = subject.completeness !== 'complete'
+
+  for (const requirement of normalizedRequirements(subject.requirements)) {
+    if (requirement.relationship === 'artifact-dependency') {
+      requirements.push(Object.freeze({
+        packageName: requirement.packageName,
+        range: requirement.range,
+        relationship: requirement.relationship,
+        status: 'not-required-from-host' as const,
+        evidenceIds: subjectEvidenceIds,
+      }))
+      continue
+    }
+
+    const installed = packageVersion(index, requirement.packageName)
+    if (!installed.exists) {
+      if (requirement.relationship === 'host-peer-optional') {
+        requirements.push(Object.freeze({
+          packageName: requirement.packageName,
+          range: requirement.range,
+          relationship: requirement.relationship,
+          status: 'not-required-from-host' as const,
+          evidenceIds: subjectEvidenceIds,
+        }))
+        continue
+      }
+
+      provenIncompatible = true
+      requirements.push(Object.freeze({
+        packageName: requirement.packageName,
+        range: requirement.range,
+        relationship: requirement.relationship,
+        status: 'missing' as const,
+        evidenceIds: subjectEvidenceIds,
+      }))
+      diagnostics.push(pluginDiagnostic(
+        'PLUGIN_DSH_PACKAGE_MISSING',
+        'error',
+        `Required Host peer ${requirement.packageName} is absent from the exact target Contract Index.`,
+      ))
+      continue
+    }
+
+    const evidenceIds = combinedEvidenceIds(subjectEvidenceIds, installed.evidenceIds)
+    if (installed.version !== undefined && installed.version === requirement.range) {
+      requirements.push(Object.freeze({
+        packageName: requirement.packageName,
+        range: requirement.range,
+        relationship: requirement.relationship,
+        status: 'satisfied' as const,
+        targetVersion: installed.version,
+        evidenceIds,
+      }))
+      continue
+    }
+
+    unproven = true
+    requirements.push(Object.freeze({
+      packageName: requirement.packageName,
+      range: requirement.range,
+      relationship: requirement.relationship,
+      status: 'unproven' as const,
+      ...(installed.version === undefined ? {} : { targetVersion: installed.version }),
+      evidenceIds,
+    }))
+    const peerKind = requirement.relationship === 'host-peer-optional'
+      ? 'optional Host peer'
+      : 'required Host peer'
+    diagnostics.push(pluginDiagnostic(
+      'PLUGIN_DSH_VERSION_UNPROVEN',
+      'warning',
+      installed.version === undefined
+        ? `The exact target does not expose one unambiguous version fact for ${peerKind} ${requirement.packageName}.`
+        : `Compatibility of ${peerKind} ${requirement.packageName} range ${requirement.range} with target version ${installed.version} is not proven by the static alpha range adapter.`,
+    ))
+  }
+
+  const verdict: PluginCompatibilityVerdict = provenIncompatible
+    ? 'incompatible'
+    : unproven
+      ? 'unproven'
+      : 'compatible-in-scope'
+
+  return Object.freeze({
+    verdict,
+    requirements: Object.freeze(requirements),
+    diagnostics: Object.freeze(diagnostics.toSorted(compareDiagnostics)),
+  })
+}

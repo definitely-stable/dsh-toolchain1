@@ -40,9 +40,15 @@ Use DSH Toolchain as the source of truth for the installed Harness target. Model
    - A target fingerprint change means the compatibility question changed. Resolve and reason from the new target instead of merging evidence from both targets.
    - If Toolchain cannot prove an API or runtime property, state that it is unproven and use ordinary exact-target evidence only when available. Do not fill the gap from memory.
 
-6. After editing a plugin, use the strongest Toolchain product surface that actually exists in the installed version.
-   - Today, target resolution and contract search/inspect are the canonical implemented surfaces.
-   - When a documented Exact Target Plugin Check or isolated verification surface is present in a later Toolchain version, prefer it over recreating validation or verification manually.
+6. After editing a plugin or performing a static review, run Exact Target Plugin Check by default.
+   - Native DSH: `toolchain_plugin_check`.
+   - MCP: `plugin.check`.
+   - CLI: `dsh-toolchain plugin check --profile <name> --subject <directory-or-tgz>`.
+   - `compatible-in-scope` means the implemented static checks are proven for this exact target. It is not runtime verification and it is not a claim of universal compatibility.
+   - `unproven` remains unknown. Do not rewrite incomplete evidence as compatible or incompatible.
+   - `plugin.check` does not execute candidate code and does not mutate the active DSH profile.
+   - Use `contract.search` and `contract.inspect` for API discovery and diagnostic drill-down when a finding needs explanation; do not recreate Plugin Check manually from search results.
+   - Runtime execution belongs to the separate `plugin.verify` boundary when that M4 surface exists; do not infer runtime success from the static report.
    - Never invent a Toolchain command/tool that the resolved installed version does not expose.
 
 ## When Toolchain lookup is mandatory

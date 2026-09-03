@@ -34,7 +34,7 @@ Later upstream DSH trains are a separate compatibility track. They MUST NOT retr
 | Contract Search v3 R2-dev boundary | **IN DEVELOPMENT** | Issue #164 / PR #165 establish a new development corpus before any v3 ranking change. |
 | Staged evaluation control plane | **IN DEVELOPMENT** | Issue #149 / PR #150 replace H1-scale manual development runs with bounded canary-first evaluation. |
 | One-dispatch staged runner | **PENDING** | Issue #151 owns structured-result transport and automatic STOP/PASS execution. |
-| Exact Target Plugin Check alpha | **IN DEVELOPMENT** | Issue #154 / PR #158 is the first one-call product flow and may proceed without rerunning H1. |
+| Exact Target Plugin Check alpha | **COMPLETE** | Issue #154 / PR #173 implement the first one-call product flow for directory and packed subjects across CLI/native/MCP with evidence-backed static verdicts and real packed-DSH smoke. |
 | Parent M2 exit | **OPEN** | Historical H1 did not establish the preregistered PASS claim; M2 therefore remains open without authorizing a rerun of H1. |
 
 ## Canonical H1 terminal outcome
@@ -80,9 +80,9 @@ The disclosed H1 tasks may be used as `DEVELOPMENT_ONLY` calibration/regression 
 
 A future H2 is permitted only after the structured measurement path is healthy, the product candidate is frozen, and a fresh hidden task set plus stopping/analysis rules are preregistered before outcomes exist.
 
-## Exact Target Plugin Check may proceed
+## Exact Target Plugin Check alpha
 
-The `INCONCLUSIVE` H1 result does not require product development to stop until H1 is rerun. Issue #154 owns the first one-call product path:
+Issue #154 / PR #173 implement the first one-call product path:
 
 ```text
 plugin subject + exact TargetSnapshot + target-bound ContractIndex
@@ -90,9 +90,11 @@ plugin subject + exact TargetSnapshot + target-bound ContractIndex
     -> evidence-backed compatibility diagnostics
 ```
 
-This alpha MUST remain read-only and MUST NOT execute/import candidate plugin code. Runtime proof remains an M4 verification responsibility.
+The alpha accepts explicit directory and packed `.tgz` subjects, shares one kernel/application operation across CLI, native DSH and MCP, and reports `compatible-in-scope`, `incompatible`, or `unproven` without forcing unknown evidence into pass/fail. Requirement findings are bound to exact target/contract provenance, malformed subjects preserve semantic diagnostics where possible, and stale target/index evidence cannot produce a successful compatibility claim.
 
-The alpha may reuse the current production Contract Search behavior. It does not need to wait for every Contract Search v3 ranking phase, provided it remains bound to the exact target/index evidence and does not duplicate search/compatibility semantics in frontends.
+The safety boundary remains static and read-only: candidate plugin code/lifecycle scripts are not executed, and runtime verification remains an M4 responsibility. CI proves the exact packed Toolchain artifact can perform the operation against a real supported DSH train without mutating the active profile.
+
+The shipped Agent Skill now prefers `plugin.check` as the default post-edit/static-review workflow. Contract search/inspect remain the drill-down surfaces when a diagnostic requires contract-level investigation.
 
 ## Explicit prohibitions
 
@@ -112,7 +114,7 @@ The current implementation order is:
 1. finish and merge the R2 development boundary in #164 / PR #165 without production ranking changes;
 2. continue Contract Search v3 through separately reviewed ranking-changing PRs using R2-dev while retaining R1 invariants;
 3. finish the staged evaluation control plane (#149) and one-dispatch structured canary runner (#151) before any future confirmatory H2;
-4. rebase/rebuild Exact Target Plugin Check (#154) on the current product baseline and complete the smallest source-directory static vertical slice;
+4. grow M3 diagnostics only from reproduced plugin failure fixtures while preserving the shared `plugin.check` semantics and static/read-only boundary;
 5. freeze a fresh R2 holdout and later H2 only after measurement transport and the product candidate are stable.
 
 No additional H1 execution is a permitted next step.

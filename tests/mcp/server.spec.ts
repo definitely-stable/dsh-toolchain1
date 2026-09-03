@@ -30,13 +30,16 @@ function snapshot(): TargetSnapshot {
   }
 }
 
-function unusedContractMethods(): Pick<ApplicationKernel, 'searchContracts' | 'inspectContract'> {
+function unusedKernelMethods(): Pick<ApplicationKernel, 'searchContracts' | 'inspectContract' | 'checkPlugin'> {
   return {
     searchContracts: vi.fn(async () => {
       throw new Error('contract search is not used by target-only MCP tests')
     }),
     inspectContract: vi.fn(async () => {
       throw new Error('contract inspect is not used by target-only MCP tests')
+    }),
+    checkPlugin: vi.fn(async () => {
+      throw new Error('plugin check is not used by target-only MCP tests')
     }),
   }
 }
@@ -49,7 +52,7 @@ function successKernel(): ApplicationKernel {
       protocolVersion: '1',
     }),
     resolveTarget: vi.fn(async () => ({ snapshot: snapshot() })),
-    ...unusedContractMethods(),
+    ...unusedKernelMethods(),
   }
 }
 
@@ -67,7 +70,7 @@ function failureKernel(): ApplicationKernel {
         ['/tmp/dsh/profiles/missing/package.json'],
       )
     }),
-    ...unusedContractMethods(),
+    ...unusedKernelMethods(),
   }
 }
 

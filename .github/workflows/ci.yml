@@ -67,6 +67,9 @@ jobs:
       - name: Smoke installed package resolution
         run: node scripts/smoke-installed-package.mjs .artifacts/dsh-toolchain.tgz
 
+      - name: Check exact packed Toolchain against real DSH
+        run: node scripts/smoke-plugin-check.mjs .artifacts/dsh-toolchain.tgz
+
       - name: Compose exact tarball in minimal and Web DSH profiles
         env:
           NODE_OPTIONS: --max-old-space-size=4096

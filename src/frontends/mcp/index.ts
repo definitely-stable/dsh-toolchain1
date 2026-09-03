@@ -7,7 +7,9 @@ import protocolSchema from '../../../spec/schemas/v1/toolchain-protocol.schema.j
 import { createDshContractFilesystemAcquisition } from '../../acquisition/dsh-contract-filesystem.js'
 import { createDshFilesystemTargetAcquisition } from '../../acquisition/dsh-filesystem.js'
 import { createNodeSha256Port } from '../../acquisition/node-sha256.js'
+import { createPluginSubjectAcquisition } from '../../acquisition/plugin-subject.js'
 import {
+  checkPluginResponse,
   createApplicationKernel,
   inspectContractResponse,
   resolveTargetResponse,
@@ -17,10 +19,13 @@ import {
 import {
   parseContractInspectRequest,
   parseContractSearchRequest,
+  parsePluginCheckRequest,
   type ContractInspectRequest,
   type ContractInspectResponse,
   type ContractSearchRequest,
   type ContractSearchResponse,
+  type PluginCheckRequest,
+  type PluginCheckResponse,
   type TargetResolveRequest,
   type TargetResolveResponse,
 } from '../../protocol/index.js'
@@ -75,11 +80,23 @@ export interface ContractInspectMcpTool {
   readonly callback: (request: ContractInspectRequest) => Promise<McpStructuredResult<ContractInspectResponse>>
 }
 
+export interface PluginCheckMcpTool {
+  readonly name: 'plugin.check'
+  readonly config: {
+    readonly description: string
+    readonly inputSchema: ReturnType<typeof fromJsonSchema<PluginCheckRequest>>
+    readonly outputSchema: ReturnType<typeof fromJsonSchema<PluginCheckResponse>>
+    readonly annotations: ReadOnlyIdempotentAnnotations
+  }
+  readonly callback: (request: PluginCheckRequest) => Promise<McpStructuredResult<PluginCheckResponse>>
+}
+
 function createNodeKernel(): ApplicationKernel {
   const digest = createNodeSha256Port()
   return createApplicationKernel({
     targetAcquisition: createDshFilesystemTargetAcquisition({ digest }),
     contractAcquisition: createDshContractFilesystemAcquisition({ digest }),
+    pluginSubjectAcquisition: createPluginSubjectAcquisition(digest),
     digest,
   })
 }
@@ -91,6 +108,8 @@ type ProtocolDefinition =
   | 'contractSearchResponse'
   | 'contractInspectRequest'
   | 'contractInspectResponse'
+  | 'pluginCheckRequest'
+  | 'pluginCheckResponse'
 
 function protocolDefinitionSchema(definition: ProtocolDefinition) {
   return {
@@ -187,6 +206,31 @@ export function createContractInspectMcpTool(
   }
 }
 
+export function createPluginCheckMcpTool(
+  kernel: ApplicationKernel,
+  requestId: () => string = randomUUID,
+): PluginCheckMcpTool {
+  const inputSchema = fromJsonSchema<PluginCheckRequest>(
+    protocolDefinitionSchema('pluginCheckRequest'),
+  )
+  const outputSchema = fromJsonSchema<PluginCheckResponse>(
+    protocolDefinitionSchema('pluginCheckResponse'),
+  )
+
+  return {
+    name: 'plugin.check',
+    config: {
+      description: 'Run the static Exact Target Plugin Check against one installed DSH target without executing candidate code or mutating the target profile.',
+      inputSchema,
+      outputSchema,
+      annotations: readOnlyIdempotent,
+    },
+    callback: async (request) => structuredResult(
+      await checkPluginResponse(kernel, parsePluginCheckRequest(request), requestId()),
+    ),
+  }
+}
+
 export function buildMcpServer(options: BuildMcpServerOptions = {}): McpServer {
   const kernel = options.kernel ?? createNodeKernel()
   const descriptor = kernel.describe()
@@ -199,10 +243,12 @@ export function buildMcpServer(options: BuildMcpServerOptions = {}): McpServer {
   const targetResolve = createTargetResolveMcpTool(kernel, requestId)
   const contractSearch = createContractSearchMcpTool(kernel, requestId)
   const contractInspect = createContractInspectMcpTool(kernel, requestId)
+  const pluginCheck = createPluginCheckMcpTool(kernel, requestId)
 
   server.registerTool(targetResolve.name, targetResolve.config, targetResolve.callback)
   server.registerTool(contractSearch.name, contractSearch.config, contractSearch.callback)
   server.registerTool(contractInspect.name, contractInspect.config, contractInspect.callback)
+  server.registerTool(pluginCheck.name, pluginCheck.config, pluginCheck.callback)
 
   return server
 }

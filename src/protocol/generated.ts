@@ -133,6 +133,41 @@ export type ContractInspectResult = {
   readonly "evidence": Array<Evidence>
 }
 
+export type PluginSubjectRequest = {
+  readonly "kind": "directory" | "packed"
+  readonly "path": string
+}
+
+export type PluginCheckRequest = {
+  readonly "target": TargetResolveRequest
+  readonly "subject": PluginSubjectRequest
+}
+
+export type PluginPackageRelationship = "host-peer-required" | "host-peer-optional" | "artifact-dependency"
+
+export type PluginRequirementStatus = "satisfied" | "not-required-from-host" | "missing" | "unproven"
+
+export type PluginRequirementAnalysis = {
+  readonly "packageName": string
+  readonly "range": string
+  readonly "relationship": PluginPackageRelationship
+  readonly "status": PluginRequirementStatus
+  readonly "targetVersion"?: string
+  readonly "evidenceIds": Array<string>
+}
+
+export type PluginCheckResult = {
+  readonly "contractIndexFingerprint": string
+  readonly "subjectFingerprint"?: string
+  readonly "subjectCompleteness": "complete" | "partial" | "invalid"
+  readonly "ruleset": "plugin-static-alpha-v1"
+  readonly "scopeComplete": false
+  readonly "verdict": "compatible-in-scope" | "incompatible" | "unproven"
+  readonly "requirements": Array<PluginRequirementAnalysis>
+  readonly "evidence": Array<Evidence>
+  readonly "candidateCodeExecuted": false
+}
+
 export type Operation = {
   readonly "id": string
   readonly "state": "queued" | "running" | "input-required" | "succeeded" | "failed" | "cancelled"
@@ -238,5 +273,31 @@ export type ContractInspectStaleResponse = {
 }
 
 export type ContractInspectResponse = ContractInspectSuccessResponse | ContractInspectFailureResponse | ContractInspectStaleResponse
+
+export type PluginCheckSuccessResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "snapshotFingerprint": string
+  readonly "status": "ok"
+  readonly "data": PluginCheckResult
+  readonly "diagnostics": Array<Diagnostic>
+}
+
+export type PluginCheckFailureResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "failed"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type PluginCheckStaleResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "snapshotFingerprint": string
+  readonly "status": "stale"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type PluginCheckResponse = PluginCheckSuccessResponse | PluginCheckFailureResponse | PluginCheckStaleResponse
 
 export type ToolchainProtocolResponse = ResponseEnvelope

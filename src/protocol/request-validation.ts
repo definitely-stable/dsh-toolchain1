@@ -2,6 +2,8 @@ import type {
   ContractInspectRequest,
   ContractKind,
   ContractSearchRequest,
+  PluginCheckRequest,
+  PluginSubjectRequest,
   TargetResolveRequest,
 } from './generated.js'
 
@@ -30,6 +32,9 @@ const inspectKeys = new Set<keyof ContractInspectRequest>([
   'contractIndexFingerprint',
   'contractId',
 ])
+const pluginCheckKeys = new Set<keyof PluginCheckRequest>(['target', 'subject'])
+const pluginSubjectKeys = new Set<keyof PluginSubjectRequest>(['kind', 'path'])
+const pluginSubjectKinds = new Set<PluginSubjectRequest['kind']>(['directory', 'packed'])
 const profilePattern = /^(?!\.{1,2}$)(?!node_modules$)[^/\\]+$/u
 
 function invalid(message: string): never {
@@ -118,5 +123,29 @@ export function parseContractInspectRequest(value: unknown): ContractInspectRequ
     target: parsedTarget,
     contractIndexFingerprint,
     contractId,
+  }
+}
+
+export function parsePluginCheckRequest(value: unknown): PluginCheckRequest {
+  const message = 'Invalid plugin.check arguments'
+  if (!isRecord(value)) invalid(message)
+  if (Object.keys(value).some(key => !pluginCheckKeys.has(key as keyof PluginCheckRequest))) invalid(message)
+
+  const { target, subject } = value
+  const parsedTarget = parseTargetResolveRequestWithMessage(target, message)
+  if (!isRecord(subject)) invalid(message)
+  if (Object.keys(subject).some(key => !pluginSubjectKeys.has(key as keyof PluginSubjectRequest))) invalid(message)
+  if (
+    typeof subject.kind !== 'string'
+    || !pluginSubjectKinds.has(subject.kind as PluginSubjectRequest['kind'])
+    || !nonEmptyString(subject.path)
+  ) invalid(message)
+
+  return {
+    target: parsedTarget,
+    subject: {
+      kind: subject.kind as PluginSubjectRequest['kind'],
+      path: subject.path,
+    },
   }
 }
