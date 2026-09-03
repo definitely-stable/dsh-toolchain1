@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import { buildStagedEvaluationReport } from '../../scripts/eval/staged-report.mjs'
 
-function result(arm: 'B' | 'C', taskId: string, decision?: { apiValid: boolean; taskSuccess: boolean }) {
+function result(
+  arm: 'B' | 'C',
+  taskId: string,
+  decision?: { apiValid: boolean; taskSuccess: boolean },
+  terminalTransportReason?: string,
+) {
   return {
     call: { ordinal: 1, taskId, arm, repetition: 1 },
     measurement: {
@@ -13,6 +18,7 @@ function result(arm: 'B' | 'C', taskId: string, decision?: { apiValid: boolean; 
       attemptCount: 1,
       hasModelOutcome: true,
       unrecoveredInfrastructure: false,
+      ...(terminalTransportReason === undefined ? {} : { terminalTransportReason }),
     },
     ...(decision === undefined ? {} : {
       decision: {
@@ -37,7 +43,9 @@ function run(status: 'PASS' | 'STOP') {
     result('B', 'task-1', { apiValid: true, taskSuccess: false }),
     result('C', 'task-1', { apiValid: true, taskSuccess: true }),
     result('B', 'task-2', { apiValid: false, taskSuccess: false }),
-    result('C', 'task-2', status === 'PASS' ? { apiValid: true, taskSuccess: false } : undefined),
+    status === 'PASS'
+      ? result('C', 'task-2', { apiValid: true, taskSuccess: false })
+      : result('C', 'task-2', undefined, 'structured_transport_unsupported'),
   ]
   return {
     mode: 'dev',
@@ -64,7 +72,15 @@ describe('staged evaluation report', () => {
     const report = buildStagedEvaluationReport(run('PASS'))
 
     expect(report.schema).toBe('dsh-toolchain-staged-eval-report-v1')
-    expect(report.measurement).toMatchObject({ status: 'PASS', reasons: [] })
+    expect(report.measurement).toMatchObject({
+      status: 'PASS',
+      reasons: [],
+      transportDiagnostics: {
+        observedTerminalReasons: 0,
+        missingTerminalReasons: 4,
+        terminalReasons: [],
+      },
+    })
     expect(report.product).toMatchObject({
       resolvedObservations: 4,
       apiValidObservations: 3,
@@ -92,12 +108,21 @@ describe('staged evaluation report', () => {
     })
   })
 
-  it('emits a valid STOP report with zero authorized remainder and excludes unresolved observations from paired deltas', () => {
+  it('emits a diagnostic STOP report with zero authorized remainder and excludes unresolved observations from paired deltas', () => {
     const report = buildStagedEvaluationReport(run('STOP'))
 
     expect(report.measurement).toMatchObject({
       status: 'STOP',
       reasons: ['FORMAT_COMPLIANCE_BELOW_MINIMUM'],
+      transportDiagnostics: {
+        observedTerminalReasons: 1,
+        missingTerminalReasons: 3,
+        terminalReasons: [{
+          reason: 'structured_transport_unsupported',
+          count: 1,
+          byArm: { B: 0, C: 1 },
+        }],
+      },
     })
     expect(report.authorization).toMatchObject({ remainderAuthorized: 0 })
     expect(report.product.resolvedObservations).toBe(3)
