@@ -80,7 +80,10 @@ export type ContractSearchField = 'identity' | 'fact' | 'summary' | 'kind'
 export interface ContractSearchTermExplanation {
   readonly token: string
   readonly documentFrequency: number
+  readonly inverseDocumentFrequency: number
   readonly field: ContractSearchField
+  readonly fieldWeight: number
+  readonly contribution: number
   readonly factIndexes: readonly number[]
   readonly evidenceIds: readonly string[]
 }
@@ -121,7 +124,7 @@ interface LexicalMatch {
 }
 
 interface IntentTokenMatch {
-  readonly score: number
+  readonly fieldWeight: number
   readonly evidenceIds: readonly string[]
   readonly field: ContractSearchField
   readonly factIndexes: readonly number[]
@@ -438,6 +441,21 @@ function requiredIntentMatches(tokenCount: number): number {
   return Math.min(3, Math.max(2, Math.ceil(tokenCount * 0.4)))
 }
 
+const INTENT_SCORE_SCALE = 100
+const IDF_PRECISION = 1_000_000
+
+function quantize(value: number): number {
+  return Math.round(value * IDF_PRECISION) / IDF_PRECISION
+}
+
+function inverseDocumentFrequency(derived: ContractSearchIndex, token: string): number {
+  const documentFrequency = derived.documentFrequency.get(token) ?? 0
+  if (derived.documentCount <= 0 || documentFrequency <= 0) return 0
+  return quantize(Math.log(
+    1 + ((derived.documentCount - documentFrequency + 0.5) / (documentFrequency + 0.5)),
+  ))
+}
+
 function factTokenMatch(
   document: ContractSearchDocument,
   token: string,
@@ -457,7 +475,7 @@ function intentTokenMatch(
 ): IntentTokenMatch | undefined {
   if (document.identity.uniqueTokens.has(token)) {
     return Object.freeze({
-      score: 45,
+      fieldWeight: 4,
       evidenceIds: contractExistenceWitness(contract),
       field: 'identity' as const,
       factIndexes: Object.freeze([]),
@@ -467,7 +485,7 @@ function intentTokenMatch(
   const factMatch = factTokenMatch(document, token)
   if (factMatch !== undefined) {
     return Object.freeze({
-      score: 35,
+      fieldWeight: 3,
       evidenceIds: factMatch.evidenceIds,
       field: 'fact' as const,
       factIndexes: factMatch.factIndexes,
@@ -476,7 +494,7 @@ function intentTokenMatch(
 
   if (document.summary.uniqueTokens.has(token)) {
     return Object.freeze({
-      score: 20,
+      fieldWeight: 2,
       evidenceIds: contractExistenceWitness(contract),
       field: 'summary' as const,
       factIndexes: Object.freeze([]),
@@ -484,7 +502,7 @@ function intentTokenMatch(
   }
   if (document.kind.uniqueTokens.has(token)) {
     return Object.freeze({
-      score: 15,
+      fieldWeight: 0.5,
       evidenceIds: contractExistenceWitness(contract),
       field: 'kind' as const,
       factIndexes: Object.freeze([]),
@@ -508,20 +526,20 @@ function intentMatch(
 
   const evidenceIds: string[] = []
   let matched = 0
-  let score = 0
+  let weightedScore = 0
 
   for (const token of queryTokens) {
     const match = intentTokenMatch(token, contract, document)
     if (match === undefined) continue
     matched += 1
-    score += match.score
+    weightedScore += match.fieldWeight * inverseDocumentFrequency(derived, token)
     evidenceIds.push(...match.evidenceIds)
   }
 
   if (matched < requiredIntentMatches(queryTokens.length)) return undefined
   const coverageBonus = Math.round((matched / queryTokens.length) * 50)
   return Object.freeze({
-    score: Math.min(199, score + coverageBonus),
+    score: Math.round(weightedScore * INTENT_SCORE_SCALE) + coverageBonus,
     evidenceIds: frozenEvidenceIds(evidenceIds),
   })
 }
@@ -677,10 +695,14 @@ export function explainContractSearch(
     const terms = queryTokens.flatMap(token => {
       const tokenMatch = intentTokenMatch(token, contract, document)
       if (tokenMatch === undefined) return []
+      const idf = inverseDocumentFrequency(ranked.intentIndex!, token)
       const term: ContractSearchTermExplanation = Object.freeze({
         token,
         documentFrequency: ranked.intentIndex!.documentFrequency.get(token) ?? 0,
+        inverseDocumentFrequency: idf,
         field: tokenMatch.field,
+        fieldWeight: tokenMatch.fieldWeight,
+        contribution: quantize(tokenMatch.fieldWeight * idf),
         factIndexes: Object.freeze([...tokenMatch.factIndexes]),
         evidenceIds: Object.freeze([...tokenMatch.evidenceIds]),
       })
