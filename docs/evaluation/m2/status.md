@@ -152,7 +152,8 @@ The final bounded real-provider canary is recorded in [`staged-measurement-repai
 - failure diagnostics: 0;
 - terminal transport reason `structured_measurement_finalized`: 16 / 16;
 - measurement tool calls: 16;
-- remainder authorized/executed: 0 / 16 total canary calls only;
+- remainder planned/authorized: 0 / 0;
+- executed calls: 16;
 - input/output tokens: 861022 / 47879;
 - provider completions/product tool calls: 147 / 223.
 
