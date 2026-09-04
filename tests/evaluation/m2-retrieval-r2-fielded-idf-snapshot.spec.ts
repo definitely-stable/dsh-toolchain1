@@ -15,7 +15,7 @@ import {
   R2_FIELDED_IDF_BASELINE_RESULTS,
 } from './m2-retrieval-r2-fielded-idf-snapshot.js'
 
-describe('Contract Search v3 fact coherence R2 development comparison', () => {
+describe('Contract Search v3 cumulative comparison against fielded IDF', () => {
   it('introduces no per-query losses against the frozen fielded-IDF phase baseline', async () => {
     const index = await createFrozenM2RetrievalIndex()
     const derived = createContractSearchIndex(index)
@@ -24,7 +24,7 @@ describe('Contract Search v3 fact coherence R2 development comparison', () => {
     expect(R2_FIELDED_IDF_BASELINE_COMMIT).toBe('df1b7f7770fe3c4507fb53cc80ce6b8d5a166f9a')
     expect(R2_FIELDED_IDF_BASELINE_RANKER_VERSION).toBe('dsh-contract-search-v3-fielded-idf')
     expect(corpusFingerprint).toBe(R2_FIELDED_IDF_BASELINE_CORPUS_FINGERPRINT)
-    expect(derived.rankerVersion).toBe('dsh-contract-search-v3-fact-coherence')
+    expect(derived.rankerVersion).toBe('dsh-contract-search-v3-conservative-abstention')
 
     const candidateResults = R2_RETRIEVAL_DEV.map(task => Object.freeze({
       taskId: task.id,
@@ -41,7 +41,7 @@ describe('Contract Search v3 fact coherence R2 development comparison', () => {
     const losses = comparisons.filter(item => item.outcome === 'loss')
     const ties = comparisons.filter(item => item.outcome === 'tie')
 
-    console.log(`M2_RETRIEVAL_R2_FACT_COHERENCE_COMPARISON ${JSON.stringify({
+    console.log(`M2_RETRIEVAL_R2_V3_VS_FIELDED_IDF ${JSON.stringify({
       baselineCommit: R2_FIELDED_IDF_BASELINE_COMMIT,
       baselineRankerVersion: R2_FIELDED_IDF_BASELINE_RANKER_VERSION,
       candidateRankerVersion: derived.rankerVersion,
