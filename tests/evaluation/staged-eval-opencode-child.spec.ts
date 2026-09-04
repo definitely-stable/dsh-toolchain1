@@ -53,8 +53,7 @@ async function listen(server: Server): Promise<number> {
       resolve()
     })
   })
-  const address = server.address() as AddressInfo
-  return address.port
+  return (server.address() as AddressInfo).port
 }
 
 async function close(server: Server): Promise<void> {
@@ -64,7 +63,7 @@ async function close(server: Server): Promise<void> {
 function modelEnvelope(): ModelEnvelope {
   return {
     schema: 'dsh-toolchain-m2-model-envelope-v1',
-    systemPrompt: 'Use exact-target evidence and submit the structured result.',
+    systemPrompt: 'Use exact-target evidence. Conclude with one concrete API existence or absence claim.',
     task: { id: 'task-01', prompt: 'Which public API should I use?' },
     staticContext: [],
     tools: [{
@@ -93,34 +92,36 @@ function processEnvironment(port: number) {
   }
 }
 
-describe('staged OpenCode Go child process boundary', () => {
-  it('keeps the result function common to B/C and intercepts it before the product dispatcher', async () => {
-    const requests: Array<Record<string, any>> = []
-    const resultPayload = {
-      schema: 'dsh-toolchain-staged-eval-result-v1',
-      taskId: 'task-01',
-      claims: [{ package: '@deepseek-ai/dsh-scope', symbol: 'Scope', assertion: 'exists' }],
-    }
-    const responses = [
-      completion('completion-1', 'ordinary_read', { path: 'README.md' }, 10, 3),
-      completion('completion-2', STAGED_RESULT_TOOL_NAME, resultPayload, 12, 4),
-    ]
-    const server = createServer((request, response) => {
-      let body = ''
-      request.setEncoding('utf8')
-      request.on('data', chunk => { body += String(chunk) })
-      request.on('end', () => {
-        requests.push(JSON.parse(body) as Record<string, any>)
-        const next = responses.shift()
-        if (next === undefined) {
-          response.writeHead(500, { 'content-type': 'application/json' })
-          response.end(JSON.stringify({ error: { message: 'unexpected request' } }))
-          return
-        }
-        response.writeHead(200, { 'content-type': 'application/json' })
-        response.end(JSON.stringify(next))
-      })
+function serve(responses: unknown[], requests: Array<Record<string, any>>) {
+  return createServer((request, response) => {
+    let body = ''
+    request.setEncoding('utf8')
+    request.on('data', chunk => { body += String(chunk) })
+    request.on('end', () => {
+      requests.push(JSON.parse(body) as Record<string, any>)
+      const next = responses.shift()
+      if (next === undefined) {
+        response.writeHead(500, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ error: { message: 'unexpected request' } }))
+        return
+      }
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify(next))
     })
+  })
+}
+
+describe('staged OpenCode Go child process boundary', () => {
+  it('keeps product exploration and strict measurement finalization in separate provider requests', async () => {
+    const requests: Array<Record<string, any>> = []
+    const measurementInput = {
+      claim: { package: '@deepseek-ai/dsh-scope', symbol: 'Scope', assertion: 'exists' },
+    }
+    const server = serve([
+      completion('completion-1', 'ordinary_read', { path: 'README.md' }, 10, 3),
+      proseCompletion('completion-2', 'The exact target exposes Scope.', 12, 4),
+      completion('completion-3', STAGED_RESULT_TOOL_NAME, measurementInput, 14, 5),
+    ], requests)
     const port = await listen(server)
     const dispatchToolCall = vi.fn(async () => ({ text: 'exact evidence' }))
 
@@ -141,71 +142,59 @@ describe('staged OpenCode Go child process boundary', () => {
       if (result.kind !== 'model-outcome') throw new Error(`expected model outcome, got ${result.reason}`)
       expect(decodeStagedFinalAnswer(result.finalAnswer)).toEqual({
         transportStatus: 'ok',
-        structuredContent: resultPayload,
+        structuredContent: {
+          schema: 'dsh-toolchain-staged-eval-result-v1',
+          taskId: 'task-01',
+          claims: [measurementInput.claim],
+        },
       })
       expect(result.providerMetadata).toMatchObject({
-        completionId: 'completion-2',
-        finishReason: 'tool_calls',
+        completionId: 'completion-3',
+        finishReason: 'structured_measurement_finalized',
         responseModel: 'deepseek-v4-flash',
-        inputTokens: 22,
-        outputTokens: 7,
+        inputTokens: 36,
+        outputTokens: 12,
+        providerCompletions: 3,
+        measurementToolCalls: 1,
       })
       expect(dispatchToolCall).toHaveBeenCalledTimes(1)
-      expect(dispatchToolCall).toHaveBeenCalledWith({
-        id: 'completion-1-tool',
-        name: 'ordinary_read',
-        input: { path: 'README.md' },
-      })
-      expect(requests).toHaveLength(2)
-      for (const request of requests) {
-        expect(request.tools.map((tool: Record<string, any>) => tool.function.name)).toEqual([
-          'ordinary_read',
-          STAGED_RESULT_TOOL_NAME,
-        ])
-        expect(request.tools[1].function.strict).toBe(true)
+      expect(requests).toHaveLength(3)
+
+      for (const request of requests.slice(0, 2)) {
+        expect(request.tools.map((tool: Record<string, any>) => tool.function.name)).toEqual(['ordinary_read'])
+        expect(request.tools.some((tool: Record<string, any>) => tool.function.name === STAGED_RESULT_TOOL_NAME)).toBe(false)
+        expect(request.tool_choice).toBeUndefined()
       }
-      const secondRequest = requests[1]
-      if (secondRequest === undefined) throw new Error('expected second provider request')
-      expect(secondRequest.messages).toContainEqual({
-        role: 'tool',
-        tool_call_id: 'completion-1-tool',
-        content: JSON.stringify({ text: 'exact evidence' }),
+
+      const finalization = requests[2]
+      if (finalization === undefined) throw new Error('expected finalization request')
+      expect(finalization.tools.map((tool: Record<string, any>) => tool.function.name)).toEqual([STAGED_RESULT_TOOL_NAME])
+      expect(finalization.tools[0].function.strict).toBe(true)
+      expect(finalization.tool_choice).toEqual({
+        type: 'function',
+        function: { name: STAGED_RESULT_TOOL_NAME },
       })
+      expect(finalization.messages).toContainEqual({ role: 'assistant', content: 'The exact target exposes Scope.' })
+      expect(finalization.messages.at(-1)).toMatchObject({
+        role: 'user',
+        content: expect.stringContaining(STAGED_RESULT_TOOL_NAME),
+      })
+      expect(JSON.stringify(finalization.tools[0].function.parameters)).not.toContain('taskId')
+      expect(JSON.stringify(finalization.messages)).not.toContain('task-01')
     } finally {
       await close(server)
     }
   })
 
-  it('recovers one prose final through a single measurement-only named-tool finalization turn without prose parsing', async () => {
+  it('finalizes an immediate product conclusion through the same measurement-only path', async () => {
     const requests: Array<Record<string, any>> = []
-    const resultPayload = {
-      schema: 'dsh-toolchain-staged-eval-result-v1',
-      taskId: 'task-01',
-      claims: [{ package: '@deepseek-ai/dsh-scope', symbol: 'Scope', assertion: 'exists' }],
-    }
-    const responses = [
-      completion('completion-1', 'ordinary_read', { path: 'README.md' }, 10, 3),
-      proseCompletion('completion-2', 'The exact target exposes Scope.', 12, 4),
-      completion('completion-3', STAGED_RESULT_TOOL_NAME, resultPayload, 14, 5),
-    ]
-    const server = createServer((request, response) => {
-      let body = ''
-      request.setEncoding('utf8')
-      request.on('data', chunk => { body += String(chunk) })
-      request.on('end', () => {
-        requests.push(JSON.parse(body) as Record<string, any>)
-        const next = responses.shift()
-        if (next === undefined) {
-          response.writeHead(500, { 'content-type': 'application/json' })
-          response.end(JSON.stringify({ error: { message: 'unexpected request' } }))
-          return
-        }
-        response.writeHead(200, { 'content-type': 'application/json' })
-        response.end(JSON.stringify(next))
-      })
-    })
+    const server = serve([
+      proseCompletion('completion-1', 'Scope is absent on this target.', 8, 3),
+      completion('completion-2', STAGED_RESULT_TOOL_NAME, {
+        claim: { package: '*', symbol: 'Scope', assertion: 'absent' },
+      }, 9, 4),
+    ], requests)
     const port = await listen(server)
-    const dispatchToolCall = vi.fn(async () => ({ text: 'exact evidence' }))
 
     try {
       const result = await executeProcessModelAttempt({
@@ -217,38 +206,22 @@ describe('staged OpenCode Go child process boundary', () => {
         timeoutMs: 10_000,
         maxStdoutBytes: 512 * 1024,
         maxStderrBytes: 64 * 1024,
-        dispatchToolCall,
+        dispatchToolCall: vi.fn(async () => ({ text: 'unused' })),
       })
 
       expect(result.kind).toBe('model-outcome')
       if (result.kind !== 'model-outcome') throw new Error(`expected model outcome, got ${result.reason}`)
       expect(decodeStagedFinalAnswer(result.finalAnswer)).toEqual({
         transportStatus: 'ok',
-        structuredContent: resultPayload,
+        structuredContent: {
+          schema: 'dsh-toolchain-staged-eval-result-v1',
+          taskId: 'task-01',
+          claims: [{ package: '*', symbol: 'Scope', assertion: 'absent' }],
+        },
       })
-      expect(result.providerMetadata).toMatchObject({
-        completionId: 'completion-3',
-        finishReason: 'structured_measurement_forced',
-        responseModel: 'deepseek-v4-flash',
-        inputTokens: 36,
-        outputTokens: 12,
-      })
-      expect(dispatchToolCall).toHaveBeenCalledTimes(1)
-      expect(requests).toHaveLength(3)
-
-      const forcedRequest = requests[2]
-      if (forcedRequest === undefined) throw new Error('expected forced finalization request')
-      expect(forcedRequest.tools.map((tool: Record<string, any>) => tool.function.name)).toEqual([STAGED_RESULT_TOOL_NAME])
-      expect(forcedRequest.tools[0].function.strict).toBe(true)
-      expect(forcedRequest.tool_choice).toEqual({
-        type: 'function',
-        function: { name: STAGED_RESULT_TOOL_NAME },
-      })
-      expect(forcedRequest.messages).toContainEqual({ role: 'assistant', content: 'The exact target exposes Scope.' })
-      expect(forcedRequest.messages.at(-1)).toMatchObject({
-        role: 'user',
-        content: expect.stringContaining(STAGED_RESULT_TOOL_NAME),
-      })
+      expect(requests).toHaveLength(2)
+      expect(requests[0]?.tools.map((tool: Record<string, any>) => tool.function.name)).toEqual(['ordinary_read'])
+      expect(requests[1]?.tools.map((tool: Record<string, any>) => tool.function.name)).toEqual([STAGED_RESULT_TOOL_NAME])
     } finally {
       await close(server)
     }
