@@ -35,7 +35,7 @@ describe('M2 frozen R1 regression gate', () => {
       metrics,
     }))
 
-    expect(CONTRACT_SEARCH_RANKER_VERSION).toBe('dsh-contract-search-v3-fielded-idf')
+    expect(CONTRACT_SEARCH_RANKER_VERSION).toBe('dsh-contract-search-v3-fact-coherence')
     expect(metrics.successAt5).toBeGreaterThan(HISTORICAL_SUCCESS_AT_5)
     expect(metrics.byCategory['exact-symbol']?.successAt5).toBe(1)
     expect(metrics.byCategory['package-api']?.successAt5).toBe(1)

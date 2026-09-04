@@ -51,7 +51,7 @@ describe('ContractSearchIndex derived state', () => {
       contracts,
     })
 
-    expect(derived.rankerVersion).toBe('dsh-contract-search-v3-fielded-idf')
+    expect(derived.rankerVersion).toBe('dsh-contract-search-v3-fact-coherence')
     expect(derived.contractIndexFingerprint).toBe(`dsh-contract-index-v1:${'a'.repeat(64)}`)
     expect(derived.documentCount).toBe(2)
 
