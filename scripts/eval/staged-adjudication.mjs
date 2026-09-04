@@ -1,5 +1,4 @@
-const PACKAGE_PATTERN = /^@?[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)?$/u
-const SYMBOL_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/u
+import { requireApiSymbol, requirePackageName } from './staged-result-contract.mjs'
 
 function requireRecord(value, label) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`)
@@ -11,29 +10,13 @@ function requireNonBlank(value, label) {
   return value
 }
 
-function requirePackage(value, label) {
-  const packageName = requireNonBlank(value, label)
-  if (!PACKAGE_PATTERN.test(packageName)) throw new Error(`${label} must be a valid package name`)
-  return packageName
-}
-
 function requireSymbols(value, label) {
   if (!Array.isArray(value) || value.length === 0) throw new Error(`${label} must contain at least one symbol`)
-  const symbols = value.map((candidate, index) => {
-    const symbol = requireNonBlank(candidate, `${label}[${index}]`)
-    if (!SYMBOL_PATTERN.test(symbol)) throw new Error(`${label}[${index}] must be a dotted API identifier`)
-    return symbol
-  })
+  const symbols = value.map((candidate, index) => requireApiSymbol(candidate, `${label}[${index}]`))
   if (new Set(symbols).size !== symbols.length) throw new Error(`${label} must not contain duplicate symbols`)
   return Object.freeze(symbols)
 }
 
-/**
- * Validate and normalize the deterministic task oracle carried by the
- * SHA-verified DEVELOPMENT_ONLY corpus. No provider/model fields participate.
- *
- * @param {unknown} taskValue
- */
 export function validateDevelopmentTaskOracle(taskValue) {
   const task = requireRecord(taskValue, 'development task')
   requireNonBlank(task.id, 'development task id')
@@ -42,7 +25,7 @@ export function validateDevelopmentTaskOracle(taskValue) {
   if (rule.kind === 'api-exists-any') {
     return Object.freeze({
       kind: 'api-exists-any',
-      package: requirePackage(rule.package, `development task ${task.id} successRule.package`),
+      package: requirePackageName(rule.package, `development task ${task.id} successRule.package`),
       symbols: requireSymbols(rule.symbols, `development task ${task.id} successRule.symbols`),
     })
   }
@@ -53,7 +36,7 @@ export function validateDevelopmentTaskOracle(taskValue) {
     if (proofScope.kind === 'package') {
       normalizedScope = Object.freeze({
         kind: 'package',
-        package: requirePackage(proofScope.package, `development task ${task.id} successRule.proofScope.package`),
+        package: requirePackageName(proofScope.package, `development task ${task.id} successRule.proofScope.package`),
       })
     } else if (proofScope.kind === 'target') {
       normalizedScope = Object.freeze({ kind: 'target' })
@@ -81,14 +64,6 @@ function unresolved(reason) {
   return Object.freeze({ status: 'unresolved', reason })
 }
 
-/**
- * Resolve a single parsed structured API claim against the task's immutable
- * development oracle. An unrelated identity stays unresolved; it is never
- * guessed or judged by the model.
- *
- * @param {unknown} taskValue
- * @param {unknown} structuredValue
- */
 export function adjudicateDevelopmentClaim(taskValue, structuredValue) {
   const task = requireRecord(taskValue, 'development task')
   const taskId = requireNonBlank(task.id, 'development task id')
