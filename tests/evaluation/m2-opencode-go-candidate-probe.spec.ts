@@ -107,7 +107,7 @@ describe('M2.3 OpenCode Go candidate identity probe', () => {
     })
   })
 
-  it('optionally verifies the staged named-tool finalization contract without changing default probe semantics', async () => {
+  it('optionally verifies the exact claim-only named-tool finalization contract without changing default probe semantics', async () => {
     const module = await import(`${new URL('../../scripts/probe-m2-opencode-go.mjs', import.meta.url).href}?staged=${Math.random()}`) as Record<string, unknown>
     const probeOpenCodeGoIdentity = module.probeOpenCodeGoIdentity as (
       environment: NodeJS.ProcessEnv,
@@ -180,9 +180,7 @@ describe('M2.3 OpenCode Go candidate identity probe', () => {
               function: {
                 name: 'submit_staged_result',
                 arguments: JSON.stringify({
-                  schema: 'dsh-toolchain-staged-eval-result-v1',
-                  taskId: 'transport-probe',
-                  claims: [{ package: '*', symbol: 'TransportProbe', assertion: 'absent' }],
+                  claim: { package: '*', symbol: 'TransportProbe', assertion: 'absent' },
                 }),
               },
             }],
@@ -201,6 +199,9 @@ describe('M2.3 OpenCode Go candidate identity probe', () => {
     expect(staged?.tools?.[0]?.function?.name).toBe('submit_staged_result')
     expect(staged?.tools?.[0]?.function?.strict).toBe(true)
     expect(staged?.tool_choice).toEqual({ type: 'function', function: { name: 'submit_staged_result' } })
+    expect(JSON.stringify(staged?.tools?.[0]?.function?.parameters)).not.toContain('taskId')
+    expect(JSON.stringify(staged?.messages)).not.toContain('transport-probe')
+    expect(JSON.stringify(staged?.messages)).not.toContain('taskId')
     expect(receipt).toMatchObject({
       stagedNamedToolChoice: 'verified',
       stagedStrictResultSchema: 'verified',
