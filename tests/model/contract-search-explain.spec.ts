@@ -133,7 +133,7 @@ describe('Contract Search internal explanation', () => {
     expect(explanation.results).toEqual([
       {
         contractId: 'package:tool-definition',
-        score: 309,
+        score: 310,
         terms: [
           {
             token: 'args',
