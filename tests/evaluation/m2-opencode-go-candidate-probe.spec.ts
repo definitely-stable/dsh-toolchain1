@@ -223,4 +223,23 @@ describe('M2.3 OpenCode Go candidate identity probe', () => {
       output: path.resolve('candidate-receipt.json'),
     })
   })
+
+  it('parses the opt-in staged transport capability flag independently of the default probe', async () => {
+    const module = await import(`${new URL('../../scripts/probe-m2-opencode-go.mjs', import.meta.url).href}?staged-args=${Math.random()}`) as Record<string, unknown>
+    const parseProbeArguments = module.parseProbeArguments as (
+      args: readonly string[],
+    ) => { readonly output: string; readonly model?: string; readonly stagedTransport?: boolean }
+
+    expect(parseProbeArguments([
+      '--model',
+      'deepseek-v4-flash',
+      '--staged-transport',
+      '--output',
+      'staged-receipt.json',
+    ])).toEqual({
+      model: 'deepseek-v4-flash',
+      stagedTransport: true,
+      output: path.resolve('staged-receipt.json'),
+    })
+  })
 })
