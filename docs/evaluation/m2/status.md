@@ -163,6 +163,10 @@ The structured staged measurement transport acceptance gate is therefore closed.
 
 The disclosed H1 tasks remain `DEVELOPMENT_ONLY` calibration/regression data. They are not confirmatory evidence after disclosure. H1 remains immutable and MUST NOT be rerun.
 
+## Acceptance evidence guard
+
+The accepted repair receipt is append-only evidence. Future implementation work MUST NOT rewrite its run id, tested commit, artifact id/digest, measurement `PASS`, 16/16 format-valid, 16/16 decision-resolved, zero-remainder, or `DEVELOPMENT_ONLY` boundary. Any later provider experiment requires a new receipt rather than mutation of this one.
+
 ## Exact Target Plugin Check alpha
 
 Issue #154 / PR #173 implement the first one-call product path:
@@ -173,7 +177,7 @@ plugin subject + exact TargetSnapshot + target-bound ContractIndex
     -> evidence-backed compatibility diagnostics
 ```
 
-The alpha accepts explicit directory and packed `.tgz` subjects, shares one kernel/application operation across CLI, native DSH and MCP, and reports `compatible-in-scope`, `incompatible`, or `unproven` without forcing unknown evidence into pass/fail. Requirement findings are bound to exact target/contract provenance, malformed subjects preserve semantic diagnostics where possible, and stale target/index evidence cannot produce a successful compatibility claim.
+The alpha accepts explicit directory and packed `.tgz` subjects, shares one kernel/application operation across CLI/native DSH and MCP, and reports `compatible-in-scope`, `incompatible`, or `unproven` without forcing unknown evidence into pass/fail. Requirement findings are bound to exact target/contract provenance, malformed subjects preserve semantic diagnostics where possible, and stale target/index evidence cannot produce a successful compatibility claim.
 
 The safety boundary remains static and read-only: candidate plugin code/lifecycle scripts are not executed, and runtime verification remains an M4 responsibility. CI proves the exact packed Toolchain artifact can perform the operation against a real supported DSH train without mutating the active profile.
 
