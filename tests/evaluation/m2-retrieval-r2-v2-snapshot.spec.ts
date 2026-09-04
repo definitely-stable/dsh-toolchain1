@@ -14,15 +14,15 @@ import {
   R2_V2_BASELINE_RESULTS,
 } from './m2-retrieval-r2-v2-snapshot.js'
 
-describe('Contract Search v3 fielded IDF R2 development comparison', () => {
-  it('preserves the proven sibling-package wins with no per-query losses against the frozen v2 baseline', async () => {
+describe('Contract Search v3 cumulative R2 development comparison', () => {
+  it('preserves the proven fielded-IDF sibling-package wins with no per-query losses against frozen v2', async () => {
     const index = await createFrozenM2RetrievalIndex()
     const derived = createContractSearchIndex(index)
     const corpusFingerprint = fingerprintR2RetrievalCorpus(R2_RETRIEVAL_DEV, index.fingerprint)
 
     expect(R2_V2_BASELINE_RANKER_VERSION).toBe('dsh-contract-search-v2-intent')
     expect(corpusFingerprint).toBe(R2_V2_BASELINE_CORPUS_FINGERPRINT)
-    expect(derived.rankerVersion).toBe('dsh-contract-search-v3-fielded-idf')
+    expect(derived.rankerVersion).toBe('dsh-contract-search-v3-fact-coherence')
 
     const candidateResults = R2_RETRIEVAL_DEV.map(task => Object.freeze({
       taskId: task.id,
@@ -39,7 +39,7 @@ describe('Contract Search v3 fielded IDF R2 development comparison', () => {
     const losses = comparisons.filter(item => item.outcome === 'loss')
     const ties = comparisons.filter(item => item.outcome === 'tie')
 
-    console.log(`M2_RETRIEVAL_R2_FIELDED_IDF_COMPARISON ${JSON.stringify({
+    console.log(`M2_RETRIEVAL_R2_V3_CUMULATIVE_COMPARISON ${JSON.stringify({
       baselineRankerVersion: R2_V2_BASELINE_RANKER_VERSION,
       candidateRankerVersion: derived.rankerVersion,
       corpusFingerprint,
