@@ -1,6 +1,6 @@
 import type { ContractDefinition } from '../protocol/index.js'
 
-export const CONTRACT_SEARCH_RANKER_VERSION = 'dsh-contract-search-v2-intent'
+export const CONTRACT_SEARCH_RANKER_VERSION = 'dsh-contract-search-v3-fielded-idf'
 
 export interface ContractSearchIndexSource {
   readonly fingerprint: string
