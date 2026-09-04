@@ -15,14 +15,14 @@ import {
 } from './m2-retrieval-r2-v2-snapshot.js'
 
 describe('Contract Search v3 cumulative R2 development comparison', () => {
-  it('preserves the proven fielded-IDF sibling-package wins with no per-query losses against frozen v2', async () => {
+  it('preserves sibling-package wins and adds both version-drift abstention wins without losses', async () => {
     const index = await createFrozenM2RetrievalIndex()
     const derived = createContractSearchIndex(index)
     const corpusFingerprint = fingerprintR2RetrievalCorpus(R2_RETRIEVAL_DEV, index.fingerprint)
 
     expect(R2_V2_BASELINE_RANKER_VERSION).toBe('dsh-contract-search-v2-intent')
     expect(corpusFingerprint).toBe(R2_V2_BASELINE_CORPUS_FINGERPRINT)
-    expect(derived.rankerVersion).toBe('dsh-contract-search-v3-fact-coherence')
+    expect(derived.rankerVersion).toBe('dsh-contract-search-v3-conservative-abstention')
 
     const candidateResults = R2_RETRIEVAL_DEV.map(task => Object.freeze({
       taskId: task.id,
@@ -51,10 +51,12 @@ describe('Contract Search v3 cumulative R2 development comparison', () => {
 
     expect(comparisons).toHaveLength(18)
     expect(losses).toEqual([])
-    expect(wins.length).toBeGreaterThanOrEqual(2)
     expect(wins.map(item => item.taskId)).toEqual(expect.arrayContaining([
       'r2-sibling-bash-sandbox',
       'r2-sibling-compaction-pruner',
+      'r2-version-drift-session-vnext-api',
+      'r2-version-drift-tools-vnext-api',
     ]))
+    expect(wins.length).toBeGreaterThanOrEqual(4)
   })
 })
