@@ -13,7 +13,6 @@ import {
 } from './m2-retrieval-r2.js'
 import {
   R2_FACT_COHERENCE_BASELINE_CORPUS_FINGERPRINT,
-  R2_FACT_COHERENCE_BASELINE_RANKER_VERSION,
 } from './m2-retrieval-r2-fact-coherence-snapshot.js'
 
 const IDF_PRECISION = 1_000_000
@@ -36,12 +35,12 @@ function ratio(numerator: number, denominator: number): number | null {
 }
 
 describe('Contract Search v3 abstention support audit', () => {
-  it('records deterministic support features on the frozen R2-dev corpus before selecting an abstention rule', async () => {
+  it('records deterministic support features for the current candidate on the frozen R2-dev corpus', async () => {
     const index = await createFrozenM2RetrievalIndex()
     const derived = createContractSearchIndex(index)
     const corpusFingerprint = fingerprintR2RetrievalCorpus(R2_RETRIEVAL_DEV, index.fingerprint)
 
-    expect(derived.rankerVersion).toBe(R2_FACT_COHERENCE_BASELINE_RANKER_VERSION)
+    expect(derived.rankerVersion).toBe('dsh-contract-search-v3-conservative-abstention')
     expect(corpusFingerprint).toBe(R2_FACT_COHERENCE_BASELINE_CORPUS_FINGERPRINT)
 
     const rows = R2_RETRIEVAL_DEV.map(task => {
