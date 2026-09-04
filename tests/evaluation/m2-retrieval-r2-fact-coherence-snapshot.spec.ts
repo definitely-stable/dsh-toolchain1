@@ -15,8 +15,8 @@ import {
   R2_FACT_COHERENCE_BASELINE_RESULTS,
 } from './m2-retrieval-r2-fact-coherence-snapshot.js'
 
-describe('Contract Search v3 abstention immediate-prior baseline', () => {
-  it('matches the frozen fact-coherence per-query baseline before abstention changes', async () => {
+describe('Contract Search v3 conservative abstention R2 development comparison', () => {
+  it('fixes the two package-qualified version-drift negatives with no losses against fact coherence', async () => {
     const index = await createFrozenM2RetrievalIndex()
     const derived = createContractSearchIndex(index)
     const corpusFingerprint = fingerprintR2RetrievalCorpus(R2_RETRIEVAL_DEV, index.fingerprint)
@@ -24,9 +24,9 @@ describe('Contract Search v3 abstention immediate-prior baseline', () => {
     expect(R2_FACT_COHERENCE_BASELINE_COMMIT).toBe('803d8e219d05f794bf980e9b11a2fa3a390bc41f')
     expect(R2_FACT_COHERENCE_BASELINE_RANKER_VERSION).toBe('dsh-contract-search-v3-fact-coherence')
     expect(corpusFingerprint).toBe(R2_FACT_COHERENCE_BASELINE_CORPUS_FINGERPRINT)
-    expect(derived.rankerVersion).toBe(R2_FACT_COHERENCE_BASELINE_RANKER_VERSION)
+    expect(derived.rankerVersion).toBe('dsh-contract-search-v3-conservative-abstention')
 
-    const current = R2_RETRIEVAL_DEV.map(task => Object.freeze({
+    const candidate = R2_RETRIEVAL_DEV.map(task => Object.freeze({
       taskId: task.id,
       rankedContractIds: Object.freeze(
         searchContractIndex(index, task.query, undefined, 5, derived).matches.map(match => match.id),
@@ -35,10 +35,29 @@ describe('Contract Search v3 abstention immediate-prior baseline', () => {
     const comparisons = compareR2RetrievalResults(
       R2_RETRIEVAL_DEV,
       R2_FACT_COHERENCE_BASELINE_RESULTS,
-      current,
+      candidate,
     )
+    const wins = comparisons.filter(item => item.outcome === 'win')
+    const losses = comparisons.filter(item => item.outcome === 'loss')
+    const ties = comparisons.filter(item => item.outcome === 'tie')
+
+    console.log(`M2_RETRIEVAL_R2_ABSTENTION_COMPARISON ${JSON.stringify({
+      baselineCommit: R2_FACT_COHERENCE_BASELINE_COMMIT,
+      baselineRankerVersion: R2_FACT_COHERENCE_BASELINE_RANKER_VERSION,
+      candidateRankerVersion: derived.rankerVersion,
+      corpusFingerprint,
+      wins: wins.length,
+      losses: losses.length,
+      ties: ties.length,
+      perQuery: comparisons,
+    })}`)
 
     expect(comparisons).toHaveLength(18)
-    expect(comparisons.every(item => item.outcome === 'tie')).toBe(true)
+    expect(losses).toEqual([])
+    expect(wins.map(item => item.taskId).toSorted()).toEqual([
+      'r2-version-drift-session-vnext-api',
+      'r2-version-drift-tools-vnext-api',
+    ])
+    expect(ties).toHaveLength(16)
   })
 })
