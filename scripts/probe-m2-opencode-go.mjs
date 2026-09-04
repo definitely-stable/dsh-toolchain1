@@ -5,6 +5,8 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { createStagedResultToolDefinition, STAGED_RESULT_TOOL_NAME } from './eval/staged-provider-transport.mjs'
+
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const DEFAULT_BASE_URL = 'https://opencode.ai/zen/go/v1'
 const DEFAULT_REQUEST_MODEL = 'deepseek-v4-flash'
@@ -14,6 +16,7 @@ const MAX_OUTPUT_TOKENS = 256
 const MAX_PROVIDER_ERROR_BYTES = 4_096
 const MAX_PROVIDER_ERROR_FIELD_CHARACTERS = 240
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u
+const STAGED_TRANSPORT_TASK_ID = 'transport-probe'
 
 function requireEnvironment(environment, name) {
   const value = environment[name]
@@ -91,14 +94,28 @@ function initialMessages() {
   ]
 }
 
-function requestBody(messages, requestModel) {
+function stagedTransportMessages() {
+  return [
+    {
+      role: 'system',
+      content: `This is a structured transport capability probe. Call ${STAGED_RESULT_TOOL_NAME} exactly once with taskId ${STAGED_TRANSPORT_TASK_ID}.`,
+    },
+    {
+      role: 'user',
+      content: 'Submit one schema-valid measurement claim now. Use package "*", symbol "TransportProbe", assertion "absent".',
+    },
+  ]
+}
+
+function requestBody(messages, requestModel, options = {}) {
   return {
     model: requestModel,
     messages,
     thinking: { type: THINKING },
     reasoning_effort: REASONING_EFFORT,
     max_tokens: MAX_OUTPUT_TOKENS,
-    tools: providerTools(),
+    tools: options.tools ?? providerTools(),
+    ...(options.toolChoice === undefined ? {} : { tool_choice: options.toolChoice }),
   }
 }
 
@@ -170,7 +187,7 @@ async function boundedProviderErrorDetails(response, apiKey) {
     .join(' ')
 }
 
-async function requestCompletion(configuration, messages, requestModel) {
+async function requestCompletion(configuration, messages, requestModel, options = {}) {
   let response
   try {
     response = await fetch(configuration.endpoint, {
@@ -179,7 +196,7 @@ async function requestCompletion(configuration, messages, requestModel) {
         authorization: `Bearer ${configuration.apiKey}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify(requestBody(messages, requestModel)),
+      body: JSON.stringify(requestBody(messages, requestModel, options)),
       signal: AbortSignal.timeout(120_000),
     })
   } catch {
@@ -240,6 +257,35 @@ function parseProbeToolCall(message) {
   return { id, raw: call }
 }
 
+function parseStagedTransportToolCall(message) {
+  const calls = message.tool_calls
+  if (!Array.isArray(calls) || calls.length !== 1) throw new Error('OpenCode Go staged transport probe must return exactly one function tool call')
+  const call = requireRecord(calls[0], 'OpenCode Go staged transport probe tool call')
+  if (call.type !== 'function') throw new Error('OpenCode Go staged transport probe tool call must be a function')
+  const fn = requireRecord(call.function, 'OpenCode Go staged transport probe tool function')
+  if (requireString(fn.name, 'OpenCode Go staged transport probe tool name') !== STAGED_RESULT_TOOL_NAME) {
+    throw new Error('OpenCode Go staged transport probe called an unexpected tool')
+  }
+  const argumentsText = requireString(fn.arguments, 'OpenCode Go staged transport probe tool arguments')
+  let input
+  try {
+    input = JSON.parse(argumentsText)
+  } catch {
+    throw new Error('OpenCode Go staged transport probe tool arguments are not valid JSON')
+  }
+  const record = requireRecord(input, 'OpenCode Go staged transport probe tool input')
+  if (record.schema !== 'dsh-toolchain-staged-eval-result-v1' || record.taskId !== STAGED_TRANSPORT_TASK_ID) {
+    throw new Error('OpenCode Go staged transport probe result identity does not match the frozen probe')
+  }
+  if (!Array.isArray(record.claims) || record.claims.length !== 1) {
+    throw new Error('OpenCode Go staged transport probe must return exactly one claim')
+  }
+  const claim = requireRecord(record.claims[0], 'OpenCode Go staged transport probe claim')
+  if (typeof claim.package !== 'string' || typeof claim.symbol !== 'string' || !['exists', 'absent'].includes(claim.assertion)) {
+    throw new Error('OpenCode Go staged transport probe claim does not match the staged schema')
+  }
+}
+
 function assistantToolMessage(message) {
   const content = optionalString(message.content, 'OpenCode Go probe assistant content') ?? ''
   const reasoningContent = optionalString(message.reasoning_content, 'OpenCode Go probe reasoning_content')
@@ -280,6 +326,26 @@ export async function probeOpenCodeGoIdentity(environment = process.env, options
     throw new Error('OpenCode Go probe system fingerprint changed during the two-step probe')
   }
 
+  let staged
+  if (options.stagedTransport === true) {
+    staged = await requestCompletion(
+      configuration,
+      stagedTransportMessages(),
+      requestModel,
+      {
+        tools: [createStagedResultToolDefinition()],
+        toolChoice: { type: 'function', function: { name: STAGED_RESULT_TOOL_NAME } },
+      },
+    )
+    if (staged.finishReason !== 'tool_calls') {
+      throw new Error('OpenCode Go staged transport probe did not finish with tool_calls')
+    }
+    parseStagedTransportToolCall(staged.message)
+    if (staged.systemFingerprint !== second.systemFingerprint) {
+      throw new Error('OpenCode Go staged transport probe system fingerprint changed after identity probe')
+    }
+  }
+
   return Object.freeze({
     schema: 'dsh-toolchain-m2-opencode-go-probe-v1',
     provider: 'opencode-go',
@@ -292,9 +358,13 @@ export async function probeOpenCodeGoIdentity(environment = process.env, options
     functionToolCall: 'verified',
     reasoningContinuation: firstReasoning === undefined || firstReasoning.length === 0 ? 'not-observed' : 'verified',
     tokenMeasurement: 'verified',
+    ...(staged === undefined ? {} : {
+      stagedNamedToolChoice: 'verified',
+      stagedStrictResultSchema: 'verified',
+    }),
     backendIdentityStrength: second.systemFingerprint === undefined ? 'response-model-only' : 'system-fingerprint',
-    inputTokens: first.inputTokens + second.inputTokens,
-    outputTokens: first.outputTokens + second.outputTokens,
+    inputTokens: first.inputTokens + second.inputTokens + (staged?.inputTokens ?? 0),
+    outputTokens: first.outputTokens + second.outputTokens + (staged?.outputTokens ?? 0),
   })
 }
 
