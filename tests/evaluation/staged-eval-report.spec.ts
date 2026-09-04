@@ -7,6 +7,7 @@ function result(
   taskId: string,
   decision?: { apiValid: boolean; taskSuccess: boolean },
   terminalTransportReason?: string,
+  failureCode?: string,
 ) {
   return {
     call: { ordinal: 1, taskId, arm, repetition: 1 },
@@ -28,12 +29,13 @@ function result(
         claims: [],
       },
     }),
+    ...(failureCode === undefined ? {} : { failure: { code: failureCode, summary: 'test failure' } }),
     cost: {
       attempts: 1,
       infrastructureFailures: 0,
       wallTimeMs: 10,
-      usage: { inputTokens: 100, outputTokens: 20, turns: 2 },
-      toolUsage: { calls: 3 },
+      usage: { inputTokens: 100, outputTokens: 20, turns: 2, providerCompletions: 2 },
+      toolUsage: { calls: 3, structuredTransportCalls: 1 },
     },
   }
 }
@@ -45,7 +47,7 @@ function run(status: 'PASS' | 'STOP') {
     result('B', 'task-2', { apiValid: false, taskSuccess: false }),
     status === 'PASS'
       ? result('C', 'task-2', { apiValid: true, taskSuccess: false })
-      : result('C', 'task-2', undefined, 'structured_transport_unsupported'),
+      : result('C', 'task-2', undefined, 'structured_measurement_invalid', 'STRUCTURED_RESULT_INVALID'),
   ]
   return {
     mode: 'dev',
@@ -75,6 +77,7 @@ describe('staged evaluation report', () => {
     expect(report.measurement).toMatchObject({
       status: 'PASS',
       reasons: [],
+      failureDiagnostics: { total: 0, byCode: [] },
       transportDiagnostics: {
         observedTerminalReasons: 0,
         missingTerminalReasons: 4,
@@ -82,6 +85,7 @@ describe('staged evaluation report', () => {
       },
     })
     expect(report.product).toMatchObject({
+      interpretable: true,
       resolvedObservations: 4,
       apiValidObservations: 3,
       taskSuccessObservations: 1,
@@ -104,28 +108,42 @@ describe('staged evaluation report', () => {
       inputTokens: 400,
       outputTokens: 80,
       turns: 8,
+      providerCompletions: 8,
       toolCalls: 12,
+      measurementToolCalls: 4,
     })
   })
 
-  it('emits a diagnostic STOP report with zero authorized remainder and excludes unresolved observations from paired deltas', () => {
+  it('makes STOP reports explicitly non-interpretable and aggregates failure codes by arm', () => {
     const report = buildStagedEvaluationReport(run('STOP'))
 
     expect(report.measurement).toMatchObject({
       status: 'STOP',
       reasons: ['FORMAT_COMPLIANCE_BELOW_MINIMUM'],
+      failureDiagnostics: {
+        total: 1,
+        byCode: [{
+          code: 'STRUCTURED_RESULT_INVALID',
+          count: 1,
+          byArm: { B: 0, C: 1 },
+        }],
+      },
       transportDiagnostics: {
         observedTerminalReasons: 1,
         missingTerminalReasons: 3,
         terminalReasons: [{
-          reason: 'structured_transport_unsupported',
+          reason: 'structured_measurement_invalid',
           count: 1,
           byArm: { B: 0, C: 1 },
         }],
       },
     })
     expect(report.authorization).toMatchObject({ remainderAuthorized: 0 })
-    expect(report.product.resolvedObservations).toBe(3)
+    expect(report.product).toMatchObject({
+      interpretable: false,
+      blockedBy: 'measurement-health',
+      resolvedObservations: 3,
+    })
     expect(report.product.pairedTasks).toEqual({
       count: 1,
       apiValidityDeltaCMinusB: 0,
