@@ -131,7 +131,7 @@ export function createStagedProviderExecutor(input) {
         inputTokens += usage.inputTokens
         outputTokens += usage.outputTokens
         const decoded = decodeStagedFinalAnswer(result.finalAnswer)
-        const exactMetrics = decoded.transportStatus === 'ok' ? decoded.transportMetrics : undefined
+        const exactMetrics = decoded.transportMetrics
         providerCompletions += exactMetrics?.providerCompletions ?? (modelToolCalls + 1)
         measurementToolCalls += exactMetrics?.measurementToolCalls ?? (decoded.transportStatus === 'ok' ? 1 : 0)
         return Object.freeze({
