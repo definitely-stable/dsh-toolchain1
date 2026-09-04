@@ -4,7 +4,7 @@ const MAX_ATTEMPTS = 2
 const RETRYABLE_INFRASTRUCTURE = Object.freeze(new Set(['provider-transport', 'tool-transport']))
 const TERMINAL_REASON_PATTERN = /^[a-z0-9_-]{1,64}$/u
 
-export const STAGED_DEVELOPMENT_SYSTEM_PROMPT = `You are evaluating public APIs on one exact installed DeepSeek Harness target. Use only evidence and tools available in this run; do not rely on newer-version knowledge. Answer the task by making exactly one concrete public-API existence or absence claim. When you have enough evidence, call submit_staged_result exactly once with the task id and claim. The structured result function is the only accepted final answer; do not finish with prose.`
+export const STAGED_DEVELOPMENT_SYSTEM_PROMPT = `You are evaluating public APIs on one exact installed DeepSeek Harness target. Use only evidence and tools available in this run; do not rely on newer-version knowledge. Answer the task by making exactly one concrete public-API existence or absence claim. Use product tools until you have enough evidence, then finish the product phase with a concise statement of that one claim. The evaluator will request the structured measurement claim in a separate finalization turn; do not attempt to call the reserved measurement function during product exploration.`
 
 function requireRecord(value, label) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`)
@@ -21,10 +21,14 @@ function nonNegativeInteger(value) {
 }
 
 function providerUsage(metadata) {
-  if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) return { inputTokens: 0, outputTokens: 0 }
+  if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return { inputTokens: 0, outputTokens: 0, providerCompletions: 0, measurementToolCalls: 0 }
+  }
   return {
     inputTokens: nonNegativeInteger(metadata.inputTokens),
     outputTokens: nonNegativeInteger(metadata.outputTokens),
+    providerCompletions: nonNegativeInteger(metadata.providerCompletions),
+    measurementToolCalls: nonNegativeInteger(metadata.measurementToolCalls),
   }
 }
 
@@ -60,23 +64,6 @@ function retryable(result, attempt) {
     && RETRYABLE_INFRASTRUCTURE.has(result.reason)
 }
 
-/**
- * Adapts the existing isolated process executor + exact P0 B/C tool runtime to
- * the one-dispatch development runner. It does not touch the historical H1 run
- * store or ledger; every call/retry receives a fresh runtime identity.
- *
- * @param {{
- *   frozen: Record<string, any>;
- *   runtime: {
- *     createModelEnvelope: Function;
- *     createFrozenP0ToolRuntime: Function;
- *     executeProcessModelAttempt: Function;
- *   };
- *   processConfiguration: Record<string, any>;
- *   sha256Utf8: (value:string) => Promise<string>;
- *   now?: () => number;
- * }} input
- */
 export function createStagedProviderExecutor(input) {
   const frozen = requireRecord(input?.frozen, 'staged frozen runtime')
   const runtime = requireRecord(input?.runtime, 'staged provider runtime')
@@ -105,6 +92,8 @@ export function createStagedProviderExecutor(input) {
     let inputTokens = 0
     let outputTokens = 0
     let modelToolCalls = 0
+    let providerCompletions = 0
+    let measurementToolCalls = 0
 
     while (attempts < MAX_ATTEMPTS) {
       attempts += 1
@@ -143,7 +132,12 @@ export function createStagedProviderExecutor(input) {
         const usage = providerUsage(result.providerMetadata)
         inputTokens += usage.inputTokens
         outputTokens += usage.outputTokens
+        const fallbackCompletions = modelToolCalls + 1
+        providerCompletions += usage.providerCompletions > 0 ? usage.providerCompletions : fallbackCompletions
         const decoded = decodeStagedFinalAnswer(result.finalAnswer)
+        measurementToolCalls += usage.measurementToolCalls > 0
+          ? usage.measurementToolCalls
+          : decoded.transportStatus === 'ok' ? 1 : 0
         return Object.freeze({
           ...decoded,
           terminalTransportReason: terminalTransportReason(result.providerMetadata),
@@ -154,10 +148,12 @@ export function createStagedProviderExecutor(input) {
             inputTokens,
             outputTokens,
             turns: modelToolCalls + 1,
+            providerCompletions,
           }),
           toolUsage: Object.freeze({
             calls: modelToolCalls,
             structuredTransportCalls: decoded.transportStatus === 'ok' ? 1 : 0,
+            measurementToolCalls,
           }),
         })
       }
@@ -169,8 +165,8 @@ export function createStagedProviderExecutor(input) {
           attempts,
           infrastructureFailures,
           wallTimeMs,
-          usage: Object.freeze({ inputTokens, outputTokens, turns: modelToolCalls }),
-          toolUsage: Object.freeze({ calls: modelToolCalls, structuredTransportCalls: 0 }),
+          usage: Object.freeze({ inputTokens, outputTokens, turns: modelToolCalls, providerCompletions }),
+          toolUsage: Object.freeze({ calls: modelToolCalls, structuredTransportCalls: 0, measurementToolCalls }),
         })
       }
     }
