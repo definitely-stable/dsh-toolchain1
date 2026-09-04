@@ -26,18 +26,16 @@ async function currentMetrics() {
   return calculateM2RetrievalMetrics(ranked)
 }
 
-describe('M2 post-H1 intent retrieval development gate', () => {
-  it('improves the disclosed R1 intent gap without regressing frozen exact/package/no-result guardrails', async () => {
+describe('M2 frozen R1 regression gate', () => {
+  it('keeps the disclosed R1 exact/package/no-result guardrails intact under the current production ranker', async () => {
     const metrics = await currentMetrics()
 
-    // Emit one bounded marker so the reviewed development baseline can be copied
-    // into durable documentation without mutating the historical v1 baseline.
-    console.info('M2_RETRIEVAL_V2_DEVELOPMENT_METRICS', JSON.stringify({
+    console.info('M2_RETRIEVAL_R1_REGRESSION_METRICS', JSON.stringify({
       rankerVersion: CONTRACT_SEARCH_RANKER_VERSION,
       metrics,
     }))
 
-    expect(CONTRACT_SEARCH_RANKER_VERSION).toBe('dsh-contract-search-v2-intent')
+    expect(CONTRACT_SEARCH_RANKER_VERSION).toBe('dsh-contract-search-v3-fielded-idf')
     expect(metrics.successAt5).toBeGreaterThan(HISTORICAL_SUCCESS_AT_5)
     expect(metrics.byCategory['exact-symbol']?.successAt5).toBe(1)
     expect(metrics.byCategory['package-api']?.successAt5).toBe(1)
