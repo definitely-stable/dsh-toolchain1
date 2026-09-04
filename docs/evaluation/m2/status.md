@@ -34,9 +34,9 @@ Later upstream DSH trains are a separate compatibility track. They MUST NOT retr
 | Contract Search v3 R2-dev boundary | **COMPLETE / FIXED** | Issue #164 / PR #165 established and merged the development corpus before ranking-changing v3 work. |
 | Staged evaluation control plane | **COMPLETE** | Issue #149 / PR #150 merged bounded modes, hard budgets, DEVELOPMENT_ONLY corpus tooling and measurement-health gating. |
 | One-dispatch staged runner | **COMPLETE / ACCEPTANCE STOP** | Issue #151 / PR #175 are merged and provide the closed B/C canary-first runner and normal manual workflow. The first real canary correctly stopped with zero remainder when measurement health failed. |
-| Structured staged measurement transport | **REPAIR IMPLEMENTED / CANARY PENDING** | Issue #176 / draft PR #177 replace model-controlled experiment identity and mixed product/measurement tooling with a two-phase claim-only finalizer. Deterministic CI is green; one fresh bounded real canary is still required before the issue can close. |
+| Structured staged measurement transport | **COMPLETE / ACCEPTED** | Issue #176 / PR #177 replace model-controlled experiment identity and mixed product/measurement tooling with a two-phase claim-only finalizer. Final deterministic CI passed and real run `33839417550` returned measurement `PASS` with 16/16 format-valid and 16/16 decision-resolved observations. |
 | Exact Target Plugin Check alpha | **COMPLETE** | Issue #154 / PR #173 implement the first one-call product flow for directory and packed subjects across CLI/native/MCP with evidence-backed static verdicts and real packed-DSH smoke. |
-| Parent M2 exit | **OPEN** | Historical H1 did not establish the preregistered PASS claim. The repaired staged measurement path still needs one healthy bounded real canary before later confirmatory work. |
+| Parent M2 exit | **OPEN** | Historical H1 remains `INCONCLUSIVE`; the staged measurement repair is accepted, but a later confirmatory claim still requires a frozen product candidate, fresh hidden evidence and preregistration. |
 
 ## Canonical H1 terminal outcome
 
@@ -109,9 +109,9 @@ A first repair added forced named-tool finalization and a provider capability pr
 
 This showed that provider tool calling itself was available; the remaining defect was downstream of the tool-call boundary.
 
-### Current repair boundary
+### Accepted two-phase measurement repair
 
-Issue #176 / draft PR #177 now implement a stricter transport boundary under TDD:
+Issue #176 / PR #177 implement a stricter transport boundary under TDD:
 
 ```text
 product phase
@@ -137,15 +137,30 @@ Key invariants:
 - runner-owned provider-completion/measurement-tool counters stay outside the frozen historical provider-metadata contract;
 - the temporary one-shot acceptance workflow has been removed; the normal manual staged workflow remains the only provider-backed operator path.
 
-Deterministic CI run `33836772112` on repair head `e6a6f687a196dc852bcce54b2419e810e649c986` completed successfully across the aggregate quality gate, Node 22/24/26 compatibility, Windows/macOS boundaries, packaging, real-DSH composition and read-only target-resolution checks.
+Final deterministic CI run `33837513545` completed successfully on repair head `cd0df441f3cd49bbed1b1fca7db7bf5721c57c7b`, including the aggregate quality gate, Node 22/24/26 compatibility, Windows/macOS boundaries, packaging, real-DSH composition and read-only target-resolution checks.
 
-A fresh real provider canary has **not** yet been run against this two-phase repair. Until it returns measurement `PASS`, `dev`, `release` and `research` staged remainders remain unauthorized for this repair claim. Under the frozen 16-observation canary and current 98% format / 95% decision thresholds, a healthy canary effectively requires `16 / 16` format-valid and `16 / 16` decision-resolved observations.
+The final bounded real-provider canary is recorded in [`staged-measurement-repair-acceptance-2026-09-04.md`](staged-measurement-repair-acceptance-2026-09-04.md). Workflow run `33839417550` on that exact repair head returned measurement `PASS`:
 
-If that canary returns `STOP`, its new failure diagnostics must be analyzed before any rerun.
+- artifact: `9924472353`;
+- artifact digest: `sha256:db851b2e0a377c05c812252b695577f39f53bed80e7d6876f06ab31050c3e2e1`;
+- scheduled/model outcomes: 16 / 16;
+- format-valid observations: 16 / 16;
+- resolved decisions: 16 / 16;
+- B/C resolution: 8 / 8 and 8 / 8;
+- infrastructure failures: 0;
+- retries: 0;
+- failure diagnostics: 0;
+- terminal transport reason `structured_measurement_finalized`: 16 / 16;
+- measurement tool calls: 16;
+- remainder authorized/executed: 0 / 16 total canary calls only;
+- input/output tokens: 861022 / 47879;
+- provider completions/product tool calls: 147 / 223.
+
+The canary product observations were mechanically interpretable and both B and C scored 8/8 on API validity and task success, producing zero paired delta in this small transport canary. That ceiling result is **not** evidence that B and C are equivalent and is not a powered product-effect claim.
+
+The structured staged measurement transport acceptance gate is therefore closed. Larger development modes are not automatically useful merely because transport is healthy; each must have an explicit product question, budget and stopping rule. A future H2 additionally requires a frozen product candidate, fresh hidden task set and preregistered stopping/analysis rules before outcomes exist.
 
 The disclosed H1 tasks remain `DEVELOPMENT_ONLY` calibration/regression data. They are not confirmatory evidence after disclosure. H1 remains immutable and MUST NOT be rerun.
-
-A future H2 is permitted only after the structured measurement path is healthy, the product candidate is frozen, and a fresh hidden task set plus stopping/analysis rules are preregistered before outcomes exist.
 
 ## Exact Target Plugin Check alpha
 
@@ -172,17 +187,17 @@ The shipped Agent Skill prefers `plugin.check` as the default post-edit/static-r
 - do not change `dsh-target-v2` or `dsh-contract-index-v1` retroactively to accommodate a later upstream train;
 - do not infer `verified` runtime compatibility from static Plugin Check;
 - do not make required repository CI depend on external model/provider calls;
-- do not run `dev`, `release`, `research`, or H2 merely because deterministic transport tests are green; one healthy real measurement canary is still required;
+- do not run `dev`, `release`, `research`, or H2 merely because the transport canary passed; larger runs require an explicit development or confirmatory question, bounded budget and applicable evidence rules;
 - do not mix Issue #33 upstream lifecycle compatibility work into the frozen rc.2 experiment evidence.
 
 ## Next permitted work
 
 The current implementation order is:
 
-1. run exactly one fresh bounded `canary` through the normal **M2 Staged Development Evaluation** workflow against the final two-phase repair head;
-2. if measurement is `PASS`, commit a new repair acceptance receipt, close #176 and make #177 merge-ready; if it is `STOP`, diagnose the new failure codes/transport reasons before any rerun;
-3. continue Contract Search v3 ranking work against the fixed R2-dev corpus while retaining R1 invariants;
+1. finalize and merge the accepted Issue #176 / PR #177 staged measurement repair without additional provider canaries;
+2. continue Contract Search v3 ranking work against the fixed R2-dev corpus while retaining R1 invariants;
+3. implement field-weighted IDF, then same-fact coherence, then conservative abstention/OOV handling before considering coarser proximity or fuzzy identifiers;
 4. grow M3 diagnostics only from reproduced plugin failure fixtures while preserving shared `plugin.check` semantics and the static/read-only boundary;
-5. freeze a fresh R2 holdout and later H2 only after measurement transport and the product candidate are stable.
+5. freeze a fresh R2 holdout and later H2 only after the product candidate is stable and confirmatory rules are preregistered.
 
 No additional H1 execution is a permitted next step.
