@@ -22,13 +22,11 @@ function nonNegativeInteger(value) {
 
 function providerUsage(metadata) {
   if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) {
-    return { inputTokens: 0, outputTokens: 0, providerCompletions: 0, measurementToolCalls: 0 }
+    return { inputTokens: 0, outputTokens: 0 }
   }
   return {
     inputTokens: nonNegativeInteger(metadata.inputTokens),
     outputTokens: nonNegativeInteger(metadata.outputTokens),
-    providerCompletions: nonNegativeInteger(metadata.providerCompletions),
-    measurementToolCalls: nonNegativeInteger(metadata.measurementToolCalls),
   }
 }
 
@@ -132,12 +130,10 @@ export function createStagedProviderExecutor(input) {
         const usage = providerUsage(result.providerMetadata)
         inputTokens += usage.inputTokens
         outputTokens += usage.outputTokens
-        const fallbackCompletions = modelToolCalls + 1
-        providerCompletions += usage.providerCompletions > 0 ? usage.providerCompletions : fallbackCompletions
         const decoded = decodeStagedFinalAnswer(result.finalAnswer)
-        measurementToolCalls += usage.measurementToolCalls > 0
-          ? usage.measurementToolCalls
-          : decoded.transportStatus === 'ok' ? 1 : 0
+        const exactMetrics = decoded.transportStatus === 'ok' ? decoded.transportMetrics : undefined
+        providerCompletions += exactMetrics?.providerCompletions ?? (modelToolCalls + 1)
+        measurementToolCalls += exactMetrics?.measurementToolCalls ?? (decoded.transportStatus === 'ok' ? 1 : 0)
         return Object.freeze({
           ...decoded,
           terminalTransportReason: terminalTransportReason(result.providerMetadata),
