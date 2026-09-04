@@ -80,6 +80,16 @@ export function encodeStagedToolResult(value, metrics) {
   })
 }
 
+export function encodeStagedUnsupportedResult(metrics) {
+  const normalizedMetrics = transportMetrics(metrics)
+  if (normalizedMetrics === undefined) throw new Error('unsupported staged transport requires runner-owned metrics')
+  return JSON.stringify({
+    schema: TRANSPORT_SCHEMA,
+    kind: 'unsupported',
+    metrics: normalizedMetrics,
+  })
+}
+
 export function routeStagedProviderToolCalls(calls, taskId, metrics) {
   if (!Array.isArray(calls) || calls.length === 0) throw new Error('staged provider tool calls must be a non-empty array')
   const measurementCalls = calls.filter(call => (
@@ -143,8 +153,6 @@ export function decodeStagedFinalAnswer(value) {
     || typeof decoded !== 'object'
     || Array.isArray(decoded)
     || decoded.schema !== TRANSPORT_SCHEMA
-    || decoded.kind !== 'structured-tool'
-    || !Object.hasOwn(decoded, 'payload')
     || Object.keys(decoded).some(key => !TRANSPORT_KEYS.has(key))
   ) {
     return Object.freeze({ transportStatus: 'unsupported' })
@@ -154,6 +162,20 @@ export function decodeStagedFinalAnswer(value) {
   try {
     metrics = transportMetrics(decoded.metrics)
   } catch {
+    return Object.freeze({ transportStatus: 'unsupported' })
+  }
+
+  if (decoded.kind === 'unsupported') {
+    if (Object.hasOwn(decoded, 'payload') || metrics === undefined) {
+      return Object.freeze({ transportStatus: 'unsupported' })
+    }
+    return Object.freeze({
+      transportStatus: 'unsupported',
+      transportMetrics: metrics,
+    })
+  }
+
+  if (decoded.kind !== 'structured-tool' || !Object.hasOwn(decoded, 'payload')) {
     return Object.freeze({ transportStatus: 'unsupported' })
   }
 
