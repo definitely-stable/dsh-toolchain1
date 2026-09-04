@@ -3,21 +3,53 @@ import { describe, expect, it } from 'vitest'
 import { createContractSearchIndex } from '../../src/model/contract-search-index.js'
 import { searchContractIndex } from '../../src/model/contract.js'
 import { createFrozenM2RetrievalIndex } from './m2-retrieval-index.js'
-import { R2_RETRIEVAL_DEV } from './m2-retrieval-r2.js'
+import { compareR2RetrievalResults } from './m2-retrieval-r2-comparison.js'
+import {
+  R2_RETRIEVAL_DEV,
+  fingerprintR2RetrievalCorpus,
+} from './m2-retrieval-r2.js'
+import {
+  R2_V2_BASELINE_CORPUS_FINGERPRINT,
+  R2_V2_BASELINE_RANKER_VERSION,
+  R2_V2_BASELINE_RESULTS,
+} from './m2-retrieval-r2-v2-snapshot.js'
 
-describe('Contract Search R2 v2 snapshot capture', () => {
-  it('emits the per-query current-v2 ranking before the Phase 3 scorer changes', async () => {
+describe('Contract Search v3 fielded IDF R2 development comparison', () => {
+  it('reports deterministic per-query wins, losses and ties against the frozen v2 baseline', async () => {
     const index = await createFrozenM2RetrievalIndex()
     const derived = createContractSearchIndex(index)
-    expect(derived.rankerVersion).toBe('dsh-contract-search-v2-intent')
+    const corpusFingerprint = fingerprintR2RetrievalCorpus(R2_RETRIEVAL_DEV, index.fingerprint)
 
-    const results = R2_RETRIEVAL_DEV.map(task => ({
+    expect(R2_V2_BASELINE_RANKER_VERSION).toBe('dsh-contract-search-v2-intent')
+    expect(corpusFingerprint).toBe(R2_V2_BASELINE_CORPUS_FINGERPRINT)
+    expect(derived.rankerVersion).toBe('dsh-contract-search-v3-fielded-idf')
+
+    const candidateResults = R2_RETRIEVAL_DEV.map(task => Object.freeze({
       taskId: task.id,
-      rankedContractIds: searchContractIndex(index, task.query, undefined, 5, derived)
-        .matches.map(match => match.id),
+      rankedContractIds: Object.freeze(
+        searchContractIndex(index, task.query, undefined, 5, derived).matches.map(match => match.id),
+      ),
     }))
+    const comparisons = compareR2RetrievalResults(
+      R2_RETRIEVAL_DEV,
+      R2_V2_BASELINE_RESULTS,
+      candidateResults,
+    )
+    const wins = comparisons.filter(item => item.outcome === 'win')
+    const losses = comparisons.filter(item => item.outcome === 'loss')
+    const ties = comparisons.filter(item => item.outcome === 'tie')
 
-    console.log(`M2_RETRIEVAL_R2_V2_PER_QUERY ${JSON.stringify(results)}`)
-    expect(results).toHaveLength(18)
+    console.log(`M2_RETRIEVAL_R2_FIELDED_IDF_COMPARISON ${JSON.stringify({
+      baselineRankerVersion: R2_V2_BASELINE_RANKER_VERSION,
+      candidateRankerVersion: derived.rankerVersion,
+      corpusFingerprint,
+      wins: wins.length,
+      losses: losses.length,
+      ties: ties.length,
+      perQuery: comparisons,
+    })}`)
+
+    expect(comparisons).toHaveLength(18)
+    expect(losses).toEqual([])
   })
 })
