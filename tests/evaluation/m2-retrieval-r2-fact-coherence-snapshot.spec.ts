@@ -9,22 +9,24 @@ import {
   fingerprintR2RetrievalCorpus,
 } from './m2-retrieval-r2.js'
 import {
-  R2_V2_BASELINE_CORPUS_FINGERPRINT,
-  R2_V2_BASELINE_RANKER_VERSION,
-  R2_V2_BASELINE_RESULTS,
-} from './m2-retrieval-r2-v2-snapshot.js'
+  R2_FACT_COHERENCE_BASELINE_COMMIT,
+  R2_FACT_COHERENCE_BASELINE_CORPUS_FINGERPRINT,
+  R2_FACT_COHERENCE_BASELINE_RANKER_VERSION,
+  R2_FACT_COHERENCE_BASELINE_RESULTS,
+} from './m2-retrieval-r2-fact-coherence-snapshot.js'
 
-describe('Contract Search v3 cumulative R2 development comparison', () => {
-  it('preserves sibling-package wins and adds both version-drift abstention wins without losses', async () => {
+describe('Contract Search v3 conservative abstention R2 development comparison', () => {
+  it('fixes the two package-qualified version-drift negatives with no losses against fact coherence', async () => {
     const index = await createFrozenM2RetrievalIndex()
     const derived = createContractSearchIndex(index)
     const corpusFingerprint = fingerprintR2RetrievalCorpus(R2_RETRIEVAL_DEV, index.fingerprint)
 
-    expect(R2_V2_BASELINE_RANKER_VERSION).toBe('dsh-contract-search-v2-intent')
-    expect(corpusFingerprint).toBe(R2_V2_BASELINE_CORPUS_FINGERPRINT)
+    expect(R2_FACT_COHERENCE_BASELINE_COMMIT).toBe('803d8e219d05f794bf980e9b11a2fa3a390bc41f')
+    expect(R2_FACT_COHERENCE_BASELINE_RANKER_VERSION).toBe('dsh-contract-search-v3-fact-coherence')
+    expect(corpusFingerprint).toBe(R2_FACT_COHERENCE_BASELINE_CORPUS_FINGERPRINT)
     expect(derived.rankerVersion).toBe('dsh-contract-search-v3-conservative-abstention')
 
-    const candidateResults = R2_RETRIEVAL_DEV.map(task => Object.freeze({
+    const candidate = R2_RETRIEVAL_DEV.map(task => Object.freeze({
       taskId: task.id,
       rankedContractIds: Object.freeze(
         searchContractIndex(index, task.query, undefined, 5, derived).matches.map(match => match.id),
@@ -32,15 +34,16 @@ describe('Contract Search v3 cumulative R2 development comparison', () => {
     }))
     const comparisons = compareR2RetrievalResults(
       R2_RETRIEVAL_DEV,
-      R2_V2_BASELINE_RESULTS,
-      candidateResults,
+      R2_FACT_COHERENCE_BASELINE_RESULTS,
+      candidate,
     )
     const wins = comparisons.filter(item => item.outcome === 'win')
     const losses = comparisons.filter(item => item.outcome === 'loss')
     const ties = comparisons.filter(item => item.outcome === 'tie')
 
-    console.log(`M2_RETRIEVAL_R2_V3_CUMULATIVE_COMPARISON ${JSON.stringify({
-      baselineRankerVersion: R2_V2_BASELINE_RANKER_VERSION,
+    console.log(`M2_RETRIEVAL_R2_ABSTENTION_COMPARISON ${JSON.stringify({
+      baselineCommit: R2_FACT_COHERENCE_BASELINE_COMMIT,
+      baselineRankerVersion: R2_FACT_COHERENCE_BASELINE_RANKER_VERSION,
       candidateRankerVersion: derived.rankerVersion,
       corpusFingerprint,
       wins: wins.length,
@@ -51,12 +54,10 @@ describe('Contract Search v3 cumulative R2 development comparison', () => {
 
     expect(comparisons).toHaveLength(18)
     expect(losses).toEqual([])
-    expect(wins.map(item => item.taskId)).toEqual(expect.arrayContaining([
-      'r2-sibling-bash-sandbox',
-      'r2-sibling-compaction-pruner',
+    expect(wins.map(item => item.taskId).toSorted()).toEqual([
       'r2-version-drift-session-vnext-api',
       'r2-version-drift-tools-vnext-api',
-    ]))
-    expect(wins.length).toBeGreaterThanOrEqual(4)
+    ])
+    expect(ties).toHaveLength(16)
   })
 })

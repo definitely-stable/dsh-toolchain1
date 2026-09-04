@@ -136,6 +136,11 @@ interface RankedContractSearch {
   readonly intentIndex?: ContractSearchIndex
 }
 
+interface PackageQualifiedApiRequest {
+  readonly contract: ContractDefinition
+  readonly identifier: string
+}
+
 type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue }
 
 function compareCodePoints(left: string, right: string): number {
@@ -622,6 +627,40 @@ function rankedMatches(
     .slice(0, Math.max(0, limit))
 }
 
+function escapedRegexLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+}
+
+function looksLikeApiIdentifier(value: string): boolean {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(value)
+    && (/^[A-Z]/u.test(value) || /[a-z0-9][A-Z]/u.test(value))
+}
+
+function packageQualifiedApiRequest(
+  query: string,
+  contracts: readonly ContractDefinition[],
+): PackageQualifiedApiRequest | undefined {
+  const packages = contracts
+    .filter(contract => contract.kind === 'package')
+    .toSorted((left, right) => right.name.length - left.name.length || compareCodePoints(left.name, right.name))
+
+  for (const contract of packages) {
+    const match = new RegExp(
+      `(?:^|\\s)${escapedRegexLiteral(contract.name)}\\s+([A-Za-z_$][A-Za-z0-9_$]*)`,
+      'iu',
+    ).exec(query)
+    const identifier = match?.[1]
+    if (identifier !== undefined && looksLikeApiIdentifier(identifier)) {
+      return Object.freeze({ contract, identifier })
+    }
+  }
+  return undefined
+}
+
+function packageExportsIdentifier(contract: ContractDefinition, identifier: string): boolean {
+  return contract.facts.some(fact => fact.key === 'declaration-export' && fact.value === identifier)
+}
+
 function validateDerivedSearchIndex(index: ContractIndex, derived: ContractSearchIndex): void {
   if (derived.contractIndexFingerprint !== index.fingerprint) {
     throw new Error(
@@ -651,6 +690,14 @@ function rankContractSearch(
     return Object.freeze({ lane: 'strict' as const, matches: Object.freeze(strictMatches) })
   }
   if (!isIntentFallbackQuery(query)) {
+    return Object.freeze({ lane: 'none' as const, matches: Object.freeze([]) })
+  }
+
+  const packageApiRequest = packageQualifiedApiRequest(query, contracts)
+  if (
+    packageApiRequest !== undefined
+    && !packageExportsIdentifier(packageApiRequest.contract, packageApiRequest.identifier)
+  ) {
     return Object.freeze({ lane: 'none' as const, matches: Object.freeze([]) })
   }
 

@@ -1,6 +1,6 @@
 import type { ContractDefinition } from '../protocol/index.js'
 
-export const CONTRACT_SEARCH_RANKER_VERSION = 'dsh-contract-search-v3-fact-coherence'
+export const CONTRACT_SEARCH_RANKER_VERSION = 'dsh-contract-search-v3-conservative-abstention'
 
 export interface ContractSearchIndexSource {
   readonly fingerprint: string
