@@ -3,6 +3,7 @@ import readline from 'node:readline'
 import {
   assertNoStagedResultToolCollision,
   createStagedResultToolDefinition,
+  encodeStagedUnsupportedResult,
   routeStagedProviderToolCalls,
   STAGED_RESULT_TOOL_NAME,
 } from './eval/staged-provider-transport.mjs'
@@ -182,8 +183,19 @@ function metadata(value, totals, finishReason = value.finishReason) {
   }
 }
 
+function metrics(totals) {
+  return {
+    providerCompletions: totals.providerCompletions,
+    measurementToolCalls: totals.measurementToolCalls,
+  }
+}
+
 function unsupported(value, totals, reason) {
-  emit({ type: 'final', finalAnswer: '', providerMetadata: metadata(value, totals, reason) })
+  emit({
+    type: 'final',
+    finalAnswer: encodeStagedUnsupportedResult(metrics(totals)),
+    providerMetadata: metadata(value, totals, reason),
+  })
 }
 
 function addUsage(result, totals) {
@@ -212,10 +224,7 @@ async function finalizeMeasurement(cfg, messages, totals, taskId) {
 
   const providerCalls = calls(result.message)
   totals.measurementToolCalls += providerCalls.filter(call => call.name === STAGED_RESULT_TOOL_NAME).length
-  const routed = routeStagedProviderToolCalls(providerCalls, taskId, {
-    providerCompletions: totals.providerCompletions,
-    measurementToolCalls: totals.measurementToolCalls,
-  })
+  const routed = routeStagedProviderToolCalls(providerCalls, taskId, metrics(totals))
   if (routed.kind !== 'final') {
     unsupported(result, totals, 'structured_measurement_invalid')
     return
