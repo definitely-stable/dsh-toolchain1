@@ -456,6 +456,21 @@ function inverseDocumentFrequency(derived: ContractSearchIndex, token: string): 
   ))
 }
 
+function sameFactCoherenceBonus(
+  document: ContractSearchDocument,
+  queryTokens: readonly string[],
+): number {
+  let maxMatched = 0
+  for (const fact of document.facts) {
+    let matched = 0
+    for (const token of queryTokens) {
+      if (fact.uniqueTokens.has(token)) matched += 1
+    }
+    maxMatched = Math.max(maxMatched, matched)
+  }
+  return Math.max(0, maxMatched - 1)
+}
+
 function factTokenMatch(
   document: ContractSearchDocument,
   token: string,
@@ -538,8 +553,9 @@ function intentMatch(
 
   if (matched < requiredIntentMatches(queryTokens.length)) return undefined
   const coverageBonus = Math.round((matched / queryTokens.length) * 50)
+  const coherenceBonus = sameFactCoherenceBonus(document, queryTokens)
   return Object.freeze({
-    score: Math.round(weightedScore * INTENT_SCORE_SCALE) + coverageBonus,
+    score: Math.round(weightedScore * INTENT_SCORE_SCALE) + coverageBonus + coherenceBonus,
     evidenceIds: frozenEvidenceIds(evidenceIds),
   })
 }
