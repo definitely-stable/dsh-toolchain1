@@ -6,6 +6,8 @@ import {
 
 export const STAGED_RESULT_TOOL_NAME = 'submit_staged_result'
 const TRANSPORT_SCHEMA = 'dsh-toolchain-staged-provider-transport-v1'
+const TRANSPORT_KEYS = new Set(['schema', 'kind', 'payload', 'metrics'])
+const TRANSPORT_METRIC_KEYS = new Set(['providerCompletions', 'measurementToolCalls'])
 
 export function createStagedResultToolDefinition() {
   return Object.freeze({
@@ -49,15 +51,36 @@ export function assertNoStagedResultToolCollision(productTools) {
   }
 }
 
-export function encodeStagedToolResult(value) {
+function nonNegativeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${label} must be a non-negative safe integer`)
+  return value
+}
+
+function transportMetrics(value) {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('staged transport metrics must be an object')
+  }
+  for (const key of Object.keys(value)) {
+    if (!TRANSPORT_METRIC_KEYS.has(key)) throw new Error(`staged transport metrics contain unknown key: ${key}`)
+  }
+  return Object.freeze({
+    providerCompletions: nonNegativeInteger(value.providerCompletions, 'providerCompletions'),
+    measurementToolCalls: nonNegativeInteger(value.measurementToolCalls, 'measurementToolCalls'),
+  })
+}
+
+export function encodeStagedToolResult(value, metrics) {
+  const normalizedMetrics = transportMetrics(metrics)
   return JSON.stringify({
     schema: TRANSPORT_SCHEMA,
     kind: 'structured-tool',
     payload: value,
+    ...(normalizedMetrics === undefined ? {} : { metrics: normalizedMetrics }),
   })
 }
 
-export function routeStagedProviderToolCalls(calls, taskId) {
+export function routeStagedProviderToolCalls(calls, taskId, metrics) {
   if (!Array.isArray(calls) || calls.length === 0) throw new Error('staged provider tool calls must be a non-empty array')
   const measurementCalls = calls.filter(call => (
     call !== null
@@ -102,7 +125,7 @@ export function routeStagedProviderToolCalls(calls, taskId) {
 
   return Object.freeze({
     kind: 'final',
-    finalAnswer: encodeStagedToolResult(canonical),
+    finalAnswer: encodeStagedToolResult(canonical, metrics),
   })
 }
 
@@ -122,12 +145,21 @@ export function decodeStagedFinalAnswer(value) {
     || decoded.schema !== TRANSPORT_SCHEMA
     || decoded.kind !== 'structured-tool'
     || !Object.hasOwn(decoded, 'payload')
+    || Object.keys(decoded).some(key => !TRANSPORT_KEYS.has(key))
   ) {
+    return Object.freeze({ transportStatus: 'unsupported' })
+  }
+
+  let metrics
+  try {
+    metrics = transportMetrics(decoded.metrics)
+  } catch {
     return Object.freeze({ transportStatus: 'unsupported' })
   }
 
   return Object.freeze({
     transportStatus: 'ok',
     structuredContent: decoded.payload,
+    ...(metrics === undefined ? {} : { transportMetrics: metrics }),
   })
 }
