@@ -5,6 +5,7 @@ import {
   createStagedResultToolDefinition,
   decodeStagedFinalAnswer,
   encodeStagedToolResult,
+  encodeStagedUnsupportedResult,
   routeStagedProviderToolCalls,
   STAGED_RESULT_TOOL_NAME,
 } from '../../scripts/eval/staged-provider-transport.mjs'
@@ -64,6 +65,14 @@ describe('staged provider result transport', () => {
         taskId: 'task-01',
         claims: [{ package: '@deepseek-ai/dsh-scope', symbol: 'Scope', assertion: 'exists' }],
       },
+    })
+  })
+
+  it('retains runner-owned cost metrics on fail-closed outcomes without creating structured content', () => {
+    const finalAnswer = encodeStagedUnsupportedResult({ providerCompletions: 4, measurementToolCalls: 1 })
+    expect(decodeStagedFinalAnswer(finalAnswer)).toEqual({
+      transportStatus: 'unsupported',
+      transportMetrics: { providerCompletions: 4, measurementToolCalls: 1 },
     })
   })
 
