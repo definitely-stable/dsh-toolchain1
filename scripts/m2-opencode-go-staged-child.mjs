@@ -179,8 +179,6 @@ function metadata(value, totals, finishReason = value.finishReason) {
     responseModel: value.responseModel,
     ...(value.systemFingerprint === undefined ? {} : { systemFingerprint: value.systemFingerprint }),
     ...(totals.complete ? { inputTokens: totals.inputTokens, outputTokens: totals.outputTokens } : {}),
-    providerCompletions: totals.providerCompletions,
-    measurementToolCalls: totals.measurementToolCalls,
   }
 }
 
@@ -214,7 +212,10 @@ async function finalizeMeasurement(cfg, messages, totals, taskId) {
 
   const providerCalls = calls(result.message)
   totals.measurementToolCalls += providerCalls.filter(call => call.name === STAGED_RESULT_TOOL_NAME).length
-  const routed = routeStagedProviderToolCalls(providerCalls, taskId)
+  const routed = routeStagedProviderToolCalls(providerCalls, taskId, {
+    providerCompletions: totals.providerCompletions,
+    measurementToolCalls: totals.measurementToolCalls,
+  })
   if (routed.kind !== 'final') {
     unsupported(result, totals, 'structured_measurement_invalid')
     return
