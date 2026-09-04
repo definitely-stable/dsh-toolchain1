@@ -139,13 +139,17 @@ describe('staged OpenCode Go child process boundary', () => {
       })
 
       expect(result.kind).toBe('model-outcome')
-      if (result.kind !== 'model-outcome') throw new Error(`expected model outcome, got ${result.reason}`)
+      if (result.kind !== 'model-outcome') throw new Error(`expected model outcome, got ${result.reason}: ${result.detail}`)
       expect(decodeStagedFinalAnswer(result.finalAnswer)).toEqual({
         transportStatus: 'ok',
         structuredContent: {
           schema: 'dsh-toolchain-staged-eval-result-v1',
           taskId: 'task-01',
           claims: [measurementInput.claim],
+        },
+        transportMetrics: {
+          providerCompletions: 3,
+          measurementToolCalls: 1,
         },
       })
       expect(result.providerMetadata).toMatchObject({
@@ -154,9 +158,9 @@ describe('staged OpenCode Go child process boundary', () => {
         responseModel: 'deepseek-v4-flash',
         inputTokens: 36,
         outputTokens: 12,
-        providerCompletions: 3,
-        measurementToolCalls: 1,
       })
+      expect(result.providerMetadata).not.toHaveProperty('providerCompletions')
+      expect(result.providerMetadata).not.toHaveProperty('measurementToolCalls')
       expect(dispatchToolCall).toHaveBeenCalledTimes(1)
       expect(requests).toHaveLength(3)
 
@@ -210,13 +214,17 @@ describe('staged OpenCode Go child process boundary', () => {
       })
 
       expect(result.kind).toBe('model-outcome')
-      if (result.kind !== 'model-outcome') throw new Error(`expected model outcome, got ${result.reason}`)
+      if (result.kind !== 'model-outcome') throw new Error(`expected model outcome, got ${result.reason}: ${result.detail}`)
       expect(decodeStagedFinalAnswer(result.finalAnswer)).toEqual({
         transportStatus: 'ok',
         structuredContent: {
           schema: 'dsh-toolchain-staged-eval-result-v1',
           taskId: 'task-01',
           claims: [{ package: '*', symbol: 'Scope', assertion: 'absent' }],
+        },
+        transportMetrics: {
+          providerCompletions: 2,
+          measurementToolCalls: 1,
         },
       })
       expect(requests).toHaveLength(2)
