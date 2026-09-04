@@ -15,7 +15,7 @@ import {
 } from './m2-retrieval-r2-v2-snapshot.js'
 
 describe('Contract Search v3 fielded IDF R2 development comparison', () => {
-  it('reports deterministic per-query wins, losses and ties against the frozen v2 baseline', async () => {
+  it('preserves the proven sibling-package wins with no per-query losses against the frozen v2 baseline', async () => {
     const index = await createFrozenM2RetrievalIndex()
     const derived = createContractSearchIndex(index)
     const corpusFingerprint = fingerprintR2RetrievalCorpus(R2_RETRIEVAL_DEV, index.fingerprint)
@@ -51,5 +51,10 @@ describe('Contract Search v3 fielded IDF R2 development comparison', () => {
 
     expect(comparisons).toHaveLength(18)
     expect(losses).toEqual([])
+    expect(wins.length).toBeGreaterThanOrEqual(2)
+    expect(wins.map(item => item.taskId)).toEqual(expect.arrayContaining([
+      'r2-sibling-bash-sandbox',
+      'r2-sibling-compaction-pruner',
+    ]))
   })
 })
