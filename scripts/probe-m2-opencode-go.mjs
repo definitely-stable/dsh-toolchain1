@@ -6,6 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createStagedResultToolDefinition, STAGED_RESULT_TOOL_NAME } from './eval/staged-provider-transport.mjs'
+import { parseStagedMeasurementInput } from './eval/staged-result-contract.mjs'
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const DEFAULT_BASE_URL = 'https://opencode.ai/zen/go/v1'
@@ -16,7 +17,6 @@ const MAX_OUTPUT_TOKENS = 256
 const MAX_PROVIDER_ERROR_BYTES = 4_096
 const MAX_PROVIDER_ERROR_FIELD_CHARACTERS = 240
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u
-const STAGED_TRANSPORT_TASK_ID = 'transport-probe'
 const PROBE_USAGE = 'Usage: node scripts/probe-m2-opencode-go.mjs [--model <model-id>] [--staged-transport] --output <new-json-path>'
 
 function requireEnvironment(environment, name) {
@@ -99,11 +99,11 @@ function stagedTransportMessages() {
   return [
     {
       role: 'system',
-      content: `This is a structured transport capability probe. Call ${STAGED_RESULT_TOOL_NAME} exactly once with taskId ${STAGED_TRANSPORT_TASK_ID}.`,
+      content: `This is a structured measurement transport capability probe. Call ${STAGED_RESULT_TOOL_NAME} exactly once. Experiment identity is transport-owned and must not be supplied by the model.`,
     },
     {
       role: 'user',
-      content: 'Submit one schema-valid measurement claim now. Use package "*", symbol "TransportProbe", assertion "absent".',
+      content: 'Submit the exact measurement claim package "*", symbol "TransportProbe", assertion "absent" now.',
     },
   ]
 }
@@ -274,16 +274,19 @@ function parseStagedTransportToolCall(message) {
   } catch {
     throw new Error('OpenCode Go staged transport probe tool arguments are not valid JSON')
   }
-  const record = requireRecord(input, 'OpenCode Go staged transport probe tool input')
-  if (record.schema !== 'dsh-toolchain-staged-eval-result-v1' || record.taskId !== STAGED_TRANSPORT_TASK_ID) {
-    throw new Error('OpenCode Go staged transport probe result identity does not match the frozen probe')
+
+  let parsed
+  try {
+    parsed = parseStagedMeasurementInput(input)
+  } catch {
+    throw new Error('OpenCode Go staged transport probe input does not match the claim-only measurement schema')
   }
-  if (!Array.isArray(record.claims) || record.claims.length !== 1) {
-    throw new Error('OpenCode Go staged transport probe must return exactly one claim')
-  }
-  const claim = requireRecord(record.claims[0], 'OpenCode Go staged transport probe claim')
-  if (typeof claim.package !== 'string' || typeof claim.symbol !== 'string' || !['exists', 'absent'].includes(claim.assertion)) {
-    throw new Error('OpenCode Go staged transport probe claim does not match the staged schema')
+  if (
+    parsed.claim.package !== '*'
+    || parsed.claim.symbol !== 'TransportProbe'
+    || parsed.claim.assertion !== 'absent'
+  ) {
+    throw new Error('OpenCode Go staged transport probe claim does not match the frozen probe value')
   }
 }
 
