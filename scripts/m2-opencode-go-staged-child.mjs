@@ -1,7 +1,7 @@
 import readline from 'node:readline'
 
 import {
-  appendStagedResultTool,
+  assertNoStagedResultToolCollision,
   createStagedResultToolDefinition,
   routeStagedProviderToolCalls,
   STAGED_RESULT_TOOL_NAME,
@@ -9,7 +9,7 @@ import {
 
 const MAX_PRODUCT_TOOL_CALLS = 31
 const MAX_TOOL_RESULT_BYTES = 512 * 1024
-const STAGED_FINALIZATION_PROMPT = `Submit the required structured measurement result now by calling ${STAGED_RESULT_TOOL_NAME} exactly once. Do not call product tools and do not answer with prose.`
+const STAGED_FINALIZATION_PROMPT = `Submit exactly one structured measurement claim now by calling ${STAGED_RESULT_TOOL_NAME}. Do not call product tools and do not answer with prose. Experiment schema and task identity are attached by the evaluator transport.`
 
 const emit = value => process.stdout.write(`${JSON.stringify(value)}\n`)
 const infrastructure = detail => emit({ type: 'infrastructure_error', reason: 'provider-transport', detail })
@@ -172,21 +172,24 @@ async function next(iterator, label) {
   return record(JSON.parse(item.value), label)
 }
 
-function metadata(value, inputTokens, outputTokens, complete, finishReason = value.finishReason) {
+function metadata(value, totals, finishReason = value.finishReason) {
   return {
     completionId: value.id,
     finishReason,
     responseModel: value.responseModel,
     ...(value.systemFingerprint === undefined ? {} : { systemFingerprint: value.systemFingerprint }),
-    ...(complete ? { inputTokens, outputTokens } : {}),
+    ...(totals.complete ? { inputTokens: totals.inputTokens, outputTokens: totals.outputTokens } : {}),
+    providerCompletions: totals.providerCompletions,
+    measurementToolCalls: totals.measurementToolCalls,
   }
 }
 
-function unsupported(value, inputTokens, outputTokens, complete, reason) {
-  emit({ type: 'final', finalAnswer: '', providerMetadata: metadata(value, inputTokens, outputTokens, complete, reason) })
+function unsupported(value, totals, reason) {
+  emit({ type: 'final', finalAnswer: '', providerMetadata: metadata(value, totals, reason) })
 }
 
 function addUsage(result, totals) {
+  totals.providerCompletions += 1
   if (result.inputTokens === undefined || result.outputTokens === undefined) totals.complete = false
   else {
     totals.inputTokens += result.inputTokens
@@ -194,7 +197,7 @@ function addUsage(result, totals) {
   }
 }
 
-async function forcedFinalization(cfg, messages, totals) {
+async function finalizeMeasurement(cfg, messages, totals, taskId) {
   messages.push({ role: 'user', content: STAGED_FINALIZATION_PROMPT })
   const result = await completion(
     cfg,
@@ -205,20 +208,22 @@ async function forcedFinalization(cfg, messages, totals) {
   addUsage(result, totals)
 
   if (!Array.isArray(result.message.tool_calls) || result.message.tool_calls.length === 0) {
-    unsupported(result, totals.inputTokens, totals.outputTokens, totals.complete, 'forced_measurement_missing')
+    unsupported(result, totals, 'measurement_finalization_missing')
     return
   }
 
-  const routed = routeStagedProviderToolCalls(calls(result.message))
+  const providerCalls = calls(result.message)
+  totals.measurementToolCalls += providerCalls.filter(call => call.name === STAGED_RESULT_TOOL_NAME).length
+  const routed = routeStagedProviderToolCalls(providerCalls, taskId)
   if (routed.kind !== 'final') {
-    unsupported(result, totals.inputTokens, totals.outputTokens, totals.complete, 'forced_measurement_invalid')
+    unsupported(result, totals, 'structured_measurement_invalid')
     return
   }
 
   emit({
     type: 'final',
     finalAnswer: routed.finalAnswer,
-    providerMetadata: metadata(result, totals.inputTokens, totals.outputTokens, totals.complete, 'structured_measurement_forced'),
+    providerMetadata: metadata(result, totals, 'structured_measurement_finalized'),
   })
 }
 
@@ -228,12 +233,19 @@ async function execute() {
   if (start.type !== 'start') throw new Error('first runner message must be start')
   const cfg = configuration()
   const modelEnvelope = envelope(start.envelope)
-  const tools = appendStagedResultTool(providerTools(modelEnvelope.tools))
+  const tools = providerTools(modelEnvelope.tools)
+  assertNoStagedResultToolCollision(tools)
   const messages = [
     { role: 'system', content: modelEnvelope.systemPrompt },
     { role: 'user', content: modelEnvelope.task.prompt },
   ]
-  const totals = { inputTokens: 0, outputTokens: 0, complete: true }
+  const totals = {
+    inputTokens: 0,
+    outputTokens: 0,
+    complete: true,
+    providerCompletions: 0,
+    measurementToolCalls: 0,
+  }
   let productToolCalls = 0
 
   while (true) {
@@ -242,35 +254,27 @@ async function execute() {
 
     if (!Array.isArray(result.message.tool_calls) || result.message.tool_calls.length === 0) {
       messages.push(assistant(result.message))
-      await forcedFinalization(cfg, messages, totals)
+      await finalizeMeasurement(cfg, messages, totals, modelEnvelope.task.id)
       return
     }
 
-    const routed = routeStagedProviderToolCalls(calls(result.message))
-    if (routed.kind === 'final') {
-      emit({
-        type: 'final',
-        finalAnswer: routed.finalAnswer,
-        providerMetadata: metadata(result, totals.inputTokens, totals.outputTokens, totals.complete),
-      })
+    const providerCalls = calls(result.message)
+    if (providerCalls.some(call => call.name === STAGED_RESULT_TOOL_NAME)) {
+      unsupported(result, totals, 'measurement_outside_finalization')
       return
     }
-    if (routed.kind === 'unsupported') {
-      unsupported(result, totals.inputTokens, totals.outputTokens, totals.complete, 'structured_transport_unsupported')
-      return
-    }
-    if (routed.calls.some(call => call.kind === 'invalid-arguments')) {
-      unsupported(result, totals.inputTokens, totals.outputTokens, totals.complete, 'invalid_tool_arguments')
+    if (providerCalls.some(call => call.kind === 'invalid-arguments')) {
+      unsupported(result, totals, 'invalid_tool_arguments')
       return
     }
 
-    productToolCalls += routed.calls.length
+    productToolCalls += providerCalls.length
     if (productToolCalls > MAX_PRODUCT_TOOL_CALLS) {
-      unsupported(result, totals.inputTokens, totals.outputTokens, totals.complete, 'tool_call_limit')
+      unsupported(result, totals, 'tool_call_limit')
       return
     }
     messages.push(assistant(result.message))
-    for (const call of routed.calls) {
+    for (const call of providerCalls) {
       emit({ type: 'tool_call', id: call.id, name: call.name, input: call.input })
       const toolResult = await next(iterator, `tool_result ${call.id}`)
       if (toolResult.type !== 'tool_result' || toolResult.id !== call.id) throw new Error(`tool result mismatch for ${call.id}`)
