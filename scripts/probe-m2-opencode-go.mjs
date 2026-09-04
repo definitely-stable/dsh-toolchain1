@@ -17,6 +17,7 @@ const MAX_PROVIDER_ERROR_BYTES = 4_096
 const MAX_PROVIDER_ERROR_FIELD_CHARACTERS = 240
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u
 const STAGED_TRANSPORT_TASK_ID = 'transport-probe'
+const PROBE_USAGE = 'Usage: node scripts/probe-m2-opencode-go.mjs [--model <model-id>] [--staged-transport] --output <new-json-path>'
 
 function requireEnvironment(environment, name) {
   const value = environment[name]
@@ -388,48 +389,55 @@ function canonicalJsonValue(value) {
 }
 
 export function parseProbeArguments(args) {
-  if (!Array.isArray(args) || args.length < 2 || args.length > 4 || args.length % 2 !== 0) {
-    throw new Error('Usage: node scripts/probe-m2-opencode-go.mjs [--model <model-id>] --output <new-json-path>')
-  }
+  if (!Array.isArray(args) || args.length < 2) throw new Error(PROBE_USAGE)
 
   let outputValue
   let modelValue
-  for (let index = 0; index < args.length; index += 2) {
+  let stagedTransport = false
+
+  for (let index = 0; index < args.length;) {
     const flag = args[index]
+    if (flag === '--staged-transport') {
+      if (stagedTransport) throw new Error('OpenCode Go probe --staged-transport may be specified only once')
+      stagedTransport = true
+      index += 1
+      continue
+    }
+
+    if (flag !== '--output' && flag !== '--model') {
+      throw new Error(`Unknown OpenCode Go probe argument: ${String(flag)}`)
+    }
     const value = args[index + 1]
-    if (typeof value !== 'string' || value.trim() === '') {
+    if (typeof value !== 'string' || value.trim() === '' || value.startsWith('--')) {
       throw new Error('OpenCode Go probe CLI values must be non-empty strings')
     }
+
     if (flag === '--output') {
       if (outputValue !== undefined) throw new Error('OpenCode Go probe --output may be specified only once')
       outputValue = value
-      continue
-    }
-    if (flag === '--model') {
+    } else {
       if (modelValue !== undefined) throw new Error('OpenCode Go probe --model may be specified only once')
       modelValue = selectedModel(value)
-      continue
     }
-    throw new Error(`Unknown OpenCode Go probe argument: ${String(flag)}`)
+    index += 2
   }
 
-  if (outputValue === undefined) {
-    throw new Error('Usage: node scripts/probe-m2-opencode-go.mjs [--model <model-id>] --output <new-json-path>')
-  }
+  if (outputValue === undefined) throw new Error(PROBE_USAGE)
   const output = path.resolve(outputValue)
   if (path.extname(output).toLocaleLowerCase('en-US') !== '.json') throw new Error('OpenCode Go probe output must use .json')
   return Object.freeze({
     ...(modelValue === undefined ? {} : { model: modelValue }),
+    ...(stagedTransport ? { stagedTransport: true } : {}),
     output,
   })
 }
 
 export async function main(args = process.argv.slice(2), environment = process.env) {
   const parsed = parseProbeArguments(args)
-  const receipt = await probeOpenCodeGoIdentity(
-    environment,
-    parsed.model === undefined ? {} : { model: parsed.model },
-  )
+  const receipt = await probeOpenCodeGoIdentity(environment, {
+    ...(parsed.model === undefined ? {} : { model: parsed.model }),
+    ...(parsed.stagedTransport === true ? { stagedTransport: true } : {}),
+  })
   await mkdir(path.dirname(parsed.output), { recursive: true })
   await writeFile(parsed.output, `${JSON.stringify(canonicalJsonValue(receipt))}\n`, { encoding: 'utf8', flag: 'wx' })
   console.log(`OpenCode Go P0 identity probe verified model=${receipt.responseModel} backend=${receipt.backendIdentityStrength} output=${parsed.output}`)
