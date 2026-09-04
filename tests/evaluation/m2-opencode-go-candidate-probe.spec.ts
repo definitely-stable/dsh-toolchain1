@@ -107,6 +107,107 @@ describe('M2.3 OpenCode Go candidate identity probe', () => {
     })
   })
 
+  it('optionally verifies the exact claim-only named-tool finalization contract without changing default probe semantics', async () => {
+    const module = await import(`${new URL('../../scripts/probe-m2-opencode-go.mjs', import.meta.url).href}?staged=${Math.random()}`) as Record<string, unknown>
+    const probeOpenCodeGoIdentity = module.probeOpenCodeGoIdentity as (
+      environment: NodeJS.ProcessEnv,
+      options: { baseUrl: string; model: string; stagedTransport: boolean },
+    ) => Promise<Record<string, unknown>>
+
+    const requests: Array<Record<string, any>> = []
+    let requestCount = 0
+    const receipt = await withServer(async (request, response) => {
+      requestCount += 1
+      const body = await readBody(request) as Record<string, any>
+      requests.push(body)
+      const model = String(body.model)
+
+      if (requestCount === 1) {
+        responseJson(response, {
+          id: 'candidate-tool',
+          object: 'chat.completion',
+          model,
+          system_fingerprint: 'fp_candidate_fixture',
+          choices: [{
+            index: 0,
+            finish_reason: 'tool_calls',
+            message: {
+              role: 'assistant',
+              content: '',
+              reasoning_content: 'probe reasoning',
+              tool_calls: [{
+                id: 'candidate-call',
+                type: 'function',
+                function: { name: 'identity_probe', arguments: '{"value":"ok"}' },
+              }],
+            },
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        })
+        return
+      }
+
+      if (requestCount === 2) {
+        responseJson(response, {
+          id: 'candidate-final',
+          object: 'chat.completion',
+          model,
+          system_fingerprint: 'fp_candidate_fixture',
+          choices: [{
+            index: 0,
+            finish_reason: 'stop',
+            message: { role: 'assistant', content: 'probe-ok', reasoning_content: 'done' },
+          }],
+          usage: { prompt_tokens: 15, completion_tokens: 4, total_tokens: 19 },
+        })
+        return
+      }
+
+      responseJson(response, {
+        id: 'staged-tool-choice',
+        object: 'chat.completion',
+        model,
+        system_fingerprint: 'fp_candidate_fixture',
+        choices: [{
+          index: 0,
+          finish_reason: 'tool_calls',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [{
+              id: 'staged-result-call',
+              type: 'function',
+              function: {
+                name: 'submit_staged_result',
+                arguments: JSON.stringify({
+                  claim: { package: '*', symbol: 'TransportProbe', assertion: 'absent' },
+                }),
+              },
+            }],
+          },
+        }],
+        usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
+      })
+    }, baseUrl => probeOpenCodeGoIdentity(
+      { OPENCODE_API_KEY: SECRET } as NodeJS.ProcessEnv,
+      { baseUrl, model: 'deepseek-v4-flash', stagedTransport: true },
+    ))
+
+    expect(requests).toHaveLength(3)
+    const staged = requests[2]
+    expect(staged?.tools).toHaveLength(1)
+    expect(staged?.tools?.[0]?.function?.name).toBe('submit_staged_result')
+    expect(staged?.tools?.[0]?.function?.strict).toBe(true)
+    expect(staged?.tool_choice).toEqual({ type: 'function', function: { name: 'submit_staged_result' } })
+    expect(JSON.stringify(staged?.tools?.[0]?.function?.parameters)).not.toContain('taskId')
+    expect(JSON.stringify(staged?.messages)).not.toContain('transport-probe')
+    expect(JSON.stringify(staged?.messages)).not.toContain('taskId')
+    expect(receipt).toMatchObject({
+      stagedNamedToolChoice: 'verified',
+      stagedStrictResultSchema: 'verified',
+    })
+  })
+
   it('parses an explicit candidate model for provider-only CLI discovery', async () => {
     const module = await import(`${new URL('../../scripts/probe-m2-opencode-go.mjs', import.meta.url).href}?args=${Math.random()}`) as Record<string, unknown>
     const parseProbeArguments = module.parseProbeArguments as (
@@ -121,6 +222,25 @@ describe('M2.3 OpenCode Go candidate identity probe', () => {
     ])).toEqual({
       model: 'glm-5.3-flash',
       output: path.resolve('candidate-receipt.json'),
+    })
+  })
+
+  it('parses the opt-in staged transport capability flag independently of the default probe', async () => {
+    const module = await import(`${new URL('../../scripts/probe-m2-opencode-go.mjs', import.meta.url).href}?staged-args=${Math.random()}`) as Record<string, unknown>
+    const parseProbeArguments = module.parseProbeArguments as (
+      args: readonly string[],
+    ) => { readonly output: string; readonly model?: string; readonly stagedTransport?: boolean }
+
+    expect(parseProbeArguments([
+      '--model',
+      'deepseek-v4-flash',
+      '--staged-transport',
+      '--output',
+      'staged-receipt.json',
+    ])).toEqual({
+      model: 'deepseek-v4-flash',
+      stagedTransport: true,
+      output: path.resolve('staged-receipt.json'),
     })
   })
 })

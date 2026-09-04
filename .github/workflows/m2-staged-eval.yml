@@ -51,17 +51,38 @@ jobs:
       - name: Install frozen dependency graph
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Probe managed OpenCode Go Flash boundary
+      - name: Probe managed OpenCode Go Flash staged boundary
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         run: >-
           node scripts/probe-m2-opencode-go.mjs
           --model deepseek-v4-flash
+          --staged-transport
           --output .artifacts/m2-staged-provider-probe.json
 
       - name: Validate exact managed-gateway capability receipt
         run: |
-          node --input-type=module -e "import fs from 'node:fs'; const r=JSON.parse(fs.readFileSync('.artifacts/m2-staged-provider-probe.json','utf8')); const bad = r.provider !== 'opencode-go' || r.baseUrl !== 'https://opencode.ai/zen/go/v1' || r.requestModel !== 'deepseek-v4-flash' || r.responseModel !== 'deepseek-v4-flash' || r.thinking !== 'enabled' || r.reasoningEffort !== 'high' || r.functionToolCall !== 'verified' || r.reasoningContinuation !== 'verified' || r.tokenMeasurement !== 'verified' || !Number.isInteger(r.inputTokens) || r.inputTokens < 0 || !Number.isInteger(r.outputTokens) || r.outputTokens < 0; if (bad) { console.error('Staged development evaluation requires the exact OpenCode Go / deepseek-v4-flash managed-gateway capability receipt'); process.exit(1) } console.log('Staged managed-gateway provider receipt is compatible')"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const receipt = JSON.parse(fs.readFileSync('.artifacts/m2-staged-provider-probe.json', 'utf8'))
+          const identityInvalid = receipt.provider !== 'opencode-go'
+            || receipt.baseUrl !== 'https://opencode.ai/zen/go/v1'
+            || receipt.requestModel !== 'deepseek-v4-flash'
+            || receipt.responseModel !== 'deepseek-v4-flash'
+            || receipt.thinking !== 'enabled'
+            || receipt.reasoningEffort !== 'high'
+            || receipt.functionToolCall !== 'verified'
+            || receipt.reasoningContinuation !== 'verified'
+            || receipt.tokenMeasurement !== 'verified'
+            || !Number.isInteger(receipt.inputTokens)
+            || receipt.inputTokens < 0
+            || !Number.isInteger(receipt.outputTokens)
+            || receipt.outputTokens < 0
+          if (identityInvalid) throw new Error('staged evaluation requires the exact OpenCode Go / deepseek-v4-flash managed-gateway identity receipt')
+          if (receipt.stagedNamedToolChoice !== 'verified') throw new Error('staged provider probe did not verify named tool_choice')
+          if (receipt.stagedStrictResultSchema !== 'verified') throw new Error('staged provider probe did not verify strict result schema')
+          console.log('Staged managed-gateway provider receipt and finalization transport are compatible')
+          NODE
 
       - name: Run bounded staged evaluation
         env:

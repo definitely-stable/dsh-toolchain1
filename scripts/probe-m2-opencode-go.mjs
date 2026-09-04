@@ -5,6 +5,9 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { createStagedResultToolDefinition, STAGED_RESULT_TOOL_NAME } from './eval/staged-provider-transport.mjs'
+import { parseStagedMeasurementInput } from './eval/staged-result-contract.mjs'
+
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const DEFAULT_BASE_URL = 'https://opencode.ai/zen/go/v1'
 const DEFAULT_REQUEST_MODEL = 'deepseek-v4-flash'
@@ -14,6 +17,7 @@ const MAX_OUTPUT_TOKENS = 256
 const MAX_PROVIDER_ERROR_BYTES = 4_096
 const MAX_PROVIDER_ERROR_FIELD_CHARACTERS = 240
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u
+const PROBE_USAGE = 'Usage: node scripts/probe-m2-opencode-go.mjs [--model <model-id>] [--staged-transport] --output <new-json-path>'
 
 function requireEnvironment(environment, name) {
   const value = environment[name]
@@ -91,14 +95,28 @@ function initialMessages() {
   ]
 }
 
-function requestBody(messages, requestModel) {
+function stagedTransportMessages() {
+  return [
+    {
+      role: 'system',
+      content: `This is a structured measurement transport capability probe. Call ${STAGED_RESULT_TOOL_NAME} exactly once. Experiment identity is transport-owned and must not be supplied by the model.`,
+    },
+    {
+      role: 'user',
+      content: 'Submit the exact measurement claim package "*", symbol "TransportProbe", assertion "absent" now.',
+    },
+  ]
+}
+
+function requestBody(messages, requestModel, options = {}) {
   return {
     model: requestModel,
     messages,
     thinking: { type: THINKING },
     reasoning_effort: REASONING_EFFORT,
     max_tokens: MAX_OUTPUT_TOKENS,
-    tools: providerTools(),
+    tools: options.tools ?? providerTools(),
+    ...(options.toolChoice === undefined ? {} : { tool_choice: options.toolChoice }),
   }
 }
 
@@ -170,7 +188,7 @@ async function boundedProviderErrorDetails(response, apiKey) {
     .join(' ')
 }
 
-async function requestCompletion(configuration, messages, requestModel) {
+async function requestCompletion(configuration, messages, requestModel, options = {}) {
   let response
   try {
     response = await fetch(configuration.endpoint, {
@@ -179,7 +197,7 @@ async function requestCompletion(configuration, messages, requestModel) {
         authorization: `Bearer ${configuration.apiKey}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify(requestBody(messages, requestModel)),
+      body: JSON.stringify(requestBody(messages, requestModel, options)),
       signal: AbortSignal.timeout(120_000),
     })
   } catch {
@@ -240,6 +258,38 @@ function parseProbeToolCall(message) {
   return { id, raw: call }
 }
 
+function parseStagedTransportToolCall(message) {
+  const calls = message.tool_calls
+  if (!Array.isArray(calls) || calls.length !== 1) throw new Error('OpenCode Go staged transport probe must return exactly one function tool call')
+  const call = requireRecord(calls[0], 'OpenCode Go staged transport probe tool call')
+  if (call.type !== 'function') throw new Error('OpenCode Go staged transport probe tool call must be a function')
+  const fn = requireRecord(call.function, 'OpenCode Go staged transport probe tool function')
+  if (requireString(fn.name, 'OpenCode Go staged transport probe tool name') !== STAGED_RESULT_TOOL_NAME) {
+    throw new Error('OpenCode Go staged transport probe called an unexpected tool')
+  }
+  const argumentsText = requireString(fn.arguments, 'OpenCode Go staged transport probe tool arguments')
+  let input
+  try {
+    input = JSON.parse(argumentsText)
+  } catch {
+    throw new Error('OpenCode Go staged transport probe tool arguments are not valid JSON')
+  }
+
+  let parsed
+  try {
+    parsed = parseStagedMeasurementInput(input)
+  } catch {
+    throw new Error('OpenCode Go staged transport probe input does not match the claim-only measurement schema')
+  }
+  if (
+    parsed.claim.package !== '*'
+    || parsed.claim.symbol !== 'TransportProbe'
+    || parsed.claim.assertion !== 'absent'
+  ) {
+    throw new Error('OpenCode Go staged transport probe claim does not match the frozen probe value')
+  }
+}
+
 function assistantToolMessage(message) {
   const content = optionalString(message.content, 'OpenCode Go probe assistant content') ?? ''
   const reasoningContent = optionalString(message.reasoning_content, 'OpenCode Go probe reasoning_content')
@@ -280,6 +330,26 @@ export async function probeOpenCodeGoIdentity(environment = process.env, options
     throw new Error('OpenCode Go probe system fingerprint changed during the two-step probe')
   }
 
+  let staged
+  if (options.stagedTransport === true) {
+    staged = await requestCompletion(
+      configuration,
+      stagedTransportMessages(),
+      requestModel,
+      {
+        tools: [createStagedResultToolDefinition()],
+        toolChoice: { type: 'function', function: { name: STAGED_RESULT_TOOL_NAME } },
+      },
+    )
+    if (staged.finishReason !== 'tool_calls') {
+      throw new Error('OpenCode Go staged transport probe did not finish with tool_calls')
+    }
+    parseStagedTransportToolCall(staged.message)
+    if (staged.systemFingerprint !== second.systemFingerprint) {
+      throw new Error('OpenCode Go staged transport probe system fingerprint changed after identity probe')
+    }
+  }
+
   return Object.freeze({
     schema: 'dsh-toolchain-m2-opencode-go-probe-v1',
     provider: 'opencode-go',
@@ -292,9 +362,13 @@ export async function probeOpenCodeGoIdentity(environment = process.env, options
     functionToolCall: 'verified',
     reasoningContinuation: firstReasoning === undefined || firstReasoning.length === 0 ? 'not-observed' : 'verified',
     tokenMeasurement: 'verified',
+    ...(staged === undefined ? {} : {
+      stagedNamedToolChoice: 'verified',
+      stagedStrictResultSchema: 'verified',
+    }),
     backendIdentityStrength: second.systemFingerprint === undefined ? 'response-model-only' : 'system-fingerprint',
-    inputTokens: first.inputTokens + second.inputTokens,
-    outputTokens: first.outputTokens + second.outputTokens,
+    inputTokens: first.inputTokens + second.inputTokens + (staged?.inputTokens ?? 0),
+    outputTokens: first.outputTokens + second.outputTokens + (staged?.outputTokens ?? 0),
   })
 }
 
@@ -318,48 +392,55 @@ function canonicalJsonValue(value) {
 }
 
 export function parseProbeArguments(args) {
-  if (!Array.isArray(args) || args.length < 2 || args.length > 4 || args.length % 2 !== 0) {
-    throw new Error('Usage: node scripts/probe-m2-opencode-go.mjs [--model <model-id>] --output <new-json-path>')
-  }
+  if (!Array.isArray(args) || args.length < 2) throw new Error(PROBE_USAGE)
 
   let outputValue
   let modelValue
-  for (let index = 0; index < args.length; index += 2) {
+  let stagedTransport = false
+
+  for (let index = 0; index < args.length;) {
     const flag = args[index]
+    if (flag === '--staged-transport') {
+      if (stagedTransport) throw new Error('OpenCode Go probe --staged-transport may be specified only once')
+      stagedTransport = true
+      index += 1
+      continue
+    }
+
+    if (flag !== '--output' && flag !== '--model') {
+      throw new Error(`Unknown OpenCode Go probe argument: ${String(flag)}`)
+    }
     const value = args[index + 1]
-    if (typeof value !== 'string' || value.trim() === '') {
+    if (typeof value !== 'string' || value.trim() === '' || value.startsWith('--')) {
       throw new Error('OpenCode Go probe CLI values must be non-empty strings')
     }
+
     if (flag === '--output') {
       if (outputValue !== undefined) throw new Error('OpenCode Go probe --output may be specified only once')
       outputValue = value
-      continue
-    }
-    if (flag === '--model') {
+    } else {
       if (modelValue !== undefined) throw new Error('OpenCode Go probe --model may be specified only once')
       modelValue = selectedModel(value)
-      continue
     }
-    throw new Error(`Unknown OpenCode Go probe argument: ${String(flag)}`)
+    index += 2
   }
 
-  if (outputValue === undefined) {
-    throw new Error('Usage: node scripts/probe-m2-opencode-go.mjs [--model <model-id>] --output <new-json-path>')
-  }
+  if (outputValue === undefined) throw new Error(PROBE_USAGE)
   const output = path.resolve(outputValue)
   if (path.extname(output).toLocaleLowerCase('en-US') !== '.json') throw new Error('OpenCode Go probe output must use .json')
   return Object.freeze({
     ...(modelValue === undefined ? {} : { model: modelValue }),
+    ...(stagedTransport ? { stagedTransport: true } : {}),
     output,
   })
 }
 
 export async function main(args = process.argv.slice(2), environment = process.env) {
   const parsed = parseProbeArguments(args)
-  const receipt = await probeOpenCodeGoIdentity(
-    environment,
-    parsed.model === undefined ? {} : { model: parsed.model },
-  )
+  const receipt = await probeOpenCodeGoIdentity(environment, {
+    ...(parsed.model === undefined ? {} : { model: parsed.model }),
+    ...(parsed.stagedTransport === true ? { stagedTransport: true } : {}),
+  })
   await mkdir(path.dirname(parsed.output), { recursive: true })
   await writeFile(parsed.output, `${JSON.stringify(canonicalJsonValue(receipt))}\n`, { encoding: 'utf8', flag: 'wx' })
   console.log(`OpenCode Go P0 identity probe verified model=${receipt.responseModel} backend=${receipt.backendIdentityStrength} output=${parsed.output}`)

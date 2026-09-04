@@ -1,43 +1,43 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  appendStagedResultTool,
+  assertNoStagedResultToolCollision,
   createStagedResultToolDefinition,
   decodeStagedFinalAnswer,
   encodeStagedToolResult,
+  encodeStagedUnsupportedResult,
   routeStagedProviderToolCalls,
   STAGED_RESULT_TOOL_NAME,
 } from '../../scripts/eval/staged-provider-transport.mjs'
 
 describe('staged provider result transport', () => {
-  it('defines one strict final-result function with the canonical claim schema', () => {
+  it('defines one strict measurement-only function whose provider input contains only the semantic claim', () => {
     expect(STAGED_RESULT_TOOL_NAME).toBe('submit_staged_result')
     expect(createStagedResultToolDefinition()).toEqual({
       type: 'function',
       function: {
         name: 'submit_staged_result',
-        description: expect.stringMatching(/final structured measurement result/i),
+        description: expect.stringMatching(/measurement claim/i),
         strict: true,
         parameters: {
           type: 'object',
           additionalProperties: false,
-          required: ['schema', 'taskId', 'claims'],
+          required: ['claim'],
           properties: {
-            schema: { type: 'string', const: 'dsh-toolchain-staged-eval-result-v1' },
-            taskId: { type: 'string', minLength: 1 },
-            claims: {
-              type: 'array',
-              minItems: 1,
-              maxItems: 1,
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['package', 'symbol', 'assertion'],
-                properties: {
-                  package: { type: 'string', minLength: 1 },
-                  symbol: { type: 'string', minLength: 1 },
-                  assertion: { type: 'string', enum: ['exists', 'absent'] },
+            claim: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['package', 'symbol', 'assertion'],
+              properties: {
+                package: {
+                  type: 'string',
+                  pattern: '^(?:\\*|@?[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?)$',
                 },
+                symbol: {
+                  type: 'string',
+                  pattern: '^[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)*$',
+                },
+                assertion: { type: 'string', enum: ['exists', 'absent'] },
               },
             },
           },
@@ -46,57 +46,62 @@ describe('staged provider result transport', () => {
     })
   })
 
-  it('adds the same measurement function after product tools without changing them', () => {
-    const productTools = [{
-      type: 'function',
-      function: { name: 'ordinary_read', description: 'read', parameters: { type: 'object' } },
-    }]
-
-    expect(appendStagedResultTool(productTools)).toEqual([
-      productTools[0],
-      createStagedResultToolDefinition(),
-    ])
-    expect(productTools).toHaveLength(1)
-    expect(() => appendStagedResultTool([createStagedResultToolDefinition()])).toThrow(/reserved measurement tool/i)
-  })
-
-  it('round-trips an explicit tool result into transportStatus ok', () => {
-    const payload = {
-      schema: 'dsh-toolchain-staged-eval-result-v1',
-      taskId: 'task-01',
-      claims: [{ package: '@deepseek-ai/dsh-scope', symbol: 'Scope', assertion: 'exists' }],
-    }
-
-    expect(decodeStagedFinalAnswer(encodeStagedToolResult(payload))).toEqual({
-      transportStatus: 'ok',
-      structuredContent: payload,
-    })
-  })
-
-  it('routes a sole measurement call to a terminal wrapper without dispatching it as a product tool', () => {
-    const payload = {
-      schema: 'dsh-toolchain-staged-eval-result-v1',
-      taskId: 'task-01',
-      claims: [{ package: '@deepseek-ai/dsh-scope', symbol: 'Scope', assertion: 'exists' }],
-    }
+  it('keeps experiment identity outside model-controlled arguments and attaches it at the transport boundary', () => {
     const routed = routeStagedProviderToolCalls([{
       kind: 'call',
       id: 'measurement-1',
       name: STAGED_RESULT_TOOL_NAME,
-      input: payload,
-    }])
+      input: {
+        claim: { package: '@deepseek-ai/dsh-scope', symbol: 'Scope', assertion: 'exists' },
+      },
+    }], 'task-01')
 
     expect(routed.kind).toBe('final')
     if (routed.kind !== 'final') throw new Error('expected terminal measurement route')
     expect(decodeStagedFinalAnswer(routed.finalAnswer)).toEqual({
       transportStatus: 'ok',
-      structuredContent: payload,
+      structuredContent: {
+        schema: 'dsh-toolchain-staged-eval-result-v1',
+        taskId: 'task-01',
+        claims: [{ package: '@deepseek-ai/dsh-scope', symbol: 'Scope', assertion: 'exists' }],
+      },
     })
   })
 
-  it('leaves ordinary B/C product tool calls untouched', () => {
-    const calls = [{ kind: 'call' as const, id: 'tool-1', name: 'ordinary_read', input: { path: 'README.md' } }]
-    expect(routeStagedProviderToolCalls(calls)).toEqual({ kind: 'product', calls })
+  it('retains runner-owned cost metrics on fail-closed outcomes without creating structured content', () => {
+    const finalAnswer = encodeStagedUnsupportedResult({ providerCompletions: 4, measurementToolCalls: 1 })
+    expect(decodeStagedFinalAnswer(finalAnswer)).toEqual({
+      transportStatus: 'unsupported',
+      transportMetrics: { providerCompletions: 4, measurementToolCalls: 1 },
+    })
+  })
+
+  it('rejects invalid measurement claims before they become canonical staged results', () => {
+    const invalid = routeStagedProviderToolCalls([{
+      kind: 'call',
+      id: 'measurement-1',
+      name: STAGED_RESULT_TOOL_NAME,
+      input: {
+        claim: { package: 'not a package name', symbol: 'Scope', assertion: 'exists' },
+      },
+    }], 'task-01')
+
+    expect(invalid).toEqual({
+      kind: 'unsupported',
+      reason: 'measurement call did not satisfy the canonical claim contract',
+    })
+  })
+
+  it('keeps ordinary B/C product tool calls untouched and reserves the measurement name', () => {
+    const product = { kind: 'call' as const, id: 'tool-1', name: 'ordinary_read', input: { path: 'README.md' } }
+    expect(routeStagedProviderToolCalls([product], 'task-01')).toEqual({ kind: 'product', calls: [product] })
+
+    const productTools = [{
+      type: 'function',
+      function: { name: 'ordinary_read', description: 'read', parameters: { type: 'object' } },
+    }]
+    expect(() => assertNoStagedResultToolCollision(productTools)).not.toThrow()
+    expect(() => assertNoStagedResultToolCollision([createStagedResultToolDefinition()])).toThrow(/reserved measurement tool/i)
   })
 
   it('fails measurement routing closed when final-result and product calls are mixed or malformed', () => {
@@ -104,11 +109,11 @@ describe('staged provider result transport', () => {
       kind: 'call' as const,
       id: 'measurement-1',
       name: STAGED_RESULT_TOOL_NAME,
-      input: { schema: 'dsh-toolchain-staged-eval-result-v1', taskId: 'task-01', claims: [] },
+      input: { claim: { package: '*', symbol: 'Scope', assertion: 'exists' } },
     }
     const product = { kind: 'call' as const, id: 'tool-1', name: 'ordinary_read', input: {} }
 
-    expect(routeStagedProviderToolCalls([product, measurement])).toEqual({
+    expect(routeStagedProviderToolCalls([product, measurement], 'task-01')).toEqual({
       kind: 'unsupported',
       reason: 'measurement call must be the only tool call in its provider turn',
     })
@@ -116,7 +121,7 @@ describe('staged provider result transport', () => {
       kind: 'invalid-arguments',
       id: 'measurement-2',
       name: STAGED_RESULT_TOOL_NAME,
-    }])).toEqual({
+    }], 'task-01')).toEqual({
       kind: 'unsupported',
       reason: 'measurement call arguments were not valid JSON',
     })
@@ -131,10 +136,16 @@ describe('staged provider result transport', () => {
     })
   })
 
-  it('preserves malformed structured-tool payloads for downstream format adjudication', () => {
-    expect(decodeStagedFinalAnswer(encodeStagedToolResult({ unexpected: true }))).toEqual({
+  it('round-trips only canonical transport-owned results through the terminal wrapper', () => {
+    const payload = {
+      schema: 'dsh-toolchain-staged-eval-result-v1',
+      taskId: 'task-01',
+      claims: [{ package: '@deepseek-ai/dsh-scope', symbol: 'Scope', assertion: 'exists' }],
+    }
+
+    expect(decodeStagedFinalAnswer(encodeStagedToolResult(payload))).toEqual({
       transportStatus: 'ok',
-      structuredContent: { unexpected: true },
+      structuredContent: payload,
     })
   })
 })

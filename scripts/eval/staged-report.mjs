@@ -30,9 +30,11 @@ function pairedSummary(results) {
   return Object.freeze({ count, apiValidityDeltaCMinusB, taskSuccessDeltaCMinusB })
 }
 
-function productSummary(results) {
+function productSummary(results, measurementStatus) {
   const resolved = results.filter(result => result.decision !== undefined)
   return Object.freeze({
+    interpretable: measurementStatus === 'PASS',
+    ...(measurementStatus === 'PASS' ? {} : { blockedBy: 'measurement-health' }),
     resolvedObservations: resolved.length,
     apiValidObservations: resolved.filter(result => result.decision.apiValid).length,
     taskSuccessObservations: resolved.filter(result => result.decision.taskSuccess).length,
@@ -42,6 +44,60 @@ function productSummary(results) {
     }),
     pairedTasks: pairedSummary(results),
   })
+}
+
+function transportDiagnostics(results) {
+  const counts = new Map()
+  let observedTerminalReasons = 0
+
+  for (const result of results) {
+    const reason = result.measurement?.terminalTransportReason
+    if (typeof reason !== 'string') continue
+    observedTerminalReasons += 1
+    const current = counts.get(reason) ?? { count: 0, B: 0, C: 0 }
+    current.count += 1
+    current[result.call.arm] += 1
+    counts.set(reason, current)
+  }
+
+  const terminalReasons = [...counts.entries()]
+    .toSorted(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+    .map(([reason, value]) => Object.freeze({
+      reason,
+      count: value.count,
+      byArm: Object.freeze({ B: value.B, C: value.C }),
+    }))
+
+  return Object.freeze({
+    observedTerminalReasons,
+    missingTerminalReasons: Math.max(0, results.length - observedTerminalReasons),
+    terminalReasons: Object.freeze(terminalReasons),
+  })
+}
+
+function failureDiagnostics(results) {
+  const counts = new Map()
+  let total = 0
+
+  for (const result of results) {
+    const code = result.failure?.code
+    if (typeof code !== 'string' || code.length === 0) continue
+    total += 1
+    const current = counts.get(code) ?? { count: 0, B: 0, C: 0 }
+    current.count += 1
+    current[result.call.arm] += 1
+    counts.set(code, current)
+  }
+
+  const byCode = [...counts.entries()]
+    .toSorted(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+    .map(([code, value]) => Object.freeze({
+      code,
+      count: value.count,
+      byArm: Object.freeze({ B: value.B, C: value.C }),
+    }))
+
+  return Object.freeze({ total, byCode: Object.freeze(byCode) })
 }
 
 function numberOrZero(value) {
@@ -55,7 +111,9 @@ function costSummary(results) {
   let inputTokens = 0
   let outputTokens = 0
   let turns = 0
+  let providerCompletions = 0
   let toolCalls = 0
+  let measurementToolCalls = 0
 
   for (const result of results) {
     attempts += numberOrZero(result.cost.attempts)
@@ -64,7 +122,12 @@ function costSummary(results) {
     inputTokens += numberOrZero(result.cost.usage?.inputTokens)
     outputTokens += numberOrZero(result.cost.usage?.outputTokens)
     turns += numberOrZero(result.cost.usage?.turns)
+    providerCompletions += numberOrZero(result.cost.usage?.providerCompletions)
     toolCalls += numberOrZero(result.cost.toolUsage?.calls)
+    const exactMeasurementCalls = numberOrZero(result.cost.toolUsage?.measurementToolCalls)
+    measurementToolCalls += exactMeasurementCalls > 0
+      ? exactMeasurementCalls
+      : numberOrZero(result.cost.toolUsage?.structuredTransportCalls)
   }
 
   return Object.freeze({
@@ -76,11 +139,12 @@ function costSummary(results) {
     inputTokens,
     outputTokens,
     turns,
+    providerCompletions,
     toolCalls,
+    measurementToolCalls,
   })
 }
 
-/** @param {Record<string, any>} run */
 export function buildStagedEvaluationReport(run) {
   const results = [...run.canaryResults, ...run.remainderResults]
   return Object.freeze({
@@ -90,8 +154,10 @@ export function buildStagedEvaluationReport(run) {
       status: run.measurementStatus,
       reasons: Object.freeze([...run.health.reasons]),
       metrics: Object.freeze({ ...run.health.metrics }),
+      failureDiagnostics: failureDiagnostics(results),
+      transportDiagnostics: transportDiagnostics(results),
     }),
-    product: productSummary(results),
+    product: productSummary(results, run.measurementStatus),
     cost: costSummary(results),
     authorization: Object.freeze({ ...run.authorization }),
   })

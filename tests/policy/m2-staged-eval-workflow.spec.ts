@@ -24,14 +24,24 @@ describe('M2 staged development evaluation workflow policy', () => {
     }
   })
 
-  it('probes the exact managed provider and executes the closed command exactly once', async () => {
+  it('probes staged transport capabilities before executing the closed command exactly once', async () => {
     const source = await readFile(workflowUrl, 'utf8')
+    const probeIndex = source.indexOf('node scripts/probe-m2-opencode-go.mjs')
+    const namedToolCheckIndex = source.indexOf("receipt.stagedNamedToolChoice !== 'verified'")
+    const strictSchemaCheckIndex = source.indexOf("receipt.stagedStrictResultSchema !== 'verified'")
+    const evalIndex = source.indexOf('pnpm eval:run --')
 
     expect(source).toContain('OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}')
     expect(source).toContain('M2_STAGED_PROVIDER_PROBE: .artifacts/m2-staged-provider-probe.json')
     expect(occurrences(source, 'probe-m2-opencode-go.mjs')).toBe(1)
     expect(source).toContain('--model deepseek-v4-flash')
+    expect(source).toContain('--staged-transport')
     expect(source).toContain('--output .artifacts/m2-staged-provider-probe.json')
+    expect(probeIndex).toBeGreaterThan(-1)
+    expect(namedToolCheckIndex).toBeGreaterThan(probeIndex)
+    expect(strictSchemaCheckIndex).toBeGreaterThan(probeIndex)
+    expect(evalIndex).toBeGreaterThan(namedToolCheckIndex)
+    expect(evalIndex).toBeGreaterThan(strictSchemaCheckIndex)
     expect(occurrences(source, 'pnpm eval:run --')).toBe(1)
     expect(source).toContain('--mode ${{ inputs.mode }}')
     expect(source).toContain('--manifest docs/evaluation/m2/h1-dev-corpus-v1/manifest.json')

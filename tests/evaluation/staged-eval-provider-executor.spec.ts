@@ -156,6 +156,28 @@ describe('staged real provider executor adapter', () => {
     expect(runtime.runtimeWorkspaces).toEqual([exactWorkspace])
   })
 
+  it('preserves the closed terminal reason when a model outcome misses the structured measurement channel', async () => {
+    const runtime = runtimeWith([{
+      kind: 'model-outcome',
+      finalAnswer: '',
+      providerMetadata: {
+        completionId: 'completion-unsupported',
+        finishReason: 'structured_transport_unsupported',
+        responseModel: 'deepseek-v4-flash',
+        inputTokens: 140,
+        outputTokens: 24,
+      },
+    }])
+    const execute = executor(runtime)
+
+    await expect(execute(call, task)).resolves.toMatchObject({
+      transportStatus: 'unsupported',
+      terminalTransportReason: 'structured_transport_unsupported',
+      attempts: 1,
+      infrastructureFailures: 0,
+    })
+  })
+
   it('retries one quality-independent infrastructure failure and reports it as cost', async () => {
     const runtime = runtimeWith([
       { kind: 'infrastructure-failure', reason: 'provider-transport', detail: 'temporary' },

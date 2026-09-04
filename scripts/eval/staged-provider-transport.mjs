@@ -1,34 +1,34 @@
+import {
+  createCanonicalStagedResult,
+  PACKAGE_CLAIM_PATTERN_SOURCE,
+  SYMBOL_PATTERN_SOURCE,
+} from './staged-result-contract.mjs'
+
 export const STAGED_RESULT_TOOL_NAME = 'submit_staged_result'
-const RESULT_SCHEMA = 'dsh-toolchain-staged-eval-result-v1'
 const TRANSPORT_SCHEMA = 'dsh-toolchain-staged-provider-transport-v1'
+const TRANSPORT_KEYS = new Set(['schema', 'kind', 'payload', 'metrics'])
+const TRANSPORT_METRIC_KEYS = new Set(['providerCompletions', 'measurementToolCalls'])
 
 export function createStagedResultToolDefinition() {
   return Object.freeze({
     type: 'function',
     function: Object.freeze({
       name: STAGED_RESULT_TOOL_NAME,
-      description: 'Submit the final structured measurement result for this evaluation task. Do not answer in prose after calling this function.',
+      description: 'Submit exactly one final structured measurement claim for this evaluation task. Experiment identity is attached by the evaluator transport.',
       strict: true,
       parameters: Object.freeze({
         type: 'object',
         additionalProperties: false,
-        required: Object.freeze(['schema', 'taskId', 'claims']),
+        required: Object.freeze(['claim']),
         properties: Object.freeze({
-          schema: Object.freeze({ type: 'string', const: RESULT_SCHEMA }),
-          taskId: Object.freeze({ type: 'string', minLength: 1 }),
-          claims: Object.freeze({
-            type: 'array',
-            minItems: 1,
-            maxItems: 1,
-            items: Object.freeze({
-              type: 'object',
-              additionalProperties: false,
-              required: Object.freeze(['package', 'symbol', 'assertion']),
-              properties: Object.freeze({
-                package: Object.freeze({ type: 'string', minLength: 1 }),
-                symbol: Object.freeze({ type: 'string', minLength: 1 }),
-                assertion: Object.freeze({ type: 'string', enum: Object.freeze(['exists', 'absent']) }),
-              }),
+          claim: Object.freeze({
+            type: 'object',
+            additionalProperties: false,
+            required: Object.freeze(['package', 'symbol', 'assertion']),
+            properties: Object.freeze({
+              package: Object.freeze({ type: 'string', pattern: PACKAGE_CLAIM_PATTERN_SOURCE }),
+              symbol: Object.freeze({ type: 'string', pattern: SYMBOL_PATTERN_SOURCE }),
+              assertion: Object.freeze({ type: 'string', enum: Object.freeze(['exists', 'absent']) }),
             }),
           }),
         }),
@@ -44,23 +44,53 @@ function providerToolName(value) {
   return typeof fn.name === 'string' ? fn.name : undefined
 }
 
-export function appendStagedResultTool(productTools) {
+export function assertNoStagedResultToolCollision(productTools) {
   if (!Array.isArray(productTools)) throw new Error('staged product tools must be an array')
   if (productTools.some(tool => providerToolName(tool) === STAGED_RESULT_TOOL_NAME)) {
     throw new Error(`product capability manifest uses reserved measurement tool ${STAGED_RESULT_TOOL_NAME}`)
   }
-  return Object.freeze([...productTools, createStagedResultToolDefinition()])
 }
 
-export function encodeStagedToolResult(value) {
+function nonNegativeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${label} must be a non-negative safe integer`)
+  return value
+}
+
+function transportMetrics(value) {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('staged transport metrics must be an object')
+  }
+  for (const key of Object.keys(value)) {
+    if (!TRANSPORT_METRIC_KEYS.has(key)) throw new Error(`staged transport metrics contain unknown key: ${key}`)
+  }
+  return Object.freeze({
+    providerCompletions: nonNegativeInteger(value.providerCompletions, 'providerCompletions'),
+    measurementToolCalls: nonNegativeInteger(value.measurementToolCalls, 'measurementToolCalls'),
+  })
+}
+
+export function encodeStagedToolResult(value, metrics) {
+  const normalizedMetrics = transportMetrics(metrics)
   return JSON.stringify({
     schema: TRANSPORT_SCHEMA,
     kind: 'structured-tool',
     payload: value,
+    ...(normalizedMetrics === undefined ? {} : { metrics: normalizedMetrics }),
   })
 }
 
-export function routeStagedProviderToolCalls(calls) {
+export function encodeStagedUnsupportedResult(metrics) {
+  const normalizedMetrics = transportMetrics(metrics)
+  if (normalizedMetrics === undefined) throw new Error('unsupported staged transport requires runner-owned metrics')
+  return JSON.stringify({
+    schema: TRANSPORT_SCHEMA,
+    kind: 'unsupported',
+    metrics: normalizedMetrics,
+  })
+}
+
+export function routeStagedProviderToolCalls(calls, taskId, metrics) {
   if (!Array.isArray(calls) || calls.length === 0) throw new Error('staged provider tool calls must be a non-empty array')
   const measurementCalls = calls.filter(call => (
     call !== null
@@ -93,9 +123,19 @@ export function routeStagedProviderToolCalls(calls) {
     })
   }
 
+  let canonical
+  try {
+    canonical = createCanonicalStagedResult(taskId, measurement.input)
+  } catch {
+    return Object.freeze({
+      kind: 'unsupported',
+      reason: 'measurement call did not satisfy the canonical claim contract',
+    })
+  }
+
   return Object.freeze({
     kind: 'final',
-    finalAnswer: encodeStagedToolResult(measurement.input),
+    finalAnswer: encodeStagedToolResult(canonical, metrics),
   })
 }
 
@@ -113,14 +153,35 @@ export function decodeStagedFinalAnswer(value) {
     || typeof decoded !== 'object'
     || Array.isArray(decoded)
     || decoded.schema !== TRANSPORT_SCHEMA
-    || decoded.kind !== 'structured-tool'
-    || !Object.hasOwn(decoded, 'payload')
+    || Object.keys(decoded).some(key => !TRANSPORT_KEYS.has(key))
   ) {
+    return Object.freeze({ transportStatus: 'unsupported' })
+  }
+
+  let metrics
+  try {
+    metrics = transportMetrics(decoded.metrics)
+  } catch {
+    return Object.freeze({ transportStatus: 'unsupported' })
+  }
+
+  if (decoded.kind === 'unsupported') {
+    if (Object.hasOwn(decoded, 'payload') || metrics === undefined) {
+      return Object.freeze({ transportStatus: 'unsupported' })
+    }
+    return Object.freeze({
+      transportStatus: 'unsupported',
+      transportMetrics: metrics,
+    })
+  }
+
+  if (decoded.kind !== 'structured-tool' || !Object.hasOwn(decoded, 'payload')) {
     return Object.freeze({ transportStatus: 'unsupported' })
   }
 
   return Object.freeze({
     transportStatus: 'ok',
     structuredContent: decoded.payload,
+    ...(metrics === undefined ? {} : { transportMetrics: metrics }),
   })
 }
