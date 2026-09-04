@@ -14,7 +14,10 @@ type SearchField = 'identity' | 'fact' | 'summary' | 'kind'
 interface TermExplanation {
   readonly token: string
   readonly documentFrequency: number
+  readonly inverseDocumentFrequency: number
   readonly field: SearchField
+  readonly fieldWeight: number
+  readonly contribution: number
   readonly factIndexes: readonly number[]
   readonly evidenceIds: readonly string[]
 }
@@ -120,7 +123,7 @@ describe('Contract Search internal explanation', () => {
     ])
   })
 
-  it('explains intent terms with document frequency, fact boundaries, and evidence', () => {
+  it('explains intent terms with deterministic IDF, field weights, fact boundaries, and evidence', () => {
     const index = fixtureIndex()
     const derived = createContractSearchIndex(index)
     const explanation = explainContractSearch(index, 'how validate args schema', derived)
@@ -130,26 +133,35 @@ describe('Contract Search internal explanation', () => {
     expect(explanation.results).toEqual([
       {
         contractId: 'package:tool-definition',
-        score: 155,
+        score: 309,
         terms: [
           {
             token: 'args',
             documentFrequency: 1,
+            inverseDocumentFrequency: 0.287682,
             field: 'fact',
+            fieldWeight: 3,
+            contribution: 0.863046,
             factIndexes: [0],
             evidenceIds: ['e:validate'],
           },
           {
             token: 'schema',
             documentFrequency: 1,
+            inverseDocumentFrequency: 0.287682,
             field: 'fact',
+            fieldWeight: 3,
+            contribution: 0.863046,
             factIndexes: [1],
             evidenceIds: ['e:schema'],
           },
           {
             token: 'validate',
             documentFrequency: 1,
+            inverseDocumentFrequency: 0.287682,
             field: 'fact',
+            fieldWeight: 3,
+            contribution: 0.863046,
             factIndexes: [0],
             evidenceIds: ['e:validate'],
           },
