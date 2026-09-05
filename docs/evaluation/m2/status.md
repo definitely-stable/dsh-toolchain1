@@ -1,225 +1,86 @@
 # M2.3 operational status
 
-This file is the **current operational index** for M2.3 and post-H1 evaluation work. It records immutable historical evidence, the current development boundary, and the work that is permitted next.
+This file is the **current operational index** for M2.3 and post-H1 evaluation work. It is intentionally concise: immutable historical evidence lives in the linked receipts. This file does not redefine Protocol, target identity, Contract Index semantics, H1, or accepted ADRs.
 
-It is not a normative contract and does not redefine Protocol, target identity, Contract Index semantics, historical H1 rules, or accepted ADRs. Normative specifications remain under `spec/`; accepted architectural decisions remain under `docs/decisions/`; capability sequencing remains in [`docs/roadmap.md`](../../roadmap.md).
+## Frozen experiment boundary
 
-## Frozen M2.3 target
+- DSH: `@deepseek-ai/dsh@0.1.1-rc.2`
+- profile: `web`
+- target: `dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe`
+- Contract Index: `dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2`
+- frozen Contract Search candidate: `dsh-contract-search-v3-conservative-abstention`
+- frozen candidate commit: `8eba7eccba77bb3e047868dbad8ea9c9ced3b033`
 
-The historical R1/P0/H1 evidence remains bound to the registry-installable Web target used by the controlled experiment:
-
-- DSH: `@deepseek-ai/dsh@0.1.1-rc.2`;
-- profile: `web`;
-- target: `dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe`;
-- Contract Index: `dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2`.
-
-Later upstream DSH trains are a separate compatibility track. They MUST NOT retroactively mutate the frozen experiment or its evidence identities.
+Later upstream DSH trains are a separate compatibility track. They must not retroactively mutate these evidence identities.
 
 ## Current state
 
 | Item | State | Meaning |
 | --- | --- | --- |
-| M2.1 offline Contract Index | **COMPLETE** | Exact-target package/declaration acquisition, deterministic search/inspect and stale-safe index identity are merged. |
-| M2.2 Agent-scoped Host Inspect enrichment | **COMPLETE** | Bounded live Host Service/Event/Tool evidence with fail-closed target binding is merged. |
-| Historical R1 baseline | **COMPLETE / IMMUTABLE** | Pre-tuning retrieval baseline remains regression evidence. |
-| Historical provider-backed P0 | **INCONCLUSIVE / IMMUTABLE** | Retained live calibration evidence; not a pending rerun. |
-| Corrected offline P0 readjudication | **COMPLETE** | Separately versioned calibration evidence; it does not rewrite historical P0. |
-| H1 design / preregistration / execution machinery | **COMPLETE** | The controlled 96-task, 864-entry experiment was fully constructed and executed. |
-| H1 execution | **COMPLETE: 864 / 864** | All scheduled H1 outcomes were executed. |
-| H1 terminal result | **INCONCLUSIVE / IMMUTABLE** | Confirmatory estimates were intentionally not computed because the frozen measurement path left unresolved decision evidence. |
-| H1 unresolved B/C observations | **227 / 576** | Measurement-resolution failure that invalidated confirmatory interpretation. |
-| H1 corpus | **DISCLOSED / DEVELOPMENT_ONLY** | May be used for development, calibration and regression work; MUST NOT be reused as an unseen H2 holdout. |
-| Contract Search v2 | **MERGED** | Deterministic intent fallback materially improves the historical R1 retrieval gap while preserving strict/no-result behavior. |
-| Contract Search v3 foundation | **MERGED** | Derived SearchIndex, explainability and bounded fingerprint cache preserve v2 rank/score/evidence behavior. |
-| Contract Search v3 R2-dev boundary | **COMPLETE / FIXED** | Issue #164 / PR #165 established and merged the development corpus before ranking-changing v3 work. |
-| Contract Search v3 final candidate | **FROZEN** | PRs #178–#181 produced and froze `8eba7eccba77bb3e047868dbad8ea9c9ced3b033`; cumulative R2-dev vs v2 is 4 wins / 0 losses / 14 ties and no further proximity tuning is authorized on disclosed R2-dev evidence. |
-| Staged evaluation control plane | **COMPLETE** | Issue #149 / PR #150 merged bounded modes, hard budgets, DEVELOPMENT_ONLY corpus tooling and measurement-health gating. |
-| One-dispatch staged runner | **COMPLETE / ACCEPTANCE STOP** | Issue #151 / PR #175 are merged and provide the closed B/C canary-first runner and normal manual workflow. The first real canary correctly stopped with zero remainder when measurement health failed. |
-| Structured staged measurement transport | **COMPLETE / ACCEPTED** | Issue #176 / PR #177 replace model-controlled experiment identity and mixed product/measurement tooling with a two-phase claim-only finalizer. Real run `33839417550` returned measurement `PASS` with 16/16 format-valid and 16/16 decision-resolved observations. |
-| Staged dev-v1 | **COMPLETE / UNINFORMATIVE** | Run `33939213526` executed 40/40 with healthy measurement and B=C=20/20 API validity, but the deterministic selector chose 20/20 `api-absent` tasks, so the product comparison is ceiling-saturated selection-bias evidence, not a Toolchain-effect estimate. |
-| Staged dev-v2 harness | **DEFINED / FROZEN DEVELOPMENT SELECTION** | The repaired harness stratifies by `domain × successRule.kind`, freezes a 12-positive/8-negative 20-task selection plus source-shard commitment, adds trace-derived B/C cost/tool telemetry, and reports API validity without fabricating an independent task-success metric. |
-| Exact Target Plugin Check alpha | **COMPLETE** | Issue #154 / PR #173 implement the first one-call product flow for directory and packed subjects across CLI/native/MCP with evidence-backed static verdicts and real packed-DSH smoke. |
-| Parent M2 exit | **OPEN** | Historical H1 remains `INCONCLUSIVE`; a later confirmatory claim still requires a frozen product candidate, fresh hidden evidence, an independent end-to-end guardrail, and preregistration. |
+| M2.1 Contract Index | **COMPLETE** | Exact-target acquisition and deterministic search/inspect are merged. |
+| M2.2 Host Inspect enrichment | **COMPLETE** | Bounded live host evidence is merged. |
+| R1 | **IMMUTABLE REGRESSION EVIDENCE** | Never tuning data. |
+| H1 | **864/864; INCONCLUSIVE / IMMUTABLE** | `227/576` B/C observations unresolved under the preregistered path. Never rerun or relabel. |
+| H1 corpus | **DISCLOSED / DEVELOPMENT_ONLY** | Never reusable as unseen H2 evidence. |
+| Contract Search v3 | **FROZEN** | R2-dev cumulative vs v2: 4 wins / 0 losses / 14 ties. No further disclosed-corpus ranking/proximity tuning is authorized. |
+| Staged dev-v1 | **COMPLETE / UNINFORMATIVE** | Run `33939213526`: selector chose 20/20 `api-absent` tasks; zero delta is selection-bias evidence, not Toolchain equivalence. |
+| Staged dev-v2 | **EXECUTED / METHODOLOGY DEFECT EXPOSED** | Run `33948582894`: B exhausted the frozen 31-tool budget on 2/8 canary tasks, C completed 8/8 and used Toolchain 8/8; report-v2 incorrectly projected those B terminals as measurement failure. |
+| Product/measurement separation | **PR #183** | Evaluation-only repair: explicit bounded product terminals, health-v2, report-v3 bounded metrics, safe per-observation receipts. No production `src/` or ranker changes. |
+| Exact Target Plugin Check alpha | **COMPLETE** | Static/read-only exact-target plugin verdict path is merged. |
+| H2 | **NOT READY** | Requires a fresh hidden dataset and independently specified end-to-end success endpoint before outcomes exist. |
 
-## Canonical H1 terminal outcome
+## Canonical receipts
 
-The canonical terminal record is [`h1-terminal-outcome-2026-09-02.md`](h1-terminal-outcome-2026-09-02.md).
+- H1: [`h1-terminal-outcome-2026-09-02.md`](h1-terminal-outcome-2026-09-02.md)
+- accepted staged measurement repair: [`staged-measurement-repair-acceptance-2026-09-04.md`](staged-measurement-repair-acceptance-2026-09-04.md)
+- dev-v1: [`staged-dev-v1-outcome-2026-09-05.md`](staged-dev-v1-outcome-2026-09-05.md)
+- frozen dev-v2 selection: [`staged-dev-v2-selection.json`](staged-dev-v2-selection.json)
+- original dev-v2 outcome: [`staged-dev-v2-outcome-2026-09-05.md`](staged-dev-v2-outcome-2026-09-05.md)
+- current staged semantics: [`staged-evaluation.md`](staged-evaluation.md)
 
-H1 completed all `864 / 864` scheduled outcomes. Its scientific status is `INCONCLUSIVE`, not an Actions failure and not a `NEEDS-IMPROVEMENT` product verdict. The frozen decision path left `227 / 576` B/C observations unresolved, so the preregistered paired confirmatory estimates were not computed.
+Historical receipts are append-only. Later methodology must not rewrite their run ids, commits, artifacts, outcomes, or evidence classifications.
 
-The H1 result is historical evidence and MUST NOT be changed, relabeled, extended until a preferred result appears, or rerun as a fresh holdout after task disclosure.
+## Staged evaluation after PR #183
 
-## Historical R1 and retrieval development
+The control plane separates three evidence planes:
 
-The immutable R1 baseline measured a real retrieval gap before retrieval tuning:
+1. **measurement health** — provider/process/finalization trustworthiness;
+2. **bounded product outcome** — completed vs recognized resource-budget terminal;
+3. **cost/trajectory evidence** — tokens, wall time, turns, provider completions, ordinary/Toolchain tool counts and safe task-level receipts.
 
-- Success@5: **56.25%**;
-- MRR: **54.6875%**;
-- natural-language Success@5: **0%**;
-- indirect Success@5: **0%**;
-- forbidden-hit rate@5: **20%**.
+The product tool-call budget remains **31**. `tool_budget_exhausted` is a valid product outcome, not infrastructure failure. Genuine malformed structured finalization and unrecovered infrastructure remain fail-closed measurement failures.
 
-Evidence-sufficiency checks established that the answerable routes existed in the authoritative declaration universe, so these failures were retrieval failures rather than missing-evidence excuses.
+`report-v3` retains resolved-only API validity for continuity but adds `boundedCompletion` and `boundedApiSuccess`, so recognized budget exhaustion cannot disappear through complete-case censoring. `taskSuccessGuardrail.measured=false` remains explicit because the current single-API-claim oracle is not an independent end-to-end developer-task grader.
 
-Contract Search v2 subsequently improved the historical regression corpus while preserving exact/no-result behavior. Contract Search v3 is now frozen at product candidate `8eba7eccba77bb3e047868dbad8ea9c9ced3b033`. Its disclosed R2-dev evidence is development history, not a reason to keep tuning until every example passes.
+Safe observation receipts may retain task id/domain/oracle kind, arm, bounded terminal, API-validity when available, cost and exact tool-count summaries. They must not persist prompt text, raw model prose, chain-of-thought/reasoning, raw tool arguments/results, workspace contents, credentials, or provider bodies.
 
-R1 is regression evidence only. It MUST NOT be used to select v3 IDF/field/coherence/abstention constants. R2-dev is disclosed development evidence and MUST NOT become future holdout material.
+## What dev-v2 established — and did not establish
 
-## Post-H1 staged evaluation
+Original run `33948582894` is historically `STOP` under report-v2 and must remain so. It established a concrete harness defect: two B observations hit the same frozen product budget while C reached finalization, but the old transport mapped the bounded B terminal to generic unsupported structured transport.
 
-H1 demonstrated that development evaluation must validate measurement health before spending a large provider budget. The implemented development lifecycle is:
+It does **not** establish either of these claims:
 
-```text
-deterministic checks
-    -> one bounded mode
-    -> fresh managed-provider probe
-    -> deterministic task selection
-    -> 16-call B/C measurement-health canary
-    -> measurement-health STOP or PASS
-    -> only the pre-authorized remainder
-    -> API-validity + cost/tool-use report
-```
+- “Toolchain has no effect” — the complete-case zero API delta used only surviving resolved pairs;
+- “Toolchain improves success by 25 pp” — bounded completion was not preregistered as that run's primary endpoint and the 24-call remainder was never authorized.
 
-PR #175 merged the exact B/C development executor, fresh process/retry boundary, one-command runner and manual **M2 Staged Development Evaluation** workflow. Required repository CI remains provider-free.
+Do not automatically rerun dev-v2 merely to obtain a preferred classification.
 
-### First real canary: fail-closed runner accepted
+## Next permitted engineering work
 
-The historical receipt is [`staged-canary-acceptance-2026-09-03.md`](staged-canary-acceptance-2026-09-03.md). Workflow run `33763657085` executed exactly 16 B/C model observations and returned `STOP` with `FORMAT_COMPLIANCE_BELOW_MINIMUM` and `DECISION_RESOLUTION_BELOW_MINIMUM`:
+After PR #183 is merged and the exact merge SHA passes post-merge `main` CI, the next recommended workstream is **Contract Search / Inspect compactness evidence**, not another ranking tweak.
 
-- scheduled/model outcomes: 16 / 16;
-- format-valid observations: 0 / 16;
-- resolved decisions: 0 / 16;
-- infrastructure failures: 0;
-- retries: 0;
-- remainder authorized/executed: 0 / 0;
-- input/output tokens: 541734 / 33595.
+The first compactness phase must be **measurement-only** and must not alter production output yet. It should establish, on frozen deterministic fixtures and retained safe staged telemetry where available:
 
-This accepted the **fail-closed runner**, not the measurement channel. Product B/C metrics were not interpretable.
+- serialized bytes and approximate model-token footprint returned by `toolchain_contract_search` and `toolchain_contract_inspect`;
+- useful-evidence density: evidence-bearing fields per returned byte/token;
+- duplicate/repeated content within a single tool response;
+- overlap between consecutive Search → Inspect responses for the same contract/evidence path;
+- repeated context across turns attributable to Toolchain results;
+- per-tool and per-task distributions (median, p90/p95, maxima), not only averages;
+- strict semantic parity checks proving any later compaction candidate preserves contract ids, ranking/order, evidence ids, target binding, fail-closed behavior and inspectability.
 
-### Second real canary: finalization alone was insufficient
+Only after that baseline exists should a separate production-compaction proposal be considered. Do not change IDF, coherence, abstention, proximity, target identity, Contract Index fingerprint semantics, or the 31-call staged budget in the compactness-baseline phase.
 
-A first repair added forced named-tool finalization and a provider capability probe. Real workflow run `33828924997` on head `df51982419fcaab871a30371d8771be0cb2a7749` again returned measurement `STOP`:
+## H2 boundary
 
-- artifact: `9921081814`;
-- artifact digest: `sha256:00c0070660db866722a661e8b53b1e7e20004b33f42b7d4f054a2ab80a393d2d`;
-- scheduled/model outcomes: 16 / 16;
-- terminal provider reason `tool_calls`: 16 / 16;
-- format-valid observations: 0 / 16;
-- resolved decisions: 0 / 16;
-- infrastructure failures: 0;
-- retries: 0;
-- input/output tokens: 650210 / 39010;
-- legacy turns/product tool calls: 235 / 219.
-
-This showed that provider tool calling itself was available; the remaining defect was downstream of the tool-call boundary.
-
-### Accepted two-phase measurement repair
-
-Issue #176 / PR #177 implement a stricter transport boundary under TDD:
-
-```text
-product phase
-  -> ordinary B/C tools only
-  -> model semantic conclusion
-  -> isolated measurement finalization
-       -> only strict submit_staged_result
-       -> named tool_choice
-       -> model returns package/symbol/assertion only
-  -> evaluator attaches exact taskId + result schema + one-claim cardinality
-  -> deterministic parser/oracle adjudication
-```
-
-Key invariants:
-
-- `taskId` is experiment identity owned by the evaluator, not model output;
-- product tools and the measurement tool never coexist in one provider request;
-- one canonical staged-result contract owns package/symbol validation;
-- no prose/JSON fallback is accepted;
-- malformed/unsupported outcomes remain fail-closed;
-- reports expose aggregated failure codes and terminal transport reasons without retaining raw model text;
-- product signal is explicitly non-interpretable whenever measurement health is `STOP`;
-- runner-owned provider-completion/measurement-tool counters stay outside the frozen historical provider-metadata contract;
-- the temporary one-shot acceptance workflow has been removed; the normal manual staged workflow remains the only provider-backed operator path.
-
-Final deterministic CI run `33837513545` completed successfully on repair head `cd0df441f3cd49bbed1b1fca7db7bf5721c57c7b`, including the aggregate quality gate, Node 22/24/26 compatibility, Windows/macOS boundaries, packaging, real-DSH composition and read-only target-resolution checks.
-
-The final bounded real-provider canary is recorded in [`staged-measurement-repair-acceptance-2026-09-04.md`](staged-measurement-repair-acceptance-2026-09-04.md). Workflow run `33839417550` on that exact repair head returned measurement `PASS`:
-
-- artifact: `9924472353`;
-- artifact digest: `sha256:db851b2e0a377c05c812252b695577f39f53bed80e7d6876f06ab31050c3e2e1`;
-- scheduled/model outcomes: 16 / 16;
-- format-valid observations: 16 / 16;
-- resolved decisions: 16 / 16;
-- B/C resolution: 8 / 8 and 8 / 8;
-- infrastructure failures: 0;
-- retries: 0;
-- failure diagnostics: 0;
-- terminal transport reason `structured_measurement_finalized`: 16 / 16;
-- measurement tool calls: 16;
-- remainder planned/authorized: 0 / 0;
-- executed calls: 16;
-- input/output tokens: 861022 / 47879;
-- provider completions/product tool calls: 147 / 223.
-
-The historical canary report labeled both API validity and task success as 8/8 and produced zero paired delta. The later dev-v2 harness audit established that the staged single-API-claim oracle did not independently measure end-to-end task completion; report v2 therefore retains API validity and explicitly marks `taskSuccessGuardrail.measured=false`. The small canary remains transport/measurement evidence, not a powered product-effect claim.
-
-### Dev-v1: healthy measurement, biased sample
-
-The durable receipt is [`staged-dev-v1-outcome-2026-09-05.md`](staged-dev-v1-outcome-2026-09-05.md). Run `33939213526` on frozen product candidate `8eba7eccba77bb3e047868dbad8ea9c9ced3b033` executed the full 40-call development budget with zero infrastructure failures/retries and returned B=C=20/20 API validity. However, the old domain-only lexical selector chose 20 `api-absent` tasks and zero `api-exists-any` tasks.
-
-The product comparison is therefore **UNINFORMATIVE / CEILING-SATURATED DUE TO SELECTION BIAS**. Do not rerun dev-v1 or reinterpret its zero delta as evidence of Toolchain equivalence.
-
-### Dev-v2 harness boundary
-
-The next development sample is frozen in [`staged-dev-v2-selection.json`](staged-dev-v2-selection.json): 20 tasks, 12 `api-exists-any`, 8 `api-absent`, all eight domains, both oracle kinds in every domain. The commitment binds selector version, frozen product candidate, source shard SHA-256 identities, and exact selected IDs.
-
-Report v2 adds per-arm tokens, time, turns, provider completions, retries, infrastructure failures and trace-derived ordinary/Toolchain tool counts. Toolchain-use rate is computed only over C observations with an actual model outcome; unrecovered infrastructure remains visible in cost/missingness but cannot be interpreted as agent tool-selection behavior.
-
-The staged development oracle still adjudicates one API claim only. It does **not** provide an independent end-to-end task-success guardrail. Any H2 design must define that guardrail separately before outcomes exist.
-
-## Acceptance evidence guard
-
-Historical acceptance receipts are append-only evidence. Future implementation work MUST NOT rewrite their run ids, tested commits, artifact identities, measurement outcomes, or `DEVELOPMENT_ONLY` boundaries. Later provider experiments require new receipts rather than mutation of older evidence.
-
-## Exact Target Plugin Check alpha
-
-Issue #154 / PR #173 implement the first one-call product path:
-
-```text
-plugin subject + exact TargetSnapshot + target-bound ContractIndex
-    -> normalized static analysis
-    -> evidence-backed compatibility diagnostics
-```
-
-The alpha accepts explicit directory and packed `.tgz` subjects, shares one kernel/application operation across CLI/native DSH and MCP, and reports `compatible-in-scope`, `incompatible`, or `unproven` without forcing unknown evidence into pass/fail. Requirement findings are bound to exact target/contract provenance, malformed subjects preserve semantic diagnostics where possible, and stale target/index evidence cannot produce a successful compatibility claim.
-
-The safety boundary remains static and read-only: candidate plugin code/lifecycle scripts are not executed, and runtime verification remains an M4 responsibility. CI proves the exact packed Toolchain artifact can perform the operation against a real supported DSH train without mutating the active profile.
-
-The shipped Agent Skill prefers `plugin.check` as the default post-edit/static-review workflow. Contract search/inspect remain drill-down surfaces when a diagnostic requires contract-level investigation.
-
-## Explicit prohibitions
-
-- do not rerun H1 to obtain a different terminal label;
-- do not reuse the disclosed H1 corpus as the future H2 holdout;
-- do not reinterpret historical P0 or H1 evidence under product-tuned rules;
-- do not tune v3 ranking constants on R1 or keep tuning disclosed R2-dev until every task passes;
-- do not change `dsh-target-v2` or `dsh-contract-index-v1` retroactively to accommodate a later upstream train;
-- do not infer `verified` runtime compatibility from static Plugin Check;
-- do not make required repository CI depend on external model/provider calls;
-- do not rerun dev-v1 to obtain a preferred result;
-- do not jump from dev-v2 harness integration directly to `release`, `research`, or H2;
-- do not treat API validity as an independently measured end-to-end task-success guardrail;
-- do not mix Issue #33 upstream lifecycle compatibility work into the frozen rc.2 experiment evidence.
-
-## Next permitted work
-
-The current implementation order is:
-
-1. integrate the staged dev-v2 harness with full exact-head and post-merge `main` CI while preserving the frozen `8eba7eccba77bb3e047868dbad8ea9c9ced3b033` product behavior;
-2. after that integration is green, authorize exactly one new DEVELOPMENT_ONLY `dev-v2` dispatch on merged `main` using the frozen 20-task selection; do not rerun dev-v1;
-3. if measurement `STOP`s, diagnose measurement/infrastructure evidence before any further provider run;
-4. if measurement `PASS`es, interpret API-validity delta together with actual Toolchain use and incremental cost; absence of an independent task-success guardrail prevents confirmatory claims;
-5. only after a useful bounded engineering signal and a separately defined end-to-end guardrail, design a fresh hidden H2 dataset/commitment and preregister confirmatory rules before any H2 outcome;
-6. continue M3 diagnostics from reproduced plugin failure fixtures without reopening frozen Contract Search v3 tuning absent new independent evidence.
-
-No additional H1 execution is a permitted next step.
+H2 remains a separate confirmatory experiment. Before any H2 provider outcome exists, freeze at minimum: product candidate, exact target, hidden dataset commitment, B/C capability boundary, model/provider/reasoning identity, independent primary and guardrail outcomes, repetition/retry/resource policy, and statistical decision rules.
