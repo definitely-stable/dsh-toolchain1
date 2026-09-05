@@ -102,12 +102,13 @@ describe('one-command staged evaluation runner', () => {
     })
 
     expect(report).toMatchObject({
-      schema: 'dsh-toolchain-staged-eval-report-v2',
+      schema: 'dsh-toolchain-staged-eval-report-v3',
       mode: 'canary',
       measurement: { status: 'PASS' },
       authorization: { plannedCalls: 16, executedCalls: 16, remainderAuthorized: 0 },
       cost: { modelCalls: 16, attempts: 16 },
     })
+    expect(report.observations).toHaveLength(16)
     const serialized = JSON.parse(await readFile(outputPath, 'utf8'))
     expect(serialized).toEqual(report)
   })
