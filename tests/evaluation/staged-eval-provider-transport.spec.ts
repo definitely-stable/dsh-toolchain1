@@ -4,6 +4,7 @@ import {
   assertNoStagedResultToolCollision,
   createStagedResultToolDefinition,
   decodeStagedFinalAnswer,
+  encodeStagedProductTerminal,
   encodeStagedToolResult,
   encodeStagedUnsupportedResult,
   routeStagedProviderToolCalls,
@@ -73,6 +74,18 @@ describe('staged provider result transport', () => {
     expect(decodeStagedFinalAnswer(finalAnswer)).toEqual({
       transportStatus: 'unsupported',
       transportMetrics: { providerCompletions: 4, measurementToolCalls: 1 },
+    })
+  })
+
+  it('round-trips bounded product exhaustion separately from measurement transport failure', () => {
+    const finalAnswer = encodeStagedProductTerminal('tool_budget_exhausted', {
+      providerCompletions: 32,
+      measurementToolCalls: 0,
+    })
+    expect(decodeStagedFinalAnswer(finalAnswer)).toEqual({
+      transportStatus: 'product-terminal',
+      productTerminalReason: 'tool_budget_exhausted',
+      transportMetrics: { providerCompletions: 32, measurementToolCalls: 0 },
     })
   })
 
