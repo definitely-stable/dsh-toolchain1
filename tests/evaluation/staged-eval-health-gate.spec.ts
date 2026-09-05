@@ -64,7 +64,7 @@ describe('staged evaluation measurement health gate', () => {
   it('stops when measurement-attempt format compliance is below 98 percent', () => {
     const observations = [
       ...Array.from({ length: 47 }, () => row({ arm: 'B' })),
-      ...Array.from({ length: 3 }, () => row({ arm: 'B', formatValid: false })),
+      ...Array.from({ length: 3 }, () => row({ arm: 'B', formatValid: false, decisionResolved: false })),
       ...Array.from({ length: 50 }, () => row({ arm: 'C' })),
     ]
     expect(evaluateMeasurementHealth({ observations })).toMatchObject({
