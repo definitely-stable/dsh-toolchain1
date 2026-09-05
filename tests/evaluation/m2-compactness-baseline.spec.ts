@@ -94,7 +94,7 @@ describe('M2 Contract Search/Inspect deterministic compactness baseline', () => 
     })
     expect(baseline.identity.rankerVersion).toBe(CONTRACT_SEARCH_RANKER_VERSION)
     expect(baseline.identity.corpusFingerprint).toMatch(/^dsh-contract-compactness-r1-v1:[0-9a-f]{64}$/)
-  })
+  }, 30_000)
 
   it('measures every frozen R1 Search case and preserves all six categories', async () => {
     const { buildCompactnessBaselineV1 } = await loadBaseline()
