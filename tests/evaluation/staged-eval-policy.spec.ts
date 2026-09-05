@@ -25,7 +25,7 @@ describe('staged evaluation repository policy', () => {
     expect(guide).toContain('pnpm eval:run --')
     expect(guide).toContain('--manifest docs/evaluation/m2/h1-dev-corpus-v1/manifest.json')
     expect(guide).toContain('M2_STAGED_PROVIDER_PROBE')
-    expect(guide).toMatch(/16-call B\/C canary/i)
+    expect(guide).toMatch(/16-call B\/C(?: measurement-health)? canary/i)
     expect(guide).toMatch(/zero remainder/i)
     expect(guide).toMatch(/DEVELOPMENT_ONLY/i)
     expect(guide).toMatch(/H1.*immutable|immutable.*H1/i)
