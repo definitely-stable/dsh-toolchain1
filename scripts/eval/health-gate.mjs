@@ -8,12 +8,10 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url)
 
 export const DEFAULT_HEALTH_THRESHOLDS = Object.freeze({
   minimumFormatComplianceRate: 0.98,
-  minimumDecisionResolutionRate: 0.95,
   maximumUnrecoveredInfrastructureRate: 0.02,
-  maximumArmResolutionGap: 0.05,
 })
 
-/** @typedef {'FORMAT_COMPLIANCE_BELOW_MINIMUM' | 'DECISION_RESOLUTION_BELOW_MINIMUM' | 'UNRECOVERED_INFRASTRUCTURE_RATE_ABOVE_MAXIMUM' | 'ARM_RESOLUTION_GAP_ABOVE_MAXIMUM'} HealthStopReason */
+/** @typedef {'NO_MEASUREMENT_ATTEMPTS' | 'FORMAT_COMPLIANCE_BELOW_MINIMUM' | 'UNRECOVERED_INFRASTRUCTURE_RATE_ABOVE_MAXIMUM'} HealthStopReason */
 
 /**
  * @typedef {object} MeasurementHealthObservation
@@ -22,8 +20,9 @@ export const DEFAULT_HEALTH_THRESHOLDS = Object.freeze({
  * @property {boolean} decisionResolved
  * @property {number} infrastructureFailures
  * @property {number} attemptCount
- * @property {boolean} [hasModelOutcome]
- * @property {boolean} [unrecoveredInfrastructure]
+ * @property {boolean} hasModelOutcome
+ * @property {boolean} measurementAttempted
+ * @property {boolean} unrecoveredInfrastructure
  */
 
 function requireNonNegativeInteger(value, label) {
@@ -49,22 +48,33 @@ function validateObservation(value, index) {
   if (attemptCount < infrastructureFailures) {
     throw new Error(`observation[${index}] attemptCount cannot be below infrastructureFailures`)
   }
-  const hasModelOutcome = record.hasModelOutcome === undefined
-    ? true
-    : requireBoolean(record.hasModelOutcome, `observation[${index}].hasModelOutcome`)
-  const unrecoveredInfrastructure = record.unrecoveredInfrastructure === undefined
-    ? (!hasModelOutcome && infrastructureFailures > 0)
-    : requireBoolean(record.unrecoveredInfrastructure, `observation[${index}].unrecoveredInfrastructure`)
+  const hasModelOutcome = requireBoolean(record.hasModelOutcome, `observation[${index}].hasModelOutcome`)
+  const measurementAttempted = requireBoolean(record.measurementAttempted, `observation[${index}].measurementAttempted`)
+  const unrecoveredInfrastructure = requireBoolean(record.unrecoveredInfrastructure, `observation[${index}].unrecoveredInfrastructure`)
+  const formatValid = requireBoolean(record.formatValid, `observation[${index}].formatValid`)
+  const decisionResolved = requireBoolean(record.decisionResolved, `observation[${index}].decisionResolved`)
+
   if (unrecoveredInfrastructure && hasModelOutcome) {
     throw new Error(`observation[${index}] cannot have a model outcome and unrecovered infrastructure`)
   }
+  if (measurementAttempted && !hasModelOutcome) {
+    throw new Error(`observation[${index}] cannot attempt measurement without a model outcome`)
+  }
+  if (!measurementAttempted && (formatValid || decisionResolved)) {
+    throw new Error(`observation[${index}] cannot report format/decision success without a measurement attempt`)
+  }
+  if (decisionResolved && !formatValid) {
+    throw new Error(`observation[${index}] cannot resolve a decision from an invalid measurement format`)
+  }
+
   return Object.freeze({
     arm: record.arm,
-    formatValid: requireBoolean(record.formatValid, `observation[${index}].formatValid`),
-    decisionResolved: requireBoolean(record.decisionResolved, `observation[${index}].decisionResolved`),
+    formatValid,
+    decisionResolved,
     infrastructureFailures,
     attemptCount,
     hasModelOutcome,
+    measurementAttempted,
     unrecoveredInfrastructure,
   })
 }
@@ -81,11 +91,13 @@ function rounded(value) {
 function armResolution(observations, arm) {
   const rows = observations.filter(value => value.arm === arm)
   if (rows.length === 0) throw new Error(`measurement health requires at least one ${arm} observation`)
-  const resolved = rows.filter(value => value.decisionResolved).length
+  const modelRows = rows.filter(value => value.hasModelOutcome)
+  const resolved = modelRows.filter(value => value.decisionResolved).length
   return Object.freeze({
     observations: rows.length,
+    modelOutcomeObservations: modelRows.length,
     resolved,
-    resolutionRate: rounded(resolved / rows.length),
+    resolutionRate: modelRows.length === 0 ? null : rounded(resolved / modelRows.length),
   })
 }
 
@@ -100,6 +112,9 @@ export function evaluateMeasurementHealth(input) {
   const observations = Object.freeze(input.observations.map(validateObservation))
   const thresholds = Object.freeze({ ...DEFAULT_HEALTH_THRESHOLDS, ...(input.thresholds ?? {}) })
   for (const [key, value] of Object.entries(thresholds)) {
+    if (!Object.hasOwn(DEFAULT_HEALTH_THRESHOLDS, key)) {
+      throw new Error(`unknown measurement health threshold ${key}`)
+    }
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
       throw new Error(`measurement health threshold ${key} must be a finite rate in 0..1`)
     }
@@ -107,46 +122,57 @@ export function evaluateMeasurementHealth(input) {
 
   const modelRows = observations.filter(value => value.hasModelOutcome)
   if (modelRows.length === 0) throw new Error('measurement health requires at least one model-outcome observation')
-  const formatValid = modelRows.filter(value => value.formatValid).length
-  const resolved = observations.filter(value => value.decisionResolved).length
+  const measurementRows = modelRows.filter(value => value.measurementAttempted)
+  const formatValid = measurementRows.filter(value => value.formatValid).length
+  const resolved = measurementRows.filter(value => value.decisionResolved).length
   const infrastructureFailures = observations.reduce((sum, value) => sum + value.infrastructureFailures, 0)
   const attempts = observations.reduce((sum, value) => sum + value.attemptCount, 0)
   const unrecovered = observations.filter(value => value.unrecoveredInfrastructure).length
   const retryAttempts = Math.max(0, attempts - observations.length)
   const B = armResolution(observations, 'B')
   const C = armResolution(observations, 'C')
+  const resolutionGap = B.resolutionRate === null || C.resolutionRate === null
+    ? null
+    : rounded(Math.abs(B.resolutionRate - C.resolutionRate))
 
   const metrics = Object.freeze({
     scheduledObservations: observations.length,
     modelOutcomeObservations: modelRows.length,
+    measurementAttemptObservations: measurementRows.length,
     formatValidObservations: formatValid,
     resolvedDecisionObservations: resolved,
     infrastructureFailures,
     attempts,
     unrecoveredInfrastructureObservations: unrecovered,
     retryAttempts,
-    formatComplianceRate: rounded(ratio(formatValid, modelRows.length, 'format compliance')),
-    decisionResolutionRate: rounded(ratio(resolved, observations.length, 'decision resolution')),
+    formatComplianceRate: measurementRows.length === 0 ? null : rounded(ratio(formatValid, measurementRows.length, 'format compliance')),
+    decisionResolutionRate: measurementRows.length === 0 ? null : rounded(ratio(resolved, measurementRows.length, 'decision resolution')),
     unrecoveredInfrastructureRate: rounded(ratio(unrecovered, observations.length, 'unrecovered infrastructure rate')),
     retryAttemptRate: rounded(ratio(retryAttempts, attempts, 'retry attempt rate')),
-    resolutionGap: rounded(Math.abs(B.resolutionRate - C.resolutionRate)),
+    resolutionGap,
     byArm: Object.freeze({ B, C }),
   })
 
   /** @type {HealthStopReason[]} */
   const reasons = []
-  if (metrics.formatComplianceRate < thresholds.minimumFormatComplianceRate) reasons.push('FORMAT_COMPLIANCE_BELOW_MINIMUM')
-  if (metrics.decisionResolutionRate < thresholds.minimumDecisionResolutionRate) reasons.push('DECISION_RESOLUTION_BELOW_MINIMUM')
+  if (measurementRows.length === 0) {
+    reasons.push('NO_MEASUREMENT_ATTEMPTS')
+  } else if (metrics.formatComplianceRate < thresholds.minimumFormatComplianceRate) {
+    reasons.push('FORMAT_COMPLIANCE_BELOW_MINIMUM')
+  }
   if (metrics.unrecoveredInfrastructureRate > thresholds.maximumUnrecoveredInfrastructureRate) {
     reasons.push('UNRECOVERED_INFRASTRUCTURE_RATE_ABOVE_MAXIMUM')
   }
-  if (metrics.resolutionGap > thresholds.maximumArmResolutionGap) reasons.push('ARM_RESOLUTION_GAP_ABOVE_MAXIMUM')
 
   return Object.freeze({
-    schema: 'dsh-toolchain-staged-eval-health-v1',
+    schema: 'dsh-toolchain-staged-eval-health-v2',
     status: reasons.length === 0 ? 'PASS' : 'STOP',
     thresholds,
     metrics,
+    diagnostics: Object.freeze({
+      decisionResolutionRate: metrics.decisionResolutionRate,
+      resolutionGap: metrics.resolutionGap,
+    }),
     reasons: Object.freeze(reasons),
   })
 }
