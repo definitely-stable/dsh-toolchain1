@@ -31,7 +31,7 @@ interface BaselineModule {
       readonly lexicalShingleSize: number
     }
     readonly search: {
-      readonly cases: readonly Array<{
+      readonly cases: ReadonlyArray<{
         readonly caseId: string
         readonly category: string
         readonly status: string
@@ -42,7 +42,7 @@ interface BaselineModule {
       readonly byCategory: Readonly<Record<string, unknown>>
     }
     readonly inspect: {
-      readonly cases: readonly Array<{
+      readonly cases: ReadonlyArray<{
         readonly contractId: string
         readonly kind: string
         readonly wireBytes: number
@@ -50,7 +50,7 @@ interface BaselineModule {
       readonly distributions: Readonly<Record<string, unknown>>
     }
     readonly searchInspect: {
-      readonly paths: readonly Array<{
+      readonly paths: ReadonlyArray<{
         readonly searchCaseId: string
         readonly contractId: string
         readonly exact: Readonly<Record<string, unknown>>
