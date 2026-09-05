@@ -53,10 +53,10 @@ export function validateDevelopmentTaskOracle(taskValue) {
   throw new Error(`development task ${task.id} successRule.kind must be api-exists-any or api-absent`)
 }
 
-function resolved(isTrue) {
+function resolved(apiValid) {
   return Object.freeze({
     status: 'resolved',
-    decision: Object.freeze({ apiValid: isTrue, taskSuccess: isTrue }),
+    decision: Object.freeze({ apiValid }),
   })
 }
 
