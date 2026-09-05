@@ -1,0 +1,72 @@
+{
+  "schema": "dsh-contract-compactness-receipt-v1",
+  "identity": {
+    "baseCommit": "a9465a962e99ebca685f0af4c308007117dbdc41",
+    "fixtureVersion": "rc2-web-v1",
+    "targetFingerprint": "dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe",
+    "contractIndexFingerprint": "dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2",
+    "rankerVersion": "dsh-contract-search-v3-conservative-abstention",
+    "corpusFingerprint": "dsh-contract-compactness-r1-v1:9e738791960745ccc6e08ecc4d87568ed9a4c4ed7bcc569e996b8720e5f2b58e",
+    "metricVersion": "dsh-contract-compactness-v1",
+    "lexicalNormalizerVersion": "nfkc-lower-unicode-alnum-v1",
+    "lexicalShingleSize": 5
+  },
+  "population": {
+    "searchCases": 36,
+    "inspectContracts": 184,
+    "searchInspectPaths": 30
+  },
+  "search": {
+    "distributions": {
+      "wireBytes": { "count": 36, "min": 360, "p50": 1258, "p90": 2587, "p95": 3080, "max": 3241 },
+      "descriptiveBytes": { "count": 36, "min": 0, "p50": 76, "p90": 95, "p95": 165, "max": 166 },
+      "evidenceBytes": { "count": 36, "min": 0, "p50": 504, "p90": 1617, "p95": 2034, "max": 2163 },
+      "repeatedLeafBytes": { "count": 36, "min": 0, "p50": 163, "p90": 542, "p95": 693, "max": 728 },
+      "repeatedLeafRate": { "count": 36, "min": 0, "p50": 0.1296738266, "p90": 0.2095090839, "p95": 0.2246220302, "max": 0.225 },
+      "lexicalDuplicationRate": { "count": 36, "min": 0, "p50": 0.5588235294, "p90": 0.7322834646, "p95": 0.7548387097, "max": 0.773006135 },
+      "uniqueEvidencePerKiB": { "count": 36, "min": 0, "p50": 1.60125, "p90": 2.37495, "p95": 2.52761, "max": 2.65974 }
+    },
+    "byCategory": {
+      "ambiguous": { "count": 5, "min": 1045, "p50": 1323, "p90": 2623, "p95": 2623, "max": 2623 },
+      "exact-symbol": { "count": 8, "min": 913, "p50": 969, "p90": 1629, "p95": 1629, "max": 1629 },
+      "indirect": { "count": 6, "min": 360, "p50": 1564, "p90": 3080, "p95": 3080, "max": 3080 },
+      "natural-language": { "count": 7, "min": 360, "p50": 1279, "p90": 3241, "p95": 3241, "max": 3241 },
+      "no-result": { "count": 4, "min": 360, "p50": 360, "p90": 360, "p95": 360, "max": 360 },
+      "package-api": { "count": 6, "min": 1177, "p50": 1257, "p90": 1587, "p95": 1587, "max": 1587 }
+    }
+  },
+  "inspect": {
+    "distributions": {
+      "wireBytes": { "count": 184, "min": 847, "p50": 4260, "p90": 10620, "p95": 14223, "max": 44998 },
+      "descriptiveBytes": { "count": 184, "min": 86, "p50": 622, "p90": 1666, "p95": 2573, "max": 5917 },
+      "evidenceBytes": { "count": 184, "min": 151, "p50": 2210, "p90": 6807, "p95": 8746, "max": 31458 },
+      "repeatedLeafBytes": { "count": 184, "min": 72, "p50": 1761, "p90": 5863, "p95": 8048, "max": 27101 },
+      "repeatedLeafRate": { "count": 184, "min": 0.0850059032, "p50": 0.4089108911, "p90": 0.5337498302, "p95": 0.5515435717, "max": 0.653136857 },
+      "lexicalDuplicationRate": { "count": 184, "min": 0.125, "p50": 0.8827838828, "p90": 0.93728223, "p95": 0.949119374, "max": 0.973634652 },
+      "uniqueEvidencePerKiB": { "count": 184, "min": 0.4066002933, "p50": 1.057578, "p90": 1.291842, "p95": 1.351369, "max": 1.485781 }
+    }
+  },
+  "searchInspect": {
+    "distributions": {
+      "exactSearchCoveredByInspect": { "count": 30, "min": 0.5812115891132572, "p50": 1, "p90": 1, "p95": 1, "max": 1 },
+      "exactInspectAlreadyInSearch": { "count": 30, "min": 0.038578943950120154, "p50": 0.18413348946135832, "p90": 0.2728977805564239, "p95": 0.27669124719461363, "max": 0.35823694904657705 },
+      "exactDescriptiveSearchCoveredByInspect": { "count": 30, "min": 0.4457831325301205, "p50": 1, "p90": 1, "p95": 1, "max": 1 },
+      "exactDescriptiveInspectAlreadyInSearch": { "count": 30, "min": 0.01760039662865642, "p50": 0.07723577235772358, "p90": 0.11048951048951049, "p95": 0.12166172106824925, "max": 0.14136904761904762 },
+      "lexicalSearchCoveredByInspect": { "count": 30, "min": 0.6086956521739131, "p50": 1, "p90": 1, "p95": 1, "max": 1 },
+      "lexicalInspectAlreadyInSearch": { "count": 30, "min": 0.19444444444444445, "p50": 0.6, "p90": 0.8043478260869565, "p95": 0.8636363636363636, "max": 0.88 },
+      "lexicalDescriptiveSearchCoveredByInspect": { "count": 30, "min": 0.5, "p50": 1, "p90": 1, "p95": 1, "max": 1 },
+      "lexicalDescriptiveInspectAlreadyInSearch": { "count": 30, "min": 0.5294117647058824, "p50": 0.7, "p90": 0.8, "p95": 0.8, "max": 0.8333333333333334 }
+    }
+  },
+  "worstCases": {
+    "largestSearch": { "caseId": "natural-session-search-text", "wireBytes": 3241 },
+    "largestInspect": { "contractId": "package:@deepseek-ai/dsh-client-runtime", "wireBytes": 44998 },
+    "mostRepeatedSearch": { "caseId": "natural-session-search-text", "repeatedLeafBytes": 728 },
+    "mostRepeatedInspect": { "contractId": "package:@deepseek-ai/dsh-client-runtime", "repeatedLeafBytes": 27101 },
+    "highestDescriptiveInspectReuse": {
+      "searchCaseId": "ambiguous-tool-result-pruner",
+      "contractId": "package:@deepseek-ai/dsh-compaction-tool-result-pruner",
+      "lexicalContainment": 0.8333333333333334
+    }
+  }
+}
