@@ -20,9 +20,10 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 | M2.1 Contract Index | **COMPLETE** | Exact-target acquisition and deterministic search/inspect are merged. |
 | M2.2 Host Inspect enrichment | **COMPLETE** | Bounded live host evidence is merged. |
 | R1 | **IMMUTABLE REGRESSION EVIDENCE** | Never tuning data. |
-| H1 | **864/864; INCONCLUSIVE / IMMUTABLE** | `227/576` B/C observations unresolved under the preregistered path. Never rerun or relabel. |
+| H1 | **864/864; INCONCLUSIVE / IMMUTABLE** | `227/576` B/C observations unresolved under the preregistered path. H1 MUST NOT be rerun or relabeled. |
 | H1 corpus | **DISCLOSED / DEVELOPMENT_ONLY** | Never reusable as unseen H2 evidence. |
 | Contract Search v3 | **FROZEN** | R2-dev cumulative vs v2: 4 wins / 0 losses / 14 ties. No further disclosed-corpus ranking/proximity tuning is authorized. |
+| One-dispatch staged runner | **COMPLETE / ACCEPTANCE STOP** | Historical run `33763657085` accepted the fail-closed runner: `FORMAT_COMPLIANCE_BELOW_MINIMUM` and `DECISION_RESOLUTION_BELOW_MINIMUM`, with zero authorized remainder. Later measurement repairs do not rewrite this result. |
 | Staged dev-v1 | **COMPLETE / UNINFORMATIVE** | Run `33939213526`: selector chose 20/20 `api-absent` tasks; zero delta is selection-bias evidence, not Toolchain equivalence. |
 | Staged dev-v2 | **EXECUTED / METHODOLOGY DEFECT EXPOSED** | Run `33948582894`: B exhausted the frozen 31-tool budget on 2/8 canary tasks, C completed 8/8 and used Toolchain 8/8; report-v2 incorrectly projected those B terminals as measurement failure. |
 | Product/measurement separation | **PR #183** | Evaluation-only repair: explicit bounded product terminals, health-v2, report-v3 bounded metrics, safe per-observation receipts. No production `src/` or ranker changes. |
@@ -32,6 +33,7 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 ## Canonical receipts
 
 - H1: [`h1-terminal-outcome-2026-09-02.md`](h1-terminal-outcome-2026-09-02.md)
+- first one-dispatch canary: [`staged-canary-acceptance-2026-09-03.md`](staged-canary-acceptance-2026-09-03.md)
 - accepted staged measurement repair: [`staged-measurement-repair-acceptance-2026-09-04.md`](staged-measurement-repair-acceptance-2026-09-04.md)
 - dev-v1: [`staged-dev-v1-outcome-2026-09-05.md`](staged-dev-v1-outcome-2026-09-05.md)
 - frozen dev-v2 selection: [`staged-dev-v2-selection.json`](staged-dev-v2-selection.json)
