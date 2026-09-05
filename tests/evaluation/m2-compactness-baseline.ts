@@ -33,6 +33,7 @@ export const INSPECT_REQUEST_ID = '00000000-0000-4000-8000-000000000002'
 
 const BASE_PRODUCT_COMMIT = 'a9465a962e99ebca685f0af4c308007117dbdc41'
 const BASELINE_SCHEMA = 'dsh-contract-compactness-baseline-v1'
+const RECEIPT_SCHEMA = 'dsh-contract-compactness-receipt-v1'
 const CORPUS_FINGERPRINT_PREFIX = 'dsh-contract-compactness-r1-v1:'
 const EXPECTED_FIXTURE_VERSION = 'rc2-web-v1'
 const EXPECTED_DSH_PACKAGE = '@deepseek-ai/dsh'
@@ -160,6 +161,27 @@ export interface CompactnessBaselineV1 {
       readonly lexicalContainment: number
     }
   }
+}
+
+export interface CompactnessReceiptV1 {
+  readonly schema: typeof RECEIPT_SCHEMA
+  readonly identity: CompactnessBaselineV1['identity']
+  readonly population: {
+    readonly searchCases: number
+    readonly inspectContracts: number
+    readonly searchInspectPaths: number
+  }
+  readonly search: {
+    readonly distributions: ResponseDistributions
+    readonly byCategory: Readonly<Record<M2RetrievalCategory, DistributionSummary>>
+  }
+  readonly inspect: {
+    readonly distributions: ResponseDistributions
+  }
+  readonly searchInspect: {
+    readonly distributions: PathDistributions
+  }
+  readonly worstCases: CompactnessBaselineV1['worstCases']
 }
 
 interface MeasuredSearchInternal {
@@ -505,4 +527,28 @@ let baselinePromise: Promise<CompactnessBaselineV1> | undefined
 export function buildCompactnessBaselineV1(): Promise<CompactnessBaselineV1> {
   baselinePromise ??= buildUncached()
   return baselinePromise
+}
+
+export async function buildCompactnessReceiptV1(): Promise<CompactnessReceiptV1> {
+  const baseline = await buildCompactnessBaselineV1()
+  const categoryWireBytes = Object.fromEntries(
+    Object.entries(baseline.search.byCategory).map(([category, distributions]) => [category, distributions.wireBytes]),
+  ) as Readonly<Record<M2RetrievalCategory, DistributionSummary>>
+
+  return Object.freeze({
+    schema: RECEIPT_SCHEMA,
+    identity: baseline.identity,
+    population: Object.freeze({
+      searchCases: baseline.search.cases.length,
+      inspectContracts: baseline.inspect.cases.length,
+      searchInspectPaths: baseline.searchInspect.paths.length,
+    }),
+    search: Object.freeze({
+      distributions: baseline.search.distributions,
+      byCategory: Object.freeze(categoryWireBytes),
+    }),
+    inspect: Object.freeze({ distributions: baseline.inspect.distributions }),
+    searchInspect: Object.freeze({ distributions: baseline.searchInspect.distributions }),
+    worstCases: baseline.worstCases,
+  })
 }
