@@ -3,6 +3,7 @@ import readline from 'node:readline'
 import {
   assertNoStagedResultToolCollision,
   createStagedResultToolDefinition,
+  encodeStagedProductTerminal,
   encodeStagedUnsupportedResult,
   routeStagedProviderToolCalls,
   STAGED_RESULT_TOOL_NAME,
@@ -198,6 +199,14 @@ function unsupported(value, totals, reason) {
   })
 }
 
+function productTerminal(value, totals, reason) {
+  emit({
+    type: 'final',
+    finalAnswer: encodeStagedProductTerminal(reason, metrics(totals)),
+    providerMetadata: metadata(value, totals, 'tool_call_limit'),
+  })
+}
+
 function addUsage(result, totals) {
   totals.providerCompletions += 1
   if (result.inputTokens === undefined || result.outputTokens === undefined) totals.complete = false
@@ -280,7 +289,7 @@ async function execute() {
 
     productToolCalls += providerCalls.length
     if (productToolCalls > MAX_PRODUCT_TOOL_CALLS) {
-      unsupported(result, totals, 'tool_call_limit')
+      productTerminal(result, totals, 'tool_budget_exhausted')
       return
     }
     messages.push(assistant(result.message))
