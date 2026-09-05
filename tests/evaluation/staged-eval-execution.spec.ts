@@ -20,7 +20,7 @@ const structuredContent = {
 }
 
 describe('staged evaluation execution boundary', () => {
-  it('normalizes a valid structured claim through deterministic task adjudication', async () => {
+  it('normalizes a valid structured claim through deterministic API adjudication only', async () => {
     const execute = vi.fn(async () => ({
       transportStatus: 'ok' as const,
       structuredContent,
@@ -44,7 +44,8 @@ describe('staged evaluation execution boundary', () => {
       hasModelOutcome: true,
       unrecoveredInfrastructure: false,
     })
-    expect(result.decision).toEqual({ apiValid: true, taskSuccess: true })
+    expect(result.decision).toEqual({ apiValid: true })
+    expect(result.decision).not.toHaveProperty('taskSuccess')
     expect(result.cost).toEqual({
       attempts: 1,
       infrastructureFailures: 0,
