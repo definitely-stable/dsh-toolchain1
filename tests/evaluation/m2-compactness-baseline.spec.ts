@@ -15,7 +15,6 @@ import {
   createFrozenM2RetrievalIndex,
 } from './m2-retrieval-index.js'
 import { createFrozenM2KernelHarness } from './m2-search-inspect-fixture.js'
-import { stableJsonV1 } from './m2-compactness-metrics.js'
 
 interface BaselineModule {
   readonly SEARCH_REQUEST_ID: string
@@ -63,6 +62,26 @@ interface BaselineModule {
     }
     readonly worstCases: Readonly<Record<string, unknown>>
   }>
+  buildCompactnessReceiptV1(): Promise<{
+    readonly schema: string
+    readonly identity: Readonly<Record<string, unknown>>
+    readonly population: {
+      readonly searchCases: number
+      readonly inspectContracts: number
+      readonly searchInspectPaths: number
+    }
+    readonly search: {
+      readonly distributions: Readonly<Record<string, unknown>>
+      readonly byCategory: Readonly<Record<string, unknown>>
+    }
+    readonly inspect: {
+      readonly distributions: Readonly<Record<string, unknown>>
+    }
+    readonly searchInspect: {
+      readonly distributions: Readonly<Record<string, unknown>>
+    }
+    readonly worstCases: Readonly<Record<string, unknown>>
+  }>
 }
 
 async function loadBaseline(): Promise<BaselineModule> {
@@ -86,6 +105,8 @@ const FORBIDDEN_RECEIPT_KEYS = [
   'chainOfThought',
   'workspaceContents',
   'toolPayload',
+  'cases',
+  'paths',
 ] as const
 
 describe('M2 Contract Search/Inspect deterministic compactness baseline', () => {
@@ -192,11 +213,17 @@ describe('M2 Contract Search/Inspect deterministic compactness baseline', () => 
     ])
   })
 
-  it('matches the durable receipt exactly and keeps raw/sensitive payloads out of it', async () => {
-    const { buildCompactnessBaselineV1 } = await loadBaseline()
-    const actual = await buildCompactnessBaselineV1()
-    const generated = stableJsonV1(actual)
-    console.log(`M2_CONTRACT_COMPACTNESS_BASELINE_V1 ${generated}`)
+  it('projects a compact durable receipt and keeps raw/per-case payloads out of it', async () => {
+    const { buildCompactnessReceiptV1 } = await loadBaseline()
+    expect(buildCompactnessReceiptV1).toBeTypeOf('function')
+    const actual = await buildCompactnessReceiptV1()
+
+    expect(actual.schema).toBe('dsh-contract-compactness-receipt-v1')
+    expect(actual.population).toEqual({
+      searchCases: 36,
+      inspectContracts: 184,
+      searchInspectPaths: 30,
+    })
 
     const receiptUrl = new URL('../../docs/evaluation/m2/contract-compactness-baseline-v1.json', import.meta.url)
     const receiptText = await readFile(receiptUrl, 'utf8')
