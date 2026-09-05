@@ -26,7 +26,8 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 | One-dispatch staged runner | **COMPLETE / ACCEPTANCE STOP** | Historical run `33763657085` accepted the fail-closed runner: `FORMAT_COMPLIANCE_BELOW_MINIMUM` and `DECISION_RESOLUTION_BELOW_MINIMUM`, with zero authorized remainder. Later measurement repairs do not rewrite this result. |
 | Staged dev-v1 | **COMPLETE / UNINFORMATIVE** | Run `33939213526`: selector chose 20/20 `api-absent` tasks; zero delta is selection-bias evidence, not Toolchain equivalence. |
 | Staged dev-v2 | **EXECUTED / METHODOLOGY DEFECT EXPOSED** | Run `33948582894`: B exhausted the frozen 31-tool budget on 2/8 canary tasks, C completed 8/8 and used Toolchain 8/8; report-v2 incorrectly projected those B terminals as measurement failure. |
-| Product/measurement separation | **PR #183** | Evaluation-only repair: explicit bounded product terminals, health-v2, report-v3 bounded metrics, safe per-observation receipts. No production `src/` or ranker changes. |
+| Product/measurement separation | **COMPLETE** | #183 separated measurement health, bounded product terminals and cost/trajectory evidence without production ranker changes. |
+| Contract Search / Inspect compactness baseline | **COMPLETE / MEASUREMENT-ONLY** | Provider-free exhaustive baseline: 36 Search cases, all 184 Inspect contracts and 30 actual Search→top-1 Inspect paths. Inspect, not Search, is the compactness hotspot. |
 | Exact Target Plugin Check alpha | **COMPLETE** | Static/read-only exact-target plugin verdict path is merged. |
 | H2 | **NOT READY** | Requires a fresh hidden dataset and independently specified end-to-end success endpoint before outcomes exist. |
 
@@ -39,6 +40,8 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 - frozen dev-v2 selection: [`staged-dev-v2-selection.json`](staged-dev-v2-selection.json)
 - original dev-v2 outcome: [`staged-dev-v2-outcome-2026-09-05.md`](staged-dev-v2-outcome-2026-09-05.md)
 - current staged semantics: [`staged-evaluation.md`](staged-evaluation.md)
+- compactness machine receipt: [`contract-compactness-baseline-v1.json`](contract-compactness-baseline-v1.json)
+- compactness interpretation: [`contract-compactness-baseline-2026-09-05.md`](contract-compactness-baseline-2026-09-05.md)
 
 Historical receipts are append-only. Later methodology must not rewrite their run ids, commits, artifacts, outcomes, or evidence classifications.
 
@@ -67,21 +70,25 @@ It does **not** establish either of these claims:
 
 Do not automatically rerun dev-v2 merely to obtain a preferred classification.
 
+## Compactness baseline result
+
+The deterministic baseline measures the exact UTF-8 bytes of the production `JSON.stringify(response)` text visible through native DSH Search/Inspect tools. Stable serialization is used only for receipt identity. No model-token estimate is published because no pinned tokenizer is part of this evaluation boundary; bytes must not be relabeled as provider-billed tokens.
+
+Key frozen results:
+
+- Search wire bytes: p50 `1,258`, p95 `3,080`, max `3,241`;
+- Inspect wire bytes: p50 `4,260`, p95 `14,223`, max `44,998`;
+- Inspect exact repeated leaf bytes: p50 `1,761`, p95 `8,048`, max `27,101`;
+- Inspect repeated-leaf rate: p50 `40.89%`, p95 `55.15%`, max `65.31%`;
+- exact descriptive Inspect content already present in the preceding Search: p50 `7.72%`, p95 `12.17%`, max `14.14%`.
+
+The result classifies **Inspect payload size plus within-response duplication** as the primary compaction signal. Search→Inspect overlap exists but is secondary; Search itself is not the primary bottleneck. Five-token shingle statistics are lexical corroboration only, not semantic equivalence or removable-byte estimates.
+
 ## Next permitted engineering work
 
-After PR #183 is merged and the exact merge SHA passes post-merge `main` CI, the next recommended workstream is **Contract Search / Inspect compactness evidence**, not another ranking tweak.
+A production compaction proposal may now be designed as a **separate** issue/PR, focused first on Inspect. It must begin with RED semantic-parity tests and preserve contract ids/ranking, evidence ids and resolvability, target/index provenance, fail-closed/no-result behavior, inspectability and CLI/native/MCP parity.
 
-The first compactness phase must be **measurement-only** and must not alter production output yet. It should establish, on frozen deterministic fixtures and retained safe staged telemetry where available:
-
-- serialized bytes and approximate model-token footprint returned by `toolchain_contract_search` and `toolchain_contract_inspect`;
-- useful-evidence density: evidence-bearing fields per returned byte/token;
-- duplicate/repeated content within a single tool response;
-- overlap between consecutive Search → Inspect responses for the same contract/evidence path;
-- repeated context across turns attributable to Toolchain results;
-- per-tool and per-task distributions (median, p90/p95, maxima), not only averages;
-- strict semantic parity checks proving any later compaction candidate preserves contract ids, ranking/order, evidence ids, target binding, fail-closed behavior and inspectability.
-
-Only after that baseline exists should a separate production-compaction proposal be considered. Do not change IDF, coherence, abstention, proximity, target identity, Contract Index fingerprint semantics, or the 31-call staged budget in the compactness-baseline phase.
+The compactness baseline itself does not authorize hidden truncation, lossy summarization, evidence removal, Search ranker changes, a provider-backed rerun, or token-savings claims. Provider/model measurement is a separate future experiment only after a semantically equivalent compact representation exists and is explicitly authorized.
 
 ## H2 boundary
 

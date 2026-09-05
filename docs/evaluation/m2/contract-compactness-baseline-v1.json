@@ -1,0 +1,120 @@
+{
+  "schema": "dsh-contract-compactness-receipt-v1",
+  "identity": {
+    "baseCommit": "a9465a962e99ebca685f0af4c308007117dbdc41",
+    "fixtureVersion": "rc2-web-v1",
+    "targetFingerprint": "dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe",
+    "contractIndexFingerprint": "dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2",
+    "rankerVersion": "dsh-contract-search-v3-conservative-abstention",
+    "corpusFingerprint": "dsh-contract-compactness-r1-v1:9e738791960745ccc6e08ecc4d87568ed9a4c4ed7bcc569e996b8720e5f2b58e",
+    "metricVersion": "dsh-contract-compactness-v1",
+    "lexicalNormalizerVersion": "nfkc-lower-unicode-alnum-v1",
+    "lexicalShingleSize": 5
+  },
+  "population": {
+    "searchCases": 36,
+    "inspectContracts": 184,
+    "searchInspectPaths": 30
+  },
+  "search": {
+    "distributions": {
+      "wireBytes": { "count": 36, "min": 360, "p50": 1258, "p90": 2587, "p95": 3080, "max": 3241 },
+      "descriptiveBytes": { "count": 36, "min": 0, "p50": 76, "p90": 95, "p95": 165, "max": 166 },
+      "evidenceBytes": { "count": 36, "min": 0, "p50": 504, "p90": 1617, "p95": 2034, "max": 2163 },
+      "repeatedLeafBytes": { "count": 36, "min": 0, "p50": 163, "p90": 542, "p95": 693, "max": 728 },
+      "repeatedLeafRate": { "count": 36, "min": 0, "p50": 0.12967382657120127, "p90": 0.20950908388094316, "p95": 0.22462203023758098, "max": 0.225 },
+      "lexicalDuplicationRate": { "count": 36, "min": 0, "p50": 0.5588235294117647, "p90": 0.7322834645669292, "p95": 0.7548387096774194, "max": 0.7730061349693251 },
+      "uniqueEvidencePerKiB": { "count": 36, "min": 0, "p50": 1.601250977326036, "p90": 2.3749516814843448, "p95": 2.52761493366245, "max": 2.6597402597402597 }
+    },
+    "byCategory": {
+      "ambiguous": {
+        "wireBytes": { "count": 5, "min": 1045, "p50": 1323, "p90": 2623, "p95": 2623, "max": 2623 },
+        "descriptiveBytes": { "count": 5, "min": 79, "p50": 86, "p90": 166, "p95": 166, "max": 166 },
+        "evidenceBytes": { "count": 5, "min": 282, "p50": 558, "p90": 1389, "p95": 1389, "max": 1389 },
+        "repeatedLeafBytes": { "count": 5, "min": 121, "p50": 200, "p90": 530, "p95": 530, "max": 530 },
+        "repeatedLeafRate": { "count": 5, "min": 0.11578947368421053, "p50": 0.15117157974300832, "p90": 0.20205871139916126, "p95": 0.20205871139916126, "max": 0.20205871139916126 },
+        "lexicalDuplicationRate": { "count": 5, "min": 0.5581395348837209, "p50": 0.6666666666666666, "p90": 0.7131782945736435, "p95": 0.7131782945736435, "max": 0.7131782945736435 },
+        "uniqueEvidencePerKiB": { "count": 5, "min": 0.9799043062200957, "p50": 1.5479969765684052, "p90": 1.9519634006862372, "p95": 1.9519634006862372, "max": 1.9519634006862372 }
+      },
+      "exact-symbol": {
+        "wireBytes": { "count": 8, "min": 913, "p50": 969, "p90": 1629, "p95": 1629, "max": 1629 },
+        "descriptiveBytes": { "count": 8, "min": 71, "p50": 79, "p90": 165, "p95": 165, "max": 165 },
+        "evidenceBytes": { "count": 8, "min": 246, "p50": 270, "p90": 561, "p95": 561, "max": 561 },
+        "repeatedLeafBytes": { "count": 8, "min": 83, "p50": 99, "p90": 263, "p95": 263, "max": 263 },
+        "repeatedLeafRate": { "count": 8, "min": 0.09090909090909091, "p50": 0.1021671826625387, "p90": 0.1614487415592388, "p95": 0.1614487415592388, "max": 0.1614487415592388 },
+        "lexicalDuplicationRate": { "count": 8, "min": 0.48148148148148145, "p50": 0.5588235294117647, "p90": 0.6756756756756757, "p95": 0.6756756756756757, "max": 0.6756756756756757 },
+        "uniqueEvidencePerKiB": { "count": 8, "min": 1.0491803278688525, "p50": 1.0963597430406853, "p90": 1.2962025316455696, "p95": 1.2962025316455696, "max": 1.2962025316455696 }
+      },
+      "indirect": {
+        "wireBytes": { "count": 6, "min": 360, "p50": 1564, "p90": 3080, "p95": 3080, "max": 3080 },
+        "descriptiveBytes": { "count": 6, "min": 0, "p50": 74, "p90": 80, "p95": 80, "max": 80 },
+        "evidenceBytes": { "count": 6, "min": 0, "p50": 768, "p90": 2034, "p95": 2034, "max": 2034 },
+        "repeatedLeafBytes": { "count": 6, "min": 0, "p50": 250, "p90": 693, "p95": 693, "max": 693 },
+        "repeatedLeafRate": { "count": 6, "min": 0, "p50": 0.159846547314578, "p90": 0.225, "p95": 0.225, "max": 0.225 },
+        "lexicalDuplicationRate": { "count": 6, "min": 0, "p50": 0.5849056603773585, "p90": 0.7548387096774194, "p95": 0.7548387096774194, "max": 0.7548387096774194 },
+        "uniqueEvidencePerKiB": { "count": 6, "min": 0, "p50": 1.9641943734015346, "p90": 2.6597402597402597, "p95": 2.6597402597402597, "max": 2.6597402597402597 }
+      },
+      "natural-language": {
+        "wireBytes": { "count": 7, "min": 360, "p50": 1279, "p90": 3241, "p95": 3241, "max": 3241 },
+        "descriptiveBytes": { "count": 7, "min": 0, "p50": 76, "p90": 80, "p95": 80, "max": 80 },
+        "evidenceBytes": { "count": 7, "min": 0, "p50": 537, "p90": 2163, "p95": 2163, "max": 2163 },
+        "repeatedLeafBytes": { "count": 7, "min": 0, "p50": 187, "p90": 728, "p95": 728, "max": 728 },
+        "repeatedLeafRate": { "count": 7, "min": 0, "p50": 0.1462079749804535, "p90": 0.22462203023758098, "p95": 0.22462203023758098, "max": 0.22462203023758098 },
+        "lexicalDuplicationRate": { "count": 7, "min": 0, "p50": 0.6136363636363636, "p90": 0.7730061349693251, "p95": 0.7730061349693251, "max": 0.7730061349693251 },
+        "uniqueEvidencePerKiB": { "count": 7, "min": 0, "p50": 1.7385398981324278, "p90": 2.52761493366245, "p95": 2.52761493366245, "max": 2.52761493366245 }
+      },
+      "no-result": {
+        "wireBytes": { "count": 4, "min": 360, "p50": 360, "p90": 360, "p95": 360, "max": 360 },
+        "descriptiveBytes": { "count": 4, "min": 0, "p50": 0, "p90": 0, "p95": 0, "max": 0 },
+        "evidenceBytes": { "count": 4, "min": 0, "p50": 0, "p90": 0, "p95": 0, "max": 0 },
+        "repeatedLeafBytes": { "count": 4, "min": 0, "p50": 0, "p90": 0, "p95": 0, "max": 0 },
+        "repeatedLeafRate": { "count": 4, "min": 0, "p50": 0, "p90": 0, "p95": 0, "max": 0 },
+        "lexicalDuplicationRate": { "count": 4, "min": 0, "p50": 0, "p90": 0, "p95": 0, "max": 0 },
+        "uniqueEvidencePerKiB": { "count": 4, "min": 0, "p50": 0, "p90": 0, "p95": 0, "max": 0 }
+      },
+      "package-api": {
+        "wireBytes": { "count": 6, "min": 1177, "p50": 1257, "p90": 1587, "p95": 1587, "max": 1587 },
+        "descriptiveBytes": { "count": 6, "min": 71, "p50": 74, "p90": 79, "p95": 79, "max": 79 },
+        "evidenceBytes": { "count": 6, "min": 456, "p50": 504, "p90": 780, "p95": 780, "max": 780 },
+        "repeatedLeafBytes": { "count": 6, "min": 139, "p50": 163, "p90": 257, "p95": 257, "max": 257 },
+        "repeatedLeafRate": { "count": 6, "min": 0.11809685641461343, "p50": 0.12967382657120127, "p90": 0.16194076874606175, "p95": 0.16194076874606175, "max": 0.16194076874606175 },
+        "lexicalDuplicationRate": { "count": 6, "min": 0.45454545454545453, "p50": 0.5581395348837209, "p90": 0.6507936507936508, "p95": 0.6507936507936508, "max": 0.6507936507936508 },
+        "uniqueEvidencePerKiB": { "count": 6, "min": 1.6292760540970566, "p50": 1.740016992353441, "p90": 2.075675675675676, "p95": 2.075675675675676, "max": 2.075675675675676 }
+      }
+    }
+  },
+  "inspect": {
+    "distributions": {
+      "wireBytes": { "count": 184, "min": 847, "p50": 4260, "p90": 10620, "p95": 14223, "max": 44998 },
+      "descriptiveBytes": { "count": 184, "min": 86, "p50": 622, "p90": 1666, "p95": 2573, "max": 5917 },
+      "evidenceBytes": { "count": 184, "min": 151, "p50": 2210, "p90": 6807, "p95": 8746, "max": 31458 },
+      "repeatedLeafBytes": { "count": 184, "min": 72, "p50": 1761, "p90": 5863, "p95": 8048, "max": 27101 },
+      "repeatedLeafRate": { "count": 184, "min": 0.08500590318772137, "p50": 0.4089108910891089, "p90": 0.5337498302322423, "p95": 0.5515435717076983, "max": 0.6531368569663814 },
+      "lexicalDuplicationRate": { "count": 184, "min": 0.125, "p50": 0.8827838827838828, "p90": 0.9372822299651568, "p95": 0.949119373776908, "max": 0.9736346516007532 },
+      "uniqueEvidencePerKiB": { "count": 184, "min": 0.4066001941233566, "p50": 1.0575781048282984, "p90": 1.2918418839360808, "p95": 1.3513691850874299, "max": 1.485780615206036 }
+    }
+  },
+  "searchInspect": {
+    "distributions": {
+      "exactSearchCoveredByInspect": { "count": 30, "min": 0.5812115891132572, "p50": 1, "p90": 1, "p95": 1, "max": 1 },
+      "exactInspectAlreadyInSearch": { "count": 30, "min": 0.038578943950120154, "p50": 0.18413348946135832, "p90": 0.2728977805564239, "p95": 0.27669124719461363, "max": 0.35823694904657705 },
+      "exactDescriptiveSearchCoveredByInspect": { "count": 30, "min": 0.4457831325301205, "p50": 1, "p90": 1, "p95": 1, "max": 1 },
+      "exactDescriptiveInspectAlreadyInSearch": { "count": 30, "min": 0.01760039662865642, "p50": 0.07723577235772358, "p90": 0.11048951048951049, "p95": 0.12166172106824925, "max": 0.14136904761904762 },
+      "lexicalSearchCoveredByInspect": { "count": 30, "min": 0.6086956521739131, "p50": 1, "p90": 1, "p95": 1, "max": 1 },
+      "lexicalInspectAlreadyInSearch": { "count": 30, "min": 0.19444444444444445, "p50": 0.6, "p90": 0.8043478260869565, "p95": 0.8636363636363636, "max": 0.88 },
+      "lexicalDescriptiveSearchCoveredByInspect": { "count": 30, "min": 0.5, "p50": 1, "p90": 1, "p95": 1, "max": 1 },
+      "lexicalDescriptiveInspectAlreadyInSearch": { "count": 30, "min": 0.5294117647058824, "p50": 0.7, "p90": 0.8, "p95": 0.8, "max": 0.8333333333333334 }
+    }
+  },
+  "worstCases": {
+    "largestSearch": { "caseId": "natural-session-search-text", "wireBytes": 3241 },
+    "largestInspect": { "contractId": "package:@deepseek-ai/dsh-client-runtime", "wireBytes": 44998 },
+    "mostRepeatedSearch": { "caseId": "natural-session-search-text", "repeatedLeafBytes": 728 },
+    "mostRepeatedInspect": { "contractId": "package:@deepseek-ai/dsh-client-runtime", "repeatedLeafBytes": 27101 },
+    "highestDescriptiveInspectReuse": {
+      "searchCaseId": "ambiguous-tool-result-pruner",
+      "contractId": "package:@deepseek-ai/dsh-compaction-tool-result-pruner",
+      "lexicalContainment": 0.8333333333333334
+    }
+  }
+}
