@@ -69,6 +69,36 @@ function result(
   }
 }
 
+function unrecoveredC(taskId: string) {
+  return {
+    call: { ordinal: 1, taskId, arm: 'C' as const, repetition: 1 },
+    measurement: {
+      arm: 'C' as const,
+      formatValid: false,
+      decisionResolved: false,
+      infrastructureFailures: 2,
+      attemptCount: 2,
+      hasModelOutcome: false,
+      unrecoveredInfrastructure: true,
+    },
+    failure: { code: 'UNRECOVERED_INFRASTRUCTURE', summary: 'test failure' },
+    cost: {
+      attempts: 2,
+      infrastructureFailures: 2,
+      wallTimeMs: 20,
+      usage: { inputTokens: 0, outputTokens: 0, turns: 0, providerCompletions: 0 },
+      toolUsage: {
+        calls: 0,
+        ordinaryCalls: 0,
+        toolchainCalls: 0,
+        byTool: { ...BY_TOOL_ZERO },
+        structuredTransportCalls: 0,
+        measurementToolCalls: 0,
+      },
+    },
+  }
+}
+
 function run(status: 'PASS' | 'STOP') {
   const canaryResults = [
     result('B', 'task-1', { apiValid: true }),
@@ -243,5 +273,22 @@ describe('staged evaluation report', () => {
       rate: 1,
     })
     expect(Object.isFrozen(report)).toBe(true)
+  })
+
+  it('excludes unrecovered C infrastructure attempts from the agent Toolchain-use denominator', () => {
+    const staged = run('STOP')
+    staged.canaryResults[3] = unrecoveredC('task-2')
+    const report = buildStagedEvaluationReport(staged)
+
+    expect(report.cost.byArm.C).toMatchObject({
+      modelCalls: 2,
+      attempts: 3,
+      infrastructureFailures: 2,
+    })
+    expect(report.cost.toolchainUse).toEqual({
+      eligibleObservations: 1,
+      observationsWithUse: 1,
+      rate: 1,
+    })
   })
 })
