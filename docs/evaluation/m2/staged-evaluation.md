@@ -62,7 +62,7 @@ The exact next 20-task development sample is frozen before any provider outcome 
 - `8` `api-absent` checks;
 - all `8` domains represented;
 - both oracle kinds present in every domain;
-- exact selected task ids and a deterministic selection commitment are committed and regression-tested.
+- exact selected task ids, source shard SHA-256 identities, and a deterministic selection commitment are committed and regression-tested.
 
 Any selection drift requires a new versioned development experiment. Do not silently mutate the frozen selection after seeing model outcomes.
 
@@ -115,13 +115,13 @@ The staged development oracle can deterministically adjudicate one API-existence
 - reports aggregate and per-arm B/C input/output tokens, wall time, turns, provider completions, retries, infrastructure failures, product-tool calls, and measurement-tool calls;
 - reports actual trace-derived ordinary vs Toolchain product-tool counts;
 - distinguishes `read_file`, `search_text`, `toolchain_contract_search`, and `toolchain_contract_inspect`;
-- reports the number/rate of executed C observations that actually used at least one Toolchain tool.
+- reports the number/rate of C observations with an actual model outcome that used at least one Toolchain tool.
 
-Tool-use telemetry is observational. It does not force C to call Toolchain and does not alter model-visible capability manifests or provider transport.
+Unrecovered C infrastructure attempts remain in cost and missingness accounting but are excluded from the Toolchain-use denominator because no agent tool-selection behavior was observed. Tool-use telemetry is observational: it does not force C to call Toolchain and does not alter model-visible capability manifests or provider transport.
 
 ## Cost discipline
 
-A mode budget is a hard cap, not a chunk size. `dev` means at most 40 B/C model outcomes: 16 health-canary calls plus 24 remainder calls only after `PASS`. There is no manual continuation loop.
+A mode budget is a hard cap, not a chunk size. `dev` means at most 40 scheduled B/C observations: 16 health-canary calls plus 24 remainder calls only after `PASS`. Authorized infrastructure retries are reported separately as attempts/cost; there is no manual continuation loop.
 
 Token overhead, turns, wall time, and tool-use differences are first-class engineering metrics. A product delta without its incremental cost must not be treated as sufficient evidence for promotion.
 
