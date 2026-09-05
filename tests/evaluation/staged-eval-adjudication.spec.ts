@@ -42,24 +42,24 @@ function result(taskId: string, claim: { package: string; symbol: string; assert
 }
 
 describe('deterministic staged task adjudication', () => {
-  it('resolves positive task claims against the frozen task oracle without model verdict fields', () => {
+  it('resolves positive task claims against the frozen task oracle without inventing task-success', () => {
     expect(adjudicateDevelopmentClaim(positiveTask(), result('positive', {
       package: '@deepseek-ai/dsh-user-approval', symbol: 'ApprovalPolicy', assertion: 'exists',
-    }))).toEqual({ status: 'resolved', decision: { apiValid: true, taskSuccess: true } })
+    }))).toEqual({ status: 'resolved', decision: { apiValid: true } })
 
     expect(adjudicateDevelopmentClaim(positiveTask(), result('positive', {
       package: '@deepseek-ai/dsh-user-approval', symbol: 'ApprovalPolicy', assertion: 'absent',
-    }))).toEqual({ status: 'resolved', decision: { apiValid: false, taskSuccess: false } })
+    }))).toEqual({ status: 'resolved', decision: { apiValid: false } })
   })
 
-  it('resolves package-scoped absence claims deterministically', () => {
+  it('resolves package-scoped absence claims deterministically without duplicating API validity as task-success', () => {
     expect(adjudicateDevelopmentClaim(packageAbsenceTask(), result('negative', {
       package: '@deepseek-ai/dsh-user-approval', symbol: 'ApprovalService.resetPolicy', assertion: 'absent',
-    }))).toEqual({ status: 'resolved', decision: { apiValid: true, taskSuccess: true } })
+    }))).toEqual({ status: 'resolved', decision: { apiValid: true } })
 
     expect(adjudicateDevelopmentClaim(packageAbsenceTask(), result('negative', {
       package: '@deepseek-ai/dsh-user-approval', symbol: 'ApprovalService.resetPolicy', assertion: 'exists',
-    }))).toEqual({ status: 'resolved', decision: { apiValid: false, taskSuccess: false } })
+    }))).toEqual({ status: 'resolved', decision: { apiValid: false } })
   })
 
   it('keeps an unrelated API identity unresolved instead of inventing a correctness verdict', () => {
@@ -84,7 +84,7 @@ describe('deterministic staged task adjudication', () => {
 
     expect(adjudicateDevelopmentClaim(task, result('target-negative', {
       package: '*', symbol: 'GhostApi', assertion: 'absent',
-    }))).toEqual({ status: 'resolved', decision: { apiValid: true, taskSuccess: true } })
+    }))).toEqual({ status: 'resolved', decision: { apiValid: true } })
     expect(adjudicateDevelopmentClaim(task, result('target-negative', {
       package: '@deepseek-ai/dsh-scope', symbol: 'GhostApi', assertion: 'absent',
     }))).toEqual({ status: 'unresolved', reason: 'CLAIM_OUTSIDE_TASK_ORACLE' })
