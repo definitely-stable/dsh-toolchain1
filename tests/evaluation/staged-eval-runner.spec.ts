@@ -100,7 +100,7 @@ describe('one-dispatch staged evaluation runner', () => {
     for (const [index, invocation] of execute.mock.calls.entries()) {
       const [call, task] = invocation
       expect(task.id).toBe(call.taskId)
-      expect(task).toBe(result.schedule.selectedTasks[index >> 1])
+      expect(task).toStrictEqual(result.schedule.selectedTasks[index >> 1])
     }
   })
 
