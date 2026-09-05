@@ -1,0 +1,51 @@
+{
+  "schema": "dsh-toolchain-staged-dev-selection-v1",
+  "status": "FROZEN-DEVELOPMENT-ONLY",
+  "selectorVersion": "domain-kind-stratified-v1",
+  "sourceCorpus": {
+    "manifest": "docs/evaluation/m2/h1-dev-corpus-v1/manifest.json",
+    "schema": "dsh-toolchain-m2-h1-development-corpus-manifest-v1",
+    "taskCount": 96,
+    "futureHoldoutAllowed": false
+  },
+  "candidateCommit": "8eba7eccba77bb3e047868dbad8ea9c9ced3b033",
+  "taskCount": 20,
+  "kindCounts": {
+    "api-exists-any": 12,
+    "api-absent": 8
+  },
+  "domainCounts": {
+    "approval-policy": 3,
+    "approval-request": 3,
+    "scope-hierarchy": 3,
+    "scope-lifecycle": 3,
+    "session-reads": 2,
+    "session-search": 2,
+    "tool-runtime": 2,
+    "tool-schema": 2
+  },
+  "selectedTaskIds": [
+    "h1-approval-policy-p01",
+    "h1-approval-request-n01",
+    "h1-scope-hierarchy-p01",
+    "h1-scope-lifecycle-n01",
+    "h1-session-reads-p01",
+    "h1-session-search-n01",
+    "h1-tool-runtime-p01",
+    "h1-tool-schema-n01",
+    "h1-approval-policy-n01",
+    "h1-approval-request-p01",
+    "h1-scope-hierarchy-n01",
+    "h1-scope-lifecycle-p01",
+    "h1-session-reads-n01",
+    "h1-session-search-p01",
+    "h1-tool-runtime-n01",
+    "h1-tool-schema-p01",
+    "h1-approval-policy-p02",
+    "h1-approval-request-p02",
+    "h1-scope-hierarchy-p02",
+    "h1-scope-lifecycle-p02"
+  ],
+  "selectionCommitmentSha256": "6a448274db2a89ced58621bbc4963058292ace5df1b104ddff2b80f05765693e",
+  "warning": "DEVELOPMENT_ONLY engineering-signal selection. It reuses disclosed H1-derived tasks and MUST NOT be described or reused as H2 holdout evidence."
+}
