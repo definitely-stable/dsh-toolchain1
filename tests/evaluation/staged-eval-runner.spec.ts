@@ -52,8 +52,8 @@ function expectedClaim(task: TestTask) {
       }
 }
 
-function healthyExecutor() {
-  return vi.fn(async (call: { taskId: string }, task: TestTask) => ({
+function healthyResult(call: { taskId: string }, task: TestTask) {
+  return {
     transportStatus: 'ok' as const,
     structuredContent: {
       schema: 'dsh-toolchain-staged-eval-result-v1',
@@ -63,7 +63,11 @@ function healthyExecutor() {
     attempts: 1,
     infrastructureFailures: 0,
     wallTimeMs: 10,
-  }))
+  }
+}
+
+function healthyExecutor() {
+  return vi.fn(async (call: { taskId: string }, task: TestTask) => healthyResult(call, task))
 }
 
 describe('one-dispatch staged evaluation runner', () => {
@@ -122,6 +126,37 @@ describe('one-dispatch staged evaluation runner', () => {
     })
   })
 
+  it('does not censor an arm-dependent product-budget gap as unhealthy measurement', async () => {
+    const exhaustedBOrdinals = new Set([1, 3])
+    const execute = vi.fn(async (call: { ordinal: number; taskId: string; arm: 'B' | 'C' }, task: TestTask) => {
+      if (call.arm === 'B' && exhaustedBOrdinals.has(call.ordinal)) {
+        return {
+          transportStatus: 'product-terminal' as const,
+          productTerminalReason: 'tool_budget_exhausted' as const,
+          terminalTransportReason: 'tool_call_limit',
+          attempts: 1,
+          infrastructureFailures: 0,
+          wallTimeMs: 10,
+        }
+      }
+      return healthyResult(call, task)
+    })
+
+    const result = await runStagedEvaluation({ mode: 'dev', tasks, execute })
+
+    expect(result.measurementStatus).toBe('PASS')
+    expect(result.health.reasons).toEqual([])
+    expect(result.health.metrics).toMatchObject({
+      scheduledObservations: 16,
+      measurementAttemptObservations: 14,
+      formatComplianceRate: 1,
+      resolutionGap: 0.25,
+    })
+    expect(result.authorization.remainderAuthorized).toBe(24)
+    expect(result.authorization.executedCalls).toBe(40)
+    expect(execute).toHaveBeenCalledTimes(40)
+  })
+
   it('keeps canary mode bounded to 16 calls even when health passes', async () => {
     const execute = healthyExecutor()
 
@@ -138,17 +173,7 @@ describe('one-dispatch staged evaluation runner', () => {
     const order: number[] = []
     const execute = vi.fn(async (call: { ordinal: number; taskId: string }, task: TestTask) => {
       order.push(call.ordinal)
-      return {
-        transportStatus: 'ok' as const,
-        structuredContent: {
-          schema: 'dsh-toolchain-staged-eval-result-v1',
-          taskId: call.taskId,
-          claims: [expectedClaim(task)],
-        },
-        attempts: 1,
-        infrastructureFailures: 0,
-        wallTimeMs: 1,
-      }
+      return healthyResult(call, task)
     })
 
     await runStagedEvaluation({ mode: 'dev', tasks, execute })
