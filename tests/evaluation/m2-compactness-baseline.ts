@@ -173,7 +173,7 @@ export interface CompactnessReceiptV1 {
   }
   readonly search: {
     readonly distributions: ResponseDistributions
-    readonly byCategory: Readonly<Record<M2RetrievalCategory, DistributionSummary>>
+    readonly byCategory: Readonly<Record<M2RetrievalCategory, ResponseDistributions>>
   }
   readonly inspect: {
     readonly distributions: ResponseDistributions
@@ -531,9 +531,6 @@ export function buildCompactnessBaselineV1(): Promise<CompactnessBaselineV1> {
 
 export async function buildCompactnessReceiptV1(): Promise<CompactnessReceiptV1> {
   const baseline = await buildCompactnessBaselineV1()
-  const categoryWireBytes = Object.fromEntries(
-    Object.entries(baseline.search.byCategory).map(([category, distributions]) => [category, distributions.wireBytes]),
-  ) as Readonly<Record<M2RetrievalCategory, DistributionSummary>>
 
   return Object.freeze({
     schema: RECEIPT_SCHEMA,
@@ -545,7 +542,7 @@ export async function buildCompactnessReceiptV1(): Promise<CompactnessReceiptV1>
     }),
     search: Object.freeze({
       distributions: baseline.search.distributions,
-      byCategory: Object.freeze(categoryWireBytes),
+      byCategory: baseline.search.byCategory,
     }),
     inspect: Object.freeze({ distributions: baseline.inspect.distributions }),
     searchInspect: Object.freeze({ distributions: baseline.searchInspect.distributions }),
