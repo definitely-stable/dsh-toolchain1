@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+
 import { describe, expect, it } from 'vitest'
 
 import { inspectContractResponse, searchContractsResponse } from '../../src/kernel/index.js'
@@ -13,6 +15,7 @@ import {
   createFrozenM2RetrievalIndex,
 } from './m2-retrieval-index.js'
 import { createFrozenM2KernelHarness } from './m2-search-inspect-fixture.js'
+import { stableJsonV1 } from './m2-compactness-metrics.js'
 
 interface BaselineModule {
   readonly SEARCH_REQUEST_ID: string
@@ -74,6 +77,15 @@ const EXPECTED_CATEGORIES = [
   'natural-language',
   'no-result',
   'package-api',
+] as const
+
+const FORBIDDEN_RECEIPT_KEYS = [
+  'wireJson',
+  'rawResponse',
+  'prompt',
+  'chainOfThought',
+  'workspaceContents',
+  'toolPayload',
 ] as const
 
 describe('M2 Contract Search/Inspect deterministic compactness baseline', () => {
@@ -178,5 +190,21 @@ describe('M2 Contract Search/Inspect deterministic compactness baseline', () => 
     expect(inspectTool.output.render({}, inspect)).toEqual([
       { type: 'text', text: JSON.stringify(inspect) },
     ])
+  })
+
+  it('matches the durable receipt exactly and keeps raw/sensitive payloads out of it', async () => {
+    const { buildCompactnessBaselineV1 } = await loadBaseline()
+    const actual = await buildCompactnessBaselineV1()
+    const generated = stableJsonV1(actual)
+    console.log(`M2_CONTRACT_COMPACTNESS_BASELINE_V1 ${generated}`)
+
+    const receiptUrl = new URL('../../docs/evaluation/m2/contract-compactness-baseline-v1.json', import.meta.url)
+    const receiptText = await readFile(receiptUrl, 'utf8')
+    const expected = JSON.parse(receiptText) as unknown
+
+    expect(actual).toEqual(expected)
+    for (const forbiddenKey of FORBIDDEN_RECEIPT_KEYS) {
+      expect(receiptText).not.toContain(`\"${forbiddenKey}\"`)
+    }
   })
 })
