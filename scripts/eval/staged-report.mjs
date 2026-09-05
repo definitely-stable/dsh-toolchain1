@@ -172,9 +172,10 @@ function flatCostSummary(results) {
 function costSummary(results) {
   const bResults = results.filter(result => result.call.arm === 'B')
   const cResults = results.filter(result => result.call.arm === 'C')
+  const eligibleCResults = cResults.filter(result => result.measurement?.hasModelOutcome === true)
   const flat = flatCostSummary(results)
-  const eligibleObservations = cResults.length
-  const observationsWithUse = cResults.filter(result => numberOrZero(result.cost.toolUsage?.toolchainCalls) > 0).length
+  const eligibleObservations = eligibleCResults.length
+  const observationsWithUse = eligibleCResults.filter(result => numberOrZero(result.cost.toolUsage?.toolchainCalls) > 0).length
   return Object.freeze({
     ...flat,
     byArm: Object.freeze({
