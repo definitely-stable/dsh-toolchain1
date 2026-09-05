@@ -102,7 +102,7 @@ describe('one-command staged evaluation runner', () => {
     })
 
     expect(report).toMatchObject({
-      schema: 'dsh-toolchain-staged-eval-report-v1',
+      schema: 'dsh-toolchain-staged-eval-report-v2',
       mode: 'canary',
       measurement: { status: 'PASS' },
       authorization: { plannedCalls: 16, executedCalls: 16, remainderAuthorized: 0 },
