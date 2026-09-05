@@ -38,7 +38,7 @@ function result(
   decision?: { apiValid: boolean },
   terminalTransportReason?: string,
   failureCode?: string,
-) {
+): any {
   const cost = arm === 'B'
     ? {
         usage: { inputTokens: 100, outputTokens: 20, turns: 2, providerCompletions: 2 },
@@ -97,7 +97,7 @@ function result(
   }
 }
 
-function budgetExhaustedB(taskId: string) {
+function budgetExhaustedB(taskId: string): any {
   return {
     call: { ordinal: 3, taskId, arm: 'B' as const, repetition: 1 },
     measurement: {
@@ -130,7 +130,7 @@ function budgetExhaustedB(taskId: string) {
   }
 }
 
-function unrecoveredC(taskId: string) {
+function unrecoveredC(taskId: string): any {
   return {
     call: { ordinal: 4, taskId, arm: 'C' as const, repetition: 1 },
     measurement: {
@@ -161,8 +161,8 @@ function unrecoveredC(taskId: string) {
   }
 }
 
-function run(status: 'PASS' | 'STOP') {
-  const canaryResults = [
+function run(status: 'PASS' | 'STOP'): any {
+  const canaryResults: any[] = [
     result('B', 'task-1', { apiValid: true }),
     result('C', 'task-1', { apiValid: true }),
     result('B', 'task-2', { apiValid: false }),
@@ -273,7 +273,7 @@ describe('staged evaluation report', () => {
       },
       paired: { count: 2, bothSuccess: 1, bOnly: 0, cOnly: 1, neither: 0, rateDeltaCMinusB: 0.5 },
     })
-    expect(report.observations.find(value => value.taskId === 'task-2' && value.arm === 'B')).toMatchObject({
+    expect(report.observations.find((value: any) => value.taskId === 'task-2' && value.arm === 'B')).toMatchObject({
       ordinal: 3,
       taskId: 'task-2',
       arm: 'B',
@@ -299,7 +299,7 @@ describe('staged evaluation report', () => {
 
   it('persists only safe operational observation receipts, never prompts, reasoning or raw tool payloads', () => {
     const report = buildStagedEvaluationReport(run('PASS'))
-    expect(report.observations.map(value => value.ordinal)).toEqual([1, 2, 3, 4])
+    expect(report.observations.map((value: any) => value.ordinal)).toEqual([1, 2, 3, 4])
     const serialized = JSON.stringify(report)
     expect(serialized).not.toContain('DO_NOT_PERSIST_PROMPT_ALPHA')
     expect(serialized).not.toContain('DO_NOT_PERSIST_PROMPT_BETA')
