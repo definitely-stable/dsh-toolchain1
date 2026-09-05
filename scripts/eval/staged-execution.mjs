@@ -9,7 +9,7 @@ const TERMINAL_REASON_PATTERN = /^[a-z0-9_-]{1,64}$/u
  * @typedef {{ arm: 'B'|'C'; formatValid: boolean; decisionResolved: boolean; infrastructureFailures: number; attemptCount: number; hasModelOutcome: boolean; unrecoveredInfrastructure: boolean; terminalTransportReason?: string }} StagedMeasurement
  * @typedef {{ attempts: number; infrastructureFailures: number; wallTimeMs: number; usage?: Readonly<Record<string, unknown>>; toolUsage?: Readonly<Record<string, unknown>> }} StagedCost
  * @typedef {{ code: string; summary: string }} StagedFailure
- * @typedef {{ apiValid: boolean; taskSuccess: boolean }} StagedDecision
+ * @typedef {{ apiValid: boolean }} StagedDecision
  * @typedef {{ call: StagedCall; measurement: StagedMeasurement; cost: StagedCost; decision?: StagedDecision; failure?: StagedFailure }} StagedExecutionResult
  */
 
