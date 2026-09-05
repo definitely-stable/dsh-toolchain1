@@ -18,18 +18,26 @@ function counts(values: readonly string[]) {
 }
 
 describe('staged dev v2 frozen development selection', () => {
-  it('binds the exact 20-task domain × oracle-kind selection before any model outcome', async () => {
+  it('binds the exact 20-task domain × oracle-kind selection and source corpus bytes before any model outcome', async () => {
     const receipt = JSON.parse(await readFile(RECEIPT_PATH, 'utf8')) as {
       schema: string
       status: string
       selectorVersion: string
-      sourceCorpus: { manifest: string; taskCount: number; futureHoldoutAllowed: boolean }
+      sourceCorpus: {
+        manifest: string
+        taskCount: number
+        futureHoldoutAllowed: boolean
+        shards: Array<{ path: string; taskCount: number; sha256: string }>
+      }
       candidateCommit: string
       taskCount: number
       kindCounts: Record<string, number>
       domainCounts: Record<string, number>
       selectedTaskIds: string[]
       selectionCommitmentSha256: string
+    }
+    const manifest = JSON.parse(await readFile(MANIFEST_PATH, 'utf8')) as {
+      shards: Array<{ path: string; taskCount: number; sha256: string }>
     }
     const corpus = await loadDevelopmentCorpus(MANIFEST_PATH)
     const selected = selectEvaluationTasks(corpus.tasks, receipt.taskCount)
@@ -42,6 +50,7 @@ describe('staged dev v2 frozen development selection', () => {
       manifest: MANIFEST_PATH,
       taskCount: 96,
       futureHoldoutAllowed: false,
+      shards: manifest.shards,
     })
     expect(receipt.candidateCommit).toBe('8eba7eccba77bb3e047868dbad8ea9c9ced3b033')
     expect(selectedTaskIds).toEqual(receipt.selectedTaskIds)
@@ -51,12 +60,13 @@ describe('staged dev v2 frozen development selection', () => {
     const commitmentIdentity = {
       selectorVersion: receipt.selectorVersion,
       candidateCommit: receipt.candidateCommit,
+      sourceCorpusShards: receipt.sourceCorpus.shards,
       selectedTaskIds,
     }
     const commitment = createHash('sha256')
       .update(`${JSON.stringify(commitmentIdentity)}\n`, 'utf8')
       .digest('hex')
     expect(commitment).toBe(receipt.selectionCommitmentSha256)
-    expect(receipt.selectionCommitmentSha256).toBe('6a448274db2a89ced58621bbc4963058292ace5df1b104ddff2b80f05765693e')
+    expect(receipt.selectionCommitmentSha256).toBe('7c3aa0c23cf150c5ba78258d7d051e8c357d0aa6d102652b1c65b88e6e5310fe')
   })
 })
