@@ -31,7 +31,7 @@
 - Add `docs/evaluation/m2/staged-dev-v2-selection.json`
 - Add `tests/evaluation/staged-dev-v2-selection.spec.ts`
 
-Record the exact 20 selected task IDs, counts by kind/domain, selector version, source corpus identity, frozen v3 commit, and a deterministic selection commitment/hash. The test must recompute the selection from the committed corpus and fail on any drift.
+Record the exact 20 selected task IDs, counts by kind/domain, selector version, source corpus shard hashes, frozen v3 product-candidate commit, and a deterministic selection commitment/hash. The test must recompute the selection from the committed corpus and fail on selector, source-byte or selected-ID drift.
 
 ## Task 3 — Preserve product-tool telemetry by arm and tool identity
 
@@ -41,9 +41,9 @@ Record the exact 20 selected task IDs, counts by kind/domain, selector version, 
 - Modify `scripts/eval/staged-report.mjs`
 - Modify `tests/evaluation/staged-eval-report.spec.ts`
 
-**RED:** Require executor output to retain ordinary/toolchain counts and the exact counts for `ordinary_read`, `ordinary_search`, `toolchain_contract_search`, and `toolchain_contract_inspect`. Require report cost summaries by B/C arm and a C-arm Toolchain-use observation/rate.
+**RED:** Require executor output to retain ordinary/toolchain counts and the exact counts for `read_file`, `search_text`, `toolchain_contract_search`, and `toolchain_contract_inspect`. Require report cost summaries by B/C arm and a C-arm Toolchain-use observation/rate.
 
-**GREEN:** Derive telemetry only from existing trace entries (`family`, `name`); do not change model-visible tools or transport. Keep aggregate cost totals while adding deterministic `byArm` summaries and tool-use counts.
+**GREEN:** Derive telemetry only from existing trace entries (`family`, `name`); do not change model-visible tools or transport. Keep aggregate cost totals while adding deterministic `byArm` summaries and tool-use counts. The Toolchain-use denominator includes only C observations with an actual model outcome; unrecovered infrastructure attempts remain in cost/missingness accounting but cannot be interpreted as agent tool-selection behavior.
 
 ## Task 4 — Stop presenting API correctness as an independent task-success guardrail
 
@@ -55,7 +55,7 @@ Record the exact 20 selected task IDs, counts by kind/domain, selector version, 
 - Modify `tests/evaluation/staged-eval-execution.spec.ts` if needed
 - Modify `tests/evaluation/staged-eval-report.spec.ts`
 
-The current development oracle can deterministically judge exactly one API claim; it cannot independently judge end-to-end task completion. Remove the duplicated `taskSuccess` boolean from the staged development decision/report or explicitly mark the guardrail as unavailable. Prefer a report-v2 contract with `apiValid` as the product outcome and `taskSuccess: { measured: false, reason: ... }` rather than fabricating a second metric.
+The current development oracle can deterministically judge exactly one API claim; it cannot independently judge end-to-end task completion. Remove the duplicated `taskSuccess` boolean from the staged development decision/report and explicitly mark the guardrail as unavailable. Report v2 uses `apiValid` as the adjudicated product outcome and `taskSuccessGuardrail: { measured: false, reason: ... }` rather than fabricating a second metric.
 
 ## Task 5 — Record dev-v1 outcome and dev-v2 authorization boundary
 
@@ -79,9 +79,9 @@ Record run `33939213526`: exact SHA, provider/transport health, 40/40 execution,
 
 - Real 20-task dev-v2 selection: exactly 12 positive discovery / 8 negative existence checks, all 8 domains represented, both kinds in every domain.
 - Selection depends on `successRule.kind`, never `n/p` naming conventions.
-- Exact selected-task receipt is committed and drift-tested before the next model run.
+- Exact selected-task receipt is committed and drift-tested before the next model run, including source shard identities.
 - Per-arm B/C tokens, wall time, turns, provider completions and product-tool calls are reported.
-- Tool telemetry distinguishes ordinary vs Toolchain and search vs inspect; C-arm Toolchain-use rate is observable.
+- Tool telemetry distinguishes ordinary vs Toolchain and search vs inspect; C-arm Toolchain-use rate is observable over model outcomes only.
 - Staged development report no longer claims `taskSuccess` is independently measured when it is only the same API-claim adjudication.
 - Dev-v1 remains DEVELOPMENT_ONLY and is not reinterpreted as negative product evidence.
 - No production Contract Search behavior changes.
