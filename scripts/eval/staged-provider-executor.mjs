@@ -3,6 +3,12 @@ import { decodeStagedFinalAnswer } from './staged-provider-transport.mjs'
 const MAX_ATTEMPTS = 2
 const RETRYABLE_INFRASTRUCTURE = Object.freeze(new Set(['provider-transport', 'tool-transport']))
 const TERMINAL_REASON_PATTERN = /^[a-z0-9_-]{1,64}$/u
+const STAGED_PRODUCT_TOOL_NAMES = Object.freeze([
+  'read_file',
+  'search_text',
+  'toolchain_contract_search',
+  'toolchain_contract_inspect',
+])
 
 export const STAGED_DEVELOPMENT_SYSTEM_PROMPT = `You are evaluating public APIs on one exact installed DeepSeek Harness target. Use only evidence and tools available in this run; do not rely on newer-version knowledge. Answer the task by making exactly one concrete public-API existence or absence claim. Use product tools until you have enough evidence, then finish the product phase with a concise statement of that one claim. The evaluator will request the structured measurement claim in a separate finalization turn; do not attempt to call the reserved measurement function during product exploration.`
 
@@ -62,6 +68,34 @@ function retryable(result, attempt) {
     && RETRYABLE_INFRASTRUCTURE.has(result.reason)
 }
 
+function initialToolCounts() {
+  return Object.fromEntries(STAGED_PRODUCT_TOOL_NAMES.map(name => [name, 0]))
+}
+
+function accumulateTrace(trace, telemetry) {
+  if (trace === null || typeof trace !== 'object' || !Array.isArray(trace.entries)) return
+  telemetry.calls += trace.entries.length
+  for (const entry of trace.entries) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
+    if (entry.family === 'ordinary') telemetry.ordinaryCalls += 1
+    if (entry.family === 'toolchain') telemetry.toolchainCalls += 1
+    if (typeof entry.name === 'string' && Object.hasOwn(telemetry.byTool, entry.name)) {
+      telemetry.byTool[entry.name] += 1
+    }
+  }
+}
+
+function frozenToolUsage(telemetry, structuredTransportCalls, measurementToolCalls) {
+  return Object.freeze({
+    calls: telemetry.calls,
+    ordinaryCalls: telemetry.ordinaryCalls,
+    toolchainCalls: telemetry.toolchainCalls,
+    byTool: Object.freeze({ ...telemetry.byTool }),
+    structuredTransportCalls,
+    measurementToolCalls,
+  })
+}
+
 export function createStagedProviderExecutor(input) {
   const frozen = requireRecord(input?.frozen, 'staged frozen runtime')
   const runtime = requireRecord(input?.runtime, 'staged provider runtime')
@@ -89,9 +123,14 @@ export function createStagedProviderExecutor(input) {
     let wallTimeMs = 0
     let inputTokens = 0
     let outputTokens = 0
-    let modelToolCalls = 0
     let providerCompletions = 0
     let measurementToolCalls = 0
+    const productTools = {
+      calls: 0,
+      ordinaryCalls: 0,
+      toolchainCalls: 0,
+      byTool: initialToolCounts(),
+    }
 
     while (attempts < MAX_ATTEMPTS) {
       attempts += 1
@@ -121,10 +160,7 @@ export function createStagedProviderExecutor(input) {
       })
       wallTimeMs += Math.max(0, now() - startedAt)
 
-      const trace = await toolRuntime.traceReceipt()
-      if (trace !== null && typeof trace === 'object' && Array.isArray(trace.entries)) {
-        modelToolCalls += trace.entries.length
-      }
+      accumulateTrace(await toolRuntime.traceReceipt(), productTools)
 
       if (result.kind === 'model-outcome') {
         const usage = providerUsage(result.providerMetadata)
@@ -132,7 +168,7 @@ export function createStagedProviderExecutor(input) {
         outputTokens += usage.outputTokens
         const decoded = decodeStagedFinalAnswer(result.finalAnswer)
         const exactMetrics = 'transportMetrics' in decoded ? decoded.transportMetrics : undefined
-        providerCompletions += exactMetrics?.providerCompletions ?? (modelToolCalls + 1)
+        providerCompletions += exactMetrics?.providerCompletions ?? (productTools.calls + 1)
         measurementToolCalls += exactMetrics?.measurementToolCalls ?? (decoded.transportStatus === 'ok' ? 1 : 0)
         return Object.freeze({
           ...decoded,
@@ -143,14 +179,14 @@ export function createStagedProviderExecutor(input) {
           usage: Object.freeze({
             inputTokens,
             outputTokens,
-            turns: modelToolCalls + 1,
+            turns: productTools.calls + 1,
             providerCompletions,
           }),
-          toolUsage: Object.freeze({
-            calls: modelToolCalls,
-            structuredTransportCalls: decoded.transportStatus === 'ok' ? 1 : 0,
+          toolUsage: frozenToolUsage(
+            productTools,
+            decoded.transportStatus === 'ok' ? 1 : 0,
             measurementToolCalls,
-          }),
+          ),
         })
       }
 
@@ -161,8 +197,8 @@ export function createStagedProviderExecutor(input) {
           attempts,
           infrastructureFailures,
           wallTimeMs,
-          usage: Object.freeze({ inputTokens, outputTokens, turns: modelToolCalls, providerCompletions }),
-          toolUsage: Object.freeze({ calls: modelToolCalls, structuredTransportCalls: 0, measurementToolCalls }),
+          usage: Object.freeze({ inputTokens, outputTokens, turns: productTools.calls, providerCompletions }),
+          toolUsage: frozenToolUsage(productTools, 0, measurementToolCalls),
         })
       }
     }

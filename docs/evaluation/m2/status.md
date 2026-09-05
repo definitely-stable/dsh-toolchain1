@@ -32,11 +32,14 @@ Later upstream DSH trains are a separate compatibility track. They MUST NOT retr
 | Contract Search v2 | **MERGED** | Deterministic intent fallback materially improves the historical R1 retrieval gap while preserving strict/no-result behavior. |
 | Contract Search v3 foundation | **MERGED** | Derived SearchIndex, explainability and bounded fingerprint cache preserve v2 rank/score/evidence behavior. |
 | Contract Search v3 R2-dev boundary | **COMPLETE / FIXED** | Issue #164 / PR #165 established and merged the development corpus before ranking-changing v3 work. |
+| Contract Search v3 final candidate | **FROZEN** | PRs #178–#181 produced and froze `8eba7eccba77bb3e047868dbad8ea9c9ced3b033`; cumulative R2-dev vs v2 is 4 wins / 0 losses / 14 ties and no further proximity tuning is authorized on disclosed R2-dev evidence. |
 | Staged evaluation control plane | **COMPLETE** | Issue #149 / PR #150 merged bounded modes, hard budgets, DEVELOPMENT_ONLY corpus tooling and measurement-health gating. |
 | One-dispatch staged runner | **COMPLETE / ACCEPTANCE STOP** | Issue #151 / PR #175 are merged and provide the closed B/C canary-first runner and normal manual workflow. The first real canary correctly stopped with zero remainder when measurement health failed. |
-| Structured staged measurement transport | **COMPLETE / ACCEPTED** | Issue #176 / PR #177 replace model-controlled experiment identity and mixed product/measurement tooling with a two-phase claim-only finalizer. Final deterministic CI passed and real run `33839417550` returned measurement `PASS` with 16/16 format-valid and 16/16 decision-resolved observations. |
+| Structured staged measurement transport | **COMPLETE / ACCEPTED** | Issue #176 / PR #177 replace model-controlled experiment identity and mixed product/measurement tooling with a two-phase claim-only finalizer. Real run `33839417550` returned measurement `PASS` with 16/16 format-valid and 16/16 decision-resolved observations. |
+| Staged dev-v1 | **COMPLETE / UNINFORMATIVE** | Run `33939213526` executed 40/40 with healthy measurement and B=C=20/20 API validity, but the deterministic selector chose 20/20 `api-absent` tasks, so the product comparison is ceiling-saturated selection-bias evidence, not a Toolchain-effect estimate. |
+| Staged dev-v2 harness | **DEFINED / FROZEN DEVELOPMENT SELECTION** | The repaired harness stratifies by `domain × successRule.kind`, freezes a 12-positive/8-negative 20-task selection plus source-shard commitment, adds trace-derived B/C cost/tool telemetry, and reports API validity without fabricating an independent task-success metric. |
 | Exact Target Plugin Check alpha | **COMPLETE** | Issue #154 / PR #173 implement the first one-call product flow for directory and packed subjects across CLI/native/MCP with evidence-backed static verdicts and real packed-DSH smoke. |
-| Parent M2 exit | **OPEN** | Historical H1 remains `INCONCLUSIVE`; the staged measurement repair is accepted, but a later confirmatory claim still requires a frozen product candidate, fresh hidden evidence and preregistration. |
+| Parent M2 exit | **OPEN** | Historical H1 remains `INCONCLUSIVE`; a later confirmatory claim still requires a frozen product candidate, fresh hidden evidence, an independent end-to-end guardrail, and preregistration. |
 
 ## Canonical H1 terminal outcome
 
@@ -58,9 +61,9 @@ The immutable R1 baseline measured a real retrieval gap before retrieval tuning:
 
 Evidence-sufficiency checks established that the answerable routes existed in the authoritative declaration universe, so these failures were retrieval failures rather than missing-evidence excuses.
 
-Contract Search v2 subsequently improved the historical regression corpus while preserving exact/no-result behavior. Contract Search v3 now develops from that proven v2 baseline and the fixed R2-dev boundary.
+Contract Search v2 subsequently improved the historical regression corpus while preserving exact/no-result behavior. Contract Search v3 is now frozen at product candidate `8eba7eccba77bb3e047868dbad8ea9c9ced3b033`. Its disclosed R2-dev evidence is development history, not a reason to keep tuning until every example passes.
 
-R1 is regression evidence only. It MUST NOT be used to select v3 IDF/field/coherence/abstention constants. A future fresh R2 holdout remains unseen during tuning.
+R1 is regression evidence only. It MUST NOT be used to select v3 IDF/field/coherence/abstention constants. R2-dev is disclosed development evidence and MUST NOT become future holdout material.
 
 ## Post-H1 staged evaluation
 
@@ -70,13 +73,14 @@ H1 demonstrated that development evaluation must validate measurement health bef
 deterministic checks
     -> one bounded mode
     -> fresh managed-provider probe
-    -> 16-call B/C canary
+    -> deterministic task selection
+    -> 16-call B/C measurement-health canary
     -> measurement-health STOP or PASS
     -> only the pre-authorized remainder
-    -> product + cost report
+    -> API-validity + cost/tool-use report
 ```
 
-PR #175 merged the deterministic schedule, exact B/C development executor, fresh process/retry boundary, one-command runner and manual **M2 Staged Development Evaluation** workflow. Required repository CI remains provider-free.
+PR #175 merged the exact B/C development executor, fresh process/retry boundary, one-command runner and manual **M2 Staged Development Evaluation** workflow. Required repository CI remains provider-free.
 
 ### First real canary: fail-closed runner accepted
 
@@ -157,15 +161,25 @@ The final bounded real-provider canary is recorded in [`staged-measurement-repai
 - input/output tokens: 861022 / 47879;
 - provider completions/product tool calls: 147 / 223.
 
-The canary product observations were mechanically interpretable and both B and C scored 8/8 on API validity and task success, producing zero paired delta in this small transport canary. That ceiling result is **not** evidence that B and C are equivalent and is not a powered product-effect claim.
+The historical canary report labeled both API validity and task success as 8/8 and produced zero paired delta. The later dev-v2 harness audit established that the staged single-API-claim oracle did not independently measure end-to-end task completion; report v2 therefore retains API validity and explicitly marks `taskSuccessGuardrail.measured=false`. The small canary remains transport/measurement evidence, not a powered product-effect claim.
 
-The structured staged measurement transport acceptance gate is therefore closed. Larger development modes are not automatically useful merely because transport is healthy; each must have an explicit product question, budget and stopping rule. A future H2 additionally requires a frozen product candidate, fresh hidden task set and preregistered stopping/analysis rules before outcomes exist.
+### Dev-v1: healthy measurement, biased sample
 
-The disclosed H1 tasks remain `DEVELOPMENT_ONLY` calibration/regression data. They are not confirmatory evidence after disclosure. H1 remains immutable and MUST NOT be rerun.
+The durable receipt is [`staged-dev-v1-outcome-2026-09-05.md`](staged-dev-v1-outcome-2026-09-05.md). Run `33939213526` on frozen product candidate `8eba7eccba77bb3e047868dbad8ea9c9ced3b033` executed the full 40-call development budget with zero infrastructure failures/retries and returned B=C=20/20 API validity. However, the old domain-only lexical selector chose 20 `api-absent` tasks and zero `api-exists-any` tasks.
+
+The product comparison is therefore **UNINFORMATIVE / CEILING-SATURATED DUE TO SELECTION BIAS**. Do not rerun dev-v1 or reinterpret its zero delta as evidence of Toolchain equivalence.
+
+### Dev-v2 harness boundary
+
+The next development sample is frozen in [`staged-dev-v2-selection.json`](staged-dev-v2-selection.json): 20 tasks, 12 `api-exists-any`, 8 `api-absent`, all eight domains, both oracle kinds in every domain. The commitment binds selector version, frozen product candidate, source shard SHA-256 identities, and exact selected IDs.
+
+Report v2 adds per-arm tokens, time, turns, provider completions, retries, infrastructure failures and trace-derived ordinary/Toolchain tool counts. Toolchain-use rate is computed only over C observations with an actual model outcome; unrecovered infrastructure remains visible in cost/missingness but cannot be interpreted as agent tool-selection behavior.
+
+The staged development oracle still adjudicates one API claim only. It does **not** provide an independent end-to-end task-success guardrail. Any H2 design must define that guardrail separately before outcomes exist.
 
 ## Acceptance evidence guard
 
-The accepted repair receipt is append-only evidence. Future implementation work MUST NOT rewrite its run id, tested commit, artifact id/digest, measurement `PASS`, 16/16 format-valid, 16/16 decision-resolved, zero-remainder, or `DEVELOPMENT_ONLY` boundary. Any later provider experiment requires a new receipt rather than mutation of this one.
+Historical acceptance receipts are append-only evidence. Future implementation work MUST NOT rewrite their run ids, tested commits, artifact identities, measurement outcomes, or `DEVELOPMENT_ONLY` boundaries. Later provider experiments require new receipts rather than mutation of older evidence.
 
 ## Exact Target Plugin Check alpha
 
@@ -188,21 +202,24 @@ The shipped Agent Skill prefers `plugin.check` as the default post-edit/static-r
 - do not rerun H1 to obtain a different terminal label;
 - do not reuse the disclosed H1 corpus as the future H2 holdout;
 - do not reinterpret historical P0 or H1 evidence under product-tuned rules;
-- do not tune v3 ranking constants on R1;
+- do not tune v3 ranking constants on R1 or keep tuning disclosed R2-dev until every task passes;
 - do not change `dsh-target-v2` or `dsh-contract-index-v1` retroactively to accommodate a later upstream train;
 - do not infer `verified` runtime compatibility from static Plugin Check;
 - do not make required repository CI depend on external model/provider calls;
-- do not run `dev`, `release`, `research`, or H2 merely because the transport canary passed; larger runs require an explicit development or confirmatory question, bounded budget and applicable evidence rules;
+- do not rerun dev-v1 to obtain a preferred result;
+- do not jump from dev-v2 harness integration directly to `release`, `research`, or H2;
+- do not treat API validity as an independently measured end-to-end task-success guardrail;
 - do not mix Issue #33 upstream lifecycle compatibility work into the frozen rc.2 experiment evidence.
 
 ## Next permitted work
 
 The current implementation order is:
 
-1. finalize and merge the accepted Issue #176 / PR #177 staged measurement repair without additional provider canaries;
-2. continue Contract Search v3 ranking work against the fixed R2-dev corpus while retaining R1 invariants;
-3. implement field-weighted IDF, then same-fact coherence, then conservative abstention/OOV handling before considering coarser proximity or fuzzy identifiers;
-4. grow M3 diagnostics only from reproduced plugin failure fixtures while preserving shared `plugin.check` semantics and the static/read-only boundary;
-5. freeze a fresh R2 holdout and later H2 only after the product candidate is stable and confirmatory rules are preregistered.
+1. integrate the staged dev-v2 harness with full exact-head and post-merge `main` CI while preserving the frozen `8eba7eccba77bb3e047868dbad8ea9c9ced3b033` product behavior;
+2. after that integration is green, authorize exactly one new DEVELOPMENT_ONLY `dev-v2` dispatch on merged `main` using the frozen 20-task selection; do not rerun dev-v1;
+3. if measurement `STOP`s, diagnose measurement/infrastructure evidence before any further provider run;
+4. if measurement `PASS`es, interpret API-validity delta together with actual Toolchain use and incremental cost; absence of an independent task-success guardrail prevents confirmatory claims;
+5. only after a useful bounded engineering signal and a separately defined end-to-end guardrail, design a fresh hidden H2 dataset/commitment and preregister confirmatory rules before any H2 outcome;
+6. continue M3 diagnostics from reproduced plugin failure fixtures without reopening frozen Contract Search v3 tuning absent new independent evidence.
 
 No additional H1 execution is a permitted next step.

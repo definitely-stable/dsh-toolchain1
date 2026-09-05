@@ -18,7 +18,10 @@ const manifestB = Object.freeze({
   schema: 'dsh-toolchain-m2-capability-manifest-v1',
   arm: 'B' as const,
   ordinaryEvidence: Object.freeze({ marker: 'exact-workspace' }),
-  tools: Object.freeze([{ family: 'ordinary', name: 'ordinary_read', description: 'read', inputSchema: { type: 'object' } }]),
+  tools: Object.freeze([
+    { family: 'ordinary', name: 'read_file', description: 'read', inputSchema: { type: 'object' } },
+    { family: 'ordinary', name: 'search_text', description: 'search', inputSchema: { type: 'object' } },
+  ]),
 })
 const manifestC = Object.freeze({
   ...manifestB,
@@ -68,7 +71,11 @@ function providerOutcome(taskId = task.id) {
   }
 }
 
-function runtimeWith(sourceResults: ProcessResult[]) {
+function familyOf(name: string): 'ordinary' | 'toolchain' {
+  return name.startsWith('toolchain_') ? 'toolchain' : 'ordinary'
+}
+
+function runtimeWith(sourceResults: ProcessResult[], productToolNames: string[] = ['read_file']) {
   const results = [...sourceResults]
   const runtimeSeeds: string[] = []
   const runtimeWorkspaces: unknown[] = []
@@ -78,17 +85,19 @@ function runtimeWith(sourceResults: ProcessResult[]) {
     const next = results.shift()
     if (next === undefined) throw new Error('unexpected extra process attempt')
     if (next.kind === 'model-outcome') {
-      await input.dispatchToolCall({ id: 'tool-1', name: 'ordinary_read', input: {} })
+      for (const [index, name] of productToolNames.entries()) {
+        await input.dispatchToolCall({ id: `tool-${index + 1}`, name, input: {} })
+      }
     }
     return next
   })
   const createFrozenP0ToolRuntime = vi.fn(async (seed: string, workspace: unknown) => {
     runtimeSeeds.push(seed)
     runtimeWorkspaces.push(workspace)
-    const entries: Array<{ name: string }> = []
+    const entries: Array<{ family: 'ordinary' | 'toolchain'; name: string }> = []
     return {
       dispatchToolCall: async (request: { name: string }) => {
-        entries.push({ name: request.name })
+        entries.push({ family: familyOf(request.name), name: request.name })
         return { ok: true }
       },
       traceReceipt: async () => ({ entries: [...entries] }),
@@ -143,7 +152,18 @@ describe('staged real provider executor adapter', () => {
       attempts: 1,
       infrastructureFailures: 0,
       usage: { inputTokens: 120, outputTokens: 30, turns: 2 },
-      toolUsage: { calls: 1, structuredTransportCalls: 1 },
+      toolUsage: {
+        calls: 1,
+        structuredTransportCalls: 1,
+        ordinaryCalls: 1,
+        toolchainCalls: 0,
+        byTool: {
+          read_file: 1,
+          search_text: 0,
+          toolchain_contract_search: 0,
+          toolchain_contract_inspect: 0,
+        },
+      },
     })
     if (result.transportStatus !== 'ok') throw new Error('expected structured transport success')
     expect(result.structuredContent).toMatchObject({ taskId: 'task-01' })
@@ -154,6 +174,32 @@ describe('staged real provider executor adapter', () => {
       capabilityManifest: manifestB,
     }])
     expect(runtime.runtimeWorkspaces).toEqual([exactWorkspace])
+  })
+
+  it('preserves exact C-arm ordinary and Toolchain usage from the execution trace', async () => {
+    const runtime = runtimeWith([providerOutcome()], [
+      'search_text',
+      'toolchain_contract_search',
+      'toolchain_contract_inspect',
+      'read_file',
+      'toolchain_contract_search',
+    ])
+    const execute = executor(runtime)
+
+    await expect(execute({ ...call, arm: 'C' }, task)).resolves.toMatchObject({
+      transportStatus: 'ok',
+      toolUsage: {
+        calls: 5,
+        ordinaryCalls: 2,
+        toolchainCalls: 3,
+        byTool: {
+          read_file: 1,
+          search_text: 1,
+          toolchain_contract_search: 2,
+          toolchain_contract_inspect: 1,
+        },
+      },
+    })
   })
 
   it('preserves the closed terminal reason when a model outcome misses the structured measurement channel', async () => {

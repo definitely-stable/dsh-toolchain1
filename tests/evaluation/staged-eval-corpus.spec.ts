@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import { loadDevelopmentCorpus, selectEvaluationTasks } from '../../scripts/eval/development-corpus.mjs'
 
+function taskKind(task: { successRule?: { kind?: unknown } }): string | undefined {
+  return typeof task.successRule?.kind === 'string' ? task.successRule.kind : undefined
+}
+
 describe('staged evaluation development corpus', () => {
   it('loads the disclosed H1 corpus with verified shard hashes', async () => {
     const corpus = await loadDevelopmentCorpus('docs/evaluation/m2/h1-dev-corpus-v1/manifest.json')
@@ -25,5 +29,22 @@ describe('staged evaluation development corpus', () => {
     expect(first).toEqual(second)
     expect(new Set(first.map(task => task.id)).size).toBe(20)
     expect(new Set(first.map(task => task.domain)).size).toBe(8)
+  })
+
+  it('stratifies the 20-task dev sample by domain and oracle kind instead of lexical task ids', async () => {
+    const corpus = await loadDevelopmentCorpus('docs/evaluation/m2/h1-dev-corpus-v1/manifest.json')
+    const selected = selectEvaluationTasks(corpus.tasks, 20)
+    const positives = selected.filter(task => taskKind(task) === 'api-exists-any')
+    const negatives = selected.filter(task => taskKind(task) === 'api-absent')
+    const domains = [...new Set(selected.map(task => task.domain))]
+
+    expect(positives).toHaveLength(12)
+    expect(negatives).toHaveLength(8)
+    expect(domains).toHaveLength(8)
+    for (const domain of domains) {
+      const domainTasks = selected.filter(task => task.domain === domain)
+      expect(domainTasks.some(task => taskKind(task) === 'api-exists-any')).toBe(true)
+      expect(domainTasks.some(task => taskKind(task) === 'api-absent')).toBe(true)
+    }
   })
 })

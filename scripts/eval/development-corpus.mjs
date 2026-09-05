@@ -5,9 +5,10 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPT_PATH = fileURLToPath(import.meta.url)
+const SCRIPT_PATH = fileURLToPath(new URL(import.meta.url))
 const MANIFEST_SCHEMA = 'dsh-toolchain-m2-h1-development-corpus-manifest-v1'
 const SHARD_SCHEMA = 'dsh-toolchain-m2-h1-development-corpus-shard-v1'
+const SELECTION_KINDS = Object.freeze(['api-exists-any', 'api-absent'])
 
 function requireRecord(value, label) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`)
@@ -47,6 +48,15 @@ function validateTask(value, label) {
     domain: requireString(task.domain, `${label}.domain`),
     prompt: requireString(task.prompt, `${label}.prompt`),
   })
+}
+
+function selectionKind(task, label) {
+  const rule = requireRecord(task.successRule, `${label}.successRule`)
+  const kind = requireString(rule.kind, `${label}.successRule.kind`)
+  if (!SELECTION_KINDS.includes(kind)) {
+    throw new Error(`${label}.successRule.kind must be api-exists-any or api-absent`)
+  }
+  return kind
 }
 
 export async function loadDevelopmentCorpus(manifestPath) {
@@ -92,41 +102,79 @@ export async function loadDevelopmentCorpus(manifestPath) {
   })
 }
 
+function selectionStrata(tasks) {
+  const byDomain = new Map()
+  for (const value of tasks) {
+    const task = validateTask(value, 'selection task')
+    const kind = selectionKind(task, `selection task ${task.id}`)
+    const domain = byDomain.get(task.domain) ?? new Map(SELECTION_KINDS.map(candidate => [candidate, []]))
+    domain.get(kind).push(task)
+    byDomain.set(task.domain, domain)
+  }
+
+  const domains = [...byDomain.keys()].toSorted((left, right) => left.localeCompare(right, 'en-US'))
+  for (const domainName of domains) {
+    const domain = byDomain.get(domainName)
+    for (const kind of SELECTION_KINDS) {
+      const stratum = domain.get(kind)
+      if (stratum.length === 0) throw new Error(`development corpus domain ${domainName} requires ${kind} tasks`)
+      domain.set(kind, stratum.toSorted((left, right) => left.id.localeCompare(right.id, 'en-US')))
+    }
+  }
+  return Object.freeze({ byDomain, domains: Object.freeze(domains) })
+}
+
 /**
- * Balanced deterministic selection. First pass chooses one sorted task per domain,
- * later passes round-robin across domains so small modes cannot collapse onto one area.
+ * Deterministic staged selection stratified by domain × oracle kind.
+ *
+ * Round 0 keeps an eight-task canary broad across domains while alternating
+ * discovery/existence-check kinds. Round 1 adds the opposite kind for every
+ * domain so the first 16 selected tasks cover every domain × kind stratum.
+ * Additional capacity is consumed by depth with discovery tasks first, then
+ * absence checks. For the 20-task dev budget this yields 12 discovery-positive
+ * and 8 negative tasks without inferring semantics from task ids.
  */
 export function selectEvaluationTasks(tasks, taskCount) {
   if (!Array.isArray(tasks) || tasks.length === 0) throw new Error('task selection requires a non-empty corpus')
   if (!Number.isSafeInteger(taskCount) || taskCount < 1 || taskCount > tasks.length) {
     throw new Error('task selection count must be within the corpus size')
   }
-  const byDomain = new Map()
-  for (const value of tasks) {
-    const task = validateTask(value, 'selection task')
-    const group = byDomain.get(task.domain) ?? []
-    group.push(task)
-    byDomain.set(task.domain, group)
-  }
-  const domains = [...byDomain.keys()].toSorted((left, right) => left.localeCompare(right, 'en-US'))
-  for (const domain of domains) byDomain.get(domain).sort((left, right) => left.id.localeCompare(right.id, 'en-US'))
 
+  const { byDomain, domains } = selectionStrata(tasks)
   const selected = []
-  let depth = 0
+
+  for (let domainIndex = 0; domainIndex < domains.length && selected.length < taskCount; domainIndex += 1) {
+    const domain = byDomain.get(domains[domainIndex])
+    const kind = SELECTION_KINDS[domainIndex % SELECTION_KINDS.length]
+    selected.push(domain.get(kind)[0])
+  }
+
+  for (let domainIndex = 0; domainIndex < domains.length && selected.length < taskCount; domainIndex += 1) {
+    const domain = byDomain.get(domains[domainIndex])
+    const kind = SELECTION_KINDS[(domainIndex + 1) % SELECTION_KINDS.length]
+    selected.push(domain.get(kind)[0])
+  }
+
+  let depth = 1
   while (selected.length < taskCount) {
     let added = false
-    for (const domain of domains) {
-      const task = byDomain.get(domain)[depth]
-      if (task !== undefined) {
-        selected.push(task)
-        added = true
-        if (selected.length === taskCount) break
+    for (const kind of SELECTION_KINDS) {
+      for (const domainName of domains) {
+        const task = byDomain.get(domainName).get(kind)[depth]
+        if (task !== undefined) {
+          selected.push(task)
+          added = true
+          if (selected.length === taskCount) break
+        }
       }
+      if (selected.length === taskCount) break
     }
     if (!added) break
     depth += 1
   }
-  if (selected.length !== taskCount) throw new Error('development corpus could not satisfy deterministic selection')
+
+  if (selected.length !== taskCount) throw new Error('development corpus could not satisfy deterministic stratified selection')
+  if (new Set(selected.map(task => task.id)).size !== selected.length) throw new Error('stratified selection produced duplicate task ids')
   return Object.freeze(selected)
 }
 

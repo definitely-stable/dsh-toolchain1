@@ -6,6 +6,9 @@ const tasks = Array.from({ length: 48 }, (_, index) => ({
   id: `task-${String(index + 1).padStart(2, '0')}`,
   domain: `domain-${index % 6}`,
   prompt: `Prompt ${index + 1}`,
+  successRule: {
+    kind: Math.floor(index / 6) % 2 === 0 ? 'api-exists-any' : 'api-absent',
+  },
 }))
 
 function tupleIdentity(call: { taskId: string; arm: 'B' | 'C'; repetition: number }) {

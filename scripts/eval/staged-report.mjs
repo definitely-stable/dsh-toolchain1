@@ -1,11 +1,17 @@
-export const STAGED_REPORT_SCHEMA = 'dsh-toolchain-staged-eval-report-v1'
+export const STAGED_REPORT_SCHEMA = 'dsh-toolchain-staged-eval-report-v2'
+const TASK_SUCCESS_GUARDRAIL_REASON = 'single-api-claim development oracle does not independently measure end-to-end task completion'
+const PRODUCT_TOOL_NAMES = Object.freeze([
+  'read_file',
+  'search_text',
+  'toolchain_contract_search',
+  'toolchain_contract_inspect',
+])
 
 function armSummary(results, arm) {
   const resolved = results.filter(result => result.call.arm === arm && result.decision !== undefined)
   return Object.freeze({
     resolved: resolved.length,
     apiValid: resolved.filter(result => result.decision.apiValid).length,
-    taskSuccess: resolved.filter(result => result.decision.taskSuccess).length,
   })
 }
 
@@ -20,14 +26,12 @@ function pairedSummary(results) {
 
   let count = 0
   let apiValidityDeltaCMinusB = 0
-  let taskSuccessDeltaCMinusB = 0
   for (const pair of byTask.values()) {
     if (pair.B === undefined || pair.C === undefined) continue
     count += 1
     apiValidityDeltaCMinusB += Number(pair.C.apiValid) - Number(pair.B.apiValid)
-    taskSuccessDeltaCMinusB += Number(pair.C.taskSuccess) - Number(pair.B.taskSuccess)
   }
-  return Object.freeze({ count, apiValidityDeltaCMinusB, taskSuccessDeltaCMinusB })
+  return Object.freeze({ count, apiValidityDeltaCMinusB })
 }
 
 function productSummary(results, measurementStatus) {
@@ -37,12 +41,15 @@ function productSummary(results, measurementStatus) {
     ...(measurementStatus === 'PASS' ? {} : { blockedBy: 'measurement-health' }),
     resolvedObservations: resolved.length,
     apiValidObservations: resolved.filter(result => result.decision.apiValid).length,
-    taskSuccessObservations: resolved.filter(result => result.decision.taskSuccess).length,
     byArm: Object.freeze({
       B: armSummary(results, 'B'),
       C: armSummary(results, 'C'),
     }),
     pairedTasks: pairedSummary(results),
+    taskSuccessGuardrail: Object.freeze({
+      measured: false,
+      reason: TASK_SUCCESS_GUARDRAIL_REASON,
+    }),
   })
 }
 
@@ -104,7 +111,11 @@ function numberOrZero(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-function costSummary(results) {
+function emptyByTool() {
+  return Object.fromEntries(PRODUCT_TOOL_NAMES.map(name => [name, 0]))
+}
+
+function flatCostSummary(results) {
   let attempts = 0
   let infrastructureFailures = 0
   let wallTimeMs = 0
@@ -114,6 +125,9 @@ function costSummary(results) {
   let providerCompletions = 0
   let toolCalls = 0
   let measurementToolCalls = 0
+  let ordinaryCalls = 0
+  let toolchainCalls = 0
+  const byTool = emptyByTool()
 
   for (const result of results) {
     attempts += numberOrZero(result.cost.attempts)
@@ -124,10 +138,17 @@ function costSummary(results) {
     turns += numberOrZero(result.cost.usage?.turns)
     providerCompletions += numberOrZero(result.cost.usage?.providerCompletions)
     toolCalls += numberOrZero(result.cost.toolUsage?.calls)
+    ordinaryCalls += numberOrZero(result.cost.toolUsage?.ordinaryCalls)
+    toolchainCalls += numberOrZero(result.cost.toolUsage?.toolchainCalls)
     const exactMeasurementCalls = numberOrZero(result.cost.toolUsage?.measurementToolCalls)
     measurementToolCalls += exactMeasurementCalls > 0
       ? exactMeasurementCalls
       : numberOrZero(result.cost.toolUsage?.structuredTransportCalls)
+
+    const observedByTool = result.cost.toolUsage?.byTool
+    if (observedByTool !== null && typeof observedByTool === 'object' && !Array.isArray(observedByTool)) {
+      for (const name of PRODUCT_TOOL_NAMES) byTool[name] += numberOrZero(observedByTool[name])
+    }
   }
 
   return Object.freeze({
@@ -142,6 +163,30 @@ function costSummary(results) {
     providerCompletions,
     toolCalls,
     measurementToolCalls,
+    ordinaryCalls,
+    toolchainCalls,
+    byTool: Object.freeze({ ...byTool }),
+  })
+}
+
+function costSummary(results) {
+  const bResults = results.filter(result => result.call.arm === 'B')
+  const cResults = results.filter(result => result.call.arm === 'C')
+  const eligibleCResults = cResults.filter(result => result.measurement?.hasModelOutcome === true)
+  const flat = flatCostSummary(results)
+  const eligibleObservations = eligibleCResults.length
+  const observationsWithUse = eligibleCResults.filter(result => numberOrZero(result.cost.toolUsage?.toolchainCalls) > 0).length
+  return Object.freeze({
+    ...flat,
+    byArm: Object.freeze({
+      B: flatCostSummary(bResults),
+      C: flatCostSummary(cResults),
+    }),
+    toolchainUse: Object.freeze({
+      eligibleObservations,
+      observationsWithUse,
+      rate: eligibleObservations === 0 ? 0 : observationsWithUse / eligibleObservations,
+    }),
   })
 }
 
