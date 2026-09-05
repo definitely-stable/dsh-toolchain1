@@ -268,7 +268,7 @@ export function measureLeafContent(value: unknown): LeafContentMeasurement {
   })
 }
 
-function uniqueShingles(values: readonly string[]): ReadonlySet<string> {
+function buildUniqueShingleSet(values: readonly string[]): ReadonlySet<string> {
   return new Set(lexicalShingles(values))
 }
 
@@ -276,8 +276,8 @@ export function measureDirectionalOverlap(
   left: readonly string[],
   right: readonly string[],
 ): DirectionalOverlapMeasurement {
-  const leftSet = uniqueShingles(left)
-  const rightSet = uniqueShingles(right)
+  const leftSet = buildUniqueShingleSet(left)
+  const rightSet = buildUniqueShingleSet(right)
   let intersectionShingles = 0
   for (const shingle of leftSet) {
     if (rightSet.has(shingle)) intersectionShingles += 1
