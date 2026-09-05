@@ -2,27 +2,55 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { runStagedEvaluation } from '../../scripts/eval/staged-runner.mjs'
 
+type ExistsRule = {
+  kind: 'api-exists-any'
+  package: string
+  symbols: string[]
+}
+
+type AbsentRule = {
+  kind: 'api-absent'
+  symbols: string[]
+  proofScope: {
+    kind: 'package'
+    package: string
+  }
+}
+
 type TestTask = {
   id: string
   domain: string
   prompt: string
-  successRule: {
-    kind: 'api-exists-any'
-    package: string
-    symbols: string[]
-  }
+  successRule: ExistsRule | AbsentRule
 }
 
-const tasks: TestTask[] = Array.from({ length: 48 }, (_, index) => ({
-  id: `task-${String(index + 1).padStart(2, '0')}`,
-  domain: `domain-${index % 6}`,
-  prompt: `Prompt ${index + 1}`,
-  successRule: {
-    kind: 'api-exists-any' as const,
-    package: '@deepseek-ai/dsh-scope',
-    symbols: [`Api${index + 1}`],
-  },
-}))
+const tasks: TestTask[] = Array.from({ length: 48 }, (_, index) => {
+  const packageName = '@deepseek-ai/dsh-scope'
+  const symbol = `Api${index + 1}`
+  const kind = Math.floor(index / 6) % 2 === 0 ? 'api-exists-any' : 'api-absent'
+  return {
+    id: `task-${String(index + 1).padStart(2, '0')}`,
+    domain: `domain-${index % 6}`,
+    prompt: `Prompt ${index + 1}`,
+    successRule: kind === 'api-exists-any'
+      ? { kind, package: packageName, symbols: [symbol] }
+      : { kind, symbols: [symbol], proofScope: { kind: 'package', package: packageName } },
+  }
+})
+
+function expectedClaim(task: TestTask) {
+  return task.successRule.kind === 'api-exists-any'
+    ? {
+        package: task.successRule.package,
+        symbol: task.successRule.symbols[0],
+        assertion: 'exists',
+      }
+    : {
+        package: task.successRule.proofScope.package,
+        symbol: task.successRule.symbols[0],
+        assertion: 'absent',
+      }
+}
 
 function healthyExecutor() {
   return vi.fn(async (call: { taskId: string }, task: TestTask) => ({
@@ -30,11 +58,7 @@ function healthyExecutor() {
     structuredContent: {
       schema: 'dsh-toolchain-staged-eval-result-v1',
       taskId: call.taskId,
-      claims: [{
-        package: task.successRule.package,
-        symbol: task.successRule.symbols[0],
-        assertion: 'exists',
-      }],
+      claims: [expectedClaim(task)],
     },
     attempts: 1,
     infrastructureFailures: 0,
@@ -70,13 +94,13 @@ describe('one-dispatch staged evaluation runner', () => {
   it('passes the exact scheduled task and oracle to every executor call', async () => {
     const execute = healthyExecutor()
 
-    await runStagedEvaluation({ mode: 'canary', tasks, execute })
+    const result = await runStagedEvaluation({ mode: 'canary', tasks, execute })
 
     expect(execute).toHaveBeenCalledTimes(16)
     for (const [index, invocation] of execute.mock.calls.entries()) {
       const [call, task] = invocation
       expect(task.id).toBe(call.taskId)
-      expect(task).toBe(tasks[index >> 1])
+      expect(task).toBe(result.schedule.selectedTasks[index >> 1])
     }
   })
 
@@ -119,11 +143,7 @@ describe('one-dispatch staged evaluation runner', () => {
         structuredContent: {
           schema: 'dsh-toolchain-staged-eval-result-v1',
           taskId: call.taskId,
-          claims: [{
-            package: task.successRule.package,
-            symbol: task.successRule.symbols[0],
-            assertion: 'exists',
-          }],
+          claims: [expectedClaim(task)],
         },
         attempts: 1,
         infrastructureFailures: 0,
