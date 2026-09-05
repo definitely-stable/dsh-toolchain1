@@ -6,11 +6,12 @@ const TERMINAL_REASON_PATTERN = /^[a-z0-9_-]{1,64}$/u
 /**
  * @typedef {{ ordinal: number; taskId: string; arm: 'B'|'C'; repetition: 1 }} StagedCall
  * @typedef {{ id: string; domain: string; prompt: string; successRule: Readonly<Record<string, unknown>> }} StagedTask
- * @typedef {{ arm: 'B'|'C'; formatValid: boolean; decisionResolved: boolean; infrastructureFailures: number; attemptCount: number; hasModelOutcome: boolean; unrecoveredInfrastructure: boolean; terminalTransportReason?: string }} StagedMeasurement
+ * @typedef {{ arm: 'B'|'C'; formatValid: boolean; decisionResolved: boolean; infrastructureFailures: number; attemptCount: number; hasModelOutcome: boolean; measurementAttempted: boolean; unrecoveredInfrastructure: boolean; terminalTransportReason?: string }} StagedMeasurement
  * @typedef {{ attempts: number; infrastructureFailures: number; wallTimeMs: number; usage?: Readonly<Record<string, unknown>>; toolUsage?: Readonly<Record<string, unknown>> }} StagedCost
  * @typedef {{ code: string; summary: string }} StagedFailure
  * @typedef {{ apiValid: boolean }} StagedDecision
- * @typedef {{ call: StagedCall; measurement: StagedMeasurement; cost: StagedCost; decision?: StagedDecision; failure?: StagedFailure }} StagedExecutionResult
+ * @typedef {{ kind: 'completed' } | { kind: 'budget-exhausted'; reason: 'tool_budget_exhausted' }} StagedProductOutcome
+ * @typedef {{ call: StagedCall; measurement: StagedMeasurement; cost: StagedCost; productOutcome?: StagedProductOutcome; decision?: StagedDecision; failure?: StagedFailure }} StagedExecutionResult
  */
 
 function requirePositiveInteger(value, label) {
@@ -45,6 +46,7 @@ function measurement(call, fields) {
     infrastructureFailures: fields.infrastructureFailures,
     attemptCount: fields.attemptCount,
     hasModelOutcome: fields.hasModelOutcome,
+    measurementAttempted: fields.measurementAttempted,
     unrecoveredInfrastructure: fields.unrecoveredInfrastructure,
     ...(fields.terminalTransportReason === undefined ? {} : { terminalTransportReason: fields.terminalTransportReason }),
   })
@@ -100,6 +102,7 @@ export async function executeStagedCall(call, task, execute) {
         infrastructureFailures,
         attemptCount: attempts,
         hasModelOutcome: false,
+        measurementAttempted: false,
         unrecoveredInfrastructure: true,
       }),
       cost: resultCost,
@@ -108,6 +111,28 @@ export async function executeStagedCall(call, task, execute) {
   }
 
   const terminalTransportReason = optionalTerminalTransportReason(raw.terminalTransportReason)
+
+  if (raw.transportStatus === 'product-terminal') {
+    if (raw.productTerminalReason !== 'tool_budget_exhausted') {
+      throw new Error(`Unknown staged product terminal reason: ${String(raw.productTerminalReason)}`)
+    }
+    return freezeResult({
+      call,
+      measurement: measurement(call, {
+        formatValid: false,
+        decisionResolved: false,
+        infrastructureFailures,
+        attemptCount: attempts,
+        hasModelOutcome: true,
+        measurementAttempted: false,
+        unrecoveredInfrastructure: false,
+        terminalTransportReason,
+      }),
+      productOutcome: Object.freeze({ kind: 'budget-exhausted', reason: 'tool_budget_exhausted' }),
+      cost: resultCost,
+      failure: failure('PRODUCT_BUDGET_EXHAUSTED', 'Product exploration exhausted the frozen tool-call budget before measurement finalization.'),
+    })
+  }
 
   if (raw.transportStatus === 'unsupported') {
     return freezeResult({
@@ -118,9 +143,11 @@ export async function executeStagedCall(call, task, execute) {
         infrastructureFailures,
         attemptCount: attempts,
         hasModelOutcome: true,
+        measurementAttempted: true,
         unrecoveredInfrastructure: false,
         terminalTransportReason,
       }),
+      productOutcome: Object.freeze({ kind: 'completed' }),
       cost: resultCost,
       failure: failure('STRUCTURED_TRANSPORT_UNSUPPORTED', 'Provider did not support the required structured-result transport.'),
     })
@@ -140,9 +167,11 @@ export async function executeStagedCall(call, task, execute) {
         infrastructureFailures,
         attemptCount: attempts,
         hasModelOutcome: true,
+        measurementAttempted: true,
         unrecoveredInfrastructure: false,
         terminalTransportReason,
       }),
+      productOutcome: Object.freeze({ kind: 'completed' }),
       cost: resultCost,
       failure: failure('STRUCTURED_RESULT_INVALID', error instanceof Error ? error.message : String(error)),
     })
@@ -157,9 +186,11 @@ export async function executeStagedCall(call, task, execute) {
         infrastructureFailures,
         attemptCount: attempts,
         hasModelOutcome: true,
+        measurementAttempted: true,
         unrecoveredInfrastructure: false,
         terminalTransportReason,
       }),
+      productOutcome: Object.freeze({ kind: 'completed' }),
       cost: resultCost,
       failure: failure('STRUCTURED_RESULT_TASK_MISMATCH', `Structured result taskId ${structured.taskId} does not match scheduled task ${call.taskId}.`),
     })
@@ -175,9 +206,11 @@ export async function executeStagedCall(call, task, execute) {
         infrastructureFailures,
         attemptCount: attempts,
         hasModelOutcome: true,
+        measurementAttempted: true,
         unrecoveredInfrastructure: false,
         terminalTransportReason,
       }),
+      productOutcome: Object.freeze({ kind: 'completed' }),
       cost: resultCost,
       failure: failure(
         'TASK_ADJUDICATION_UNRESOLVED',
@@ -194,9 +227,11 @@ export async function executeStagedCall(call, task, execute) {
       infrastructureFailures,
       attemptCount: attempts,
       hasModelOutcome: true,
+      measurementAttempted: true,
       unrecoveredInfrastructure: false,
       terminalTransportReason,
     }),
+    productOutcome: Object.freeze({ kind: 'completed' }),
     decision: adjudicated.decision,
     cost: resultCost,
   })

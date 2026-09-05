@@ -42,8 +42,10 @@ describe('staged evaluation execution boundary', () => {
       infrastructureFailures: 0,
       attemptCount: 1,
       hasModelOutcome: true,
+      measurementAttempted: true,
       unrecoveredInfrastructure: false,
     })
+    expect(result.productOutcome).toEqual({ kind: 'completed' })
     expect(result.decision).toEqual({ apiValid: true })
     expect(result.decision).not.toHaveProperty('taskSuccess')
     expect(result.cost).toEqual({
@@ -55,7 +57,7 @@ describe('staged evaluation execution boundary', () => {
     })
   })
 
-  it('classifies an unrelated but schema-valid claim as unresolved adjudication', async () => {
+  it('classifies an unrelated but schema-valid claim as unresolved adjudication after completed exploration', async () => {
     const result = await executeStagedCall(call, task, async () => ({
       transportStatus: 'ok',
       structuredContent: {
@@ -71,13 +73,15 @@ describe('staged evaluation execution boundary', () => {
       formatValid: true,
       decisionResolved: false,
       hasModelOutcome: true,
+      measurementAttempted: true,
       unrecoveredInfrastructure: false,
     })
+    expect(result.productOutcome).toEqual({ kind: 'completed' })
     expect(result.failure).toMatchObject({ code: 'TASK_ADJUDICATION_UNRESOLVED' })
     expect(result).not.toHaveProperty('decision')
   })
 
-  it('classifies unsupported structured transport as unresolved model evidence without prose fallback', async () => {
+  it('classifies unsupported structured transport as measurement failure after measurement was attempted', async () => {
     const result = await executeStagedCall(call, task, async () => ({
       transportStatus: 'unsupported',
       terminalTransportReason: 'structured_transport_unsupported',
@@ -90,10 +94,37 @@ describe('staged evaluation execution boundary', () => {
       formatValid: false,
       decisionResolved: false,
       hasModelOutcome: true,
+      measurementAttempted: true,
       unrecoveredInfrastructure: false,
       terminalTransportReason: 'structured_transport_unsupported',
     })
     expect(result.failure).toMatchObject({ code: 'STRUCTURED_TRANSPORT_UNSUPPORTED' })
+    expect(result).not.toHaveProperty('decision')
+  })
+
+  it('classifies product tool-budget exhaustion as a bounded product outcome without pretending measurement was attempted', async () => {
+    const result = await executeStagedCall(call, task, async () => ({
+      transportStatus: 'product-terminal',
+      productTerminalReason: 'tool_budget_exhausted',
+      terminalTransportReason: 'tool_call_limit',
+      attempts: 1,
+      infrastructureFailures: 0,
+      wallTimeMs: 500,
+      usage: { inputTokens: 5000, outputTokens: 300, turns: 32, providerCompletions: 32 },
+      toolUsage: { calls: 31, ordinaryCalls: 31, toolchainCalls: 0 },
+    }))
+
+    expect(result.measurement).toMatchObject({
+      formatValid: false,
+      decisionResolved: false,
+      hasModelOutcome: true,
+      measurementAttempted: false,
+      unrecoveredInfrastructure: false,
+      terminalTransportReason: 'tool_call_limit',
+    })
+    expect(result.productOutcome).toEqual({ kind: 'budget-exhausted', reason: 'tool_budget_exhausted' })
+    expect(result.failure).toMatchObject({ code: 'PRODUCT_BUDGET_EXHAUSTED' })
+    expect(result.failure?.code).not.toBe('STRUCTURED_TRANSPORT_UNSUPPORTED')
     expect(result).not.toHaveProperty('decision')
   })
 
@@ -106,7 +137,7 @@ describe('staged evaluation execution boundary', () => {
       wallTimeMs: 60,
     }))
     expect(malformed.failure).toMatchObject({ code: 'STRUCTURED_RESULT_INVALID' })
-    expect(malformed.measurement).toMatchObject({ formatValid: false, decisionResolved: false, hasModelOutcome: true })
+    expect(malformed.measurement).toMatchObject({ formatValid: false, decisionResolved: false, hasModelOutcome: true, measurementAttempted: true })
 
     const mismatched = await executeStagedCall(call, task, async () => ({
       transportStatus: 'ok',
@@ -116,7 +147,7 @@ describe('staged evaluation execution boundary', () => {
       wallTimeMs: 60,
     }))
     expect(mismatched.failure).toMatchObject({ code: 'STRUCTURED_RESULT_TASK_MISMATCH' })
-    expect(mismatched.measurement.decisionResolved).toBe(false)
+    expect(mismatched.measurement).toMatchObject({ decisionResolved: false, measurementAttempted: true })
   })
 
   it('reports a recovered infrastructure retry as cost without unrecovered missingness', async () => {
@@ -132,6 +163,7 @@ describe('staged evaluation execution boundary', () => {
       infrastructureFailures: 1,
       attemptCount: 2,
       hasModelOutcome: true,
+      measurementAttempted: true,
       unrecoveredInfrastructure: false,
       formatValid: true,
       decisionResolved: true,
@@ -150,6 +182,7 @@ describe('staged evaluation execution boundary', () => {
       infrastructureFailures: 2,
       attemptCount: 2,
       hasModelOutcome: false,
+      measurementAttempted: false,
       unrecoveredInfrastructure: true,
       formatValid: false,
       decisionResolved: false,

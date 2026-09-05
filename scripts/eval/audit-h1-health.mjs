@@ -4,10 +4,14 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { evaluateMeasurementHealth } from './health-gate.mjs'
-
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const DEFAULT_PREFIXES = Object.freeze([12, 24, 48, 96])
+const HISTORICAL_HEALTH_THRESHOLDS = Object.freeze({
+  minimumFormatComplianceRate: 0.98,
+  minimumDecisionResolutionRate: 0.95,
+  maximumUnrecoveredInfrastructureRate: 0.02,
+  maximumArmResolutionGap: 0.05,
+})
 
 function requireRecord(value, label) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`)
@@ -22,6 +26,10 @@ function requireArray(value, label) {
 function requirePositiveInteger(value, label) {
   if (!Number.isSafeInteger(value) || Number(value) < 1) throw new Error(`${label} must be a positive safe integer`)
   return Number(value)
+}
+
+function rounded(value) {
+  return Number(value.toFixed(6))
 }
 
 function scientificStatus(result) {
@@ -50,6 +58,7 @@ function healthObservation(runValue) {
       decisionResolved: false,
       infrastructureFailures,
       attemptCount: attempts.length,
+      unrecoveredInfrastructure: infrastructureFailures > 0,
     })
   }
 
@@ -66,6 +75,67 @@ function healthObservation(runValue) {
     decisionResolved,
     infrastructureFailures,
     attemptCount: attempts.length,
+    unrecoveredInfrastructure: false,
+  })
+}
+
+function historicalArmResolution(observations, arm) {
+  const rows = observations.filter(value => value.arm === arm)
+  if (rows.length === 0) throw new Error(`historical H1 health requires at least one ${arm} observation`)
+  const resolved = rows.filter(value => value.decisionResolved).length
+  return Object.freeze({
+    observations: rows.length,
+    resolved,
+    resolutionRate: rounded(resolved / rows.length),
+  })
+}
+
+/**
+ * Frozen adapter for the historical H1 prefix diagnostic. Do not reuse this
+ * for new staged runs: H1 was collected under the legacy health definition,
+ * and retroactively applying staged health-v2 would rewrite historical meaning.
+ */
+function evaluateHistoricalH1Health(observations) {
+  const modelRows = observations.filter(value => value.hasModelOutcome)
+  if (modelRows.length === 0) throw new Error('historical H1 health requires at least one model-outcome observation')
+  const formatValid = modelRows.filter(value => value.formatValid).length
+  const resolved = observations.filter(value => value.decisionResolved).length
+  const infrastructureFailures = observations.reduce((sum, value) => sum + value.infrastructureFailures, 0)
+  const attempts = observations.reduce((sum, value) => sum + value.attemptCount, 0)
+  const unrecovered = observations.filter(value => value.unrecoveredInfrastructure).length
+  const retryAttempts = Math.max(0, attempts - observations.length)
+  const B = historicalArmResolution(observations, 'B')
+  const C = historicalArmResolution(observations, 'C')
+
+  const metrics = Object.freeze({
+    scheduledObservations: observations.length,
+    modelOutcomeObservations: modelRows.length,
+    formatValidObservations: formatValid,
+    resolvedDecisionObservations: resolved,
+    infrastructureFailures,
+    attempts,
+    unrecoveredInfrastructureObservations: unrecovered,
+    retryAttempts,
+    formatComplianceRate: rounded(formatValid / modelRows.length),
+    decisionResolutionRate: rounded(resolved / observations.length),
+    unrecoveredInfrastructureRate: rounded(unrecovered / observations.length),
+    retryAttemptRate: attempts === 0 ? 0 : rounded(retryAttempts / attempts),
+    resolutionGap: rounded(Math.abs(B.resolutionRate - C.resolutionRate)),
+    byArm: Object.freeze({ B, C }),
+  })
+
+  const reasons = []
+  if (metrics.formatComplianceRate < HISTORICAL_HEALTH_THRESHOLDS.minimumFormatComplianceRate) reasons.push('FORMAT_COMPLIANCE_BELOW_MINIMUM')
+  if (metrics.decisionResolutionRate < HISTORICAL_HEALTH_THRESHOLDS.minimumDecisionResolutionRate) reasons.push('DECISION_RESOLUTION_BELOW_MINIMUM')
+  if (metrics.unrecoveredInfrastructureRate > HISTORICAL_HEALTH_THRESHOLDS.maximumUnrecoveredInfrastructureRate) {
+    reasons.push('UNRECOVERED_INFRASTRUCTURE_RATE_ABOVE_MAXIMUM')
+  }
+  if (metrics.resolutionGap > HISTORICAL_HEALTH_THRESHOLDS.maximumArmResolutionGap) reasons.push('ARM_RESOLUTION_GAP_ABOVE_MAXIMUM')
+
+  return Object.freeze({
+    status: reasons.length === 0 ? 'PASS' : 'STOP',
+    reasons: Object.freeze(reasons),
+    metrics,
   })
 }
 
@@ -87,7 +157,7 @@ export function auditH1HealthPrefixes(input) {
     if (observations.length === 0) {
       return Object.freeze({ prefix, decisionObservations: 0, healthStatus: 'STOP', reasons: Object.freeze(['NO_BC_OBSERVATIONS']), metrics: null })
     }
-    const health = evaluateMeasurementHealth({ observations })
+    const health = evaluateHistoricalH1Health(observations)
     return Object.freeze({
       prefix,
       decisionObservations: observations.length,
@@ -101,6 +171,7 @@ export function auditH1HealthPrefixes(input) {
     schema: 'dsh-toolchain-m2-h1-prefix-health-audit-v1',
     scientificStatus: scientificStatus(result),
     purpose: 'HISTORICAL_MEASUREMENT_DIAGNOSTIC_ONLY',
+    healthDefinition: 'legacy-h1-v1-frozen',
     snapshots: Object.freeze(snapshots),
   })
 }

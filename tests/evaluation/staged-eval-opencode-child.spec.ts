@@ -234,4 +234,47 @@ describe('staged OpenCode Go child process boundary', () => {
       await close(server)
     }
   })
+
+  it('returns a bounded product terminal when product exploration exceeds the unchanged 31-call budget', async () => {
+    const requests: Array<Record<string, any>> = []
+    const server = serve(Array.from({ length: 32 }, (_, index) => (
+      completion(`completion-${index + 1}`, 'ordinary_read', { path: `evidence-${index + 1}.txt` }, 10, 1)
+    )), requests)
+    const port = await listen(server)
+    const dispatchToolCall = vi.fn(async () => ({ text: 'keep searching' }))
+
+    try {
+      const result = await executeProcessModelAttempt({
+        command: process.execPath,
+        args: [stagedChild],
+        cwd: repositoryRoot,
+        environment: processEnvironment(port),
+        envelope: modelEnvelope(),
+        timeoutMs: 20_000,
+        maxStdoutBytes: 512 * 1024,
+        maxStderrBytes: 64 * 1024,
+        dispatchToolCall,
+      })
+
+      expect(result.kind).toBe('model-outcome')
+      if (result.kind !== 'model-outcome') throw new Error(`expected model outcome, got ${result.reason}: ${result.detail}`)
+      expect(decodeStagedFinalAnswer(result.finalAnswer)).toEqual({
+        transportStatus: 'product-terminal',
+        productTerminalReason: 'tool_budget_exhausted',
+        transportMetrics: {
+          providerCompletions: 32,
+          measurementToolCalls: 0,
+        },
+      })
+      expect(result.providerMetadata).toMatchObject({
+        finishReason: 'tool_call_limit',
+        inputTokens: 320,
+        outputTokens: 32,
+      })
+      expect(dispatchToolCall).toHaveBeenCalledTimes(31)
+      expect(requests).toHaveLength(32)
+    } finally {
+      await close(server)
+    }
+  })
 })

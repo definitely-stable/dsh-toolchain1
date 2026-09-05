@@ -5,9 +5,10 @@ import {
 } from './staged-result-contract.mjs'
 
 export const STAGED_RESULT_TOOL_NAME = 'submit_staged_result'
-const TRANSPORT_SCHEMA = 'dsh-toolchain-staged-provider-transport-v1'
-const TRANSPORT_KEYS = new Set(['schema', 'kind', 'payload', 'metrics'])
+const TRANSPORT_SCHEMA = 'dsh-toolchain-staged-provider-transport-v2'
+const TRANSPORT_KEYS = new Set(['schema', 'kind', 'payload', 'metrics', 'reason'])
 const TRANSPORT_METRIC_KEYS = new Set(['providerCompletions', 'measurementToolCalls'])
+const PRODUCT_TERMINAL_REASONS = new Set(['tool_budget_exhausted'])
 
 export function createStagedResultToolDefinition() {
   return Object.freeze({
@@ -90,6 +91,18 @@ export function encodeStagedUnsupportedResult(metrics) {
   })
 }
 
+export function encodeStagedProductTerminal(reason, metrics) {
+  if (!PRODUCT_TERMINAL_REASONS.has(reason)) throw new Error(`unsupported staged product terminal reason: ${String(reason)}`)
+  const normalizedMetrics = transportMetrics(metrics)
+  if (normalizedMetrics === undefined) throw new Error('staged product terminal requires runner-owned metrics')
+  return JSON.stringify({
+    schema: TRANSPORT_SCHEMA,
+    kind: 'product-terminal',
+    reason,
+    metrics: normalizedMetrics,
+  })
+}
+
 export function routeStagedProviderToolCalls(calls, taskId, metrics) {
   if (!Array.isArray(calls) || calls.length === 0) throw new Error('staged provider tool calls must be a non-empty array')
   const measurementCalls = calls.filter(call => (
@@ -164,6 +177,24 @@ export function decodeStagedFinalAnswer(value) {
   } catch {
     return Object.freeze({ transportStatus: 'unsupported' })
   }
+
+  if (decoded.kind === 'product-terminal') {
+    if (
+      Object.hasOwn(decoded, 'payload')
+      || metrics === undefined
+      || typeof decoded.reason !== 'string'
+      || !PRODUCT_TERMINAL_REASONS.has(decoded.reason)
+    ) {
+      return Object.freeze({ transportStatus: 'unsupported' })
+    }
+    return Object.freeze({
+      transportStatus: 'product-terminal',
+      productTerminalReason: decoded.reason,
+      transportMetrics: metrics,
+    })
+  }
+
+  if (Object.hasOwn(decoded, 'reason')) return Object.freeze({ transportStatus: 'unsupported' })
 
   if (decoded.kind === 'unsupported') {
     if (Object.hasOwn(decoded, 'payload') || metrics === undefined) {

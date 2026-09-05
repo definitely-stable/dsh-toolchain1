@@ -9,13 +9,36 @@ const BY_TOOL_ZERO = Object.freeze({
   toolchain_contract_inspect: 0,
 })
 
+const TASKS = Object.freeze([
+  Object.freeze({
+    id: 'task-1',
+    domain: 'approval-policy',
+    prompt: 'DO_NOT_PERSIST_PROMPT_ALPHA',
+    successRule: Object.freeze({
+      kind: 'api-exists-any',
+      package: '@deepseek-ai/dsh-user-approval',
+      symbols: Object.freeze(['ApprovalPolicy']),
+    }),
+  }),
+  Object.freeze({
+    id: 'task-2',
+    domain: 'tool-schema',
+    prompt: 'DO_NOT_PERSIST_PROMPT_BETA',
+    successRule: Object.freeze({
+      kind: 'api-absent',
+      symbols: Object.freeze(['FutureTool']),
+      proofScope: Object.freeze({ kind: 'target' }),
+    }),
+  }),
+])
+
 function result(
   arm: 'B' | 'C',
   taskId: string,
   decision?: { apiValid: boolean },
   terminalTransportReason?: string,
   failureCode?: string,
-) {
+): any {
   const cost = arm === 'B'
     ? {
         usage: { inputTokens: 100, outputTokens: 20, turns: 2, providerCompletions: 2 },
@@ -47,7 +70,7 @@ function result(
       }
 
   return {
-    call: { ordinal: 1, taskId, arm, repetition: 1 },
+    call: { ordinal: taskId === 'task-1' ? (arm === 'B' ? 1 : 2) : (arm === 'B' ? 3 : 4), taskId, arm, repetition: 1 },
     measurement: {
       arm,
       formatValid: decision !== undefined,
@@ -55,9 +78,11 @@ function result(
       infrastructureFailures: 0,
       attemptCount: 1,
       hasModelOutcome: true,
+      measurementAttempted: true,
       unrecoveredInfrastructure: false,
       ...(terminalTransportReason === undefined ? {} : { terminalTransportReason }),
     },
+    productOutcome: { kind: 'completed' as const },
     ...(decision === undefined ? {} : { decision }),
     ...(failureCode === undefined ? {} : { failure: { code: failureCode, summary: 'test failure' } }),
     cost: {
@@ -66,12 +91,48 @@ function result(
       wallTimeMs: 10,
       ...cost,
     },
+    // Deliberately unsafe synthetic material: report receipts must never copy it.
+    reasoning: 'DO_NOT_PERSIST_CHAIN_OF_THOUGHT',
+    rawToolPayload: { secret: 'DO_NOT_PERSIST_RAW_TOOL_PAYLOAD' },
   }
 }
 
-function unrecoveredC(taskId: string) {
+function budgetExhaustedB(taskId: string): any {
   return {
-    call: { ordinal: 1, taskId, arm: 'C' as const, repetition: 1 },
+    call: { ordinal: 3, taskId, arm: 'B' as const, repetition: 1 },
+    measurement: {
+      arm: 'B' as const,
+      formatValid: false,
+      decisionResolved: false,
+      infrastructureFailures: 0,
+      attemptCount: 1,
+      hasModelOutcome: true,
+      measurementAttempted: false,
+      unrecoveredInfrastructure: false,
+      terminalTransportReason: 'tool_call_limit',
+    },
+    productOutcome: { kind: 'budget-exhausted' as const, reason: 'tool_budget_exhausted' as const },
+    failure: { code: 'PRODUCT_BUDGET_EXHAUSTED', summary: 'bounded product terminal' },
+    cost: {
+      attempts: 1,
+      infrastructureFailures: 0,
+      wallTimeMs: 100,
+      usage: { inputTokens: 500, outputTokens: 50, turns: 32, providerCompletions: 32 },
+      toolUsage: {
+        calls: 31,
+        ordinaryCalls: 31,
+        toolchainCalls: 0,
+        byTool: { ...BY_TOOL_ZERO, read_file: 10, search_text: 21 },
+        structuredTransportCalls: 0,
+        measurementToolCalls: 0,
+      },
+    },
+  }
+}
+
+function unrecoveredC(taskId: string): any {
+  return {
+    call: { ordinal: 4, taskId, arm: 'C' as const, repetition: 1 },
     measurement: {
       arm: 'C' as const,
       formatValid: false,
@@ -79,6 +140,7 @@ function unrecoveredC(taskId: string) {
       infrastructureFailures: 2,
       attemptCount: 2,
       hasModelOutcome: false,
+      measurementAttempted: false,
       unrecoveredInfrastructure: true,
     },
     failure: { code: 'UNRECOVERED_INFRASTRUCTURE', summary: 'test failure' },
@@ -99,8 +161,8 @@ function unrecoveredC(taskId: string) {
   }
 }
 
-function run(status: 'PASS' | 'STOP') {
-  const canaryResults = [
+function run(status: 'PASS' | 'STOP'): any {
+  const canaryResults: any[] = [
     result('B', 'task-1', { apiValid: true }),
     result('C', 'task-1', { apiValid: true }),
     result('B', 'task-2', { apiValid: false }),
@@ -111,12 +173,18 @@ function run(status: 'PASS' | 'STOP') {
   return {
     mode: 'dev',
     measurementStatus: status,
+    schedule: { selectedTasks: TASKS },
     canaryResults,
     remainderResults: [],
     health: {
       status,
       reasons: status === 'STOP' ? ['FORMAT_COMPLIANCE_BELOW_MINIMUM'] : [],
-      metrics: { scheduledObservations: 4, formatComplianceRate: status === 'STOP' ? 0.75 : 1 },
+      metrics: {
+        scheduledObservations: 4,
+        modelOutcomeObservations: 4,
+        measurementAttemptObservations: 4,
+        formatComplianceRate: status === 'STOP' ? 0.75 : 1,
+      },
     },
     authorization: {
       plannedCalls: 40,
@@ -129,21 +197,16 @@ function run(status: 'PASS' | 'STOP') {
 }
 
 describe('staged evaluation report', () => {
-  it('reports API validity honestly with per-arm cost and actual Toolchain use', () => {
+  it('publishes report-v3 bounded product metrics without regressing cost/tool telemetry', () => {
     const report = buildStagedEvaluationReport(run('PASS'))
 
-    expect(report.schema).toBe('dsh-toolchain-staged-eval-report-v2')
+    expect(report.schema).toBe('dsh-toolchain-staged-eval-report-v3')
     expect(report.measurement).toMatchObject({
       status: 'PASS',
       reasons: [],
       failureDiagnostics: { total: 0, byCode: [] },
-      transportDiagnostics: {
-        observedTerminalReasons: 0,
-        missingTerminalReasons: 4,
-        terminalReasons: [],
-      },
     })
-    expect(report.product).toEqual({
+    expect(report.product).toMatchObject({
       interpretable: true,
       resolvedObservations: 4,
       apiValidObservations: 3,
@@ -151,144 +214,111 @@ describe('staged evaluation report', () => {
         B: { resolved: 2, apiValid: 1 },
         C: { resolved: 2, apiValid: 2 },
       },
-      pairedTasks: {
-        count: 2,
-        apiValidityDeltaCMinusB: 1,
-      },
-      taskSuccessGuardrail: {
-        measured: false,
-        reason: 'single-api-claim development oracle does not independently measure end-to-end task completion',
-      },
-    })
-    expect(report.cost).toEqual({
-      modelCalls: 4,
-      attempts: 4,
-      retries: 0,
-      infrastructureFailures: 0,
-      wallTimeMs: 40,
-      inputTokens: 440,
-      outputTokens: 100,
-      turns: 10,
-      providerCompletions: 10,
-      toolCalls: 14,
-      measurementToolCalls: 4,
-      ordinaryCalls: 10,
-      toolchainCalls: 4,
-      byTool: {
-        read_file: 4,
-        search_text: 6,
-        toolchain_contract_search: 2,
-        toolchain_contract_inspect: 2,
-      },
-      byArm: {
-        B: {
-          modelCalls: 2,
-          attempts: 2,
-          retries: 0,
-          infrastructureFailures: 0,
-          wallTimeMs: 20,
-          inputTokens: 200,
-          outputTokens: 40,
-          turns: 4,
-          providerCompletions: 4,
-          toolCalls: 6,
-          measurementToolCalls: 2,
-          ordinaryCalls: 6,
-          toolchainCalls: 0,
-          byTool: {
-            read_file: 2,
-            search_text: 4,
-            toolchain_contract_search: 0,
-            toolchain_contract_inspect: 0,
-          },
-        },
-        C: {
-          modelCalls: 2,
-          attempts: 2,
-          retries: 0,
-          infrastructureFailures: 0,
-          wallTimeMs: 20,
-          inputTokens: 240,
-          outputTokens: 60,
-          turns: 6,
-          providerCompletions: 6,
-          toolCalls: 8,
-          measurementToolCalls: 2,
-          ordinaryCalls: 4,
-          toolchainCalls: 4,
-          byTool: {
-            read_file: 2,
-            search_text: 2,
-            toolchain_contract_search: 2,
-            toolchain_contract_inspect: 2,
-          },
-        },
-      },
-      toolchainUse: {
-        eligibleObservations: 2,
-        observationsWithUse: 2,
+      pairedTasks: { count: 2, apiValidityDeltaCMinusB: 1 },
+      boundedCompletion: {
+        eligibleObservations: 4,
+        completedObservations: 4,
         rate: 1,
+        byArm: {
+          B: { eligible: 2, completed: 2, rate: 1 },
+          C: { eligible: 2, completed: 2, rate: 1 },
+        },
+        paired: { count: 2, bothCompleted: 2, bOnly: 0, cOnly: 0, neither: 0, rateDeltaCMinusB: 0 },
       },
-    })
-  })
-
-  it('keeps STOP reports non-interpretable while preserving executed-arm telemetry', () => {
-    const report = buildStagedEvaluationReport(run('STOP'))
-
-    expect(report.measurement).toMatchObject({
-      status: 'STOP',
-      reasons: ['FORMAT_COMPLIANCE_BELOW_MINIMUM'],
-      failureDiagnostics: {
-        total: 1,
-        byCode: [{
-          code: 'STRUCTURED_RESULT_INVALID',
-          count: 1,
-          byArm: { B: 0, C: 1 },
-        }],
+      boundedApiSuccess: {
+        eligibleObservations: 4,
+        successfulObservations: 3,
+        rate: 0.75,
+        byArm: {
+          B: { eligible: 2, successful: 1, rate: 0.5 },
+          C: { eligible: 2, successful: 2, rate: 1 },
+        },
+        paired: { count: 2, bothSuccess: 1, bOnly: 0, cOnly: 1, neither: 0, rateDeltaCMinusB: 0.5 },
       },
-      transportDiagnostics: {
-        observedTerminalReasons: 1,
-        missingTerminalReasons: 3,
-        terminalReasons: [{
-          reason: 'structured_measurement_invalid',
-          count: 1,
-          byArm: { B: 0, C: 1 },
-        }],
-      },
-    })
-    expect(report.authorization).toMatchObject({ remainderAuthorized: 0 })
-    expect(report.product).toMatchObject({
-      interpretable: false,
-      blockedBy: 'measurement-health',
-      resolvedObservations: 3,
       taskSuccessGuardrail: { measured: false },
     })
-    expect(report.product.pairedTasks).toEqual({
-      count: 1,
-      apiValidityDeltaCMinusB: 0,
+    expect(report.cost).toMatchObject({
+      modelCalls: 4,
+      attempts: 4,
+      inputTokens: 440,
+      outputTokens: 100,
+      toolCalls: 14,
+      ordinaryCalls: 10,
+      toolchainCalls: 4,
+      byArm: {
+        B: { modelCalls: 2, inputTokens: 200, ordinaryCalls: 6, toolchainCalls: 0 },
+        C: { modelCalls: 2, inputTokens: 240, ordinaryCalls: 4, toolchainCalls: 4 },
+      },
+      toolchainUse: { eligibleObservations: 2, observationsWithUse: 2, rate: 1 },
     })
-    expect(report.cost.toolchainUse).toEqual({
-      eligibleObservations: 2,
-      observationsWithUse: 2,
-      rate: 1,
-    })
-    expect(Object.isFrozen(report)).toBe(true)
   })
 
-  it('excludes unrecovered C infrastructure attempts from the agent Toolchain-use denominator', () => {
+  it('retains bounded budget exhaustion instead of complete-case censoring', () => {
+    const staged = run('PASS')
+    staged.canaryResults[2] = budgetExhaustedB('task-2')
+    const report = buildStagedEvaluationReport(staged)
+
+    expect(report.product.pairedTasks).toEqual({ count: 1, apiValidityDeltaCMinusB: 0 })
+    expect(report.product.boundedCompletion).toMatchObject({
+      byArm: {
+        B: { eligible: 2, completed: 1, rate: 0.5 },
+        C: { eligible: 2, completed: 2, rate: 1 },
+      },
+      paired: { count: 2, bothCompleted: 1, bOnly: 0, cOnly: 1, neither: 0, rateDeltaCMinusB: 0.5 },
+    })
+    expect(report.product.boundedApiSuccess).toMatchObject({
+      byArm: {
+        B: { eligible: 2, successful: 1, rate: 0.5 },
+        C: { eligible: 2, successful: 2, rate: 1 },
+      },
+      paired: { count: 2, bothSuccess: 1, bOnly: 0, cOnly: 1, neither: 0, rateDeltaCMinusB: 0.5 },
+    })
+    expect(report.observations.find((value: any) => value.taskId === 'task-2' && value.arm === 'B')).toMatchObject({
+      ordinal: 3,
+      taskId: 'task-2',
+      arm: 'B',
+      repetition: 1,
+      domain: 'tool-schema',
+      oracleKind: 'api-absent',
+      hasModelOutcome: true,
+      measurementAttempted: false,
+      productOutcome: { kind: 'budget-exhausted', reason: 'tool_budget_exhausted' },
+      terminalReason: 'tool_call_limit',
+      failureCode: 'PRODUCT_BUDGET_EXHAUSTED',
+      cost: {
+        inputTokens: 500,
+        outputTokens: 50,
+        turns: 32,
+        providerCompletions: 32,
+        toolCalls: 31,
+        ordinaryCalls: 31,
+        toolchainCalls: 0,
+      },
+    })
+  })
+
+  it('persists only safe operational observation receipts, never prompts, reasoning or raw tool payloads', () => {
+    const report = buildStagedEvaluationReport(run('PASS'))
+    expect(report.observations.map((value: any) => value.ordinal)).toEqual([1, 2, 3, 4])
+    const serialized = JSON.stringify(report)
+    expect(serialized).not.toContain('DO_NOT_PERSIST_PROMPT_ALPHA')
+    expect(serialized).not.toContain('DO_NOT_PERSIST_PROMPT_BETA')
+    expect(serialized).not.toContain('DO_NOT_PERSIST_CHAIN_OF_THOUGHT')
+    expect(serialized).not.toContain('DO_NOT_PERSIST_RAW_TOOL_PAYLOAD')
+    expect(serialized).not.toContain('rawToolPayload')
+    expect(serialized).not.toContain('reasoning')
+  })
+
+  it('keeps STOP reports non-interpretable and excludes unrecovered C infrastructure from agent-use/product denominators', () => {
     const staged = run('STOP')
     staged.canaryResults[3] = unrecoveredC('task-2')
     const report = buildStagedEvaluationReport(staged)
 
-    expect(report.cost.byArm.C).toMatchObject({
-      modelCalls: 2,
-      attempts: 3,
-      infrastructureFailures: 2,
-    })
-    expect(report.cost.toolchainUse).toEqual({
-      eligibleObservations: 1,
-      observationsWithUse: 1,
-      rate: 1,
-    })
+    expect(report.product).toMatchObject({ interpretable: false, blockedBy: 'measurement-health' })
+    expect(report.cost.byArm.C).toMatchObject({ modelCalls: 2, attempts: 3, infrastructureFailures: 2 })
+    expect(report.cost.toolchainUse).toEqual({ eligibleObservations: 1, observationsWithUse: 1, rate: 1 })
+    expect(report.product.boundedCompletion.byArm.C.eligible).toBe(1)
+    expect(report.product.boundedApiSuccess.byArm.C.eligible).toBe(1)
+    expect(Object.isFrozen(report)).toBe(true)
   })
 })

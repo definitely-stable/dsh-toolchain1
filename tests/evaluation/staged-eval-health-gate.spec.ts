@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { evaluateMeasurementHealth } from '../../scripts/eval/health-gate.mjs'
 
-function row(overrides: Partial<{ arm: 'B' | 'C'; formatValid: boolean; decisionResolved: boolean; infrastructureFailures: number; attemptCount: number; hasModelOutcome: boolean; unrecoveredInfrastructure: boolean }> = {}) {
+function row(overrides: Partial<{ arm: 'B' | 'C'; formatValid: boolean; decisionResolved: boolean; infrastructureFailures: number; attemptCount: number; hasModelOutcome: boolean; measurementAttempted: boolean; unrecoveredInfrastructure: boolean }> = {}) {
   return {
     arm: 'B' as const,
     formatValid: true,
@@ -10,6 +10,7 @@ function row(overrides: Partial<{ arm: 'B' | 'C'; formatValid: boolean; decision
     infrastructureFailures: 0,
     attemptCount: 1,
     hasModelOutcome: true,
+    measurementAttempted: true,
     unrecoveredInfrastructure: false,
     ...overrides,
   }
@@ -33,10 +34,37 @@ describe('staged evaluation measurement health gate', () => {
     })
   })
 
-  it('stops when format compliance is below 98 percent', () => {
+  it('passes an arm-dependent bounded product completion gap when measurement attempts themselves are healthy', () => {
+    const observations = [
+      ...Array.from({ length: 6 }, () => row({ arm: 'B' })),
+      ...Array.from({ length: 2 }, () => row({
+        arm: 'B',
+        formatValid: false,
+        decisionResolved: false,
+        measurementAttempted: false,
+      })),
+      ...Array.from({ length: 8 }, () => row({ arm: 'C' })),
+    ]
+    const result = evaluateMeasurementHealth({ observations })
+
+    expect(result.status).toBe('PASS')
+    expect(result.reasons).toEqual([])
+    expect(result.metrics).toMatchObject({
+      scheduledObservations: 16,
+      modelOutcomeObservations: 16,
+      measurementAttemptObservations: 14,
+      formatValidObservations: 14,
+      resolvedDecisionObservations: 14,
+      formatComplianceRate: 1,
+      decisionResolutionRate: 1,
+      resolutionGap: 0.25,
+    })
+  })
+
+  it('stops when measurement-attempt format compliance is below 98 percent', () => {
     const observations = [
       ...Array.from({ length: 47 }, () => row({ arm: 'B' })),
-      ...Array.from({ length: 3 }, () => row({ arm: 'B', formatValid: false })),
+      ...Array.from({ length: 3 }, () => row({ arm: 'B', formatValid: false, decisionResolved: false })),
       ...Array.from({ length: 50 }, () => row({ arm: 'C' })),
     ]
     expect(evaluateMeasurementHealth({ observations })).toMatchObject({
@@ -45,7 +73,7 @@ describe('staged evaluation measurement health gate', () => {
     })
   })
 
-  it('stops when decision resolution is below 95 percent', () => {
+  it('keeps deterministic adjudication resolution as a diagnostic rather than a measurement STOP criterion', () => {
     const observations = [
       ...Array.from({ length: 47 }, () => row({ arm: 'B' })),
       ...Array.from({ length: 3 }, () => row({ arm: 'B', decisionResolved: false })),
@@ -53,15 +81,15 @@ describe('staged evaluation measurement health gate', () => {
       ...Array.from({ length: 3 }, () => row({ arm: 'C', decisionResolved: false })),
     ]
     const result = evaluateMeasurementHealth({ observations })
-    expect(result.status).toBe('STOP')
-    expect(result.reasons).toContain('DECISION_RESOLUTION_BELOW_MINIMUM')
+    expect(result.status).toBe('PASS')
+    expect(result.metrics.decisionResolutionRate).toBe(0.94)
     expect(result.metrics.resolutionGap).toBe(0)
   })
 
   it('stops on unrecovered infrastructure missingness above two percent', () => {
     const observations = [
       ...Array.from({ length: 49 }, () => row({ arm: 'B' })),
-      ...Array.from({ length: 3 }, () => row({ arm: 'B', hasModelOutcome: false, formatValid: false, decisionResolved: false, infrastructureFailures: 1, attemptCount: 1, unrecoveredInfrastructure: true })),
+      ...Array.from({ length: 3 }, () => row({ arm: 'B', hasModelOutcome: false, measurementAttempted: false, formatValid: false, decisionResolved: false, infrastructureFailures: 1, attemptCount: 1, unrecoveredInfrastructure: true })),
       ...Array.from({ length: 50 }, () => row({ arm: 'C' })),
     ]
     const result = evaluateMeasurementHealth({ observations })
@@ -81,15 +109,28 @@ describe('staged evaluation measurement health gate', () => {
     expect(result.metrics.unrecoveredInfrastructureRate).toBe(0)
   })
 
-  it('stops when B and C resolution differ by more than five percentage points', () => {
+  it('reports arm decision-resolution gaps diagnostically without censoring a possible treatment effect', () => {
     const observations = [
       ...Array.from({ length: 50 }, () => row({ arm: 'B' })),
       ...Array.from({ length: 45 }, () => row({ arm: 'C' })),
       ...Array.from({ length: 5 }, () => row({ arm: 'C', decisionResolved: false })),
     ]
     const result = evaluateMeasurementHealth({ observations })
-    expect(result.status).toBe('STOP')
-    expect(result.reasons).toContain('ARM_RESOLUTION_GAP_ABOVE_MAXIMUM')
+    expect(result.status).toBe('PASS')
+    expect(result.metrics.resolutionGap).toBe(0.1)
+  })
+
+  it('fails closed when model outcomes exist but no observation reaches measurement finalization', () => {
+    const observations = Array.from({ length: 16 }, (_, index) => row({
+      arm: index % 2 === 0 ? 'B' : 'C',
+      formatValid: false,
+      decisionResolved: false,
+      measurementAttempted: false,
+    }))
+    expect(evaluateMeasurementHealth({ observations })).toMatchObject({
+      status: 'STOP',
+      reasons: ['NO_MEASUREMENT_ATTEMPTS'],
+    })
   })
 
   it('rejects non B/C observations and empty input', () => {
