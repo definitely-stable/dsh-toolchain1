@@ -6,7 +6,13 @@
     "manifest": "docs/evaluation/m2/h1-dev-corpus-v1/manifest.json",
     "schema": "dsh-toolchain-m2-h1-development-corpus-manifest-v1",
     "taskCount": 96,
-    "futureHoldoutAllowed": false
+    "futureHoldoutAllowed": false,
+    "shards": [
+      { "path": "shard-01.json", "taskCount": 24, "sha256": "b5b90118a19a2e9074ca1860c579c5837ede6bb635217fb53739edd38a01d787" },
+      { "path": "shard-02.json", "taskCount": 24, "sha256": "8a1ba794c987c99b6a02b4ab017bd3d27ee7faf8932966f1e221a304d795edb4" },
+      { "path": "shard-03.json", "taskCount": 24, "sha256": "8d31fdce3e5147f08d04ac3e70f18fe4800e563de28294fff72684462e207525" },
+      { "path": "shard-04.json", "taskCount": 24, "sha256": "5dd5030b7704d6be53d0db9ab346aa246b9bb5c9213bd588a1c36799088ebc3f" }
+    ]
   },
   "candidateCommit": "8eba7eccba77bb3e047868dbad8ea9c9ced3b033",
   "taskCount": 20,
@@ -46,6 +52,6 @@
     "h1-scope-hierarchy-p02",
     "h1-scope-lifecycle-p02"
   ],
-  "selectionCommitmentSha256": "6a448274db2a89ced58621bbc4963058292ace5df1b104ddff2b80f05765693e",
+  "selectionCommitmentSha256": "7c3aa0c23cf150c5ba78258d7d051e8c357d0aa6d102652b1c65b88e6e5310fe",
   "warning": "DEVELOPMENT_ONLY engineering-signal selection. It reuses disclosed H1-derived tasks and MUST NOT be described or reused as H2 holdout evidence."
 }
