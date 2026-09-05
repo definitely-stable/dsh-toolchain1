@@ -2,6 +2,8 @@
 
 Status: **COMPLETE / MEASUREMENT-ONLY**
 
+Classification: **MULTIPLE** — Inspect payload size and within-response duplication are the primary compactness signals; Search → Inspect overlap is measurable but secondary.
+
 This receipt measures the frozen Contract Search / Inspect product at base commit `a9465a962e99ebca685f0af4c308007117dbdc41`. It does not change production output, ranking, Protocol, Contract Index semantics, or provider execution.
 
 Canonical machine-readable receipt: [`contract-compactness-baseline-v1.json`](contract-compactness-baseline-v1.json).
