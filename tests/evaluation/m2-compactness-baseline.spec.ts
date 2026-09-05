@@ -98,6 +98,16 @@ const EXPECTED_CATEGORIES = [
   'package-api',
 ] as const
 
+const REQUIRED_FAMILY_DISTRIBUTIONS = [
+  'wireBytes',
+  'descriptiveBytes',
+  'evidenceBytes',
+  'repeatedLeafBytes',
+  'repeatedLeafRate',
+  'lexicalDuplicationRate',
+  'uniqueEvidencePerKiB',
+] as const
+
 const FORBIDDEN_RECEIPT_KEYS = [
   'wireJson',
   'rawResponse',
@@ -224,6 +234,16 @@ describe('M2 Contract Search/Inspect deterministic compactness baseline', () => 
       inspectContracts: 184,
       searchInspectPaths: 30,
     })
+
+    expect(Object.keys(actual.search.byCategory).toSorted()).toEqual(EXPECTED_CATEGORIES)
+    for (const category of EXPECTED_CATEGORIES) {
+      const distributions = actual.search.byCategory[category]
+      expect(distributions).toBeTypeOf('object')
+      if (typeof distributions !== 'object' || distributions === null) {
+        throw new Error(`Expected aggregate distributions for Search category ${category}`)
+      }
+      expect(Object.keys(distributions).toSorted()).toEqual([...REQUIRED_FAMILY_DISTRIBUTIONS].toSorted())
+    }
 
     const receiptUrl = new URL('../../docs/evaluation/m2/contract-compactness-baseline-v1.json', import.meta.url)
     const receiptText = await readFile(receiptUrl, 'utf8')
