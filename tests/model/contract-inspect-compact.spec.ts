@@ -10,6 +10,7 @@ const snapshotFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
 const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
 const longEvidenceId = 'types:@deepseek-ai/dsh-tools:lib/contracts/tool-definition.d.ts#ToolDefinition'
 
+type ContractInspectSuccess = Extract<ContractInspectResponse, { readonly status: 'ok' }>
 type CompactProjector = (response: ContractInspectResponse) => unknown
 
 function compactProjector(): CompactProjector {
@@ -34,7 +35,7 @@ function evidence(id: string, source: string): Evidence {
 
 function successResponse(
   evidenceItems: Evidence[] = [evidence(longEvidenceId, '@deepseek-ai/dsh-tools/lib/contracts/tool-definition.d.ts')],
-): ContractInspectResponse {
+): ContractInspectSuccess {
   return {
     protocolVersion: '1',
     requestId: 'compact-test',
@@ -72,6 +73,32 @@ function occurrences(serialized: string, value: string): number {
     cursor = index + needle.length
   }
 }
+
+const nonSuccessResponses = [
+  {
+    protocolVersion: '1',
+    requestId: 'failed-test',
+    status: 'failed',
+    diagnostics: [{
+      code: 'CONTRACT_NOT_FOUND',
+      severity: 'error',
+      domain: 'contract',
+      summary: 'Not found.',
+    }],
+  },
+  {
+    protocolVersion: '1',
+    requestId: 'stale-test',
+    snapshotFingerprint,
+    status: 'stale',
+    diagnostics: [{
+      code: 'CONTRACT_INDEX_STALE',
+      severity: 'error',
+      domain: 'contract',
+      summary: 'Stale.',
+    }],
+  },
+] satisfies readonly ContractInspectResponse[]
 
 describe('Contract Inspect compact model projection', () => {
   it('interns repeated canonical evidence ids without removing the canonical evidence record', () => {
@@ -151,31 +178,7 @@ describe('Contract Inspect compact model projection', () => {
     expect(() => compactProjector()(canonical)).toThrow(/duplicate|evidence/i)
   })
 
-  it.each<ContractInspectResponse>([
-    {
-      protocolVersion: '1',
-      requestId: 'failed-test',
-      status: 'failed',
-      diagnostics: [{
-        code: 'CONTRACT_NOT_FOUND',
-        severity: 'error',
-        domain: 'contract',
-        summary: 'Not found.',
-      }],
-    },
-    {
-      protocolVersion: '1',
-      requestId: 'stale-test',
-      snapshotFingerprint,
-      status: 'stale',
-      diagnostics: [{
-        code: 'CONTRACT_INDEX_STALE',
-        severity: 'error',
-        domain: 'contract',
-        summary: 'Stale.',
-      }],
-    },
-  ])('leaves non-success Protocol responses semantically unchanged: $status', (canonical) => {
+  it.each(nonSuccessResponses)('leaves non-success Protocol responses semantically unchanged: $status', (canonical) => {
     const projected = compactProjector()(canonical)
 
     expect(projected).toEqual(canonical)
