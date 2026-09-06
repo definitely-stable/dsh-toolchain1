@@ -10,6 +10,7 @@ import {
 import { createVerificationBootProbe } from './boot-probe.js'
 import {
   classifyVerificationProcessFailure,
+  classifyVerificationWorkerFailure,
   verificationDiagnostic,
 } from './diagnostics.js'
 import { createSafeVerificationEnvironment } from './environment.js'
@@ -160,7 +161,18 @@ async function runRequiredProcess(
   readonly diagnostic?: Diagnostic
   readonly terminal?: 'failed' | 'cancelled'
 }> {
-  const outcome = await runner(request, signal)
+  let outcome: VerificationProcessOutcome
+  try {
+    outcome = await runner(request, signal)
+  } catch {
+    const failure = classifyVerificationWorkerFailure()
+    return Object.freeze({
+      passed: false,
+      diagnostic: failure.diagnostic,
+      terminal: failure.terminal,
+    })
+  }
+
   const failure = classifyVerificationProcessFailure(outcome, failureCode)
   if (failure === undefined) return Object.freeze({ passed: true })
   return Object.freeze({
@@ -381,16 +393,32 @@ export async function runPackedPluginVerification(
       }
     }
 
+    let bootOutcome: VerificationProcessOutcome | undefined
     if (!stopped && bootProbe !== undefined) {
-      const bootOutcome = await processRunner(
-        processRequest(
-          bootLauncherArgs(input.target.profile.name),
-          runnerDir,
-          env,
-          BOOT_TIMEOUT_MS,
-        ),
-        signal,
-      )
+      try {
+        bootOutcome = await processRunner(
+          processRequest(
+            bootLauncherArgs(input.target.profile.name),
+            runnerDir,
+            env,
+            BOOT_TIMEOUT_MS,
+          ),
+          signal,
+        )
+      } catch {
+        const failure = recordProcessFailure(
+          classifyVerificationWorkerFailure(),
+          'boot',
+          checks,
+          diagnostics,
+        )
+        checks = failure.checks
+        terminal = failure.terminal
+        stopped = true
+      }
+    }
+
+    if (!stopped && bootProbe !== undefined && bootOutcome !== undefined) {
       const bootFailure = classifyVerificationProcessFailure(bootOutcome, 'VERIFY_BOOT_FAILED')
       if (bootFailure !== undefined) {
         const failure = recordProcessFailure(bootFailure, 'boot', checks, diagnostics)
