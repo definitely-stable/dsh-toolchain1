@@ -36,11 +36,19 @@ type VerificationProcessStageFailureCode =
   | 'VERIFY_INSTALL_FAILED'
   | 'VERIFY_COMPOSE_FAILED'
   | 'VERIFY_BOOT_FAILED'
+type VerificationWorkerFailureStage = 'package' | 'install' | 'compose' | 'boot' | 'visibility'
 
 const OUTPUT_LIMIT_BYTES = 128 * 1024
 const INSTALL_TIMEOUT_MS = 300_000
 const COMPOSE_TIMEOUT_MS = 120_000
 const BOOT_TIMEOUT_MS = 120_000
+const WORKER_FAILURE_STAGES = Object.freeze([
+  'package',
+  'install',
+  'compose',
+  'boot',
+  'visibility',
+] as const satisfies readonly VerificationWorkerFailureStage[])
 
 export interface PackedVerificationArtifactInput {
   readonly path: string
@@ -188,6 +196,14 @@ function failStage(
   diagnostic: Diagnostic,
 ): readonly VerificationCheck[] {
   return failVerificationStage(checks, stage, stageFailureReason(diagnostic))
+}
+
+function currentWorkerFailureStage(checks: readonly VerificationCheck[]): VerificationWorkerFailureStage {
+  for (const id of WORKER_FAILURE_STAGES) {
+    const check = checks.find(candidate => candidate.id === id)
+    if (check?.status !== 'passed') return id
+  }
+  return 'visibility'
 }
 
 function recordProcessFailure(
@@ -448,6 +464,12 @@ export async function runPackedPluginVerification(
       }
       terminal = 'completed'
     }
+  } catch {
+    const failure = classifyVerificationWorkerFailure()
+    diagnostics.push(failure.diagnostic)
+    checks = failStage(checks, currentWorkerFailureStage(checks), failure.diagnostic)
+    terminal = failure.terminal
+    stopped = true
   } finally {
     if (root !== undefined) {
       try {
