@@ -14,22 +14,28 @@ import {
   inspectContractResponse,
   resolveTargetResponse,
   searchContractsResponse,
+  verifyPluginResponse,
   type ApplicationKernel,
+  type VerificationApplicationKernel,
 } from '../../kernel/index.js'
 import { serializeContractInspectModelResponse } from '../../model/contract-inspect-compact.js'
 import {
   parseContractInspectRequest,
   parseContractSearchRequest,
   parsePluginCheckRequest,
+  parsePluginVerifyRequest,
   type ContractInspectRequest,
   type ContractInspectResponse,
   type ContractSearchRequest,
   type ContractSearchResponse,
   type PluginCheckRequest,
   type PluginCheckResponse,
+  type PluginVerifyRequest,
+  type PluginVerifyResponse,
   type TargetResolveRequest,
   type TargetResolveResponse,
 } from '../../protocol/index.js'
+import { createPackedPluginVerificationExecutionPort } from '../../verification/execution-port.js'
 
 export type ServeStdio = (factory: () => McpServer) => StdioServerHandle
 
@@ -41,6 +47,11 @@ export interface BuildMcpServerOptions {
 interface ReadOnlyIdempotentAnnotations {
   readonly readOnlyHint: true
   readonly idempotentHint: true
+}
+
+interface ExecutingAnnotations {
+  readonly readOnlyHint: false
+  readonly idempotentHint: false
 }
 
 type McpStructuredResult<T> = {
@@ -92,14 +103,32 @@ export interface PluginCheckMcpTool {
   readonly callback: (request: PluginCheckRequest) => Promise<McpStructuredResult<PluginCheckResponse>>
 }
 
-function createNodeKernel(): ApplicationKernel {
+export interface PluginVerifyMcpTool {
+  readonly name: 'plugin.verify'
+  readonly config: {
+    readonly description: string
+    readonly inputSchema: ReturnType<typeof fromJsonSchema<PluginVerifyRequest>>
+    readonly outputSchema: ReturnType<typeof fromJsonSchema<PluginVerifyResponse>>
+    readonly annotations: ExecutingAnnotations
+  }
+  readonly callback: (request: PluginVerifyRequest) => Promise<McpStructuredResult<PluginVerifyResponse>>
+}
+
+function createNodeKernel(): VerificationApplicationKernel {
   const digest = createNodeSha256Port()
   return createApplicationKernel({
     targetAcquisition: createDshFilesystemTargetAcquisition({ digest }),
     contractAcquisition: createDshContractFilesystemAcquisition({ digest }),
     pluginSubjectAcquisition: createPluginSubjectAcquisition(digest),
+    pluginVerificationExecution: createPackedPluginVerificationExecutionPort(),
     digest,
   })
+}
+
+function verificationKernel(kernel: ApplicationKernel): VerificationApplicationKernel | undefined {
+  return typeof kernel.verifyPlugin === 'function'
+    ? kernel as VerificationApplicationKernel
+    : undefined
 }
 
 type ProtocolDefinition =
@@ -111,6 +140,8 @@ type ProtocolDefinition =
   | 'contractInspectResponse'
   | 'pluginCheckRequest'
   | 'pluginCheckResponse'
+  | 'pluginVerifyRequest'
+  | 'pluginVerifyResponse'
 
 function protocolDefinitionSchema(definition: ProtocolDefinition) {
   return {
@@ -137,6 +168,11 @@ function structuredSerializedResult<T>(response: T, text: string): McpStructured
 const readOnlyIdempotent = Object.freeze({
   readOnlyHint: true as const,
   idempotentHint: true as const,
+})
+
+const executing = Object.freeze({
+  readOnlyHint: false as const,
+  idempotentHint: false as const,
 })
 
 export function createTargetResolveMcpTool(
@@ -247,6 +283,41 @@ export function createPluginCheckMcpTool(
   }
 }
 
+export function createPluginVerifyMcpTool(
+  kernel: ApplicationKernel,
+  requestId: () => string = randomUUID,
+): PluginVerifyMcpTool {
+  const inputSchema = fromJsonSchema<PluginVerifyRequest>(
+    protocolDefinitionSchema('pluginVerifyRequest'),
+  )
+  const outputSchema = fromJsonSchema<PluginVerifyResponse>(
+    protocolDefinitionSchema('pluginVerifyResponse'),
+  )
+
+  return {
+    name: 'plugin.verify',
+    config: {
+      description: 'Execute one packed plugin in an isolated temporary DSH environment under the safe policy and return the canonical verification receipt.',
+      inputSchema,
+      outputSchema,
+      annotations: executing,
+    },
+    callback: async (request) => {
+      const verification = verificationKernel(kernel)
+      if (verification === undefined) {
+        throw new Error('Plugin verification execution is not configured for this MCP server')
+      }
+      return structuredResult(
+        await verifyPluginResponse(
+          verification,
+          parsePluginVerifyRequest(request),
+          requestId(),
+        ),
+      )
+    },
+  }
+}
+
 export function buildMcpServer(options: BuildMcpServerOptions = {}): McpServer {
   const kernel = options.kernel ?? createNodeKernel()
   const descriptor = kernel.describe()
@@ -260,11 +331,13 @@ export function buildMcpServer(options: BuildMcpServerOptions = {}): McpServer {
   const contractSearch = createContractSearchMcpTool(kernel, requestId)
   const contractInspect = createContractInspectMcpTool(kernel, requestId)
   const pluginCheck = createPluginCheckMcpTool(kernel, requestId)
+  const pluginVerify = createPluginVerifyMcpTool(kernel, requestId)
 
   server.registerTool(targetResolve.name, targetResolve.config, targetResolve.callback)
   server.registerTool(contractSearch.name, contractSearch.config, contractSearch.callback)
   server.registerTool(contractInspect.name, contractInspect.config, contractInspect.callback)
   server.registerTool(pluginCheck.name, pluginCheck.config, pluginCheck.callback)
+  server.registerTool(pluginVerify.name, pluginVerify.config, pluginVerify.callback)
 
   return server
 }

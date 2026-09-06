@@ -300,4 +300,33 @@ export type PluginCheckStaleResponse = {
 
 export type PluginCheckResponse = PluginCheckSuccessResponse | PluginCheckFailureResponse | PluginCheckStaleResponse
 
+export type PluginPackedSubjectRequest = {
+  readonly "kind": "packed"
+  readonly "path": string
+}
+
+export type PluginVerifyRequest = {
+  readonly "target": TargetResolveRequest
+  readonly "subject": PluginPackedSubjectRequest
+  readonly "executionPolicy": "safe"
+}
+
+export type PluginVerifySuccessResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "snapshotFingerprint": string
+  readonly "status": "ok"
+  readonly "data": VerificationReport
+  readonly "diagnostics": Array<Diagnostic>
+}
+
+export type PluginVerifyFailureResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "failed"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type PluginVerifyResponse = PluginVerifySuccessResponse | PluginVerifyFailureResponse
+
 export type ToolchainProtocolResponse = ResponseEnvelope

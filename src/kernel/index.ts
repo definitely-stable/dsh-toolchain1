@@ -19,6 +19,10 @@ import type {
   PluginCheckResult,
   PluginCheckStaleResponse,
   PluginCheckSuccessResponse,
+  PluginVerifyFailureResponse,
+  PluginVerifyRequest,
+  PluginVerifyResponse,
+  PluginVerifySuccessResponse,
   ResolvedBundleIdentity,
   ResolvedPackageIdentity,
   TargetResolveFailureResponse,
@@ -27,6 +31,7 @@ import type {
   TargetResolveResult,
   TargetResolveSuccessResponse,
   TargetSnapshot,
+  VerificationReport,
 } from '../protocol/index.js'
 import { TOOLCHAIN_PROTOCOL_VERSION } from '../protocol/index.js'
 import { TOOLCHAIN_PRODUCT, TOOLCHAIN_VERSION } from '../product.js'
@@ -50,8 +55,15 @@ import {
 } from '../model/contract-search-index.js'
 import { analyzePluginCompatibility } from '../model/plugin-check.js'
 import {
+  bindPackedVerificationArtifact,
+  PluginVerificationOperationError,
+  reducePluginVerification,
+  type PluginVerificationExecutionPort,
+} from '../model/plugin-verify.js'
+import {
   createPluginSubjectSemanticProjection,
   fingerprintPluginSubject,
+  type AcquiredPluginSubject,
   type PluginSubjectAcquisitionPort,
 } from '../model/plugin.js'
 import {
@@ -85,18 +97,29 @@ export interface PluginCheckOutcome {
   readonly diagnostics: readonly Diagnostic[]
 }
 
+export interface PluginVerifyOutcome {
+  readonly snapshotFingerprint: string
+  readonly data: VerificationReport
+}
+
 export interface ApplicationKernel {
   describe(): KernelDescriptor
   resolveTarget(request: TargetResolveRequest): Promise<TargetResolveResult>
   searchContracts(request: ContractSearchRequest, enrichment?: ContractEnrichmentPort): Promise<ContractSearchOutcome>
   inspectContract(request: ContractInspectRequest, enrichment?: ContractEnrichmentPort): Promise<ContractInspectOutcome>
   checkPlugin(request: PluginCheckRequest): Promise<PluginCheckOutcome>
+  verifyPlugin?(request: PluginVerifyRequest, signal?: AbortSignal): Promise<PluginVerifyOutcome>
+}
+
+export interface VerificationApplicationKernel extends ApplicationKernel {
+  verifyPlugin(request: PluginVerifyRequest, signal?: AbortSignal): Promise<PluginVerifyOutcome>
 }
 
 export interface ApplicationKernelOptions {
   readonly targetAcquisition: TargetAcquisitionPort
   readonly contractAcquisition?: ContractAcquisitionPort
   readonly pluginSubjectAcquisition?: PluginSubjectAcquisitionPort
+  readonly pluginVerificationExecution?: PluginVerificationExecutionPort
   readonly digest: Sha256Port
   readonly now?: () => string
   /** Internal deterministic seam for search-index lifecycle tests. */
@@ -213,6 +236,15 @@ function contractDiagnostic(error: ContractOperationError): Diagnostic {
     summary: error.message,
     ...(error.locations.length === 0 ? {} : { locations: [...error.locations] }),
     ...(error.repair === undefined ? {} : { repair: { ...error.repair } }),
+  }
+}
+
+function verificationDiagnostic(error: PluginVerificationOperationError): Diagnostic {
+  return {
+    code: error.code,
+    severity: 'error',
+    domain: 'verification',
+    summary: error.message,
   }
 }
 
@@ -443,7 +475,45 @@ export async function checkPluginResponse(
   }
 }
 
-export function createApplicationKernel(options: ApplicationKernelOptions): ApplicationKernel {
+export async function verifyPluginResponse(
+  kernel: VerificationApplicationKernel,
+  request: PluginVerifyRequest,
+  requestId: string,
+): Promise<PluginVerifyResponse> {
+  try {
+    const outcome = await kernel.verifyPlugin(request)
+    const response: PluginVerifySuccessResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      snapshotFingerprint: outcome.snapshotFingerprint,
+      status: 'ok',
+      data: outcome.data,
+      diagnostics: [],
+    }
+    return response
+  } catch (error) {
+    let diagnostic: Diagnostic
+    if (error instanceof TargetAcquisitionError) {
+      diagnostic = targetDiagnostic(error)
+    } else if (error instanceof ContractOperationError) {
+      diagnostic = contractDiagnostic(error)
+    } else if (error instanceof PluginVerificationOperationError) {
+      diagnostic = verificationDiagnostic(error)
+    } else {
+      throw error
+    }
+
+    const response: PluginVerifyFailureResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'failed',
+      diagnostics: [diagnostic],
+    }
+    return response
+  }
+}
+
+export function createApplicationKernel(options: ApplicationKernelOptions): VerificationApplicationKernel {
   const now = options.now ?? (() => new Date().toISOString())
   const searchIndexFactory = options.createContractSearchIndex ?? createContractSearchIndex
   const searchIndexes = new Map<string, ContractSearchIndex>()
@@ -497,6 +567,42 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
       options.digest,
     )
     return Object.freeze({ snapshot, index })
+  }
+
+  async function pluginCheckOutcome(
+    snapshot: TargetSnapshot,
+    index: ContractIndex,
+    subject: AcquiredPluginSubject,
+  ): Promise<PluginCheckOutcome> {
+    const projection = createPluginSubjectSemanticProjection(subject)
+    const subjectFingerprint = projection === undefined
+      ? undefined
+      : await fingerprintPluginSubject(projection, options.digest)
+    const analysis = analyzePluginCompatibility(subject, index)
+    const data: PluginCheckResult = {
+      contractIndexFingerprint: index.fingerprint,
+      ...(subjectFingerprint === undefined ? {} : { subjectFingerprint }),
+      subjectCompleteness: subject.completeness,
+      ruleset: PLUGIN_STATIC_RULESET,
+      scopeComplete: false,
+      verdict: analysis.verdict,
+      requirements: analysis.requirements.map(requirement => ({
+        ...requirement,
+        evidenceIds: [...requirement.evidenceIds],
+      })),
+      evidence: pluginCheckEvidence(
+        subject.evidence,
+        index,
+        analysis.requirements.map(requirement => requirement.evidenceIds),
+      ),
+      candidateCodeExecuted: false,
+    }
+
+    return Object.freeze({
+      snapshotFingerprint: snapshot.fingerprint,
+      data: Object.freeze(data),
+      diagnostics: Object.freeze([...analysis.diagnostics]),
+    })
   }
 
   return Object.freeze({
@@ -574,34 +680,42 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Appl
 
       const { snapshot, index } = await buildContractIndex(request.target)
       const subject = await options.pluginSubjectAcquisition.acquire(request.subject)
-      const projection = createPluginSubjectSemanticProjection(subject)
-      const subjectFingerprint = projection === undefined
-        ? undefined
-        : await fingerprintPluginSubject(projection, options.digest)
-      const analysis = analyzePluginCompatibility(subject, index)
-      const data: PluginCheckResult = {
-        contractIndexFingerprint: index.fingerprint,
-        ...(subjectFingerprint === undefined ? {} : { subjectFingerprint }),
-        subjectCompleteness: subject.completeness,
-        ruleset: PLUGIN_STATIC_RULESET,
-        scopeComplete: false,
-        verdict: analysis.verdict,
-        requirements: analysis.requirements.map(requirement => ({
-          ...requirement,
-          evidenceIds: [...requirement.evidenceIds],
-        })),
-        evidence: pluginCheckEvidence(
-          subject.evidence,
-          index,
-          analysis.requirements.map(requirement => requirement.evidenceIds),
-        ),
-        candidateCodeExecuted: false,
+      return pluginCheckOutcome(snapshot, index, subject)
+    },
+    async verifyPlugin(
+      request: PluginVerifyRequest,
+      signal?: AbortSignal,
+    ): Promise<PluginVerifyOutcome> {
+      if (options.pluginSubjectAcquisition === undefined) {
+        throw new Error('Plugin subject acquisition is not configured for this application kernel')
       }
+      if (options.pluginVerificationExecution === undefined) {
+        throw new Error('Plugin verification execution is not configured for this application kernel')
+      }
+
+      const { snapshot, index } = await buildContractIndex(request.target)
+      const subject = await options.pluginSubjectAcquisition.acquire(request.subject)
+      const staticOutcome = await pluginCheckOutcome(snapshot, index, subject)
+      const artifact = bindPackedVerificationArtifact(subject)
+      const execution = await options.pluginVerificationExecution.verify({
+        artifactPath: artifact.path,
+        expectedContentHash: artifact.contentHash,
+        target: snapshot,
+        executionPolicy: request.executionPolicy,
+      }, signal)
+      const { snapshot: finalSnapshot } = await resolveTarget(request.target)
+      const data = reducePluginVerification({
+        artifactFingerprint: artifact.fingerprint,
+        initialTargetFingerprint: snapshot.fingerprint,
+        finalTargetFingerprint: finalSnapshot.fingerprint,
+        staticResult: staticOutcome.data,
+        staticDiagnostics: staticOutcome.diagnostics,
+        execution,
+      })
 
       return Object.freeze({
         snapshotFingerprint: snapshot.fingerprint,
-        data: Object.freeze(data),
-        diagnostics: Object.freeze([...analysis.diagnostics]),
+        data,
       })
     },
   })
