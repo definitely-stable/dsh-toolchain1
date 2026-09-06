@@ -7,10 +7,9 @@ import { gzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createNodeSha256Port } from '../../src/acquisition/node-sha256.js'
-import {
-  acquirePluginPacked,
-  acquirePluginPackedWithArtifact,
-} from '../../src/acquisition/plugin-packed.js'
+import { acquirePluginPackedWithArtifact } from '../../src/acquisition/plugin-packed-artifact.js'
+import { acquirePluginPacked } from '../../src/acquisition/plugin-packed.js'
+import type { Evidence } from '../../src/protocol/index.js'
 
 const roots: string[] = []
 
@@ -143,7 +142,7 @@ describe('packed plugin acquisition', () => {
     await writeFile(packed, bytes)
 
     const acquired = await acquirePluginPackedWithArtifact(packed, createNodeSha256Port())
-    const evidence = acquired.subject.evidence.find(item => item.id === 'plugin:packed-artifact')
+    const evidence = acquired.subject.evidence.find((item: Evidence) => item.id === 'plugin:packed-artifact')
     const expectedHash = createHash('sha256').update(bytes).digest('hex')
 
     expect(acquired.subject.completeness).toBe('complete')
