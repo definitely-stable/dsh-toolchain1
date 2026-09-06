@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -6,7 +7,10 @@ import { gzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createNodeSha256Port } from '../../src/acquisition/node-sha256.js'
-import { acquirePluginPacked } from '../../src/acquisition/plugin-packed.js'
+import {
+  acquirePluginPacked,
+  acquirePluginPackedWithArtifact,
+} from '../../src/acquisition/plugin-packed.js'
 
 const roots: string[] = []
 
@@ -120,6 +124,37 @@ describe('packed plugin acquisition', () => {
       strength: 'authoritative',
       contentHash: expect.stringMatching(/^[0-9a-f]{64}$/u),
     }))
+  })
+
+  it('returns a typed authoritative artifact handoff bound to the same bounded bytes as packed evidence', async () => {
+    const root = await fixture()
+    const packed = path.join(root, 'handoff-plugin.tgz')
+    const bytes = npmTgz([
+      {
+        name: 'package/package.json',
+        content: JSON.stringify({
+          name: 'handoff-plugin',
+          version: '1.0.0',
+          dsh: { bundle: { patch: './cordis.patch.yml' } },
+        }),
+      },
+      { name: 'package/cordis.patch.yml', content: '- name: handoff\n' },
+    ])
+    await writeFile(packed, bytes)
+
+    const acquired = await acquirePluginPackedWithArtifact(packed, createNodeSha256Port())
+    const evidence = acquired.subject.evidence.find(item => item.id === 'plugin:packed-artifact')
+    const expectedHash = createHash('sha256').update(bytes).digest('hex')
+
+    expect(acquired.subject.completeness).toBe('complete')
+    expect(acquired.artifact).toEqual({
+      location: evidence?.location,
+      contentHash: expectedHash,
+    })
+    expect(acquired.artifact?.contentHash).toBe(evidence?.contentHash)
+    expect(acquired.artifact?.location).toBe(evidence?.location)
+    expect(Object.isFrozen(acquired)).toBe(true)
+    expect(Object.isFrozen(acquired.artifact)).toBe(true)
   })
 
   it('returns an invalid semantic subject instead of throwing for malformed gzip or tar bytes', async () => {
