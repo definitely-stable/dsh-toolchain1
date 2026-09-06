@@ -156,6 +156,21 @@ describe('packed plugin acquisition', () => {
     expect(Object.isFrozen(acquired.artifact)).toBe(true)
   })
 
+  it('does not expose an executable artifact handoff for malformed archive bytes', async () => {
+    const root = await fixture()
+    const packed = path.join(root, 'invalid-handoff.tgz')
+    await writeFile(packed, 'not-a-gzip', 'utf8')
+
+    const acquired = await acquirePluginPackedWithArtifact(packed, createNodeSha256Port())
+
+    expect(acquired.subject.completeness).toBe('invalid')
+    expect(acquired.subject.evidence).toContainEqual(expect.objectContaining({
+      id: 'plugin:packed-artifact',
+      strength: 'authoritative',
+    }))
+    expect(acquired.artifact).toBeUndefined()
+  })
+
   it('returns an invalid semantic subject instead of throwing for malformed gzip or tar bytes', async () => {
     const root = await fixture()
     const packed = path.join(root, 'broken.tgz')
