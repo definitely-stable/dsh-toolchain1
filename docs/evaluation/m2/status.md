@@ -28,6 +28,7 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 | Staged dev-v2 | **EXECUTED / METHODOLOGY DEFECT EXPOSED** | Run `33948582894`: B exhausted the frozen 31-tool budget on 2/8 canary tasks, C completed 8/8 and used Toolchain 8/8; report-v2 incorrectly projected those B terminals as measurement failure. |
 | Product/measurement separation | **COMPLETE** | #183 separated measurement health, bounded product terminals and cost/trajectory evidence without production ranker changes. |
 | Contract Search / Inspect compactness baseline | **COMPLETE / MEASUREMENT-ONLY** | Provider-free exhaustive baseline: 36 Search cases, all 184 Inspect contracts and 30 actual Search→top-1 Inspect paths. Inspect, not Search, is the compactness hotspot. |
+| Contract Inspect lossless compaction | **COMPLETE / PROVIDER-FREE PRODUCT MEASUREMENT** | #186 / PR #187: 184/184 lossless parity; production serializer improves 183 cases, leaves 1 no-benefit case canonical, regresses 0; aggregate exact-byte reduction 32.8915%. |
 | Exact Target Plugin Check alpha | **COMPLETE** | Static/read-only exact-target plugin verdict path is merged. |
 | H2 | **NOT READY** | Requires a fresh hidden dataset and independently specified end-to-end success endpoint before outcomes exist. |
 
@@ -42,6 +43,8 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 - current staged semantics: [`staged-evaluation.md`](staged-evaluation.md)
 - compactness machine receipt: [`contract-compactness-baseline-v1.json`](contract-compactness-baseline-v1.json)
 - compactness interpretation: [`contract-compactness-baseline-2026-09-05.md`](contract-compactness-baseline-2026-09-05.md)
+- Inspect compaction machine receipt: [`contract-inspect-compaction-v1.json`](contract-inspect-compaction-v1.json)
+- Inspect compaction interpretation: [`contract-inspect-compaction-2026-09-06.md`](contract-inspect-compaction-2026-09-06.md)
 
 Historical receipts are append-only. Later methodology must not rewrite their run ids, commits, artifacts, outcomes, or evidence classifications.
 
@@ -84,11 +87,35 @@ Key frozen results:
 
 The result classifies **Inspect payload size plus within-response duplication** as the primary compaction signal. Search→Inspect overlap exists but is secondary; Search itself is not the primary bottleneck. Five-token shingle statistics are lexical corroboration only, not semantic equivalence or removable-byte estimates.
 
-## Next permitted engineering work
+## Inspect compaction result
 
-A production compaction proposal may now be designed as a **separate** issue/PR, focused first on Inspect. It must begin with RED semantic-parity tests and preserve contract ids/ranking, evidence ids and resolvability, target/index provenance, fail-closed/no-result behavior, inspectability and CLI/native/MCP parity.
+PR #187 implements the first authorized production response to that baseline without changing Protocol v1 or Search. Successful model-facing Inspect text may use lossless `dsh-contract-inspect-compact-v1`, which interns canonical evidence records and replaces repeated long evidence ids with deterministic local refs. Native DSH and MCP share one serializer; MCP `structuredContent` and CLI remain canonical.
 
-The compactness baseline itself does not authorize hidden truncation, lossy summarization, evidence removal, Search ranker changes, a provider-backed rerun, or token-savings claims. Provider/model measurement is a separate future experiment only after a semantically equivalent compact representation exists and is explicitly authorized.
+The production serializer uses `strictly-smaller-utf8-v1`: compact JSON is emitted only if its exact UTF-8 `JSON.stringify` representation is strictly smaller; otherwise canonical JSON is emitted. Failed/stale results remain canonical.
+
+Frozen provider-free results over all 184 Inspect contracts:
+
+- exact lossless round-trip: `184/184`;
+- improved / unchanged / regressed: `183 / 1 / 0`;
+- aggregate bytes: `1,070,705 → 718,534`, saving `352,171` bytes (`32.8915%`);
+- p50: `4,260 → 3,116` bytes;
+- p95: `14,223 → 8,891` bytes;
+- max: `44,998 → 23,760` bytes;
+- p50 saving rate: `27.2727%`; p95 `41.3416%`; max `51.5883%`.
+
+The raw compact projection would make the minimal `package:@deepseek-ai/dsh` response 43 bytes larger, so the production serializer correctly keeps that no-benefit case canonical. This is a measured fallback, not truncation or evidence removal.
+
+Exact repeated-string attribution identifies evidence references as the dominant duplicated scalar category: `334,887` repeated bytes across `5,364` repeated occurrences. This matches the pre-change diagnosis and supports evidence interning as the correct first compaction mechanism.
+
+These are wire-byte measurements, not token/provider claims. No provider, tokenizer, model-quality, wall-time, or end-to-end success conclusion is authorized by this receipt.
+
+## Post-compaction boundary
+
+Contract Search v3 and the lossless Inspect projection should remain frozen after merge unless independent evidence justifies another change. Do not reopen ranking on disclosed R1/R2 data, do not rerun H1, and do not add hidden truncation, lossy summaries, evidence removal or Protocol v2 under the compaction label.
+
+A provider/model measurement of compaction impact is a separate future experiment and requires explicit authorization. It is not required to continue product development.
+
+The next product-level roadmap work remains **M4 isolated runtime verification (`plugin.verify`)**: execute candidate verification only in a disposable exact-target composition, bind receipts to the candidate artifact and TargetSnapshot, preserve cleanup/cancellation/fail-closed semantics, and never reinterpret static `plugin.check` as runtime verification.
 
 ## H2 boundary
 
