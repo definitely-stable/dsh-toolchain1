@@ -158,6 +158,27 @@ function failStage(
   return failVerificationStage(checks, stage, stageFailureReason(diagnostic))
 }
 
+function recordProcessFailure(
+  result: {
+    readonly diagnostic?: Diagnostic
+    readonly terminal?: 'failed' | 'cancelled'
+  },
+  stage: 'install' | 'compose',
+  checks: readonly VerificationCheck[],
+  diagnostics: Diagnostic[],
+): {
+  readonly checks: readonly VerificationCheck[]
+  readonly terminal: 'failed' | 'cancelled'
+} {
+  const diagnostic = result.diagnostic
+  if (diagnostic === undefined) throw new Error(`${stage} process failed without a diagnostic.`)
+  diagnostics.push(diagnostic)
+  return Object.freeze({
+    checks: failStage(checks, stage, diagnostic),
+    terminal: result.terminal ?? 'failed',
+  })
+}
+
 /**
  * Executes the M4.1 packed-artifact runtime boundary under the safe policy.
  *
@@ -184,10 +205,10 @@ export async function runPackedPluginVerification(
   let terminal: PackedPluginVerificationExecution['terminal'] = 'failed'
   let cleanup: VerificationReport['cleanup'] = 'not-required'
   let root: string | undefined
+  let stopped = false
 
   try {
     root = await createTemporaryRoot()
-    cleanup = 'succeeded'
 
     const runnerDir = path.join(root, 'runner')
     const dshHome = path.join(root, 'dsh-home')
@@ -226,80 +247,84 @@ export async function runPackedPluginVerification(
       diagnostics.push(diagnostic)
       checks = failStage(checks, 'package', diagnostic)
       terminal = 'failed'
-      return freezeExecution(input, artifactFingerprint, checks, diagnostics, cleanup, terminal)
+      stopped = true
     }
 
     const env = createSafeVerificationEnvironment(parentEnv, { dshHome, userHome, tempDir })
 
-    const installDsh = await runRequiredProcess(
-      processRunner,
-      processRequest(
-        ['add', '--save-exact', '--ignore-scripts', `@deepseek-ai/dsh@${input.target.dsh.version}`],
-        runnerDir,
-        env,
-        INSTALL_TIMEOUT_MS,
-      ),
-      signal,
-      'VERIFY_INSTALL_FAILED',
-    )
-    if (!installDsh.passed) {
-      const diagnostic = installDsh.diagnostic
-      if (diagnostic === undefined) throw new Error('Install process failed without a diagnostic.')
-      diagnostics.push(diagnostic)
-      checks = failStage(checks, 'install', diagnostic)
-      terminal = installDsh.terminal ?? 'failed'
-      return freezeExecution(input, artifactFingerprint, checks, diagnostics, cleanup, terminal)
+    if (!stopped) {
+      const installDsh = await runRequiredProcess(
+        processRunner,
+        processRequest(
+          ['add', '--save-exact', '--ignore-scripts', `@deepseek-ai/dsh@${input.target.dsh.version}`],
+          runnerDir,
+          env,
+          INSTALL_TIMEOUT_MS,
+        ),
+        signal,
+        'VERIFY_INSTALL_FAILED',
+      )
+      if (!installDsh.passed) {
+        const failure = recordProcessFailure(installDsh, 'install', checks, diagnostics)
+        checks = failure.checks
+        terminal = failure.terminal
+        stopped = true
+      }
     }
 
-    const installCandidate = await runRequiredProcess(
-      processRunner,
-      processRequest(
-        ['exec', 'dsh', 'plugin', '--profile', input.target.profile.name, 'add', '--ignore-scripts', candidateCopy],
-        runnerDir,
-        env,
-        INSTALL_TIMEOUT_MS,
-      ),
-      signal,
-      'VERIFY_INSTALL_FAILED',
-    )
-    if (!installCandidate.passed) {
-      const diagnostic = installCandidate.diagnostic
-      if (diagnostic === undefined) throw new Error('Candidate install process failed without a diagnostic.')
-      diagnostics.push(diagnostic)
-      checks = failStage(checks, 'install', diagnostic)
-      terminal = installCandidate.terminal ?? 'failed'
-      return freezeExecution(input, artifactFingerprint, checks, diagnostics, cleanup, terminal)
+    if (!stopped) {
+      const installCandidate = await runRequiredProcess(
+        processRunner,
+        processRequest(
+          ['exec', 'dsh', 'plugin', '--profile', input.target.profile.name, 'add', '--ignore-scripts', candidateCopy],
+          runnerDir,
+          env,
+          INSTALL_TIMEOUT_MS,
+        ),
+        signal,
+        'VERIFY_INSTALL_FAILED',
+      )
+      if (!installCandidate.passed) {
+        const failure = recordProcessFailure(installCandidate, 'install', checks, diagnostics)
+        checks = failure.checks
+        terminal = failure.terminal
+        stopped = true
+      }
     }
-    checks = passVerificationStage(checks, 'install')
 
-    const compose = await runRequiredProcess(
-      processRunner,
-      processRequest(
-        ['exec', 'dsh', '--profile', input.target.profile.name, '--dump-config'],
-        runnerDir,
-        env,
-        COMPOSE_TIMEOUT_MS,
-      ),
-      signal,
-      'VERIFY_COMPOSE_FAILED',
-    )
-    if (!compose.passed) {
-      const diagnostic = compose.diagnostic
-      if (diagnostic === undefined) throw new Error('Compose process failed without a diagnostic.')
-      diagnostics.push(diagnostic)
-      checks = failStage(checks, 'compose', diagnostic)
-      terminal = compose.terminal ?? 'failed'
-      return freezeExecution(input, artifactFingerprint, checks, diagnostics, cleanup, terminal)
-    }
-    checks = passVerificationStage(checks, 'compose')
+    if (!stopped) checks = passVerificationStage(checks, 'install')
 
-    // M4.1 must not equate successful composition or process spawn with boot.
-    // Task 5 is the first slice allowed to pass boot after a marker-backed probe.
-    checks = skipVerificationStage(checks, 'boot', 'boot-probe-required')
-    if ((input.visibilityAssertions?.length ?? 0) > 0) {
-      checks = skipVerificationStage(checks, 'visibility', 'visibility-assertions-not-supported-before-boot-probe')
+    if (!stopped) {
+      const compose = await runRequiredProcess(
+        processRunner,
+        processRequest(
+          ['exec', 'dsh', '--profile', input.target.profile.name, '--dump-config'],
+          runnerDir,
+          env,
+          COMPOSE_TIMEOUT_MS,
+        ),
+        signal,
+        'VERIFY_COMPOSE_FAILED',
+      )
+      if (!compose.passed) {
+        const failure = recordProcessFailure(compose, 'compose', checks, diagnostics)
+        checks = failure.checks
+        terminal = failure.terminal
+        stopped = true
+      }
     }
-    terminal = 'completed'
+
+    if (!stopped) {
+      checks = passVerificationStage(checks, 'compose')
+
+      // M4.1 must not equate successful composition or process spawn with boot.
+      // Task 5 is the first slice allowed to pass boot after a marker-backed probe.
+      checks = skipVerificationStage(checks, 'boot', 'boot-probe-required')
+      if ((input.visibilityAssertions?.length ?? 0) > 0) {
+        checks = skipVerificationStage(checks, 'visibility', 'visibility-assertions-not-supported-before-boot-probe')
+      }
+      terminal = 'completed'
+    }
   } finally {
     if (root !== undefined) {
       try {
