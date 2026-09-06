@@ -7,6 +7,7 @@ import {
   createContractSearchToolDefinition,
   type DshContractToolExecutionContext,
 } from '../../src/integrations/dsh/contract-tool.js'
+import { compactContractInspectModelResponse } from '../../src/model/contract-inspect-compact.js'
 import type {
   ContractInspectResponse,
   ContractSearchResponse,
@@ -43,10 +44,16 @@ function inspectResponse(): ContractInspectResponse {
         name: '@deepseek-ai/dsh-tools',
         qualifiedName: 'package:@deepseek-ai/dsh-tools',
         availability: 'unknown',
-        facts: [],
-        evidenceIds: [],
+        facts: [{ key: 'version', value: '0.1.1-rc.2', evidenceIds: ['manifest:tools'] }],
+        evidenceIds: ['manifest:tools'],
       },
-      evidence: [],
+      evidence: [{
+        id: 'manifest:tools',
+        kind: 'manifest',
+        strength: 'authoritative',
+        source: '@deepseek-ai/dsh-tools/package.json',
+        contentHash: '3'.repeat(64),
+      }],
     },
     diagnostics: [],
   }
@@ -94,7 +101,7 @@ describe('native DSH Contract Intelligence tools', () => {
     })
   })
 
-  it('delegates canonical Protocol requests and renders the exact returned response as JSON text', async () => {
+  it('keeps canonical execution values while rendering only Inspect through the compact model projection', async () => {
     const searchResolver = vi.fn(async () => searchResponse())
     const inspectResolver = vi.fn(async () => inspectResponse())
     const search = createContractSearchToolDefinition(searchResolver)
@@ -124,7 +131,31 @@ describe('native DSH Contract Intelligence tools', () => {
       contractIndexFingerprint,
       contractId: 'package:@deepseek-ai/dsh-tools',
     })
-    expect(JSON.parse(inspect.output.render({}, inspectValue)[0]?.text ?? 'null')).toEqual(inspectValue)
+    expect(inspectValue).toEqual(inspectResponse())
+    expect(inspectValue).toMatchObject({
+      status: 'ok',
+      data: {
+        contract: { evidenceIds: ['manifest:tools'] },
+        evidence: [{ id: 'manifest:tools' }],
+      },
+    })
+
+    const rendered = JSON.parse(inspect.output.render({}, inspectValue)[0]?.text ?? 'null')
+    expect(rendered).toEqual(compactContractInspectModelResponse(inspectValue))
+    expect(rendered).toMatchObject({
+      representation: 'dsh-contract-inspect-compact-v1',
+      status: 'ok',
+      data: {
+        contract: {
+          evidenceRefs: ['e0'],
+          facts: [{ evidenceRefs: ['e0'] }],
+        },
+        evidenceByRef: {
+          e0: { id: 'manifest:tools' },
+        },
+      },
+    })
+    expect(rendered).not.toHaveProperty('data.contract.evidenceIds')
   })
 
   it('projects only Agent and AbortSignal from the current DSH execution object', async () => {
