@@ -116,7 +116,7 @@ Owns transport-neutral use cases:
 - `operation.get`
 - `operation.cancel`
 
-`plugin.check` is the public static compatibility boundary. It acquires the exact target/Contract Index and plugin subject, runs the internal normalization/analysis/validation passes, and returns evidence-backed `compatible-in-scope`, `incompatible`, or `unproven` without executing candidate code. `plugin.verify` remains a separate later execution boundary owned by M4.
+`plugin.check` is the public static compatibility boundary. It acquires the exact target/Contract Index and plugin subject, runs the internal normalization/analysis/validation passes, and returns evidence-backed `compatible-in-scope`, `incompatible`, or `unproven` without executing candidate code. `plugin.verify` remains a separate execution boundary owned by M4. M4.1 implements the internal packed-artifact worker first; the public kernel operation, freshness reduction and operation lifecycle remain M4.2 work and MUST NOT be inferred from the worker merely returning a completed execution.
 
 The kernel defines no MCP, CLI, Typert, HTTP, Cordis, React, Node-runtime, or filesystem/process concepts.
 
@@ -139,6 +139,34 @@ Version-specific differences are contained here. Version conditionals MUST NOT s
 Performs the execution boundary: build/package checks when requested, actual package installation, DSH composition, boot, runtime probe, capability assertions, and cleanup.
 
 Candidate-plugin execution occurs out of the user's active DSH process and uses a temporary DSH home by default. See `spec/verification.md` and `docs/security.md`.
+
+M4.1 establishes the first concrete worker slice for caller-supplied packed `.tgz` artifacts under `safe` policy. Runtime-capable implementation stays inside the declared `verification` layer; packed archive semantics stay in acquisition and the semantic kernel receives no Node/process/filesystem types.
+
+The M4.1 execution path is:
+
+```text
+authoritative packed acquisition
+        ↓ exact contentHash handoff
+worker re-hash / exact-byte artifact identity
+        ↓
+disposable runner + DSH_HOME + HOME + TMP
+        ↓
+install exact DSH train
+        ↓
+install candidate --ignore-scripts
+        ↓
+candidate-only dsh --dump-config
+        ↓
+install Toolchain-owned boot probe
+        ↓
+normal profile launch -> exact marker + exit 0
+        ↓
+stage observations + cleanup outcome
+```
+
+The worker binds observations to the supplied immutable starting target fingerprint. It does not re-resolve the caller's active target after execution and therefore cannot independently emit the final public `verified` / `stale` conclusion; that reduction belongs to M4.2 application orchestration.
+
+The disposable DSH home is configuration/credential isolation, not a malicious-code sandbox. Candidate runtime code still has whatever filesystem/network capabilities the operating system grants to the verifier process.
 
 ### DSH Host
 
