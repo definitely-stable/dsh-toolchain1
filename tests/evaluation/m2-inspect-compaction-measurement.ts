@@ -4,6 +4,7 @@ import { inspectContractResponse } from '../../src/kernel/index.js'
 import {
   CONTRACT_INSPECT_COMPACT_REPRESENTATION,
   compactContractInspectModelResponse,
+  serializeContractInspectModelResponse,
 } from '../../src/model/contract-inspect-compact.js'
 import type { ContractInspectResponse } from '../../src/protocol/index.js'
 import {
@@ -21,6 +22,7 @@ import { createFrozenM2KernelHarness } from './m2-search-inspect-fixture.js'
 const BASELINE_SCHEMA = 'dsh-contract-compactness-baseline-v1' as const
 const BASELINE_BASE_COMMIT = 'a9465a962e99ebca685f0af4c308007117dbdc41'
 const FIXTURE_VERSION = 'rc2-web-v1'
+const SERIALIZER_POLICY = 'strictly-smaller-utf8-v1' as const
 const METRIC_VERSION = 'dsh-contract-inspect-compaction-v1' as const
 const INSPECT_REQUEST_ID = '46c64a36-55fb-4ef8-84c2-0cf27d7431d0'
 
@@ -42,9 +44,11 @@ type AttributionCategory = typeof ATTRIBUTION_CATEGORIES[number]
 interface InspectComparisonCase {
   readonly contractId: string
   readonly canonicalBytes: number
-  readonly compactBytes: number
+  readonly rawCompactBytes: number
+  readonly modelBytes: number
   readonly savedBytes: number
   readonly savingRate: number
+  readonly rawSavedBytes: number
 }
 
 interface StringOccurrence {
@@ -67,6 +71,7 @@ export interface InspectCompactionMeasurementV1 {
     readonly targetFingerprint: string
     readonly contractIndexFingerprint: string
     readonly compactRepresentation: typeof CONTRACT_INSPECT_COMPACT_REPRESENTATION
+    readonly serializerPolicy: typeof SERIALIZER_POLICY
     readonly metricVersion: typeof METRIC_VERSION
   }
   readonly population: {
@@ -77,13 +82,20 @@ export interface InspectCompactionMeasurementV1 {
     readonly unchanged: number
     readonly regressed: number
     readonly totalCanonicalBytes: number
-    readonly totalCompactBytes: number
+    readonly totalModelBytes: number
     readonly totalSavedBytes: number
     readonly aggregateSavingRate: number
     readonly canonicalBytes: DistributionSummary
-    readonly compactBytes: DistributionSummary
+    readonly modelBytes: DistributionSummary
     readonly savedBytes: DistributionSummary
     readonly savingRate: DistributionSummary
+  }
+  readonly rawCompactProjection: {
+    readonly improved: number
+    readonly unchanged: number
+    readonly regressed: number
+    readonly totalCompactBytes: number
+    readonly largestRegression: { readonly contractId: string | null; readonly bytes: number }
   }
   readonly attribution: {
     readonly repeatedBytesByCategory: Readonly<Record<AttributionCategory, number>>
@@ -91,9 +103,8 @@ export interface InspectCompactionMeasurementV1 {
   }
   readonly worstCases: {
     readonly largestCanonical: { readonly contractId: string; readonly bytes: number }
-    readonly largestCompact: { readonly contractId: string; readonly bytes: number }
+    readonly largestModel: { readonly contractId: string; readonly bytes: number }
     readonly largestSaving: { readonly contractId: string; readonly bytes: number }
-    readonly largestRegression: { readonly contractId: string | null; readonly bytes: number }
   }
 }
 
@@ -254,30 +265,36 @@ export async function buildInspectCompactionMeasurementV1(): Promise<InspectComp
 
   for (const contract of index.contracts.toSorted((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0)) {
     const canonical = await inspectCanonical(contract.id, harness)
-    const compact = compactContractInspectModelResponse(canonical)
+    const rawCompact = compactContractInspectModelResponse(canonical)
     const canonicalBytes = measureWireResponse(canonical).wireBytes
-    const compactBytes = measureWireResponse(compact).wireBytes
-    const savedBytes = canonicalBytes - compactBytes
+    const rawCompactBytes = measureWireResponse(rawCompact).wireBytes
+    const modelJson = serializeContractInspectModelResponse(canonical)
+    const modelBytes = Buffer.byteLength(modelJson, 'utf8')
+    const savedBytes = canonicalBytes - modelBytes
     cases.push(Object.freeze({
       contractId: contract.id,
       canonicalBytes,
-      compactBytes,
+      rawCompactBytes,
+      modelBytes,
       savedBytes,
       savingRate: roundRate(savedBytes / canonicalBytes),
+      rawSavedBytes: canonicalBytes - rawCompactBytes,
     }))
     addAttribution(attribution, measureRepeatedStringAttribution(canonical))
   }
 
   const totalCanonicalBytes = cases.reduce((sum, item) => sum + item.canonicalBytes, 0)
-  const totalCompactBytes = cases.reduce((sum, item) => sum + item.compactBytes, 0)
-  const totalSavedBytes = totalCanonicalBytes - totalCompactBytes
-  const largestCanonical = largestBy(cases, item => item.canonicalBytes)
-  const largestCompact = largestBy(cases, item => item.compactBytes)
-  const largestSaving = largestBy(cases, item => item.savedBytes)
+  const totalModelBytes = cases.reduce((sum, item) => sum + item.modelBytes, 0)
+  const totalSavedBytes = totalCanonicalBytes - totalModelBytes
+  const totalCompactBytes = cases.reduce((sum, item) => sum + item.rawCompactBytes, 0)
   const regressions = cases.filter(item => item.savedBytes < 0)
-  const largestRegression = regressions.length === 0
+  const rawRegressions = cases.filter(item => item.rawSavedBytes < 0)
+  const largestRawRegression = rawRegressions.length === 0
     ? null
-    : largestBy(regressions, item => -item.savedBytes)
+    : largestBy(rawRegressions, item => -item.rawSavedBytes)
+  const largestCanonical = largestBy(cases, item => item.canonicalBytes)
+  const largestModel = largestBy(cases, item => item.modelBytes)
+  const largestSaving = largestBy(cases, item => item.savedBytes)
 
   return Object.freeze({
     schema: 'dsh-contract-inspect-compaction-measurement-v1',
@@ -288,6 +305,7 @@ export async function buildInspectCompactionMeasurementV1(): Promise<InspectComp
       targetFingerprint: M2_RETRIEVAL_TARGET.targetFingerprint,
       contractIndexFingerprint: M2_RETRIEVAL_TARGET.contractIndexFingerprint,
       compactRepresentation: CONTRACT_INSPECT_COMPACT_REPRESENTATION,
+      serializerPolicy: SERIALIZER_POLICY,
       metricVersion: METRIC_VERSION,
     }),
     population: Object.freeze({ inspectContracts: cases.length }),
@@ -296,13 +314,23 @@ export async function buildInspectCompactionMeasurementV1(): Promise<InspectComp
       unchanged: cases.filter(item => item.savedBytes === 0).length,
       regressed: regressions.length,
       totalCanonicalBytes,
-      totalCompactBytes,
+      totalModelBytes,
       totalSavedBytes,
       aggregateSavingRate: roundRate(totalSavedBytes / totalCanonicalBytes),
       canonicalBytes: summarizeDistribution(cases.map(item => item.canonicalBytes)),
-      compactBytes: summarizeDistribution(cases.map(item => item.compactBytes)),
+      modelBytes: summarizeDistribution(cases.map(item => item.modelBytes)),
       savedBytes: summarizeDistribution(cases.map(item => item.savedBytes)),
       savingRate: summarizeDistribution(cases.map(item => item.savingRate)),
+    }),
+    rawCompactProjection: Object.freeze({
+      improved: cases.filter(item => item.rawSavedBytes > 0).length,
+      unchanged: cases.filter(item => item.rawSavedBytes === 0).length,
+      regressed: rawRegressions.length,
+      totalCompactBytes,
+      largestRegression: Object.freeze({
+        contractId: largestRawRegression?.contractId ?? null,
+        bytes: largestRawRegression === null ? 0 : -largestRawRegression.rawSavedBytes,
+      }),
     }),
     attribution: Object.freeze({
       repeatedBytesByCategory: Object.freeze({ ...attribution.repeatedBytesByCategory }),
@@ -313,17 +341,13 @@ export async function buildInspectCompactionMeasurementV1(): Promise<InspectComp
         contractId: largestCanonical.contractId,
         bytes: largestCanonical.canonicalBytes,
       }),
-      largestCompact: Object.freeze({
-        contractId: largestCompact.contractId,
-        bytes: largestCompact.compactBytes,
+      largestModel: Object.freeze({
+        contractId: largestModel.contractId,
+        bytes: largestModel.modelBytes,
       }),
       largestSaving: Object.freeze({
         contractId: largestSaving.contractId,
         bytes: largestSaving.savedBytes,
-      }),
-      largestRegression: Object.freeze({
-        contractId: largestRegression?.contractId ?? null,
-        bytes: largestRegression === null ? 0 : -largestRegression.savedBytes,
       }),
     }),
   })
