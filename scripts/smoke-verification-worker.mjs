@@ -15,16 +15,45 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { createDshFilesystemTargetAcquisition } from '../lib/acquisition/dsh-filesystem.js'
-import { createNodeSha256Port } from '../lib/acquisition/node-sha256.js'
-import { acquirePluginPackedWithArtifact } from '../lib/acquisition/plugin-packed-artifact.js'
-import { createApplicationKernel } from '../lib/kernel/index.js'
-import { runPackedPluginVerification } from '../lib/verification/packed-worker.js'
-
 const DSH_VERSION = '0.1.1-rc.2'
 const PROFILE = 'web'
 const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/u
 const ARTIFACT_FINGERPRINT = /^dsh-plugin-artifact-v1:[0-9a-f]{64}$/u
+
+async function loadBuiltVerificationModules() {
+  const urls = {
+    dshFilesystem: new URL('../lib/acquisition/dsh-filesystem.js', import.meta.url).href,
+    digest: new URL('../lib/acquisition/node-sha256.js', import.meta.url).href,
+    packedArtifact: new URL('../lib/acquisition/plugin-packed-artifact.js', import.meta.url).href,
+    kernel: new URL('../lib/kernel/index.js', import.meta.url).href,
+    worker: new URL('../lib/verification/packed-worker.js', import.meta.url).href,
+  }
+  const [dshFilesystem, digest, packedArtifact, kernel, worker] = await Promise.all([
+    import(urls.dshFilesystem),
+    import(urls.digest),
+    import(urls.packedArtifact),
+    import(urls.kernel),
+    import(urls.worker),
+  ])
+
+  if (
+    typeof dshFilesystem.createDshFilesystemTargetAcquisition !== 'function'
+    || typeof digest.createNodeSha256Port !== 'function'
+    || typeof packedArtifact.acquirePluginPackedWithArtifact !== 'function'
+    || typeof kernel.createApplicationKernel !== 'function'
+    || typeof worker.runPackedPluginVerification !== 'function'
+  ) {
+    throw new Error('verification worker smoke: one or more built internal exports are missing')
+  }
+
+  return Object.freeze({
+    createDshFilesystemTargetAcquisition: dshFilesystem.createDshFilesystemTargetAcquisition,
+    createNodeSha256Port: digest.createNodeSha256Port,
+    acquirePluginPackedWithArtifact: packedArtifact.acquirePluginPackedWithArtifact,
+    createApplicationKernel: kernel.createApplicationKernel,
+    runPackedPluginVerification: worker.runPackedPluginVerification,
+  })
+}
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -72,6 +101,14 @@ function checkFor(execution, id) {
 }
 
 export async function smokeVerificationWorker(candidateTarball) {
+  const {
+    createDshFilesystemTargetAcquisition,
+    createNodeSha256Port,
+    acquirePluginPackedWithArtifact,
+    createApplicationKernel,
+    runPackedPluginVerification,
+  } = await loadBuiltVerificationModules()
+
   const candidatePath = await realpath(resolve(candidateTarball))
   const root = await mkdtemp(join(tmpdir(), 'dsh-toolchain-verification-worker-smoke-'))
   const baselineRunner = join(root, 'baseline-runner')
