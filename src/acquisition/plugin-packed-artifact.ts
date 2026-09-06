@@ -15,21 +15,26 @@ export interface AcquiredPluginPackedWithArtifact {
 function authoritativePackedArtifact(
   subject: AcquiredPluginSubject,
 ): AcquiredPackedArtifact | undefined {
+  if (subject.completeness !== 'complete') return undefined
+
   const matches = subject.evidence.filter(evidence => evidence.id === 'plugin:packed-artifact')
   if (matches.length !== 1) return undefined
 
   const evidence = matches[0]
+  if (evidence === undefined) return undefined
+  const contentHash = evidence.contentHash
   if (
     evidence.kind !== 'package'
     || evidence.strength !== 'authoritative'
     || typeof evidence.location !== 'string'
     || evidence.location.length === 0
-    || !/^[0-9a-f]{64}$/u.test(evidence.contentHash)
+    || typeof contentHash !== 'string'
+    || !/^[0-9a-f]{64}$/u.test(contentHash)
   ) return undefined
 
   return Object.freeze({
     location: evidence.location,
-    contentHash: evidence.contentHash,
+    contentHash,
   })
 }
 
