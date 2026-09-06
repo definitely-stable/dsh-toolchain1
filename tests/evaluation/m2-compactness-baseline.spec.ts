@@ -2,12 +2,7 @@ import { readFile } from 'node:fs/promises'
 
 import { describe, expect, it } from 'vitest'
 
-import { inspectContractResponse, searchContractsResponse } from '../../src/kernel/index.js'
-import {
-  createContractInspectToolDefinition,
-  createContractSearchToolDefinition,
-} from '../../src/integrations/dsh/contract-tool.js'
-import { compactContractInspectModelResponse } from '../../src/model/contract-inspect-compact.js'
+import { inspectContractResponse } from '../../src/kernel/index.js'
 import { CONTRACT_SEARCH_RANKER_VERSION } from '../../src/model/contract.js'
 import { M2_RETRIEVAL_R1 } from './m2-retrieval-corpus.js'
 import {
@@ -189,39 +184,25 @@ describe('M2 Contract Search/Inspect deterministic compactness baseline', () => 
     expect(SEARCH_REQUEST_ID).not.toBe(INSPECT_REQUEST_ID)
   })
 
-  it('keeps Search canonical while current native Inspect text uses the lossless compact projection', async () => {
-    const { SEARCH_REQUEST_ID, INSPECT_REQUEST_ID } = await loadBaseline()
+  it('keeps the historical Inspect wire-byte baseline bound to canonical Protocol JSON, independent of current renderers', async () => {
+    const { INSPECT_REQUEST_ID, buildCompactnessBaselineV1 } = await loadBaseline()
+    const baseline = await buildCompactnessBaselineV1()
     const harness = await createFrozenM2KernelHarness()
-    const search = await searchContractsResponse(
-      harness.kernel,
-      { target: { profile: 'web' }, query: 'ToolRuntimeScheduler' },
-      SEARCH_REQUEST_ID,
-    )
-    expect(search.status).toBe('ok')
-    if (search.status !== 'ok') throw new Error('Expected frozen Search response to resolve')
-
-    const searchTool = createContractSearchToolDefinition(async () => search)
-    expect(searchTool.output.render({}, search)).toEqual([
-      { type: 'text', text: JSON.stringify(search) },
-    ])
-
-    const top = search.data.matches[0]
-    if (top === undefined) throw new Error('Expected frozen Search response to have a top match')
+    const contractId = 'package:@deepseek-ai/dsh-tools'
     const inspect = await inspectContractResponse(
       harness.kernel,
       {
         target: { profile: 'web' },
-        contractIndexFingerprint: search.data.contractIndexFingerprint,
-        contractId: top.id,
+        contractIndexFingerprint: M2_RETRIEVAL_TARGET.contractIndexFingerprint,
+        contractId,
       },
       INSPECT_REQUEST_ID,
     )
     expect(inspect.status).toBe('ok')
 
-    const inspectTool = createContractInspectToolDefinition(async () => inspect)
-    expect(inspectTool.output.render({}, inspect)).toEqual([
-      { type: 'text', text: JSON.stringify(compactContractInspectModelResponse(inspect)) },
-    ])
+    const baselineCase = baseline.inspect.cases.find(item => item.contractId === contractId)
+    expect(baselineCase).toBeDefined()
+    expect(baselineCase?.wireBytes).toBe(new TextEncoder().encode(JSON.stringify(inspect)).byteLength)
   })
 
   it('projects a compact durable receipt and keeps raw/per-case payloads out of it', async () => {
