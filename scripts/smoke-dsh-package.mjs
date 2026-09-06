@@ -195,6 +195,7 @@ export async function createBootProbePackage(root, options = {}) {
   await writeFile(join(probe, 'cordis.patch.yml'), `- insert:\n${rows.join('\n')}\n`)
 
   await writeFile(join(probe, 'probe.mjs'), `const RUNTIME_TOOL_CONTRACT_ID = ${JSON.stringify(RUNTIME_TOOL_CONTRACT_ID)}
+const COMPACT_INSPECT_REPRESENTATION = 'dsh-contract-inspect-compact-v1'
 
 function renderedMatchesValue(result) {
   if (result?.isError) return false
@@ -204,6 +205,95 @@ function renderedMatchesValue(result) {
     return JSON.stringify(JSON.parse(rendered.text)) === JSON.stringify(result.value)
   } catch {
     return false
+  }
+}
+
+function utf8Bytes(value) {
+  return new TextEncoder().encode(value).byteLength
+}
+
+function jsonEquivalent(left, right) {
+  function normalize(value) {
+    if (Array.isArray(value)) return value.map(normalize)
+    if (value === null || typeof value !== 'object') return value
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+        .map(([key, child]) => [key, normalize(child)]),
+    )
+  }
+  return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right))
+}
+
+function expandCompactInspect(rendered) {
+  if (rendered?.representation !== COMPACT_INSPECT_REPRESENTATION) return rendered
+  if (rendered?.status !== 'ok') throw new Error('Compact Inspect representation must be successful')
+
+  const table = rendered?.data?.evidenceByRef
+  const contract = rendered?.data?.contract
+  if (table === null || typeof table !== 'object' || contract === null || typeof contract !== 'object') {
+    throw new Error('Compact Inspect representation is missing evidence table or contract')
+  }
+
+  function evidenceIds(refs) {
+    if (!Array.isArray(refs)) throw new Error('Compact Inspect evidence refs must be an array')
+    return refs.map((ref) => {
+      const evidence = table[ref]
+      if (evidence === undefined || typeof evidence?.id !== 'string') {
+        throw new Error('Compact Inspect evidence ref is not resolvable: ' + String(ref))
+      }
+      return evidence.id
+    })
+  }
+
+  return {
+    protocolVersion: rendered.protocolVersion,
+    requestId: rendered.requestId,
+    snapshotFingerprint: rendered.snapshotFingerprint,
+    status: rendered.status,
+    data: {
+      contractIndexFingerprint: rendered.data.contractIndexFingerprint,
+      contract: {
+        id: contract.id,
+        kind: contract.kind,
+        name: contract.name,
+        qualifiedName: contract.qualifiedName,
+        availability: contract.availability,
+        ...(contract.summary === undefined ? {} : { summary: contract.summary }),
+        facts: contract.facts.map(fact => ({
+          key: fact.key,
+          value: fact.value,
+          evidenceIds: evidenceIds(fact.evidenceRefs),
+        })),
+        evidenceIds: evidenceIds(contract.evidenceRefs),
+      },
+      evidence: Object.values(table),
+    },
+    diagnostics: rendered.diagnostics,
+  }
+}
+
+function inspectRenderEvidence(result) {
+  if (result?.isError) {
+    return { roundTripsValue: false, nonRegressing: false, representation: null }
+  }
+  const rendered = result?.content?.find(block => block.type === 'text')
+  if (rendered?.type !== 'text') {
+    return { roundTripsValue: false, nonRegressing: false, representation: null }
+  }
+  try {
+    const parsed = JSON.parse(rendered.text)
+    const expanded = expandCompactInspect(parsed)
+    const canonicalJson = JSON.stringify(result.value)
+    return {
+      roundTripsValue: jsonEquivalent(expanded, result.value),
+      nonRegressing: utf8Bytes(rendered.text) <= utf8Bytes(canonicalJson),
+      representation: parsed?.representation === COMPACT_INSPECT_REPRESENTATION
+        ? COMPACT_INSPECT_REPRESENTATION
+        : 'protocol-v1',
+    }
+  } catch {
+    return { roundTripsValue: false, nonRegressing: false, representation: null }
   }
 }
 
@@ -283,6 +373,9 @@ export function apply(rootCtx) {
             signal: new AbortController().signal,
           })
         : undefined
+      const contractInspectRender = contractInspectResult === undefined
+        ? null
+        : inspectRenderEvidence(contractInspectResult)
 
       const receipt = {
         profile,
@@ -331,7 +424,9 @@ export function apply(rootCtx) {
               contractId: contractInspectResult.isError ? undefined : contractInspectResult.value?.data?.contract?.id,
               availability: contractInspectResult.isError ? undefined : contractInspectResult.value?.data?.contract?.availability,
               runtimeEvidence: contractInspectResult.isError ? false : hasRuntimeToolEvidence(contractInspectResult.value),
-              renderedMatchesValue: renderedMatchesValue(contractInspectResult),
+              renderedRoundTripsValue: contractInspectRender?.roundTripsValue ?? false,
+              renderedNonRegressing: contractInspectRender?.nonRegressing ?? false,
+              renderedRepresentation: contractInspectRender?.representation ?? null,
             },
       }
       process.stdout.write(${JSON.stringify(BOOT_PROBE_MARKER)} + JSON.stringify(receipt) + '\\n')
@@ -451,9 +546,11 @@ export function assertBootProbeOutput(output, options = {}) {
     || receipt.contractInspect.contractId !== RUNTIME_TOOL_CONTRACT_ID
     || receipt.contractInspect.availability !== 'available'
     || receipt.contractInspect.runtimeEvidence !== true
-    || receipt.contractInspect.renderedMatchesValue !== true
+    || receipt.contractInspect.renderedRoundTripsValue !== true
+    || receipt.contractInspect.renderedNonRegressing !== true
+    || !['protocol-v1', 'dsh-contract-inspect-compact-v1'].includes(receipt.contractInspect.renderedRepresentation)
   ) {
-    throw new Error(`DSH smoke: live Contract inspect did not preserve Agent/index/runtime-evidence continuity ${JSON.stringify(receipt?.contractInspect)}`)
+    throw new Error(`DSH smoke: live Contract inspect did not preserve Agent/index/runtime-evidence/render continuity ${JSON.stringify(receipt?.contractInspect)}`)
   }
 }
 
