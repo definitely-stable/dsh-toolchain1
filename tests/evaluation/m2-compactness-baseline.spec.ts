@@ -7,6 +7,7 @@ import {
   createContractInspectToolDefinition,
   createContractSearchToolDefinition,
 } from '../../src/integrations/dsh/contract-tool.js'
+import { compactContractInspectModelResponse } from '../../src/model/contract-inspect-compact.js'
 import { CONTRACT_SEARCH_RANKER_VERSION } from '../../src/model/contract.js'
 import { M2_RETRIEVAL_R1 } from './m2-retrieval-corpus.js'
 import {
@@ -188,7 +189,7 @@ describe('M2 Contract Search/Inspect deterministic compactness baseline', () => 
     expect(SEARCH_REQUEST_ID).not.toBe(INSPECT_REQUEST_ID)
   })
 
-  it('matches the exact JSON text rendered by native DSH Search and Inspect tools', async () => {
+  it('keeps Search canonical while current native Inspect text uses the lossless compact projection', async () => {
     const { SEARCH_REQUEST_ID, INSPECT_REQUEST_ID } = await loadBaseline()
     const harness = await createFrozenM2KernelHarness()
     const search = await searchContractsResponse(
@@ -219,7 +220,7 @@ describe('M2 Contract Search/Inspect deterministic compactness baseline', () => 
 
     const inspectTool = createContractInspectToolDefinition(async () => inspect)
     expect(inspectTool.output.render({}, inspect)).toEqual([
-      { type: 'text', text: JSON.stringify(inspect) },
+      { type: 'text', text: JSON.stringify(compactContractInspectModelResponse(inspect)) },
     ])
   })
 
