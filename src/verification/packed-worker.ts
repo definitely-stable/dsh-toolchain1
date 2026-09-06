@@ -7,6 +7,7 @@ import {
   fingerprintPackedArtifact,
   VerificationArtifactError,
 } from './artifact.js'
+import { createVerificationBootProbe } from './boot-probe.js'
 import {
   classifyVerificationProcessFailure,
   verificationDiagnostic,
@@ -30,10 +31,15 @@ type VerificationProcessRunner = (
   request: VerificationProcessRequest,
   signal?: AbortSignal,
 ) => Promise<VerificationProcessOutcome>
+type VerificationProcessStageFailureCode =
+  | 'VERIFY_INSTALL_FAILED'
+  | 'VERIFY_COMPOSE_FAILED'
+  | 'VERIFY_BOOT_FAILED'
 
 const OUTPUT_LIMIT_BYTES = 128 * 1024
 const INSTALL_TIMEOUT_MS = 300_000
 const COMPOSE_TIMEOUT_MS = 120_000
+const BOOT_TIMEOUT_MS = 120_000
 
 export interface PackedVerificationArtifactInput {
   readonly path: string
@@ -90,6 +96,20 @@ function processRequest(
   })
 }
 
+function bootLauncherArgs(profile: string): readonly string[] {
+  return Object.freeze([
+    'exec',
+    'dsh',
+    '--profile',
+    profile,
+    ...(profile === 'web' ? ['--no-open', '--port', '0'] : []),
+  ])
+}
+
+function hasExactBootMarker(stdout: string, marker: string): boolean {
+  return stdout.split(/\r?\n/u).some(line => line === marker)
+}
+
 async function defaultTemporaryRoot(): Promise<string> {
   return mkdtemp(path.join(tmpdir(), 'dsh-toolchain-verify-'))
 }
@@ -134,7 +154,7 @@ async function runRequiredProcess(
   runner: VerificationProcessRunner,
   request: VerificationProcessRequest,
   signal: AbortSignal | undefined,
-  failureCode: 'VERIFY_INSTALL_FAILED' | 'VERIFY_COMPOSE_FAILED',
+  failureCode: VerificationProcessStageFailureCode,
 ): Promise<{
   readonly passed: boolean
   readonly diagnostic?: Diagnostic
@@ -163,7 +183,7 @@ function recordProcessFailure(
     readonly diagnostic?: Diagnostic
     readonly terminal?: 'failed' | 'cancelled'
   },
-  stage: 'install' | 'compose',
+  stage: 'install' | 'compose' | 'boot',
   checks: readonly VerificationCheck[],
   diagnostics: Diagnostic[],
 ): {
@@ -314,14 +334,89 @@ export async function runPackedPluginVerification(
       }
     }
 
-    if (!stopped) {
-      checks = passVerificationStage(checks, 'compose')
+    if (!stopped) checks = passVerificationStage(checks, 'compose')
 
-      // M4.1 must not equate successful composition or process spawn with boot.
-      // Task 5 is the first slice allowed to pass boot after a marker-backed probe.
-      checks = skipVerificationStage(checks, 'boot', 'boot-probe-required')
+    let bootProbe: Awaited<ReturnType<typeof createVerificationBootProbe>> | undefined
+    if (!stopped) {
+      try {
+        bootProbe = await createVerificationBootProbe(root, input.target.profile.name)
+      } catch {
+        const diagnostic = verificationDiagnostic(
+          'VERIFY_BOOT_FAILED',
+          'Verification boot probe could not be prepared in the temporary environment.',
+        )
+        diagnostics.push(diagnostic)
+        checks = failStage(checks, 'boot', diagnostic)
+        terminal = 'failed'
+        stopped = true
+      }
+    }
+
+    if (!stopped && bootProbe !== undefined) {
+      const installProbe = await runRequiredProcess(
+        processRunner,
+        processRequest(
+          [
+            'exec',
+            'dsh',
+            'plugin',
+            '--profile',
+            input.target.profile.name,
+            'add',
+            '--ignore-scripts',
+            bootProbe.packagePath,
+          ],
+          runnerDir,
+          env,
+          INSTALL_TIMEOUT_MS,
+        ),
+        signal,
+        'VERIFY_BOOT_FAILED',
+      )
+      if (!installProbe.passed) {
+        const failure = recordProcessFailure(installProbe, 'boot', checks, diagnostics)
+        checks = failure.checks
+        terminal = failure.terminal
+        stopped = true
+      }
+    }
+
+    if (!stopped && bootProbe !== undefined) {
+      const bootOutcome = await processRunner(
+        processRequest(
+          bootLauncherArgs(input.target.profile.name),
+          runnerDir,
+          env,
+          BOOT_TIMEOUT_MS,
+        ),
+        signal,
+      )
+      const bootFailure = classifyVerificationProcessFailure(bootOutcome, 'VERIFY_BOOT_FAILED')
+      if (bootFailure !== undefined) {
+        const failure = recordProcessFailure(bootFailure, 'boot', checks, diagnostics)
+        checks = failure.checks
+        terminal = failure.terminal
+        stopped = true
+      } else if (
+        bootOutcome.kind !== 'exited'
+        || bootOutcome.code !== 0
+        || !hasExactBootMarker(bootOutcome.stdout, bootProbe.marker)
+      ) {
+        const diagnostic = verificationDiagnostic(
+          'VERIFY_BOOT_FAILED',
+          'DSH boot completed without the exact Toolchain verification probe marker.',
+        )
+        diagnostics.push(diagnostic)
+        checks = failStage(checks, 'boot', diagnostic)
+        terminal = 'failed'
+        stopped = true
+      }
+    }
+
+    if (!stopped) {
+      checks = passVerificationStage(checks, 'boot')
       if ((input.visibilityAssertions?.length ?? 0) > 0) {
-        checks = skipVerificationStage(checks, 'visibility', 'visibility-assertions-not-supported-before-boot-probe')
+        checks = skipVerificationStage(checks, 'visibility', 'visibility-assertions-not-supported-in-m4.1')
       }
       terminal = 'completed'
     }
