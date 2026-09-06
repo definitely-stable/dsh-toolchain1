@@ -42,6 +42,10 @@ function sha256(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
+function bootMarker(profile: string): string {
+  return `DSH_TOOLCHAIN_VERIFY_BOOT_PROBE_V1:${sha256(Buffer.from(`profile:${profile}`))}`
+}
+
 function target(): TargetSnapshot {
   return {
     fingerprint: `dsh-target-v2:${'a'.repeat(64)}`,
@@ -136,14 +140,20 @@ function check(execution: ExecutionView, id: string): VerificationCheck | undefi
   return execution.checks.find(item => item.id === id)
 }
 
+function successfulOutcomes(): readonly VerificationProcessOutcome[] {
+  return [
+    { kind: 'exited', code: 0, stdout: '', stderr: '' },
+    { kind: 'exited', code: 0, stdout: '', stderr: '' },
+    { kind: 'exited', code: 0, stdout: 'composed', stderr: '' },
+    { kind: 'exited', code: 0, stdout: '', stderr: '' },
+    { kind: 'exited', code: 0, stdout: `${bootMarker('web')}\n`, stderr: '' },
+  ]
+}
+
 describe('packed plugin verification worker', () => {
-  it('binds exact artifact bytes and executes install/compose only in one disposable DSH environment', async () => {
+  it('binds exact artifact bytes and proves install/compose/boot only in one disposable DSH environment', async () => {
     const root = await fixtureRoot()
-    const runner = fakeRunner([
-      { kind: 'exited', code: 0, stdout: '', stderr: '' },
-      { kind: 'exited', code: 0, stdout: '', stderr: '' },
-      { kind: 'exited', code: 0, stdout: 'composed', stderr: '' },
-    ])
+    const runner = fakeRunner(successfulOutcomes())
 
     const { execution, workerRoot } = await runWith(root, runner)
 
@@ -167,15 +177,16 @@ describe('packed plugin verification worker', () => {
     expect(check(execution, 'package')).toEqual({ id: 'package', status: 'passed' })
     expect(check(execution, 'install')).toEqual({ id: 'install', status: 'passed' })
     expect(check(execution, 'compose')).toEqual({ id: 'compose', status: 'passed' })
-    expect(check(execution, 'boot')).toEqual({ id: 'boot', status: 'skipped', reason: 'boot-probe-required' })
+    expect(check(execution, 'boot')).toEqual({ id: 'boot', status: 'passed' })
     expect(check(execution, 'visibility')).toEqual({ id: 'visibility', status: 'skipped', reason: 'no-visibility-assertions' })
     expect(check(execution, 'behavior')).toEqual({ id: 'behavior', status: 'skipped', reason: 'not-supported-in-m4.1' })
 
-    expect(runner.calls).toHaveLength(3)
-    const [installDsh, installCandidate, compose] = runner.calls
+    expect(runner.calls).toHaveLength(5)
+    const [installDsh, installCandidate, compose, installProbe, boot] = runner.calls
     const runnerDir = path.join(workerRoot, 'runner')
     const temporaryDshHome = path.join(workerRoot, 'dsh-home')
     const candidateCopy = path.join(workerRoot, 'artifact', 'candidate.tgz')
+    const probePath = path.join(workerRoot, 'boot-probe')
 
     expect(installDsh).toMatchObject({
       args: ['add', '--save-exact', '--ignore-scripts', '@deepseek-ai/dsh@0.1.1-rc.2'],
@@ -188,6 +199,15 @@ describe('packed plugin verification worker', () => {
     expect(compose).toMatchObject({
       args: ['exec', 'dsh', '--profile', 'web', '--dump-config'],
       cwd: runnerDir,
+    })
+    expect(installProbe).toMatchObject({
+      args: ['exec', 'dsh', 'plugin', '--profile', 'web', 'add', '--ignore-scripts', probePath],
+      cwd: runnerDir,
+    })
+    expect(boot).toMatchObject({
+      args: ['exec', 'dsh', '--profile', 'web', '--no-open', '--port', '0'],
+      cwd: runnerDir,
+      timeoutMs: 120_000,
     })
     for (const call of runner.calls) {
       expect(call.command).toBe(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm')
@@ -246,6 +266,44 @@ describe('packed plugin verification worker', () => {
       calls: 3,
     },
     {
+      name: 'boot probe installation non-zero exit',
+      outcomes: [
+        { kind: 'exited', code: 0, stdout: '', stderr: '' },
+        { kind: 'exited', code: 0, stdout: '', stderr: '' },
+        { kind: 'exited', code: 0, stdout: '', stderr: '' },
+        { kind: 'exited', code: 4, stdout: '', stderr: 'probe install failed' },
+      ] as const,
+      code: 'VERIFY_BOOT_FAILED',
+      failedStage: 'boot',
+      calls: 4,
+    },
+    {
+      name: 'boot process non-zero exit',
+      outcomes: [
+        { kind: 'exited', code: 0, stdout: '', stderr: '' },
+        { kind: 'exited', code: 0, stdout: '', stderr: '' },
+        { kind: 'exited', code: 0, stdout: '', stderr: '' },
+        { kind: 'exited', code: 0, stdout: '', stderr: '' },
+        { kind: 'exited', code: 5, stdout: '', stderr: 'boot failed' },
+      ] as const,
+      code: 'VERIFY_BOOT_FAILED',
+      failedStage: 'boot',
+      calls: 5,
+    },
+    {
+      name: 'boot exits zero without marker',
+      outcomes: [
+        { kind: 'exited', code: 0, stdout: '', stderr: '' },
+        { kind: 'exited', code: 0, stdout: '', stderr: '' },
+        { kind: 'exited', code: 0, stdout: '', stderr: '' },
+        { kind: 'exited', code: 0, stdout: '', stderr: '' },
+        { kind: 'exited', code: 0, stdout: 'launcher exited cleanly\n', stderr: '' },
+      ] as const,
+      code: 'VERIFY_BOOT_FAILED',
+      failedStage: 'boot',
+      calls: 5,
+    },
+    {
       name: 'process timeout',
       outcomes: [{ kind: 'timeout', stdout: '', stderr: '' }] as const,
       code: 'VERIFY_PROCESS_TIMEOUT',
@@ -293,11 +351,7 @@ describe('packed plugin verification worker', () => {
 
   it('retains cleanup failure without rewriting the completed execution lifecycle', async () => {
     const root = await fixtureRoot()
-    const runner = fakeRunner([
-      { kind: 'exited', code: 0, stdout: '', stderr: '' },
-      { kind: 'exited', code: 0, stdout: '', stderr: '' },
-      { kind: 'exited', code: 0, stdout: '', stderr: '' },
-    ])
+    const runner = fakeRunner(successfulOutcomes())
 
     const { execution } = await runWith(root, runner, {
       cleanup: async () => {
@@ -309,5 +363,6 @@ describe('packed plugin verification worker', () => {
     expect(execution.cleanup).toBe('failed')
     expect(execution.diagnostics.map(item => item.code)).toContain('VERIFY_CLEANUP_FAILED')
     expect(check(execution, 'compose')).toMatchObject({ status: 'passed' })
+    expect(check(execution, 'boot')).toMatchObject({ status: 'passed' })
   })
 })
