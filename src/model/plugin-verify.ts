@@ -1,6 +1,8 @@
+import type { AcquiredPluginSubject } from './plugin.js'
 import type {
   Diagnostic,
   PluginCheckResult,
+  TargetSnapshot,
   VerificationReport,
 } from '../protocol/index.js'
 
@@ -40,6 +42,73 @@ export interface PluginVerificationExecutionObservation {
   readonly diagnostics: readonly Diagnostic[]
   readonly cleanup: VerificationReport['cleanup']
   readonly terminal: 'completed' | 'failed' | 'cancelled'
+}
+
+export interface PluginVerificationExecutionInput {
+  readonly artifactPath: string
+  readonly expectedContentHash: string
+  readonly target: TargetSnapshot
+  readonly executionPolicy: 'safe'
+}
+
+export interface PluginVerificationExecutionPort {
+  verify(
+    input: PluginVerificationExecutionInput,
+    signal?: AbortSignal,
+  ): Promise<PluginVerificationExecutionObservation>
+}
+
+export interface BoundPackedVerificationArtifact {
+  readonly path: string
+  readonly contentHash: string
+  readonly fingerprint: string
+}
+
+export type PluginVerificationOperationErrorCode = 'VERIFY_ARTIFACT_UNPROVEN'
+
+export class PluginVerificationOperationError extends Error {
+  readonly code: PluginVerificationOperationErrorCode
+
+  constructor(code: PluginVerificationOperationErrorCode, message: string) {
+    super(message)
+    this.name = 'PluginVerificationOperationError'
+    this.code = code
+  }
+}
+
+export function bindPackedVerificationArtifact(
+  subject: AcquiredPluginSubject,
+): BoundPackedVerificationArtifact {
+  if (subject.completeness !== 'complete') {
+    throw new PluginVerificationOperationError(
+      'VERIFY_ARTIFACT_UNPROVEN',
+      'Runtime verification requires one complete packed subject with authoritative exact artifact evidence.',
+    )
+  }
+
+  const matches = subject.evidence.filter(item => item.id === 'plugin:packed-artifact')
+  const artifact = matches.length === 1 ? matches[0] : undefined
+  const contentHash = artifact?.contentHash
+  if (
+    artifact === undefined
+    || artifact.kind !== 'package'
+    || artifact.strength !== 'authoritative'
+    || typeof artifact.location !== 'string'
+    || artifact.location.length === 0
+    || typeof contentHash !== 'string'
+    || !/^[0-9a-f]{64}$/u.test(contentHash)
+  ) {
+    throw new PluginVerificationOperationError(
+      'VERIFY_ARTIFACT_UNPROVEN',
+      'Runtime verification could not bind one authoritative exact packed artifact observation.',
+    )
+  }
+
+  return Object.freeze({
+    path: artifact.location,
+    contentHash,
+    fingerprint: `dsh-plugin-artifact-v1:${contentHash}`,
+  })
 }
 
 export interface PluginVerificationReductionInput {
