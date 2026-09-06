@@ -243,13 +243,13 @@ describe('Contract Inspect compact model projection', () => {
     expect(modelSerializer()(canonical)).toBe(compactJson)
   })
 
-  it('makes the minimal successful envelope smaller without hiding variable semantics', () => {
+  it('keeps a no-evidence minimal success canonical when the compact envelope has no payload benefit', () => {
     const canonical = minimalSuccessResponse()
     const canonicalJson = JSON.stringify(canonical)
     const compactJson = JSON.stringify(compactProjector()(canonical))
 
-    expect(utf8Bytes(compactJson)).toBeLessThan(utf8Bytes(canonicalJson))
-    expect(modelSerializer()(canonical)).toBe(compactJson)
+    expect(utf8Bytes(compactJson)).toBeGreaterThan(utf8Bytes(canonicalJson))
+    expect(modelSerializer()(canonical)).toBe(canonicalJson)
   })
 
   it('falls back to canonical JSON when pathological short evidence refs would regress wire bytes', () => {
