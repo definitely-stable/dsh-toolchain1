@@ -14,13 +14,13 @@
     "inspectContracts": 184
   },
   "comparison": {
-    "improved": 183,
-    "unchanged": 1,
+    "improved": 184,
+    "unchanged": 0,
     "regressed": 0,
     "totalCanonicalBytes": 1070705,
-    "totalModelBytes": 718534,
-    "totalSavedBytes": 352171,
-    "aggregateSavingRate": 0.328915,
+    "totalModelBytes": 708825,
+    "totalSavedBytes": 361880,
+    "aggregateSavingRate": 0.337983,
     "canonicalBytes": {
       "count": 184,
       "min": 847,
@@ -31,37 +31,37 @@
     },
     "modelBytes": {
       "count": 184,
-      "min": 847,
-      "p50": 3116,
-      "p90": 6452,
-      "p95": 8891,
-      "max": 23760
+      "min": 837,
+      "p50": 3063,
+      "p90": 6399,
+      "p95": 8838,
+      "max": 23707
     },
     "savedBytes": {
       "count": 184,
-      "min": 0,
-      "p50": 1166,
-      "p90": 4249,
-      "p95": 6257,
-      "max": 21238
+      "min": 10,
+      "p50": 1219,
+      "p90": 4302,
+      "p95": 6310,
+      "max": 21291
     },
     "savingRate": {
       "count": 184,
-      "min": 0,
-      "p50": 0.272727,
-      "p90": 0.381938,
-      "p95": 0.413416,
-      "max": 0.515883
+      "min": 0.011806,
+      "p50": 0.286241,
+      "p90": 0.387507,
+      "p95": 0.417362,
+      "max": 0.518221
     }
   },
   "rawCompactProjection": {
-    "improved": 183,
+    "improved": 184,
     "unchanged": 0,
-    "regressed": 1,
-    "totalCompactBytes": 718577,
+    "regressed": 0,
+    "totalCompactBytes": 708825,
     "largestRegression": {
-      "contractId": "package:@deepseek-ai/dsh",
-      "bytes": 43
+      "contractId": null,
+      "bytes": 0
     }
   },
   "attribution": {
@@ -97,11 +97,11 @@
     },
     "largestModel": {
       "contractId": "package:@deepseek-ai/dsh-client-runtime",
-      "bytes": 23760
+      "bytes": 23707
     },
     "largestSaving": {
       "contractId": "package:@deepseek-ai/dsh-client-runtime",
-      "bytes": 21238
+      "bytes": 21291
     }
   }
 }
