@@ -12,10 +12,11 @@ import {
   inspectContractResponse,
   resolveTargetResponse,
   searchContractsResponse,
+  verifyPluginResponse,
   type KernelDescriptor,
 } from '../../kernel/index.js'
-import type { Sha256Port } from '../../model/digest.js'
 import type { ContractEnrichmentPort } from '../../model/contract.js'
+import type { Sha256Port } from '../../model/digest.js'
 import type {
   ContractInspectRequest,
   ContractInspectResponse,
@@ -23,9 +24,12 @@ import type {
   ContractSearchResponse,
   PluginCheckRequest,
   PluginCheckResponse,
+  PluginVerifyRequest,
+  PluginVerifyResponse,
   TargetResolveRequest,
   TargetResolveResponse,
 } from '../../protocol/index.js'
+import { createPackedPluginVerificationExecutionPort } from '../../verification/execution-port.js'
 import {
   createContractInspectToolDefinition,
   createContractSearchToolDefinition,
@@ -36,6 +40,7 @@ import {
   type DshCordisInspectRegistryPort,
 } from './live-inspect.js'
 import { createPluginCheckToolDefinition } from './plugin-check-tool.js'
+import { createPluginVerifyToolDefinition } from './plugin-verify-tool.js'
 import {
   bindContractEnrichmentToRuntimeTarget,
   createDshRuntimeTargetBinding,
@@ -52,6 +57,7 @@ function createNodeKernel(digest: Sha256Port) {
     targetAcquisition: createDshFilesystemTargetAcquisition({ digest }),
     contractAcquisition: createDshContractFilesystemAcquisition({ digest }),
     pluginSubjectAcquisition: createPluginSubjectAcquisition(digest),
+    pluginVerificationExecution: createPackedPluginVerificationExecutionPort(),
     digest,
   })
 }
@@ -159,6 +165,9 @@ function registerNativeTools(
     disposers.push(tools.register(createPluginCheckToolDefinition(
       request => ctx.toolchain.checkPlugin(request),
     )))
+    disposers.push(tools.register(createPluginVerifyToolDefinition(
+      request => ctx.toolchain.verifyPlugin(request),
+    )))
   } catch (error) {
     for (const dispose of disposers.toReversed()) dispose()
     throw error
@@ -221,6 +230,13 @@ export class ToolchainService extends Service {
     requestId: string = randomUUID(),
   ): Promise<PluginCheckResponse> {
     return checkPluginResponse(this.kernel, request, requestId)
+  }
+
+  verifyPlugin(
+    request: PluginVerifyRequest,
+    requestId: string = randomUUID(),
+  ): Promise<PluginVerifyResponse> {
+    return verifyPluginResponse(this.kernel, request, requestId)
   }
 
   private liveEnrichment(
