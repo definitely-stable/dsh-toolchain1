@@ -202,9 +202,13 @@ describe('Contract Intelligence MCP projection', () => {
     const canonical = result.structuredContent as ContractInspectResponse
     const renderedText = result.content[0]?.type === 'text' ? result.content[0].text : ''
     expect(renderedText).toBe(serializeContractInspectModelResponse(canonical))
-    expect(JSON.parse(renderedText)).toEqual(canonical)
+    expect(JSON.parse(renderedText)).toMatchObject({
+      representation: 'dsh-contract-inspect-compact-v1',
+      requestId: canonical.requestId,
+      snapshotFingerprint: targetFingerprint,
+    })
     expect(new TextEncoder().encode(renderedText).byteLength)
-      .toBeLessThanOrEqual(new TextEncoder().encode(JSON.stringify(canonical)).byteLength)
+      .toBeLessThan(new TextEncoder().encode(JSON.stringify(canonical)).byteLength)
   })
 
   it('returns stale contract indexes as canonical semantic Protocol results rather than MCP transport errors', async () => {
