@@ -47,7 +47,11 @@ function mockKernel(): ApplicationKernel {
           name: '@deepseek-ai/dsh-tools',
           qualifiedName: 'package:@deepseek-ai/dsh-tools',
           availability: 'unknown' as const,
-          facts: [{ key: 'version', value: '0.1.1-rc.2', evidenceIds: ['manifest:tools'] }],
+          facts: [{
+            key: 'version',
+            value: '0.1.1-rc.2',
+            evidenceIds: ['manifest:tools'] as [string],
+          }],
           evidenceIds: ['manifest:tools'],
         },
         evidence: [{
