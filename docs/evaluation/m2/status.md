@@ -28,7 +28,7 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 | Staged dev-v2 | **EXECUTED / METHODOLOGY DEFECT EXPOSED** | Run `33948582894`: B exhausted the frozen 31-tool budget on 2/8 canary tasks, C completed 8/8 and used Toolchain 8/8; report-v2 incorrectly projected those B terminals as measurement failure. |
 | Product/measurement separation | **COMPLETE** | #183 separated measurement health, bounded product terminals and cost/trajectory evidence without production ranker changes. |
 | Contract Search / Inspect compactness baseline | **COMPLETE / MEASUREMENT-ONLY** | Provider-free exhaustive baseline: 36 Search cases, all 184 Inspect contracts and 30 actual Search→top-1 Inspect paths. Inspect, not Search, is the compactness hotspot. |
-| Contract Inspect lossless compaction | **COMPLETE / PROVIDER-FREE PRODUCT MEASUREMENT** | #186 / PR #187: 184/184 lossless parity; production serializer improves 183 cases, leaves 1 no-benefit case canonical, regresses 0; aggregate exact-byte reduction 32.8915%. |
+| Contract Inspect lossless compaction | **COMPLETE / PROVIDER-FREE PRODUCT MEASUREMENT** | #186 / PR #187: 184/184 exact lossless parity; production serializer improves all 184 frozen Inspect responses, 0 ties/regressions; aggregate exact-byte reduction 33.7983%. |
 | Exact Target Plugin Check alpha | **COMPLETE** | Static/read-only exact-target plugin verdict path is merged. |
 | H2 | **NOT READY** | Requires a fresh hidden dataset and independently specified end-to-end success endpoint before outcomes exist. |
 
@@ -91,19 +91,22 @@ The result classifies **Inspect payload size plus within-response duplication** 
 
 PR #187 implements the first authorized production response to that baseline without changing Protocol v1 or Search. Successful model-facing Inspect text may use lossless `dsh-contract-inspect-compact-v1`, which interns canonical evidence records and replaces repeated long evidence ids with deterministic local refs. Native DSH and MCP share one serializer; MCP `structuredContent` and CLI remain canonical.
 
+The compact-v1 identity implies canonical `protocolVersion='1'`, `status='ok'`, and empty diagnostics when `diagnostics` is omitted. Non-empty diagnostics remain explicit. Independent expansion must recover the exact canonical Protocol v1 value.
+
 The production serializer uses `strictly-smaller-utf8-v1`: compact JSON is emitted only if its exact UTF-8 `JSON.stringify` representation is strictly smaller; otherwise canonical JSON is emitted. Failed/stale results remain canonical.
 
 Frozen provider-free results over all 184 Inspect contracts:
 
 - exact lossless round-trip: `184/184`;
-- improved / unchanged / regressed: `183 / 1 / 0`;
-- aggregate bytes: `1,070,705 → 718,534`, saving `352,171` bytes (`32.8915%`);
-- p50: `4,260 → 3,116` bytes;
-- p95: `14,223 → 8,891` bytes;
-- max: `44,998 → 23,760` bytes;
-- p50 saving rate: `27.2727%`; p95 `41.3416%`; max `51.5883%`.
+- improved / unchanged / regressed: `184 / 0 / 0`;
+- aggregate bytes: `1,070,705 → 708,825`, saving `361,880` bytes (`33.7983%`);
+- p50: `4,260 → 3,063` bytes;
+- p95: `14,223 → 8,838` bytes;
+- max: `44,998 → 23,707` bytes;
+- minimum saving: `10` bytes (`1.1806%`);
+- p50 saving rate: `28.6241%`; p95 `41.7362%`; max `51.8221%`.
 
-The raw compact projection would make the minimal `package:@deepseek-ai/dsh` response 43 bytes larger, so the production serializer correctly keeps that no-benefit case canonical. This is a measured fallback, not truncation or evidence removal.
+The exhaustive gate requires strict byte reduction for every frozen successful response containing repeated canonical evidence references. Final compact-v1 satisfies it; raw compact projection itself is `184 / 0 / 0` improved/unchanged/regressed, so no frozen response relies on fallback.
 
 Exact repeated-string attribution identifies evidence references as the dominant duplicated scalar category: `334,887` repeated bytes across `5,364` repeated occurrences. This matches the pre-change diagnosis and supports evidence interning as the correct first compaction mechanism.
 
