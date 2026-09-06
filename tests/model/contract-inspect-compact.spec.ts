@@ -12,6 +12,7 @@ const longEvidenceId = 'types:@deepseek-ai/dsh-tools:lib/contracts/tool-definiti
 
 type ContractInspectSuccess = Extract<ContractInspectResponse, { readonly status: 'ok' }>
 type CompactProjector = (response: ContractInspectResponse) => unknown
+type ModelSerializer = (response: ContractInspectResponse) => string
 
 function compactProjector(): CompactProjector {
   const compact = (compactModel as unknown as {
@@ -20,6 +21,15 @@ function compactProjector(): CompactProjector {
   expect(compact, 'compact model must expose compactContractInspectModelResponse').toBeTypeOf('function')
   if (compact === undefined) throw new Error('compactContractInspectModelResponse is unavailable')
   return compact
+}
+
+function modelSerializer(): ModelSerializer {
+  const serialize = (compactModel as unknown as {
+    readonly serializeContractInspectModelResponse?: ModelSerializer
+  }).serializeContractInspectModelResponse
+  expect(serialize, 'compact model must expose serializeContractInspectModelResponse').toBeTypeOf('function')
+  if (serialize === undefined) throw new Error('serializeContractInspectModelResponse is unavailable')
+  return serialize
 }
 
 function evidence(id: string, source: string): Evidence {
@@ -62,6 +72,29 @@ function successResponse(
   }
 }
 
+function minimalSuccessResponse(): ContractInspectSuccess {
+  return {
+    protocolVersion: '1',
+    requestId: 'minimal-compact-test',
+    snapshotFingerprint,
+    status: 'ok',
+    data: {
+      contractIndexFingerprint,
+      contract: {
+        id: 'package:@deepseek-ai/dsh',
+        kind: 'package',
+        name: '@deepseek-ai/dsh',
+        qualifiedName: 'package:@deepseek-ai/dsh',
+        availability: 'unknown',
+        facts: [],
+        evidenceIds: [],
+      },
+      evidence: [],
+    },
+    diagnostics: [],
+  }
+}
+
 function occurrences(serialized: string, value: string): number {
   const needle = JSON.stringify(value)
   let count = 0
@@ -72,6 +105,10 @@ function occurrences(serialized: string, value: string): number {
     count += 1
     cursor = index + needle.length
   }
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength
 }
 
 const nonSuccessResponses = [
@@ -165,6 +202,25 @@ describe('Contract Inspect compact model projection', () => {
     expect(compact.data.contract.facts[0]?.evidenceRefs).toEqual(['e0', 'e1'])
   })
 
+  it('serializes the compact projection only when its exact UTF-8 payload is smaller', () => {
+    const canonical = successResponse()
+    const canonicalJson = JSON.stringify(canonical)
+    const compact = compactProjector()(canonical)
+    const compactJson = JSON.stringify(compact)
+
+    expect(utf8Bytes(compactJson)).toBeLessThan(utf8Bytes(canonicalJson))
+    expect(modelSerializer()(canonical)).toBe(compactJson)
+  })
+
+  it('falls back to canonical JSON when compact representation overhead would regress wire bytes', () => {
+    const canonical = minimalSuccessResponse()
+    const canonicalJson = JSON.stringify(canonical)
+    const compactJson = JSON.stringify(compactProjector()(canonical))
+
+    expect(utf8Bytes(compactJson)).toBeGreaterThan(utf8Bytes(canonicalJson))
+    expect(modelSerializer()(canonical)).toBe(canonicalJson)
+  })
+
   it('fails loud when a successful canonical response references evidence absent from data.evidence', () => {
     const canonical = successResponse([])
 
@@ -183,5 +239,6 @@ describe('Contract Inspect compact model projection', () => {
 
     expect(projected).toEqual(canonical)
     expect(projected).not.toHaveProperty('representation')
+    expect(modelSerializer()(canonical)).toBe(JSON.stringify(canonical))
   })
 })
