@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import * as contractModel from '../../src/model/contract.js'
+import * as compactModel from '../../src/model/contract-inspect-compact.js'
 import type {
   ContractInspectResponse,
   Evidence,
@@ -14,10 +14,10 @@ type ContractInspectSuccess = Extract<ContractInspectResponse, { readonly status
 type CompactProjector = (response: ContractInspectResponse) => unknown
 
 function compactProjector(): CompactProjector {
-  const compact = (contractModel as unknown as {
+  const compact = (compactModel as unknown as {
     readonly compactContractInspectModelResponse?: CompactProjector
   }).compactContractInspectModelResponse
-  expect(compact, 'contract model must expose compactContractInspectModelResponse').toBeTypeOf('function')
+  expect(compact, 'compact model must expose compactContractInspectModelResponse').toBeTypeOf('function')
   if (compact === undefined) throw new Error('compactContractInspectModelResponse is unavailable')
   return compact
 }
