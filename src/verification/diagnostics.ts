@@ -83,7 +83,7 @@ export function classifyVerificationWorkerFailure(): ClassifiedProcessFailure {
   return Object.freeze({
     diagnostic: verificationDiagnostic(
       'VERIFY_WORKER_FAILED',
-      'Verification worker failed while executing a stage process boundary.',
+      'Verification worker encountered an unexpected infrastructure failure.',
     ),
     terminal: 'failed' as const,
   })
