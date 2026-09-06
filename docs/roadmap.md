@@ -206,9 +206,45 @@ Exit criteria:
 
 ## M4 — Isolated Verification Alpha
 
+**Status:** **in progress**. M4.1 establishes the internal packed-artifact execution worker; public verification orchestration remains M4.2.
+
 **Goal:** prove whether the artifact users install composes and works in a real DSH target, producing portable evidence rather than a generic pass badge.
 
-Capabilities:
+### M4.1 — Isolated packed-artifact worker
+
+**Status:** implemented on PR #189; final merge remains gated on exact-head CI and review.
+
+M4.1 is deliberately worker-first. It verifies a caller-supplied packed `.tgz` under execution policy `safe` and produces internal execution evidence without exposing a premature public `plugin.verify` operation.
+
+Implemented boundary:
+- exact-byte `dsh-plugin-artifact-v1:<sha256>` identity, separate from static `dsh-plugin-subject-v1`;
+- authoritative packed acquisition handoff only for complete subjects, followed by worker-side exact-hash revalidation;
+- unique disposable runner, `DSH_HOME`, user home and temp directory;
+- allowlisted child environment with Toolchain-owned temporary coordinates and no silent credential inheritance;
+- exact DSH train installation and candidate installation with lifecycle scripts disabled;
+- candidate-only official `--dump-config` composition before boot instrumentation;
+- Toolchain-owned private boot probe installed into the same disposable profile;
+- `boot` passes only on normal launcher exit plus the exact marker emitted after the probe apply point;
+- deterministic package/install/compose/boot failure diagnostics with explicit downstream skips;
+- timeout, cancellation, bounded stdout/stderr and process-tree termination;
+- cleanup attempted on every terminal path and retained independently from semantic outcome;
+- cross-platform process-boundary CI on Windows/macOS and exact packed real-DSH worker smoke on the frozen `0.1.1-rc.2` Web train.
+
+M4.1 does **not** itself produce a public `verified` claim. It binds execution observations to the starting TargetSnapshot fingerprint; active-target freshness re-resolution remains an application-layer responsibility.
+
+### M4.2 — Public verification orchestration
+
+**Status:** not started.
+
+Next scope:
+- compose static `plugin.check` evidence and M4.1 worker observations into the existing Protocol v1 `VerificationReport` semantics;
+- re-resolve the original target after execution and reduce fresh evidence to `verified | failed | partial | stale | cancelled` without weakening fail-closed behavior;
+- introduce the transport-neutral Operation lifecycle from proven worker needs;
+- project one shared `plugin.verify` application operation through CLI, native DSH and MCP;
+- add explicit visibility assertions and deterministic behavior fixtures only through reviewed contracts rather than synthetic success;
+- keep later DSH-train runtime claims gated by #33 lifecycle/target-identity governance.
+
+M4 capabilities across the full milestone:
 - artifact fingerprint and package preview/pack;
 - temporary DSH home;
 - install, composition, actual boot and runtime probe;
@@ -220,7 +256,7 @@ Capabilities:
 - allowlisted environment, timeouts, process-tree cleanup and bounded output;
 - cleanup/crash/cancel handling.
 
-Exit criteria:
+M4 exit criteria:
 - active profile is untouched under the default isolation policy;
 - source-valid/package-broken and boot/visibility-broken fixtures are detected;
 - stale target or incompatible runtime cannot yield `verified`;
