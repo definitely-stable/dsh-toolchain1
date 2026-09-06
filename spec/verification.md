@@ -10,6 +10,13 @@ The subject is a concrete candidate artifact plus a concrete DSH target snapshot
 
 Before runtime installation, Toolchain SHOULD verify the package artifact that would be installed by a user (for an npm-style plugin, the packed tarball/pack preview), not only the working tree.
 
+Static plugin identity and executable artifact identity are deliberately separate:
+
+- `dsh-plugin-subject-v1:<sha256>` identifies normalized static subject semantics used by `plugin.check`;
+- `dsh-plugin-artifact-v1:<sha256>` identifies the exact packed artifact bytes executed by verification, as frozen by ADR-0009.
+
+A packed-artifact fingerprint MUST NOT depend on path, mtime, user name, or other machine coordinates. The runtime worker MUST bind execution to the authoritative content hash supplied by packed acquisition and fail closed before candidate execution if the bytes no longer match.
+
 The report records:
 - candidate artifact fingerprint;
 - starting target snapshot fingerprint;
@@ -37,6 +44,23 @@ Protocol v1 recognizes the following stage identities:
 
 Implementations MAY skip stages that do not apply, but MUST record the skip and reason. They MUST NOT imply an unexecuted stage passed.
 
+## M4.1 packed worker boundary
+
+M4.1 implements the first production execution slice for caller-supplied packed `.tgz` artifacts under policy `safe`. It is an internal worker evidence boundary, not yet the public `plugin.verify` application operation.
+
+For this slice:
+
+- packed acquisition remains the archive-validation authority and exposes an executable handoff only for a complete subject;
+- the worker revalidates the exact artifact content hash before staging it into a disposable workspace;
+- DSH and candidate installation use package-manager/DSH install paths with lifecycle scripts disabled through `--ignore-scripts`;
+- candidate-only composition is proven through the official DSH `--dump-config` route before boot instrumentation is added;
+- Toolchain then installs a generated private boot-probe package into the same disposable profile;
+- `boot` passes only when the normal profile launcher exits successfully **and** stdout contains the exact Toolchain-owned probe marker emitted after the probe's apply point; process exit alone is not boot evidence;
+- absent visibility assertions remain explicitly skipped; M4.1 does not synthesize visibility or behavior success;
+- the worker returns internal stage observations, runtime coordinates, diagnostics, target fingerprint binding, terminal classification, and cleanup outcome for later application-level reduction.
+
+The generated boot probe is verification instrumentation. Its marker is derived without host paths or credentials and does not redefine the candidate artifact or target identities.
+
 ## Isolation
 
 Default verification uses policy `safe` and MUST NOT intentionally mutate the user's active DSH profile.
@@ -45,11 +69,15 @@ Runtime candidate execution occurs in a separate process using a temporary DSH h
 
 The worker receives an allowlisted environment chosen by Toolchain. Credentials are not silently copied from the user's active profile.
 
+M4.1 verifies Toolchain-owned configuration/path isolation by using a unique temporary DSH home, temporary user home and temporary directory for the worker. This does not prevent candidate runtime code from accessing filesystem or network resources that the operating system itself allows.
+
 ## Freshness
 
 The verifier captures the starting target snapshot. Before producing `verified`, it MUST determine whether compatibility-relevant target state changed during the operation.
 
 If the target changed and the executed evidence cannot be proven to correspond to the new state, final status is `stale`.
+
+M4.1 binds worker observations to the immutable starting target fingerprint but does not independently re-read the caller's active target after execution. Final target re-resolution and `verified` / `stale` reduction belong to the application orchestration layer introduced with the public `plugin.verify` slice (M4.2). Therefore an M4.1 worker `terminal: completed` result is execution evidence, not a public `verified` claim.
 
 ## Status
 
