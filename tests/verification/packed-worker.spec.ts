@@ -7,9 +7,26 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { runPackedPluginVerification } from '../../src/verification/packed-worker.js'
 import type { VerificationProcessOutcome, VerificationProcessRequest } from '../../src/verification/process.js'
-import type { TargetSnapshot } from '../../src/protocol/index.js'
+import type { Diagnostic, TargetSnapshot, VerificationReport } from '../../src/protocol/index.js'
 
 const roots: string[] = []
+
+type VerificationCheck = VerificationReport['checks'][number]
+
+interface ExecutionView {
+  readonly artifactFingerprint?: string
+  readonly targetFingerprint: string
+  readonly executionPolicy: 'safe'
+  readonly runtime: {
+    readonly nodeVersion: string
+    readonly platform: string
+    readonly arch: string
+  }
+  readonly checks: readonly VerificationCheck[]
+  readonly diagnostics: readonly Diagnostic[]
+  readonly cleanup: VerificationReport['cleanup']
+  readonly terminal: 'completed' | 'failed' | 'cancelled'
+}
 
 async function fixtureRoot(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'dsh-toolchain-worker-test-'))
@@ -26,28 +43,28 @@ function sha256(bytes: Uint8Array): string {
 }
 
 function target(): TargetSnapshot {
-  return Object.freeze({
+  return {
     fingerprint: `dsh-target-v2:${'a'.repeat(64)}`,
     createdAt: '2026-09-06T12:00:00.000Z',
-    dsh: Object.freeze({ name: '@deepseek-ai/dsh' as const, version: '0.1.1-rc.2' }),
-    runtime: Object.freeze({ nodeVersion: '24.19.0', platform: 'linux', arch: 'x64' }),
-    profile: Object.freeze({
+    dsh: { name: '@deepseek-ai/dsh', version: '0.1.1-rc.2' },
+    runtime: { nodeVersion: '24.19.0', platform: 'linux', arch: 'x64' },
+    profile: {
       name: 'web',
-      bundles: Object.freeze([]),
-      dependencies: Object.freeze([]),
+      bundles: [],
+      dependencies: [],
       profilePatchHash: 'b'.repeat(64),
       homePatchHash: 'c'.repeat(64),
-      overlayPatchHashes: Object.freeze([]),
-    }),
-    evidence: Object.freeze([Object.freeze({
+      overlayPatchHashes: [],
+    },
+    evidence: [{
       id: 'manifest:profile',
-      kind: 'manifest' as const,
-      strength: 'authoritative' as const,
+      kind: 'manifest',
+      strength: 'authoritative',
       contentHash: 'd'.repeat(64),
       location: '/active/dsh-home/profiles/web/package.json',
-    })]),
-    supportStatus: 'tested' as const,
-  })
+    }],
+    supportStatus: 'tested',
+  }
 }
 
 interface FakeRunner {
@@ -84,7 +101,7 @@ async function runWith(
     readonly cleanup?: (temporaryRoot: string) => Promise<void>
     readonly signal?: AbortSignal
   } = {},
-) {
+): Promise<{ readonly execution: ExecutionView; readonly workerRoot: string }> {
   const artifact = await candidate(root)
   const workerRoot = path.join(root, 'worker')
   const input = {
@@ -110,12 +127,12 @@ async function runWith(
     cleanupTemporaryRoot: outcomes.cleanup ?? (async (temporaryRoot: string) => {
       await rm(temporaryRoot, { recursive: true, force: true })
     }),
-  }, outcomes.signal)
+  }, outcomes.signal) as ExecutionView
 
   return { execution, workerRoot }
 }
 
-function check(execution: Awaited<ReturnType<typeof runPackedPluginVerification>>, id: string) {
+function check(execution: ExecutionView, id: string): VerificationCheck | undefined {
   return execution.checks.find(item => item.id === id)
 }
 
