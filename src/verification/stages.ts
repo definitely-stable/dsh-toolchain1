@@ -3,6 +3,7 @@ import type { VerificationReport } from '../protocol/index.js'
 type VerificationCheck = VerificationReport['checks'][number]
 type VerificationStageId = VerificationCheck['id']
 type VerificationStageStatus = VerificationCheck['status']
+type RuntimeVerificationStageId = 'package' | 'install' | 'compose' | 'boot' | 'visibility'
 
 const STAGE_IDS = Object.freeze([
   'structure',
@@ -26,7 +27,7 @@ const RUNTIME_PASSABLE = new Set<VerificationStageId>([
   'visibility',
 ])
 
-const PREREQUISITE: Partial<Record<VerificationStageId, VerificationStageId>> = Object.freeze({
+const PREREQUISITE: Partial<Record<RuntimeVerificationStageId, RuntimeVerificationStageId>> = Object.freeze({
   install: 'package',
   compose: 'install',
   boot: 'compose',
@@ -39,10 +40,7 @@ const DOWNSTREAM = Object.freeze({
   compose: Object.freeze(['boot', 'visibility'] as const),
   boot: Object.freeze(['visibility'] as const),
   visibility: Object.freeze([] as const),
-}) satisfies Readonly<Record<
-  'package' | 'install' | 'compose' | 'boot' | 'visibility',
-  readonly VerificationStageId[]
->>
+}) satisfies Readonly<Record<RuntimeVerificationStageId, readonly VerificationStageId[]>>
 
 function freezeChecks(checks: readonly VerificationCheck[]): readonly VerificationCheck[] {
   return Object.freeze(checks.map(check => Object.freeze({ ...check })))
@@ -75,7 +73,7 @@ function checkFor(checks: readonly VerificationCheck[], id: VerificationStageId)
   return check
 }
 
-function assertRuntimePassable(id: VerificationStageId): void {
+function assertRuntimePassable(id: VerificationStageId): asserts id is RuntimeVerificationStageId {
   if (!RUNTIME_PASSABLE.has(id)) {
     throw new Error(`Verification stage ${id} is not passable by the M4.1 runtime worker.`)
   }
