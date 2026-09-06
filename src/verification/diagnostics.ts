@@ -10,6 +10,7 @@ export type VerificationDiagnosticCode =
   | 'VERIFY_PROCESS_TIMEOUT'
   | 'VERIFY_PROCESS_CANCELLED'
   | 'VERIFY_PROCESS_OUTPUT_LIMIT_EXCEEDED'
+  | 'VERIFY_WORKER_FAILED'
   | 'VERIFY_INSTALL_FAILED'
   | 'VERIFY_COMPOSE_FAILED'
   | 'VERIFY_BOOT_FAILED'
@@ -74,6 +75,16 @@ export function classifyVerificationProcessFailure(
   }
   return Object.freeze({
     diagnostic: verificationDiagnostic('VERIFY_PROCESS_START_FAILED', 'Verification stage process could not be started.'),
+    terminal: 'failed' as const,
+  })
+}
+
+export function classifyVerificationWorkerFailure(): ClassifiedProcessFailure {
+  return Object.freeze({
+    diagnostic: verificationDiagnostic(
+      'VERIFY_WORKER_FAILED',
+      'Verification worker failed while executing a stage process boundary.',
+    ),
     terminal: 'failed' as const,
   })
 }
