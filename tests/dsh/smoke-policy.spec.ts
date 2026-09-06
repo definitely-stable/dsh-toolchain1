@@ -122,12 +122,15 @@ describe('DSH package smoke policy', () => {
     expect(smokeSource).toContain("kinds: ['tool']")
     expect(smokeSource).toContain("contractId: 'tool:host:toolchain_target_resolve'")
     expect(smokeSource).toContain("source === 'cordis-inspect:host/Tool/listTools'")
+    expect(smokeSource).toContain("const COMPACT_INSPECT_REPRESENTATION = 'dsh-contract-inspect-compact-v1'")
+    expect(smokeSource).toContain('renderedRoundTripsValue:')
+    expect(smokeSource).toContain('renderedNonRegressing:')
     expect(smokeSource).toContain("'exec', 'dsh', '--profile', profile")
     expect(smokeSource).toContain('runBootProbe(runner, DSH_BOOT_PROBE_PROFILE, env, false)')
     expect(smokeSource).toContain('runBootProbe(runner, DSH_LIVE_BOOT_PROBE_PROFILE, env, true)')
   })
 
-  it('accepts only a live receipt proving Agent identity, runtime evidence, index drift, and inspect continuity', () => {
+  it('accepts only a live receipt proving Agent identity, runtime evidence, index drift, and lossless non-regressing inspect render', () => {
     const assertBootProbeOutput = smokeModule.assertBootProbeOutput as (
       output: string,
       options: { profile: string; expectLive: boolean },
@@ -182,7 +185,9 @@ describe('DSH package smoke policy', () => {
         contractId: 'tool:host:toolchain_target_resolve',
         availability: 'available',
         runtimeEvidence: true,
-        renderedMatchesValue: true,
+        renderedRoundTripsValue: true,
+        renderedNonRegressing: true,
+        renderedRepresentation: 'dsh-contract-inspect-compact-v1',
       },
     }
 
@@ -211,6 +216,27 @@ describe('DSH package smoke policy', () => {
       })}\n`,
       { profile: 'web', expectLive: true },
     )).toThrow(/live Contract inspect/i)
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
+        ...receipt,
+        contractInspect: { ...receipt.contractInspect, renderedRoundTripsValue: false },
+      })}\n`,
+      { profile: 'web', expectLive: true },
+    )).toThrow(/render continuity/i)
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
+        ...receipt,
+        contractInspect: { ...receipt.contractInspect, renderedNonRegressing: false },
+      })}\n`,
+      { profile: 'web', expectLive: true },
+    )).toThrow(/render continuity/i)
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
+        ...receipt,
+        contractInspect: { ...receipt.contractInspect, renderedRepresentation: 'unknown-v2' },
+      })}\n`,
+      { profile: 'web', expectLive: true },
+    )).toThrow(/render continuity/i)
   })
 
   it('accepts the Agent-backed missing-Inspect path only when native and offline indexes stay identical', () => {
