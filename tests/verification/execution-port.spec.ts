@@ -40,7 +40,7 @@ describe('packed plugin verification execution port', () => {
       diagnostics: [],
       cleanup: 'succeeded',
       terminal: 'completed',
-    }))
+    } as const))
     const port = createPackedPluginVerificationExecutionPort(runner)
     const snapshot = target()
 
