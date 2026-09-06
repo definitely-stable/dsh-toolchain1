@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict'
-import { fileURLToPath } from 'node:url'
-
-import { runVerificationProcess } from '../lib/verification/process.js'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const fixture = fileURLToPath(new URL('./fixtures/verification-child.mjs', import.meta.url))
+
+async function loadVerificationProcess() {
+  const moduleUrl = new URL('../lib/verification/process.js', import.meta.url).href
+  const loaded = await import(moduleUrl)
+  if (typeof loaded.runVerificationProcess !== 'function') {
+    throw new Error('verification process smoke: built process runner export is missing')
+  }
+  return loaded.runVerificationProcess
+}
 
 function request(args, overrides = {}) {
   return {
@@ -39,6 +46,7 @@ async function waitForProcessGone(pid) {
 }
 
 export async function smokeVerificationProcess() {
+  const runVerificationProcess = await loadVerificationProcess()
   const timeout = await runVerificationProcess(request(['spawn-grandchild'], {
     timeoutMs: 250,
   }))
@@ -74,7 +82,7 @@ export async function smokeVerificationProcess() {
 }
 
 const invokedAsScript = process.argv[1]
-  ? fileURLToPath(import.meta.url) === fileURLToPath(new URL(`file://${process.argv[1]}`))
+  ? pathToFileURL(process.argv[1]).href === import.meta.url
   : false
 
 if (invokedAsScript) await smokeVerificationProcess()
