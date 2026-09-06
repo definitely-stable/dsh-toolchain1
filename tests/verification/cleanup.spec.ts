@@ -157,4 +157,37 @@ describe('packed verification cleanup lifecycle', () => {
       status: 'skipped',
     })
   })
+
+  it('fails closed when the temporary verification workspace cannot be created', async () => {
+    const outer = await mkdtemp(path.join(tmpdir(), 'dsh-toolchain-worker-setup-red-'))
+    roots.push(outer)
+    const packed = await artifact(outer)
+    let processCalls = 0
+
+    const execution = await runPackedPluginVerification({
+      artifact: packed,
+      target: target(),
+      executionPolicy: 'safe',
+    }, {
+      parentEnv: { PATH: process.env.PATH },
+      createTemporaryRoot: async () => {
+        throw new Error('temporary workspace unavailable')
+      },
+      processRunner: async () => {
+        processCalls += 1
+        return { kind: 'exited', code: 0, stdout: '', stderr: '' }
+      },
+    })
+
+    expect(processCalls).toBe(0)
+    expect(execution.terminal).toBe('failed')
+    expect(execution.cleanup).toBe('not-required')
+    expect(execution.diagnostics.map(item => item.code)).toEqual(['VERIFY_WORKER_FAILED'])
+    expect(execution.checks.find(item => item.id === 'package')).toMatchObject({
+      status: 'failed',
+    })
+    expect(execution.checks.find(item => item.id === 'install')).toMatchObject({
+      status: 'skipped',
+    })
+  })
 })
