@@ -113,6 +113,10 @@ export interface ApplicationKernel {
   searchContracts(request: ContractSearchRequest, enrichment?: ContractEnrichmentPort): Promise<ContractSearchOutcome>
   inspectContract(request: ContractInspectRequest, enrichment?: ContractEnrichmentPort): Promise<ContractInspectOutcome>
   checkPlugin(request: PluginCheckRequest): Promise<PluginCheckOutcome>
+  verifyPlugin?(request: PluginVerifyApplicationRequest, signal?: AbortSignal): Promise<PluginVerifyOutcome>
+}
+
+export interface VerificationApplicationKernel extends ApplicationKernel {
   verifyPlugin(request: PluginVerifyApplicationRequest, signal?: AbortSignal): Promise<PluginVerifyOutcome>
 }
 
@@ -467,7 +471,7 @@ export async function checkPluginResponse(
   }
 }
 
-export function createApplicationKernel(options: ApplicationKernelOptions): ApplicationKernel {
+export function createApplicationKernel(options: ApplicationKernelOptions): VerificationApplicationKernel {
   const now = options.now ?? (() => new Date().toISOString())
   const searchIndexFactory = options.createContractSearchIndex ?? createContractSearchIndex
   const searchIndexes = new Map<string, ContractSearchIndex>()
