@@ -118,4 +118,43 @@ describe('packed verification cleanup lifecycle', () => {
       status: 'skipped',
     })
   })
+
+  it('converts a signalled child crash into deterministic process evidence and still cleans up', async () => {
+    const outer = await mkdtemp(path.join(tmpdir(), 'dsh-toolchain-child-signal-'))
+    roots.push(outer)
+    const packed = await artifact(outer)
+    const workerRoot = path.join(outer, 'worker')
+
+    const execution = await runPackedPluginVerification({
+      artifact: packed,
+      target: target(),
+      executionPolicy: 'safe',
+    }, {
+      parentEnv: { PATH: process.env.PATH },
+      createTemporaryRoot: async () => {
+        await mkdir(workerRoot, { recursive: true })
+        return workerRoot
+      },
+      processRunner: async () => ({
+        kind: 'signalled',
+        signal: 'SIGTERM',
+        stdout: '',
+        stderr: '',
+      }),
+    })
+
+    expect(execution.terminal).toBe('failed')
+    expect(execution.cleanup).toBe('succeeded')
+    expect(execution.diagnostics.map(item => item.code)).toContain('VERIFY_PROCESS_EXIT_FAILED')
+    expect(execution.checks.find(item => item.id === 'package')).toEqual({
+      id: 'package',
+      status: 'passed',
+    })
+    expect(execution.checks.find(item => item.id === 'install')).toMatchObject({
+      status: 'failed',
+    })
+    expect(execution.checks.find(item => item.id === 'compose')).toMatchObject({
+      status: 'skipped',
+    })
+  })
 })
