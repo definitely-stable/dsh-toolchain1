@@ -33,13 +33,16 @@ const PREREQUISITE: Partial<Record<VerificationStageId, VerificationStageId>> = 
   visibility: 'boot',
 })
 
-const DOWNSTREAM: Readonly<Record<'package' | 'install' | 'compose' | 'boot' | 'visibility', readonly VerificationStageId[]>> = Object.freeze({
-  package: Object.freeze(['install', 'compose', 'boot', 'visibility']),
-  install: Object.freeze(['compose', 'boot', 'visibility']),
-  compose: Object.freeze(['boot', 'visibility']),
-  boot: Object.freeze(['visibility']),
-  visibility: Object.freeze([]),
-})
+const DOWNSTREAM = Object.freeze({
+  package: Object.freeze(['install', 'compose', 'boot', 'visibility'] as const),
+  install: Object.freeze(['compose', 'boot', 'visibility'] as const),
+  compose: Object.freeze(['boot', 'visibility'] as const),
+  boot: Object.freeze(['visibility'] as const),
+  visibility: Object.freeze([] as const),
+}) satisfies Readonly<Record<
+  'package' | 'install' | 'compose' | 'boot' | 'visibility',
+  readonly VerificationStageId[]
+>>
 
 function freezeChecks(checks: readonly VerificationCheck[]): readonly VerificationCheck[] {
   return Object.freeze(checks.map(check => Object.freeze({ ...check })))
@@ -103,8 +106,7 @@ export function failVerificationStage(
   if (reason.length === 0) throw new Error('Failed verification stage requires a reason.')
 
   let next = replaceCheck(checks, id, 'failed', reason)
-  const downstream = DOWNSTREAM[id as keyof typeof DOWNSTREAM]
-  for (const downstreamId of downstream) {
+  for (const downstreamId of DOWNSTREAM[id]) {
     next = replaceCheck(next, downstreamId, 'skipped', `prerequisite-${id}-failed`)
   }
   return next
