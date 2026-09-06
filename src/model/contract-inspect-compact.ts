@@ -123,6 +123,10 @@ function compactSuccessResponse(
   })
 }
 
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength
+}
+
 /**
  * Lossless model-facing projection for Contract Inspect.
  *
@@ -135,4 +139,24 @@ export function compactContractInspectModelResponse(
 ): ContractInspectModelResponse {
   if (response.status !== 'ok') return response
   return compactSuccessResponse(response)
+}
+
+/**
+ * Serialize Contract Inspect for model-facing text without ever increasing the
+ * exact UTF-8 payload relative to canonical Protocol v1 JSON.
+ *
+ * Successful responses use the lossless compact projection only when it is
+ * strictly smaller. Ties and regressions fall back to canonical JSON. Failed
+ * and stale responses remain canonical so fail-closed semantics stay explicit.
+ */
+export function serializeContractInspectModelResponse(
+  response: ContractInspectResponse,
+): string {
+  const canonicalJson = JSON.stringify(response)
+  if (response.status !== 'ok') return canonicalJson
+
+  const compactJson = JSON.stringify(compactSuccessResponse(response))
+  return utf8Bytes(compactJson) < utf8Bytes(canonicalJson)
+    ? compactJson
+    : canonicalJson
 }
