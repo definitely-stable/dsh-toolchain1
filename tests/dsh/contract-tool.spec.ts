@@ -7,7 +7,7 @@ import {
   createContractSearchToolDefinition,
   type DshContractToolExecutionContext,
 } from '../../src/integrations/dsh/contract-tool.js'
-import { compactContractInspectModelResponse } from '../../src/model/contract-inspect-compact.js'
+import { serializeContractInspectModelResponse } from '../../src/model/contract-inspect-compact.js'
 import type {
   ContractInspectResponse,
   ContractSearchResponse,
@@ -101,7 +101,7 @@ describe('native DSH Contract Intelligence tools', () => {
     })
   })
 
-  it('keeps canonical execution values while rendering only Inspect through the compact model projection', async () => {
+  it('keeps canonical execution values and uses the non-regressing Inspect serializer for model text', async () => {
     const searchResolver = vi.fn(async () => searchResponse())
     const inspectResolver = vi.fn(async () => inspectResponse())
     const search = createContractSearchToolDefinition(searchResolver)
@@ -132,30 +132,12 @@ describe('native DSH Contract Intelligence tools', () => {
       contractId: 'package:@deepseek-ai/dsh-tools',
     })
     expect(inspectValue).toEqual(inspectResponse())
-    expect(inspectValue).toMatchObject({
-      status: 'ok',
-      data: {
-        contract: { evidenceIds: ['manifest:tools'] },
-        evidence: [{ id: 'manifest:tools' }],
-      },
-    })
 
-    const rendered = JSON.parse(inspect.output.render({}, inspectValue)[0]?.text ?? 'null')
-    expect(rendered).toEqual(compactContractInspectModelResponse(inspectValue))
-    expect(rendered).toMatchObject({
-      representation: 'dsh-contract-inspect-compact-v1',
-      status: 'ok',
-      data: {
-        contract: {
-          evidenceRefs: ['e0'],
-          facts: [{ evidenceRefs: ['e0'] }],
-        },
-        evidenceByRef: {
-          e0: { id: 'manifest:tools' },
-        },
-      },
-    })
-    expect(rendered).not.toHaveProperty('data.contract.evidenceIds')
+    const renderedText = inspect.output.render({}, inspectValue)[0]?.text ?? ''
+    expect(renderedText).toBe(serializeContractInspectModelResponse(inspectValue))
+    expect(JSON.parse(renderedText)).toEqual(inspectValue)
+    expect(new TextEncoder().encode(renderedText).byteLength)
+      .toBeLessThanOrEqual(new TextEncoder().encode(JSON.stringify(inspectValue)).byteLength)
   })
 
   it('projects only Agent and AbortSignal from the current DSH execution object', async () => {
