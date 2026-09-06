@@ -4,6 +4,7 @@ import type {
   ContractSearchRequest,
   PluginCheckRequest,
   PluginSubjectRequest,
+  PluginVerifyRequest,
   TargetResolveRequest,
 } from './generated.js'
 
@@ -33,6 +34,7 @@ const inspectKeys = new Set<keyof ContractInspectRequest>([
   'contractId',
 ])
 const pluginCheckKeys = new Set<keyof PluginCheckRequest>(['target', 'subject'])
+const pluginVerifyKeys = new Set<keyof PluginVerifyRequest>(['target', 'subject', 'executionPolicy'])
 const pluginSubjectKeys = new Set<keyof PluginSubjectRequest>(['kind', 'path'])
 const pluginSubjectKinds = new Set<PluginSubjectRequest['kind']>(['directory', 'packed'])
 const profilePattern = /^(?!\.{1,2}$)(?!node_modules$)[^/\\]+$/u
@@ -147,5 +149,26 @@ export function parsePluginCheckRequest(value: unknown): PluginCheckRequest {
       kind: subject.kind as PluginSubjectRequest['kind'],
       path: subject.path,
     },
+  }
+}
+
+export function parsePluginVerifyRequest(value: unknown): PluginVerifyRequest {
+  const message = 'Invalid plugin.verify arguments'
+  if (!isRecord(value)) invalid(message)
+  if (Object.keys(value).some(key => !pluginVerifyKeys.has(key as keyof PluginVerifyRequest))) invalid(message)
+
+  const { target, subject, executionPolicy } = value
+  const parsedTarget = parseTargetResolveRequestWithMessage(target, message)
+  if (!isRecord(subject)) invalid(message)
+  if (Object.keys(subject).some(key => !pluginSubjectKeys.has(key as keyof PluginSubjectRequest))) invalid(message)
+  if (subject.kind !== 'packed' || !nonEmptyString(subject.path) || executionPolicy !== 'safe') invalid(message)
+
+  return {
+    target: parsedTarget,
+    subject: {
+      kind: 'packed',
+      path: subject.path,
+    },
+    executionPolicy: 'safe',
   }
 }
