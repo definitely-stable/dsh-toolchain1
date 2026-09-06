@@ -70,6 +70,9 @@ jobs:
       - name: Check exact packed Toolchain against real DSH
         run: node scripts/smoke-plugin-check.mjs .artifacts/dsh-toolchain.tgz
 
+      - name: Verify exact packed Toolchain in isolated DSH worker
+        run: node scripts/smoke-verification-worker.mjs .artifacts/dsh-toolchain.tgz
+
       - name: Compose exact tarball in minimal and Web DSH profiles
         env:
           NODE_OPTIONS: --max-old-space-size=4096
@@ -154,6 +157,9 @@ jobs:
 
       - name: Build platform boundary
         run: pnpm build
+
+      - name: Smoke verification process boundary
+        run: node scripts/smoke-verification-process.mjs
 
       - name: Smoke built CLI and stable public API
         shell: bash
