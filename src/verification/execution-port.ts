@@ -1,4 +1,7 @@
-import type { PluginVerificationExecutionPort } from '../model/plugin-verify.js'
+import type {
+  PluginVerificationExecutionInput,
+  PluginVerificationExecutionPort,
+} from '../model/plugin-verify.js'
 import {
   runPackedPluginVerification,
   type PackedPluginVerificationExecution,
@@ -17,7 +20,7 @@ export function createPackedPluginVerificationExecutionPort(
   runner: PackedPluginVerificationRunner = defaultRunner,
 ): PluginVerificationExecutionPort {
   return Object.freeze({
-    async verify(input, signal) {
+    async verify(input: PluginVerificationExecutionInput, signal?: AbortSignal) {
       const execution = await runner({
         artifact: {
           path: input.artifactPath,
