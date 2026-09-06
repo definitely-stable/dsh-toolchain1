@@ -171,7 +171,7 @@ describe('Contract Intelligence CLI projection', () => {
     expect(searchContracts).not.toHaveBeenCalled()
   })
 
-  it('advertises implemented contract commands but not future plugin verification', async () => {
+  it('advertises implemented contract and plugin verification commands', async () => {
     const streams = io()
     const code = await runCli(
       ['--help'],
@@ -182,6 +182,6 @@ describe('Contract Intelligence CLI projection', () => {
     expect(code).toBe(0)
     expect(streams.stdout()).toContain('contract search')
     expect(streams.stdout()).toContain('contract inspect')
-    expect(streams.stdout()).not.toContain('plugin verify')
+    expect(streams.stdout()).toContain('plugin verify')
   })
 })
