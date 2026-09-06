@@ -95,6 +95,22 @@ function minimalSuccessResponse(): ContractInspectSuccess {
   }
 }
 
+function shortEvidenceRegressionResponse(): ContractInspectSuccess {
+  const shortId = 'x'
+  const canonical = successResponse([evidence(shortId, 'x')])
+  canonical.data.contract.evidenceIds.splice(0, canonical.data.contract.evidenceIds.length, shortId)
+  canonical.data.contract.facts.splice(
+    0,
+    canonical.data.contract.facts.length,
+    ...Array.from({ length: 80 }, (_, index) => ({
+      key: `k${index}`,
+      value: 'v',
+      evidenceIds: [shortId] as [string],
+    })),
+  )
+  return canonical
+}
+
 function occurrences(serialized: string, value: string): number {
   const needle = JSON.stringify(value)
   let count = 0
@@ -138,16 +154,14 @@ const nonSuccessResponses = [
 ] satisfies readonly ContractInspectResponse[]
 
 describe('Contract Inspect compact model projection', () => {
-  it('interns repeated canonical evidence ids without removing the canonical evidence record', () => {
+  it('interns repeated canonical evidence ids and omits only success-envelope invariants implied by compact-v1', () => {
     const canonical = successResponse()
     const compact = compactProjector()(canonical)
 
     expect(compact).toEqual({
       representation: 'dsh-contract-inspect-compact-v1',
-      protocolVersion: '1',
       requestId: 'compact-test',
       snapshotFingerprint,
-      status: 'ok',
       data: {
         contractIndexFingerprint,
         contract: {
@@ -167,11 +181,28 @@ describe('Contract Inspect compact model projection', () => {
           e0: evidence(longEvidenceId, '@deepseek-ai/dsh-tools/lib/contracts/tool-definition.d.ts'),
         },
       },
-      diagnostics: [],
     })
 
     expect(occurrences(JSON.stringify(canonical), longEvidenceId)).toBe(4)
     expect(occurrences(JSON.stringify(compact), longEvidenceId)).toBe(1)
+    expect(compact).not.toHaveProperty('protocolVersion')
+    expect(compact).not.toHaveProperty('status')
+    expect(compact).not.toHaveProperty('diagnostics')
+  })
+
+  it('keeps non-empty success diagnostics explicit even though empty diagnostics are implied', () => {
+    const canonical = successResponse()
+    canonical.diagnostics.push({
+      code: 'COMPACT_TEST_WARNING',
+      severity: 'warning',
+      domain: 'contract',
+      summary: 'Synthetic warning.',
+    })
+
+    expect(compactProjector()(canonical)).toMatchObject({
+      representation: 'dsh-contract-inspect-compact-v1',
+      diagnostics: canonical.diagnostics,
+    })
   })
 
   it('assigns deterministic local refs from canonical evidence-array order, not lexical evidence-id order', () => {
@@ -212,8 +243,17 @@ describe('Contract Inspect compact model projection', () => {
     expect(modelSerializer()(canonical)).toBe(compactJson)
   })
 
-  it('falls back to canonical JSON when compact representation overhead would regress wire bytes', () => {
+  it('makes the minimal successful envelope smaller without hiding variable semantics', () => {
     const canonical = minimalSuccessResponse()
+    const canonicalJson = JSON.stringify(canonical)
+    const compactJson = JSON.stringify(compactProjector()(canonical))
+
+    expect(utf8Bytes(compactJson)).toBeLessThan(utf8Bytes(canonicalJson))
+    expect(modelSerializer()(canonical)).toBe(compactJson)
+  })
+
+  it('falls back to canonical JSON when pathological short evidence refs would regress wire bytes', () => {
+    const canonical = shortEvidenceRegressionResponse()
     const canonicalJson = JSON.stringify(canonical)
     const compactJson = JSON.stringify(compactProjector()(canonical))
 
