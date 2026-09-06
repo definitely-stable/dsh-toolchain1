@@ -1,4 +1,4 @@
-import { compactContractInspectModelResponse } from '../../model/contract-inspect-compact.js'
+import { serializeContractInspectModelResponse } from '../../model/contract-inspect-compact.js'
 import {
   CONTRACT_KINDS,
   parseContractInspectRequest,
@@ -64,9 +64,7 @@ function inspectOutput(): DshToolDefinition['output'] {
     render(_args: unknown, value: unknown) {
       return [{
         type: 'text',
-        text: JSON.stringify(
-          compactContractInspectModelResponse(value as ContractInspectResponse),
-        ),
+        text: serializeContractInspectModelResponse(value as ContractInspectResponse),
       }]
     },
   }
