@@ -1,0 +1,107 @@
+{
+  "schema": "dsh-contract-inspect-compaction-measurement-v1",
+  "identity": {
+    "baselineSchema": "dsh-contract-compactness-baseline-v1",
+    "baselineBaseCommit": "a9465a962e99ebca685f0af4c308007117dbdc41",
+    "fixtureVersion": "rc2-web-v1",
+    "targetFingerprint": "dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe",
+    "contractIndexFingerprint": "dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2",
+    "compactRepresentation": "dsh-contract-inspect-compact-v1",
+    "serializerPolicy": "strictly-smaller-utf8-v1",
+    "metricVersion": "dsh-contract-inspect-compaction-v1"
+  },
+  "population": {
+    "inspectContracts": 184
+  },
+  "comparison": {
+    "improved": 183,
+    "unchanged": 1,
+    "regressed": 0,
+    "totalCanonicalBytes": 1070705,
+    "totalModelBytes": 718534,
+    "totalSavedBytes": 352171,
+    "aggregateSavingRate": 0.328915,
+    "canonicalBytes": {
+      "count": 184,
+      "min": 847,
+      "p50": 4260,
+      "p90": 10620,
+      "p95": 14223,
+      "max": 44998
+    },
+    "modelBytes": {
+      "count": 184,
+      "min": 847,
+      "p50": 3116,
+      "p90": 6452,
+      "p95": 8891,
+      "max": 23760
+    },
+    "savedBytes": {
+      "count": 184,
+      "min": 0,
+      "p50": 1166,
+      "p90": 4249,
+      "p95": 6257,
+      "max": 21238
+    },
+    "savingRate": {
+      "count": 184,
+      "min": 0,
+      "p50": 0.272727,
+      "p90": 0.381938,
+      "p95": 0.413416,
+      "max": 0.515883
+    }
+  },
+  "rawCompactProjection": {
+    "improved": 183,
+    "unchanged": 0,
+    "regressed": 1,
+    "totalCompactBytes": 718577,
+    "largestRegression": {
+      "contractId": "package:@deepseek-ai/dsh",
+      "bytes": 43
+    }
+  },
+  "attribution": {
+    "repeatedBytesByCategory": {
+      "contract-identity": 7709,
+      "evidence-content-hash": 0,
+      "evidence-location": 0,
+      "evidence-record-id": 62771,
+      "evidence-reference": 334887,
+      "evidence-source": 67,
+      "fact-key": 66811,
+      "fact-value": 3998,
+      "other": 23421,
+      "summary": 0
+    },
+    "repeatedOccurrencesByCategory": {
+      "contract-identity": 184,
+      "evidence-content-hash": 0,
+      "evidence-location": 0,
+      "evidence-record-id": 993,
+      "evidence-reference": 5364,
+      "evidence-source": 3,
+      "fact-key": 3364,
+      "fact-value": 182,
+      "other": 1436,
+      "summary": 0
+    }
+  },
+  "worstCases": {
+    "largestCanonical": {
+      "contractId": "package:@deepseek-ai/dsh-client-runtime",
+      "bytes": 44998
+    },
+    "largestModel": {
+      "contractId": "package:@deepseek-ai/dsh-client-runtime",
+      "bytes": 23760
+    },
+    "largestSaving": {
+      "contractId": "package:@deepseek-ai/dsh-client-runtime",
+      "bytes": 21238
+    }
+  }
+}
