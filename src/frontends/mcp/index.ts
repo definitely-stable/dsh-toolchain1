@@ -16,6 +16,7 @@ import {
   searchContractsResponse,
   type ApplicationKernel,
 } from '../../kernel/index.js'
+import { compactContractInspectModelResponse } from '../../model/contract-inspect-compact.js'
 import {
   parseContractInspectRequest,
   parseContractSearchRequest,
@@ -119,9 +120,9 @@ function protocolDefinitionSchema(definition: ProtocolDefinition) {
   }
 }
 
-function structuredResult<T>(response: T): McpStructuredResult<T> {
+function structuredResult<T>(response: T, textValue: unknown = response): McpStructuredResult<T> {
   return {
-    content: [{ type: 'text', text: JSON.stringify(response) }],
+    content: [{ type: 'text', text: JSON.stringify(textValue) }],
     structuredContent: response,
   }
 }
@@ -200,9 +201,14 @@ export function createContractInspectMcpTool(
       outputSchema,
       annotations: readOnlyIdempotent,
     },
-    callback: async (request) => structuredResult(
-      await inspectContractResponse(kernel, parseContractInspectRequest(request), requestId()),
-    ),
+    callback: async (request) => {
+      const response = await inspectContractResponse(
+        kernel,
+        parseContractInspectRequest(request),
+        requestId(),
+      )
+      return structuredResult(response, compactContractInspectModelResponse(response))
+    },
   }
 }
 
