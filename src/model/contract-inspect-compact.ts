@@ -30,16 +30,14 @@ export interface CompactContractDefinition {
 
 export interface CompactContractInspectSuccessResponse {
   readonly representation: typeof CONTRACT_INSPECT_COMPACT_REPRESENTATION
-  readonly protocolVersion: '1'
   readonly requestId: string
   readonly snapshotFingerprint: string
-  readonly status: 'ok'
   readonly data: {
     readonly contractIndexFingerprint: string
     readonly contract: CompactContractDefinition
     readonly evidenceByRef: Readonly<Record<string, Evidence>>
   }
-  readonly diagnostics: readonly Diagnostic[]
+  readonly diagnostics?: readonly Diagnostic[]
 }
 
 export type ContractInspectModelResponse =
@@ -110,16 +108,16 @@ function compactSuccessResponse(
 
   return Object.freeze({
     representation: CONTRACT_INSPECT_COMPACT_REPRESENTATION,
-    protocolVersion: response.protocolVersion,
     requestId: response.requestId,
     snapshotFingerprint: response.snapshotFingerprint,
-    status: 'ok' as const,
     data: Object.freeze({
       contractIndexFingerprint: response.data.contractIndexFingerprint,
       contract: compactContract,
       evidenceByRef: table.evidenceByRef,
     }),
-    diagnostics: Object.freeze([...response.diagnostics]),
+    ...(response.diagnostics.length === 0
+      ? {}
+      : { diagnostics: Object.freeze([...response.diagnostics]) }),
   })
 }
 
@@ -133,6 +131,10 @@ function utf8Bytes(value: string): number {
  * The canonical Protocol v1 response remains the source of truth. Only successful
  * responses are normalized into local evidence references; failed/stale responses
  * pass through unchanged so existing fail-closed semantics remain intact.
+ *
+ * The compact-v1 identity itself implies canonical `protocolVersion: '1'` and
+ * `status: 'ok'`; empty diagnostics are likewise reconstructed as `[]` by the
+ * independent verification inverse. Non-empty diagnostics remain explicit.
  */
 export function compactContractInspectModelResponse(
   response: ContractInspectResponse,
