@@ -10,7 +10,7 @@ import {
   type ApplicationKernel,
 } from '../../src/kernel/index.js'
 import type { AcquiredContractFacts } from '../../src/model/contract.js'
-import { compactContractInspectModelResponse } from '../../src/model/contract-inspect-compact.js'
+import { serializeContractInspectModelResponse } from '../../src/model/contract-inspect-compact.js'
 import type { AcquiredTargetFacts } from '../../src/model/target.js'
 import type { ContractInspectResponse } from '../../src/protocol/index.js'
 
@@ -169,7 +169,7 @@ describe('Contract Intelligence MCP projection', () => {
       .toEqual(result.structuredContent)
   })
 
-  it('keeps canonical structuredContent while rendering contract.inspect text through the compact projection', async () => {
+  it('keeps canonical structuredContent while using the non-regressing Inspect serializer for text', async () => {
     const kernel = mockKernel()
     const tool = createContractInspectMcpTool(kernel, () => 'mcp-inspect')
     const request = {
@@ -200,22 +200,11 @@ describe('Contract Intelligence MCP projection', () => {
     })
 
     const canonical = result.structuredContent as ContractInspectResponse
-    const rendered = JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : 'null')
-    expect(rendered).toEqual(compactContractInspectModelResponse(canonical))
-    expect(rendered).toMatchObject({
-      representation: 'dsh-contract-inspect-compact-v1',
-      status: 'ok',
-      data: {
-        contract: {
-          evidenceRefs: ['e0'],
-          facts: [{ evidenceRefs: ['e0'] }],
-        },
-        evidenceByRef: {
-          e0: { id: 'manifest:tools' },
-        },
-      },
-    })
-    expect(rendered).not.toHaveProperty('data.contract.evidenceIds')
+    const renderedText = result.content[0]?.type === 'text' ? result.content[0].text : ''
+    expect(renderedText).toBe(serializeContractInspectModelResponse(canonical))
+    expect(JSON.parse(renderedText)).toEqual(canonical)
+    expect(new TextEncoder().encode(renderedText).byteLength)
+      .toBeLessThanOrEqual(new TextEncoder().encode(JSON.stringify(canonical)).byteLength)
   })
 
   it('returns stale contract indexes as canonical semantic Protocol results rather than MCP transport errors', async () => {
