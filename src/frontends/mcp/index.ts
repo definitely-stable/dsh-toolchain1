@@ -16,6 +16,7 @@ import {
   searchContractsResponse,
   type ApplicationKernel,
 } from '../../kernel/index.js'
+import { serializeContractInspectModelResponse } from '../../model/contract-inspect-compact.js'
 import {
   parseContractInspectRequest,
   parseContractSearchRequest,
@@ -126,6 +127,13 @@ function structuredResult<T>(response: T): McpStructuredResult<T> {
   }
 }
 
+function structuredSerializedResult<T>(response: T, text: string): McpStructuredResult<T> {
+  return {
+    content: [{ type: 'text', text }],
+    structuredContent: response,
+  }
+}
+
 const readOnlyIdempotent = Object.freeze({
   readOnlyHint: true as const,
   idempotentHint: true as const,
@@ -200,9 +208,17 @@ export function createContractInspectMcpTool(
       outputSchema,
       annotations: readOnlyIdempotent,
     },
-    callback: async (request) => structuredResult(
-      await inspectContractResponse(kernel, parseContractInspectRequest(request), requestId()),
-    ),
+    callback: async (request) => {
+      const response = await inspectContractResponse(
+        kernel,
+        parseContractInspectRequest(request),
+        requestId(),
+      )
+      return structuredSerializedResult(
+        response,
+        serializeContractInspectModelResponse(response),
+      )
+    },
   }
 }
 

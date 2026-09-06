@@ -1,3 +1,4 @@
+import { serializeContractInspectModelResponse } from '../../model/contract-inspect-compact.js'
 import {
   CONTRACT_KINDS,
   parseContractInspectRequest,
@@ -57,6 +58,18 @@ function output(description: string): DshToolDefinition['output'] {
   }
 }
 
+function inspectOutput(): DshToolDefinition['output'] {
+  return {
+    schema: { type: 'object', description: 'Protocol v1 ContractInspectResponse.' },
+    render(_args: unknown, value: unknown) {
+      return [{
+        type: 'text',
+        text: serializeContractInspectModelResponse(value as ContractInspectResponse),
+      }]
+    },
+  }
+}
+
 export function createContractSearchToolDefinition(
   search: ContractSearchResolver,
 ): DshToolDefinition {
@@ -110,7 +123,7 @@ export function createContractInspectToolDefinition(
       },
       required: ['target', 'contractIndexFingerprint', 'contractId'],
     },
-    output: output('Protocol v1 ContractInspectResponse.'),
+    output: inspectOutput(),
     execute(args: unknown, execution?: unknown): Promise<ContractInspectResponse> {
       const request = parseContractInspectRequest(args)
       const current = executionContext(execution)

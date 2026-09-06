@@ -10,7 +10,9 @@ import {
   type ApplicationKernel,
 } from '../../src/kernel/index.js'
 import type { AcquiredContractFacts } from '../../src/model/contract.js'
+import { serializeContractInspectModelResponse } from '../../src/model/contract-inspect-compact.js'
 import type { AcquiredTargetFacts } from '../../src/model/target.js'
+import type { ContractInspectResponse } from '../../src/protocol/index.js'
 
 const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
 const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
@@ -45,10 +47,20 @@ function mockKernel(): ApplicationKernel {
           name: '@deepseek-ai/dsh-tools',
           qualifiedName: 'package:@deepseek-ai/dsh-tools',
           availability: 'unknown' as const,
-          facts: [],
+          facts: [{
+            key: 'version',
+            value: '0.1.1-rc.2',
+            evidenceIds: ['manifest:tools'] as [string],
+          }],
           evidenceIds: ['manifest:tools'],
         },
-        evidence: [],
+        evidence: [{
+          id: 'manifest:tools',
+          kind: 'manifest' as const,
+          strength: 'authoritative' as const,
+          source: '@deepseek-ai/dsh-tools/package.json',
+          contentHash: '3'.repeat(64),
+        }],
       },
     })),
     checkPlugin: vi.fn(async () => { throw new Error('plugin check is not used by contract MCP tests') }),
@@ -157,7 +169,7 @@ describe('Contract Intelligence MCP projection', () => {
       .toEqual(result.structuredContent)
   })
 
-  it('defines contract.inspect as read-only/idempotent and delegates canonical requests', async () => {
+  it('keeps canonical structuredContent while using the non-regressing Inspect serializer for text', async () => {
     const kernel = mockKernel()
     const tool = createContractInspectMcpTool(kernel, () => 'mcp-inspect')
     const request = {
@@ -179,12 +191,27 @@ describe('Contract Intelligence MCP projection', () => {
       status: 'ok',
       data: {
         contractIndexFingerprint,
-        contract: { id: 'package:@deepseek-ai/dsh-tools' },
+        contract: {
+          id: 'package:@deepseek-ai/dsh-tools',
+          evidenceIds: ['manifest:tools'],
+        },
+        evidence: [{ id: 'manifest:tools' }],
       },
     })
+
+    const canonical = result.structuredContent as ContractInspectResponse
+    const renderedText = result.content[0]?.type === 'text' ? result.content[0].text : ''
+    expect(renderedText).toBe(serializeContractInspectModelResponse(canonical))
+    expect(JSON.parse(renderedText)).toMatchObject({
+      representation: 'dsh-contract-inspect-compact-v1',
+      requestId: canonical.requestId,
+      snapshotFingerprint: targetFingerprint,
+    })
+    expect(new TextEncoder().encode(renderedText).byteLength)
+      .toBeLessThan(new TextEncoder().encode(JSON.stringify(canonical)).byteLength)
   })
 
-  it('returns stale contract indexes as semantic Protocol results rather than MCP transport errors', async () => {
+  it('returns stale contract indexes as canonical semantic Protocol results rather than MCP transport errors', async () => {
     const tool = createContractInspectMcpTool(staleKernel(), () => 'mcp-stale')
 
     const result = await tool.callback({
@@ -201,5 +228,7 @@ describe('Contract Intelligence MCP projection', () => {
       status: 'stale',
       diagnostics: [{ code: 'CONTRACT_INDEX_STALE', domain: 'contract' }],
     })
+    expect(JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : 'null'))
+      .toEqual(result.structuredContent)
   })
 })
