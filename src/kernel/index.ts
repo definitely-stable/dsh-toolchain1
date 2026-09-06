@@ -19,6 +19,10 @@ import type {
   PluginCheckResult,
   PluginCheckStaleResponse,
   PluginCheckSuccessResponse,
+  PluginVerifyFailureResponse,
+  PluginVerifyRequest,
+  PluginVerifyResponse,
+  PluginVerifySuccessResponse,
   ResolvedBundleIdentity,
   ResolvedPackageIdentity,
   TargetResolveFailureResponse,
@@ -52,6 +56,7 @@ import {
 import { analyzePluginCompatibility } from '../model/plugin-check.js'
 import {
   bindPackedVerificationArtifact,
+  PluginVerificationOperationError,
   reducePluginVerification,
   type PluginVerificationExecutionPort,
 } from '../model/plugin-verify.js'
@@ -92,16 +97,6 @@ export interface PluginCheckOutcome {
   readonly diagnostics: readonly Diagnostic[]
 }
 
-/** Pre-Protocol-v1-freeze application shape; replaced by generated PluginVerifyRequest in the protocol slice. */
-export interface PluginVerifyApplicationRequest {
-  readonly target: TargetResolveRequest
-  readonly subject: {
-    readonly kind: 'packed'
-    readonly path: string
-  }
-  readonly executionPolicy: 'safe'
-}
-
 export interface PluginVerifyOutcome {
   readonly snapshotFingerprint: string
   readonly data: VerificationReport
@@ -113,11 +108,11 @@ export interface ApplicationKernel {
   searchContracts(request: ContractSearchRequest, enrichment?: ContractEnrichmentPort): Promise<ContractSearchOutcome>
   inspectContract(request: ContractInspectRequest, enrichment?: ContractEnrichmentPort): Promise<ContractInspectOutcome>
   checkPlugin(request: PluginCheckRequest): Promise<PluginCheckOutcome>
-  verifyPlugin?(request: PluginVerifyApplicationRequest, signal?: AbortSignal): Promise<PluginVerifyOutcome>
+  verifyPlugin?(request: PluginVerifyRequest, signal?: AbortSignal): Promise<PluginVerifyOutcome>
 }
 
 export interface VerificationApplicationKernel extends ApplicationKernel {
-  verifyPlugin(request: PluginVerifyApplicationRequest, signal?: AbortSignal): Promise<PluginVerifyOutcome>
+  verifyPlugin(request: PluginVerifyRequest, signal?: AbortSignal): Promise<PluginVerifyOutcome>
 }
 
 export interface ApplicationKernelOptions {
@@ -241,6 +236,15 @@ function contractDiagnostic(error: ContractOperationError): Diagnostic {
     summary: error.message,
     ...(error.locations.length === 0 ? {} : { locations: [...error.locations] }),
     ...(error.repair === undefined ? {} : { repair: { ...error.repair } }),
+  }
+}
+
+function verificationDiagnostic(error: PluginVerificationOperationError): Diagnostic {
+  return {
+    code: error.code,
+    severity: 'error',
+    domain: 'verification',
+    summary: error.message,
   }
 }
 
@@ -471,6 +475,44 @@ export async function checkPluginResponse(
   }
 }
 
+export async function verifyPluginResponse(
+  kernel: VerificationApplicationKernel,
+  request: PluginVerifyRequest,
+  requestId: string,
+): Promise<PluginVerifyResponse> {
+  try {
+    const outcome = await kernel.verifyPlugin(request)
+    const response: PluginVerifySuccessResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      snapshotFingerprint: outcome.snapshotFingerprint,
+      status: 'ok',
+      data: outcome.data,
+      diagnostics: [],
+    }
+    return response
+  } catch (error) {
+    let diagnostic: Diagnostic
+    if (error instanceof TargetAcquisitionError) {
+      diagnostic = targetDiagnostic(error)
+    } else if (error instanceof ContractOperationError) {
+      diagnostic = contractDiagnostic(error)
+    } else if (error instanceof PluginVerificationOperationError) {
+      diagnostic = verificationDiagnostic(error)
+    } else {
+      throw error
+    }
+
+    const response: PluginVerifyFailureResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'failed',
+      diagnostics: [diagnostic],
+    }
+    return response
+  }
+}
+
 export function createApplicationKernel(options: ApplicationKernelOptions): VerificationApplicationKernel {
   const now = options.now ?? (() => new Date().toISOString())
   const searchIndexFactory = options.createContractSearchIndex ?? createContractSearchIndex
@@ -641,7 +683,7 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Veri
       return pluginCheckOutcome(snapshot, index, subject)
     },
     async verifyPlugin(
-      request: PluginVerifyApplicationRequest,
+      request: PluginVerifyRequest,
       signal?: AbortSignal,
     ): Promise<PluginVerifyOutcome> {
       if (options.pluginSubjectAcquisition === undefined) {
