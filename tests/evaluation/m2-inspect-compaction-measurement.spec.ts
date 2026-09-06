@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+
 import { describe, expect, it } from 'vitest'
 
 import { M2_RETRIEVAL_FIXTURE_MANIFEST, M2_RETRIEVAL_TARGET } from './m2-retrieval-index.js'
@@ -20,6 +22,7 @@ interface MeasurementReceipt {
     readonly targetFingerprint: string
     readonly contractIndexFingerprint: string
     readonly compactRepresentation: 'dsh-contract-inspect-compact-v1'
+    readonly serializerPolicy: 'strictly-smaller-utf8-v1'
     readonly metricVersion: 'dsh-contract-inspect-compaction-v1'
   }
   readonly population: {
@@ -30,13 +33,20 @@ interface MeasurementReceipt {
     readonly unchanged: number
     readonly regressed: number
     readonly totalCanonicalBytes: number
-    readonly totalCompactBytes: number
+    readonly totalModelBytes: number
     readonly totalSavedBytes: number
     readonly aggregateSavingRate: number
     readonly canonicalBytes: DistributionSummary
-    readonly compactBytes: DistributionSummary
+    readonly modelBytes: DistributionSummary
     readonly savedBytes: DistributionSummary
     readonly savingRate: DistributionSummary
+  }
+  readonly rawCompactProjection: {
+    readonly improved: number
+    readonly unchanged: number
+    readonly regressed: number
+    readonly totalCompactBytes: number
+    readonly largestRegression: { readonly contractId: string | null; readonly bytes: number }
   }
   readonly attribution: {
     readonly repeatedBytesByCategory: Readonly<Record<string, number>>
@@ -44,9 +54,8 @@ interface MeasurementReceipt {
   }
   readonly worstCases: {
     readonly largestCanonical: { readonly contractId: string; readonly bytes: number }
-    readonly largestCompact: { readonly contractId: string; readonly bytes: number }
+    readonly largestModel: { readonly contractId: string; readonly bytes: number }
     readonly largestSaving: { readonly contractId: string; readonly bytes: number }
-    readonly largestRegression: { readonly contractId: string | null; readonly bytes: number }
   }
 }
 
@@ -73,7 +82,7 @@ const ATTRIBUTION_CATEGORIES = [
 ] as const
 
 describe('M2 Contract Inspect lossless compaction measurement', () => {
-  it('measures every frozen Inspect contract and emits deterministic exact-byte/attribution evidence', async () => {
+  it('measures every frozen Inspect contract using the actual non-regressing model serializer', async () => {
     const { buildInspectCompactionMeasurementV1 } = await loadMeasurement()
     const receipt = await buildInspectCompactionMeasurementV1()
 
@@ -85,15 +94,17 @@ describe('M2 Contract Inspect lossless compaction measurement', () => {
       targetFingerprint: M2_RETRIEVAL_TARGET.targetFingerprint,
       contractIndexFingerprint: M2_RETRIEVAL_TARGET.contractIndexFingerprint,
       compactRepresentation: 'dsh-contract-inspect-compact-v1',
+      serializerPolicy: 'strictly-smaller-utf8-v1',
       metricVersion: 'dsh-contract-inspect-compaction-v1',
     })
     expect(receipt.population.inspectContracts).toBe(M2_RETRIEVAL_FIXTURE_MANIFEST.expected.contractCount)
     expect(receipt.population.inspectContracts).toBe(184)
     expect(receipt.comparison.improved + receipt.comparison.unchanged + receipt.comparison.regressed).toBe(184)
+    expect(receipt.comparison.regressed).toBe(0)
 
     for (const distribution of [
       receipt.comparison.canonicalBytes,
-      receipt.comparison.compactBytes,
+      receipt.comparison.modelBytes,
       receipt.comparison.savedBytes,
       receipt.comparison.savingRate,
     ]) {
@@ -109,9 +120,27 @@ describe('M2 Contract Inspect lossless compaction measurement', () => {
     expect(Object.values(receipt.attribution.repeatedOccurrencesByCategory).every(value => value >= 0)).toBe(true)
 
     expect(receipt.comparison.totalCanonicalBytes).toBeGreaterThan(0)
-    expect(receipt.comparison.totalCompactBytes).toBeGreaterThan(0)
+    expect(receipt.comparison.totalModelBytes).toBeGreaterThan(0)
+    expect(receipt.comparison.totalModelBytes).toBeLessThanOrEqual(receipt.comparison.totalCanonicalBytes)
+    expect(receipt.comparison.totalSavedBytes).toBe(
+      receipt.comparison.totalCanonicalBytes - receipt.comparison.totalModelBytes,
+    )
     expect(Number.isFinite(receipt.comparison.aggregateSavingRate)).toBe(true)
+    expect(receipt.rawCompactProjection.regressed).toBeGreaterThanOrEqual(0)
 
     console.log('M2_INSPECT_COMPACTION_MEASUREMENT', JSON.stringify(receipt))
+  }, 15_000)
+
+  it('matches the committed aggregate receipt exactly without per-case payloads', async () => {
+    const { buildInspectCompactionMeasurementV1 } = await loadMeasurement()
+    const actual = await buildInspectCompactionMeasurementV1()
+    const receiptUrl = new URL('../../docs/evaluation/m2/contract-inspect-compaction-v1.json', import.meta.url)
+    const receiptText = await readFile(receiptUrl, 'utf8')
+    const expected = JSON.parse(receiptText) as unknown
+
+    expect(actual).toEqual(expected)
+    for (const forbiddenKey of ['cases', 'responses', 'rawResponse', 'wireJson']) {
+      expect(receiptText).not.toContain(`\"${forbiddenKey}\"`)
+    }
   }, 15_000)
 })
