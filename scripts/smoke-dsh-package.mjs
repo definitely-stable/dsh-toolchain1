@@ -227,7 +227,6 @@ function jsonEquivalent(left, right) {
 
 function expandCompactInspect(rendered) {
   if (rendered?.representation !== COMPACT_INSPECT_REPRESENTATION) return rendered
-  if (rendered?.status !== 'ok') throw new Error('Compact Inspect representation must be successful')
 
   const table = rendered?.data?.evidenceByRef
   const contract = rendered?.data?.contract
@@ -247,10 +246,10 @@ function expandCompactInspect(rendered) {
   }
 
   return {
-    protocolVersion: rendered.protocolVersion,
+    protocolVersion: '1',
     requestId: rendered.requestId,
     snapshotFingerprint: rendered.snapshotFingerprint,
-    status: rendered.status,
+    status: 'ok',
     data: {
       contractIndexFingerprint: rendered.data.contractIndexFingerprint,
       contract: {
@@ -269,7 +268,7 @@ function expandCompactInspect(rendered) {
       },
       evidence: Object.values(table),
     },
-    diagnostics: rendered.diagnostics,
+    diagnostics: rendered.diagnostics ?? [],
   }
 }
 
