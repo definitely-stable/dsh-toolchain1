@@ -33,21 +33,29 @@ function target(): TargetSnapshot {
   }
 }
 
+async function artifact(outer: string): Promise<{
+  readonly path: string
+  readonly expectedContentHash: string
+}> {
+  const artifactPath = path.join(outer, 'candidate.tgz')
+  const bytes = Buffer.from('candidate')
+  await writeFile(artifactPath, bytes)
+  return {
+    path: artifactPath,
+    expectedContentHash: createHash('sha256').update(bytes).digest('hex'),
+  }
+}
+
 describe('packed verification cleanup lifecycle', () => {
   it('retains cleanup failure after a primary install failure', async () => {
     const outer = await mkdtemp(path.join(tmpdir(), 'dsh-toolchain-cleanup-red-'))
     roots.push(outer)
-    const artifactPath = path.join(outer, 'candidate.tgz')
-    const bytes = Buffer.from('candidate')
-    await writeFile(artifactPath, bytes)
+    const packed = await artifact(outer)
     const workerRoot = path.join(outer, 'worker')
     const calls: VerificationProcessRequest[] = []
 
     const execution = await runPackedPluginVerification({
-      artifact: {
-        path: artifactPath,
-        expectedContentHash: createHash('sha256').update(bytes).digest('hex'),
-      },
+      artifact: packed,
       target: target(),
       executionPolicy: 'safe',
     }, {
@@ -73,5 +81,41 @@ describe('packed verification cleanup lifecycle', () => {
       'VERIFY_CLEANUP_FAILED',
     ])
     expect(execution.checks.find(item => item.id === 'install')).toMatchObject({ status: 'failed' })
+  })
+
+  it('converts an unexpected verification runner crash into infrastructure evidence and still cleans up', async () => {
+    const outer = await mkdtemp(path.join(tmpdir(), 'dsh-toolchain-worker-crash-red-'))
+    roots.push(outer)
+    const packed = await artifact(outer)
+    const workerRoot = path.join(outer, 'worker')
+
+    const execution = await runPackedPluginVerification({
+      artifact: packed,
+      target: target(),
+      executionPolicy: 'safe',
+    }, {
+      parentEnv: { PATH: process.env.PATH },
+      createTemporaryRoot: async () => {
+        await mkdir(workerRoot, { recursive: true })
+        return workerRoot
+      },
+      processRunner: async () => {
+        throw new Error('verification runner crashed')
+      },
+    })
+
+    expect(execution.terminal).toBe('failed')
+    expect(execution.cleanup).toBe('succeeded')
+    expect(execution.diagnostics.map(item => item.code)).toContain('VERIFY_WORKER_FAILED')
+    expect(execution.checks.find(item => item.id === 'package')).toEqual({
+      id: 'package',
+      status: 'passed',
+    })
+    expect(execution.checks.find(item => item.id === 'install')).toMatchObject({
+      status: 'failed',
+    })
+    expect(execution.checks.find(item => item.id === 'compose')).toMatchObject({
+      status: 'skipped',
+    })
   })
 })
