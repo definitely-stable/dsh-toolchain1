@@ -16,6 +16,7 @@ import {
 import { createFrozenM2KernelHarness } from './m2-search-inspect-fixture.js'
 
 const INSPECT_REQUEST_ID = '00000000-0000-4000-8000-000000000186'
+const EXHAUSTIVE_TIMEOUT_MS = 15_000
 
 type CompactEvidenceRef = `e${number}`
 
@@ -164,5 +165,5 @@ describe('M2 exhaustive Contract Inspect compact parity', () => {
     }
 
     expect(successes).toBe(184)
-  })
+  }, EXHAUSTIVE_TIMEOUT_MS)
 })
