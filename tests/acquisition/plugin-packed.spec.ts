@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -6,7 +7,9 @@ import { gzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createNodeSha256Port } from '../../src/acquisition/node-sha256.js'
+import { acquirePluginPackedWithArtifact } from '../../src/acquisition/plugin-packed-artifact.js'
 import { acquirePluginPacked } from '../../src/acquisition/plugin-packed.js'
+import type { Evidence } from '../../src/protocol/index.js'
 
 const roots: string[] = []
 
@@ -120,6 +123,52 @@ describe('packed plugin acquisition', () => {
       strength: 'authoritative',
       contentHash: expect.stringMatching(/^[0-9a-f]{64}$/u),
     }))
+  })
+
+  it('returns a typed authoritative artifact handoff bound to the same bounded bytes as packed evidence', async () => {
+    const root = await fixture()
+    const packed = path.join(root, 'handoff-plugin.tgz')
+    const bytes = npmTgz([
+      {
+        name: 'package/package.json',
+        content: JSON.stringify({
+          name: 'handoff-plugin',
+          version: '1.0.0',
+          dsh: { bundle: { patch: './cordis.patch.yml' } },
+        }),
+      },
+      { name: 'package/cordis.patch.yml', content: '- name: handoff\n' },
+    ])
+    await writeFile(packed, bytes)
+
+    const acquired = await acquirePluginPackedWithArtifact(packed, createNodeSha256Port())
+    const evidence = acquired.subject.evidence.find((item: Evidence) => item.id === 'plugin:packed-artifact')
+    const expectedHash = createHash('sha256').update(bytes).digest('hex')
+
+    expect(acquired.subject.completeness).toBe('complete')
+    expect(acquired.artifact).toEqual({
+      location: evidence?.location,
+      contentHash: expectedHash,
+    })
+    expect(acquired.artifact?.contentHash).toBe(evidence?.contentHash)
+    expect(acquired.artifact?.location).toBe(evidence?.location)
+    expect(Object.isFrozen(acquired)).toBe(true)
+    expect(Object.isFrozen(acquired.artifact)).toBe(true)
+  })
+
+  it('does not expose an executable artifact handoff for malformed archive bytes', async () => {
+    const root = await fixture()
+    const packed = path.join(root, 'invalid-handoff.tgz')
+    await writeFile(packed, 'not-a-gzip', 'utf8')
+
+    const acquired = await acquirePluginPackedWithArtifact(packed, createNodeSha256Port())
+
+    expect(acquired.subject.completeness).toBe('invalid')
+    expect(acquired.subject.evidence).toContainEqual(expect.objectContaining({
+      id: 'plugin:packed-artifact',
+      strength: 'authoritative',
+    }))
+    expect(acquired.artifact).toBeUndefined()
   })
 
   it('returns an invalid semantic subject instead of throwing for malformed gzip or tar bytes', async () => {
