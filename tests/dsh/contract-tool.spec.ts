@@ -125,7 +125,7 @@ describe('native DSH Contract Intelligence tools', () => {
       target: { profile: 'web' },
       contractIndexFingerprint,
       contractId: 'package:@deepseek-ai/dsh-tools',
-    })
+    }) as ContractInspectResponse
     expect(inspectResolver).toHaveBeenCalledWith({
       target: { profile: 'web' },
       contractIndexFingerprint,
