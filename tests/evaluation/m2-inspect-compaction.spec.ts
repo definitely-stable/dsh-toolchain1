@@ -39,16 +39,14 @@ interface CompactContractForTest {
 
 interface CompactSuccessForTest {
   readonly representation: 'dsh-contract-inspect-compact-v1'
-  readonly protocolVersion: '1'
   readonly requestId: string
   readonly snapshotFingerprint: string
-  readonly status: 'ok'
   readonly data: {
     readonly contractIndexFingerprint: string
     readonly contract: CompactContractForTest
     readonly evidenceByRef: Readonly<Record<CompactEvidenceRef, Evidence>>
   }
-  readonly diagnostics: readonly Diagnostic[]
+  readonly diagnostics?: readonly Diagnostic[]
 }
 
 type CompactProjector = (response: ContractInspectResponse) => unknown
@@ -96,7 +94,7 @@ function expandForTest(compact: CompactSuccessForTest): Extract<ContractInspectR
 
   const contract = compact.data.contract
   return {
-    protocolVersion: compact.protocolVersion,
+    protocolVersion: '1',
     requestId: compact.requestId,
     snapshotFingerprint: compact.snapshotFingerprint,
     status: 'ok',
@@ -119,7 +117,7 @@ function expandForTest(compact: CompactSuccessForTest): Extract<ContractInspectR
       },
       evidence: evidenceEntries.map(([, item]) => item),
     },
-    diagnostics: [...compact.diagnostics],
+    diagnostics: [...(compact.diagnostics ?? [])],
   }
 }
 
@@ -173,6 +171,10 @@ describe('M2 exhaustive Contract Inspect compact parity', () => {
       expect(projected.representation, contract.id).toBe('dsh-contract-inspect-compact-v1')
       expect(projected.data.contract.id, contract.id).toBe(contract.id)
       expect(projected.data.contractIndexFingerprint, contract.id).toBe(index.fingerprint)
+      expect(projected, `${contract.id}: compact-v1 implies Protocol v1 successful envelope`)
+        .not.toHaveProperty('protocolVersion')
+      expect(projected, `${contract.id}: compact-v1 implies successful status`)
+        .not.toHaveProperty('status')
 
       const evidenceRefs = Object.keys(projected.data.evidenceByRef)
       expect(new Set(evidenceRefs).size, `${contract.id}: unique compact refs`).toBe(evidenceRefs.length)
