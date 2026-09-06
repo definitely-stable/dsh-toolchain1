@@ -135,9 +135,13 @@ describe('native DSH Contract Intelligence tools', () => {
 
     const renderedText = inspect.output.render({}, inspectValue)[0]?.text ?? ''
     expect(renderedText).toBe(serializeContractInspectModelResponse(inspectValue))
-    expect(JSON.parse(renderedText)).toEqual(inspectValue)
+    expect(JSON.parse(renderedText)).toMatchObject({
+      representation: 'dsh-contract-inspect-compact-v1',
+      requestId: inspectValue.requestId,
+      snapshotFingerprint: inspectValue.status === 'ok' ? inspectValue.snapshotFingerprint : undefined,
+    })
     expect(new TextEncoder().encode(renderedText).byteLength)
-      .toBeLessThanOrEqual(new TextEncoder().encode(JSON.stringify(inspectValue)).byteLength)
+      .toBeLessThan(new TextEncoder().encode(JSON.stringify(inspectValue)).byteLength)
   })
 
   it('projects only Agent and AbortSignal from the current DSH execution object', async () => {
