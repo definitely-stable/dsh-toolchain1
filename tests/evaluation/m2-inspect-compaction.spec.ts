@@ -52,6 +52,7 @@ interface CompactSuccessForTest {
 }
 
 type CompactProjector = (response: ContractInspectResponse) => unknown
+type ModelSerializer = (response: ContractInspectResponse) => string
 
 function compactProjector(): CompactProjector {
   const compact = (compactModel as unknown as {
@@ -60,6 +61,15 @@ function compactProjector(): CompactProjector {
   expect(compact, 'compact model must expose compactContractInspectModelResponse').toBeTypeOf('function')
   if (compact === undefined) throw new Error('compactContractInspectModelResponse is unavailable')
   return compact
+}
+
+function modelSerializer(): ModelSerializer {
+  const serialize = (compactModel as unknown as {
+    readonly serializeContractInspectModelResponse?: ModelSerializer
+  }).serializeContractInspectModelResponse
+  expect(serialize, 'compact model must expose serializeContractInspectModelResponse').toBeTypeOf('function')
+  if (serialize === undefined) throw new Error('serializeContractInspectModelResponse is unavailable')
+  return serialize
 }
 
 function parseRef(ref: string): number {
@@ -120,16 +130,31 @@ function referencedCompactRefs(compact: CompactSuccessForTest): Set<string> {
   ])
 }
 
+function canonicalEvidenceReferences(
+  response: Extract<ContractInspectResponse, { readonly status: 'ok' }>,
+): readonly string[] {
+  return [
+    ...response.data.contract.evidenceIds,
+    ...response.data.contract.facts.flatMap(fact => fact.evidenceIds),
+  ]
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength
+}
+
 describe('M2 exhaustive Contract Inspect compact parity', () => {
   it('round-trips every frozen rc2 Web Inspect response without losing provenance or semantics', async () => {
     const index = await createFrozenM2RetrievalIndex()
     const harness = await createFrozenM2KernelHarness()
     const compact = compactProjector()
+    const serialize = modelSerializer()
 
     expect(index.contracts).toHaveLength(M2_RETRIEVAL_FIXTURE_MANIFEST.expected.contractCount)
     expect(index.contracts).toHaveLength(184)
 
     let successes = 0
+    let repeatedEvidenceReferenceCases = 0
     for (const contract of index.contracts) {
       const canonical = await inspectContractResponse(
         harness.kernel,
@@ -162,8 +187,22 @@ describe('M2 exhaustive Contract Inspect compact parity', () => {
         .toEqual(new Set(evidenceRefs))
 
       expect(expandForTest(projected), contract.id).toEqual(canonical)
+
+      const canonicalJson = JSON.stringify(canonical)
+      const modelJson = serialize(canonical)
+      const canonicalRefs = canonicalEvidenceReferences(canonical)
+      const hasRepeatedEvidenceReference = new Set(canonicalRefs).size < canonicalRefs.length
+      if (hasRepeatedEvidenceReference) {
+        repeatedEvidenceReferenceCases += 1
+        expect(utf8Bytes(modelJson), `${contract.id}: repeated evidence refs must strictly compact`)
+          .toBeLessThan(utf8Bytes(canonicalJson))
+      } else {
+        expect(utf8Bytes(modelJson), `${contract.id}: no-benefit cases must never regress`)
+          .toBeLessThanOrEqual(utf8Bytes(canonicalJson))
+      }
     }
 
     expect(successes).toBe(184)
+    expect(repeatedEvidenceReferenceCases).toBeGreaterThan(0)
   }, EXHAUSTIVE_TIMEOUT_MS)
 })
