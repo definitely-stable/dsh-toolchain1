@@ -1,8 +1,8 @@
 # ADR-0010: Profile patch-reload lifecycle identity v1
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-07
-- Related: ADR-0007, ADR-0008, ADR-0009, Issue #33
+- Related: ADR-0007, ADR-0008, ADR-0009, Issue #33, PR #198
 
 ## Context
 
@@ -91,6 +91,8 @@ Likewise, live DSH Host enrichment may join a resolved snapshot only when the im
 
 Registry support for DSH 0.1.2 is widened only after real `@deepseek-ai/dsh@0.1.2-rc.1` target-resolution and isolated public `plugin.verify` smokes pass with lifecycle assertions. Source-only/master evidence is not sufficient for the support claim.
 
+That gate is satisfied by PR #198 CI run #1537 on 2026-09-07: the real registry-backed `0.1.2-rc.1` `headless` target resolved with `patchReload: startup` and a `dsh-profile-lifecycle-v1` fingerprint; public packed-artifact `plugin.verify` returned a lifecycle-bound `verified` receipt with live Host Service visibility; and the target-resolution matrix also retained `0.1.1-rc.2` and `0.1.0-rc.8` without lifecycle backfill.
+
 ## Consequences
 
 - Target identity retains the precise static meaning established by ADR-0007.
@@ -98,3 +100,7 @@ Registry support for DSH 0.1.2 is widened only after real `@deepseek-ai/dsh@0.1.
 - Frozen rc.2 evidence does not need migration or relabeling.
 - Protocol v1 gains additive optional lifecycle metadata rather than a target namespace reset.
 - Verification/runtime binding becomes stricter on lifecycle-aware DSH trains while remaining backward-compatible for older supported trains.
+
+## Implementation evidence
+
+PR #198 implements this decision across acquisition, protocol schemas/generated types, kernel reduction, isolated verification execution, live DSH Host binding, and registry-backed smoke coverage. CI run #1537 completed successfully on Node 22.19, 24.19 and 26 plus Windows 2025 and macOS 15 boundaries. The primary lane passed the exact packed public `plugin.verify` smoke against `@deepseek-ai/dsh@0.1.2-rc.1` and the read-only target matrix for rc.1, rc.2 and rc.8.

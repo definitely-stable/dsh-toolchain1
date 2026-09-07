@@ -13,30 +13,37 @@ M2.3 remains bound to the registry-installable target used by the frozen artifac
 - target identity: `dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe`
 - Contract Index identity: `dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2`
 
-The retrieval baseline, R1 corpus, API oracle, P0 calibration set and future H1 commitment all refer to this exact target/index pair. Changing the target would create a different experiment rather than updating this one.
+The retrieval baseline, R1 corpus, API oracle, P0 calibration set and completed H1 commitment all refer to this exact target/index pair. Changing the target would create a different experiment rather than updating this one. H1 completed 864/864 with terminal `INCONCLUSIVE`; this compatibility work does not rerun, relabel, or reinterpret that result.
 
-## Observed upstream prerelease
+## Historical upstream drift signal
 
-On 2026-08-28, upstream GitHub exposes immutable prerelease `dsh-v0.1.2-alpha.1`. The corresponding source package at commit `cd5ef8148158c3a752a658978873241fdf8e2bbc` declares `@deepseek-ai/dsh@0.1.2-alpha.1`.
+On 2026-08-28, upstream GitHub exposed immutable prerelease `dsh-v0.1.2-alpha.1`. The corresponding source package at commit `cd5ef8148158c3a752a658978873241fdf8e2bbc` declared `@deepseek-ai/dsh@0.1.2-alpha.1` and introduced profile lifecycle semantics through `dsh.profile.patchReload: 'live' | 'startup'`.
 
-That source train introduced profile lifecycle semantics through `dsh.profile.patchReload: 'live' | 'startup'`. In the observed source profiles, Web uses `live` while headless/ACP/SDK-style profiles use `startup`; this can change how later profile/home patch mutations affect the running composition.
+That source-only signal created Issue #33 because `dsh-target-v2` intentionally identifies startup composition bytes/coordinates but not post-boot reload policy. Mutating the existing target-v2 namespace in place was rejected.
 
-The current `dsh-target-v2` projection does not encode `patchReload`. Therefore two otherwise equal compositions can have different lifecycle behavior without changing the current target fingerprint. Issue #33 owns the compatibility decision. The field must **not** be silently appended to the `dsh-target-v2` semantic projection because doing so would mutate an already named content-addressed namespace.
+## Published lifecycle-aware train
 
-## Registry distinction
+By 2026-09-07, npm publishes `@deepseek-ai/dsh@0.1.2-rc.1`. The published lifecycle contract is therefore no longer only a source/master canary.
 
-The GitHub prerelease and registry support policy are intentionally separate signals. A GitHub release/tag does not by itself make a version part of Toolchain's registry-backed compatibility matrix.
+Issue #33 is resolved architecturally by ADR-0010: `dsh-target-v2` remains the startup-composition identity and lifecycle-aware targets additionally carry the orthogonal content-addressed identity `dsh-profile-lifecycle-v1:<sha256>` over effective `patchReload: live | startup`.
 
-At the 2026-08-28 M2.3 governance check, the public npm package page still reports `@deepseek-ai/dsh` version `0.1.1-rc.2`; earlier registry CI also rejected an install attempt for `0.1.2-alpha.1`. Until an installable registry train carrying the new lifecycle contract exists and Issue #33 is resolved, Toolchain must not claim target-identity support for that lifecycle semantic.
+PR #198 proves the registry path rather than widening support from source inspection alone. CI run #1537 completed successfully with:
+
+- real `@deepseek-ai/dsh@0.1.2-rc.1` `headless` target resolution, effective `patchReload: startup`, and lifecycle fingerprint;
+- public packed-artifact `plugin.verify` on rc.1 producing a lifecycle-bound `verified` receipt with live Host Service visibility;
+- read-only/path-stable/no-hint target resolution across `0.1.2-rc.1`, `0.1.1-rc.2`, and `0.1.0-rc.8`;
+- no lifecycle metadata backfilled onto the older rc.2/rc.8 trains.
+
+This is compatibility evidence for target resolution and verification. It is not a new M2 retrieval baseline and does not imply that every upstream rc.1 Web/runtime behavior is covered.
 
 ## Evaluation policy
 
-- Do not regenerate the rc.2 frozen fixture from alpha.1 source.
-- Do not add alpha.1 contracts or wording to R1, P0, the rc.2 API oracle or any H1 task/oracle after seeing outcomes.
-- Do not compare alpha.1 retrieval scores to rc.2 scores as though they were the same experiment.
-- Do not change production ranking in PR #35 to accommodate a later train.
-- When an installable DSH train containing `patchReload` is published, resolve Issue #33 first, add a target-identity compatibility fixture/matrix entry, then create a separately identified evaluation baseline if needed.
+- Do not regenerate the frozen rc.2 fixture from rc.1 or later source.
+- Do not add rc.1 contracts or wording to R1, P0, the rc.2 API oracle, H1 tasks, or H1 adjudication after outcomes are known.
+- Do not compare rc.1 retrieval scores to rc.2 scores as though they were the same experiment.
+- Do not change the frozen production ranking or Contract Index identity as a side effect of lifecycle compatibility work.
+- A future H2, if authorized, requires a fresh hidden dataset and separately frozen target/model/provider design; the disclosed H1 corpus remains development-only.
 
 ## Relationship to M2
 
-This drift does not invalidate the rc.2 M2.3 experiment. It does limit the scope of any compatibility claim: M2 evidence proves behavior for the exact pinned target/index, not for future DSH lifecycle semantics that the current target namespace cannot distinguish.
+The lifecycle compatibility decision does not invalidate or update the rc.2 M2.3 experiment. The exact rc.2 target and Contract Index identities above remain historical source of truth for that evaluation. `dsh-profile-lifecycle-v1` is an orthogonal runtime/freshness identity for lifecycle-aware DSH trains, not a replacement label for frozen M2 evidence.

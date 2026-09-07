@@ -20,6 +20,7 @@ A packed-artifact fingerprint MUST NOT depend on path, mtime, user name, or othe
 The report records:
 - candidate artifact fingerprint;
 - starting target snapshot fingerprint;
+- starting profile lifecycle fingerprint when the target is lifecycle-aware;
 - execution policy;
 - checks requested and checks executed;
 - diagnostics;
@@ -57,9 +58,9 @@ For this slice:
 - Toolchain then installs a generated private boot-probe package into the same disposable profile;
 - `boot` passes only when the normal profile launcher exits successfully **and** stdout contains the exact Toolchain-owned probe marker emitted after the probe's apply point; process exit alone is not boot evidence;
 - absent visibility assertions remain explicitly skipped; M4.1 does not synthesize visibility or behavior success;
-- the worker returns internal stage observations, runtime coordinates, diagnostics, target fingerprint binding, terminal classification, and cleanup outcome for later application-level reduction.
+- the worker returns internal stage observations, runtime coordinates, diagnostics, target fingerprint binding, lifecycle fingerprint binding when present, terminal classification, and cleanup outcome for later application-level reduction.
 
-The generated boot probe is verification instrumentation. Its marker is derived without host paths or credentials and does not redefine the candidate artifact or target identities.
+The generated boot probe is verification instrumentation. Its marker is derived without host paths or credentials and does not redefine the candidate artifact, target, or lifecycle identities.
 
 ## M4.3.1 Host Service visibility assertion
 
@@ -97,20 +98,24 @@ M4.1 verifies Toolchain-owned configuration/path isolation by using a unique tem
 
 ## Freshness
 
-The verifier captures the starting target snapshot. Before producing `verified`, it MUST determine whether compatibility-relevant target state changed during the operation.
+The verifier captures the starting target snapshot. `dsh-target-v2` remains the startup-composition identity. On lifecycle-aware DSH trains the snapshot additionally carries `dsh-profile-lifecycle-v1:<sha256>` for the effective `dsh.profile.patchReload` policy. Before producing `verified`, Toolchain MUST determine whether either bound epoch changed during the operation.
 
-If the target changed and the executed evidence cannot be proven to correspond to the new state, final status is `stale`.
+The worker MUST echo the initial lifecycle fingerprint whenever the supplied snapshot carries one. A missing or different worker lifecycle binding on a lifecycle-aware target fails closed with `VERIFY_LIFECYCLE_BINDING_MISMATCH`; it MUST NOT be treated as an old-train omission.
 
-M4.1 binds worker observations to the immutable starting target fingerprint but does not independently re-read the caller's active target after execution. Final target re-resolution and `verified` / `stale` reduction belong to the application orchestration layer introduced with the public `plugin.verify` slice (M4.2). Therefore an M4.1 worker `terminal: completed` result is execution evidence, not a public `verified` claim.
+After execution, the application kernel re-resolves the target. If the final `dsh-target-v2` differs, final status is `stale` with `VERIFY_TARGET_STALE`. If the target-v2 remains equal but the lifecycle fingerprint is added, removed, or changed, final status is also `stale`, with `VERIFY_LIFECYCLE_STALE`. This prevents a runtime receipt obtained under one reload policy from being claimed for another lifecycle epoch while preserving the static target namespace.
+
+M4.1 binds worker observations to the immutable starting target fingerprint and, when present, the starting lifecycle fingerprint, but does not independently re-read the caller's active target after execution. Final target/lifecycle re-resolution and `verified` / `stale` reduction belong to the application orchestration layer introduced with the public `plugin.verify` slice (M4.2). Therefore an M4.1 worker `terminal: completed` result is execution evidence, not a public `verified` claim.
+
+Live DSH Host enrichment follows the same epoch rule: on lifecycle-aware targets it may join a resolved snapshot only when both the immutable startup target fingerprint and startup lifecycle fingerprint match. Old trains that legitimately have no lifecycle metadata retain their historical target-v2-only binding.
 
 ## Status
 
 Baseline verification report statuses:
 
-- `verified` — all required requested checks passed against a fresh target;
-- `failed` — one or more required checks failed;
+- `verified` — all required requested checks passed against a fresh target and lifecycle epoch when present;
+- `failed` — one or more required checks or identity bindings failed;
 - `partial` — some requested checks could not be executed and the caller's policy does not allow a verified claim;
-- `stale` — target state invalidated the evidence;
+- `stale` — target or lifecycle state invalidated the evidence;
 - `cancelled` — operation was cancelled before a terminal verification conclusion.
 
 Infrastructure failure is represented by diagnostics and `failed`/`partial` according to whether semantic checks could be concluded.
@@ -127,6 +132,6 @@ Cleanup failure MUST be reported. A cleanup error MUST NOT rewrite a prior verif
 
 ## Evidence receipt
 
-A verification report is intended to be portable evidence, not a guarantee for all machines/versions. It MUST name the candidate and target fingerprints and the exact checks executed.
+A verification report is intended to be portable evidence, not a guarantee for all machines/versions. It MUST name the candidate and target fingerprints and the exact checks executed. When the starting target is lifecycle-aware, it MUST also name the starting lifecycle fingerprint so the receipt is bound to the exact post-boot reload policy it observed.
 
 Future CI badges/compatibility databases MUST derive claims from receipts rather than from package version alone.

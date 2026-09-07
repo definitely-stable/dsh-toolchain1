@@ -74,11 +74,11 @@ This follows the compiler/rust-analyzer pattern: IO belongs at the boundary; the
 
 ### Immutable target snapshots
 
-A `TargetSnapshot` is the unit of reproducibility. Search, inspection, static plugin-check, and verification claims are evaluated against a snapshot identity, not against an implicitly mutable `~/.dsh`.
+A `TargetSnapshot` is the unit of reproducibility. Search, inspection, static plugin-check, and verification claims are evaluated against explicit snapshot identities, not against an implicitly mutable `~/.dsh`.
 
-A snapshot contains a canonical semantic fingerprint over compatibility-relevant target state. Machine-specific paths, user names, secrets, timestamps, and session contents are excluded from the semantic identity.
+`dsh-target-v2` is the canonical content-addressed identity of the startup composition inputs defined by ADR-0007. Machine-specific paths, user names, secrets, timestamps, and session contents are excluded from that semantic identity. DSH lifecycle policy is deliberately orthogonal: on lifecycle-aware trains the snapshot additionally carries `dsh-profile-lifecycle-v1:<sha256>` over effective `dsh.profile.patchReload: live | startup`, as defined by ADR-0010. A lifecycle-only change therefore does not rename an otherwise identical startup composition or its Contract Index.
 
-If relevant target state changes before a strong verification result is committed, the operation MUST report `stale` rather than silently claiming the new state was verified.
+Strong runtime claims bind both axes when lifecycle metadata is present. If the target-v2 or lifecycle epoch changes before a verification result is committed, the operation MUST report `stale` rather than silently claiming the new epoch was verified. Older DSH trains that predate the lifecycle contract legitimately remain target-v2-only and MUST NOT be backfilled.
 
 ### Evidence, not undocumented confidence
 
@@ -116,7 +116,7 @@ Owns transport-neutral use cases:
 - `operation.get`
 - `operation.cancel`
 
-`plugin.check` is the public static compatibility boundary. It acquires the exact target/Contract Index and plugin subject, runs the internal normalization/analysis/validation passes, and returns evidence-backed `compatible-in-scope`, `incompatible`, or `unproven` without executing candidate code. `plugin.verify` is the separate public runtime-verification boundary owned by M4: M4.1 supplies the isolated packed-artifact worker, M4.2 composes static evidence + worker evidence + final target re-resolution into the kernel-owned `VerificationReport`, and M4.3.1 adds optional live Host Service visibility assertions. Broader Tool/Client/behavior assertions and the transport-neutral long-operation lifecycle remain later M4 scope.
+`plugin.check` is the public static compatibility boundary. It acquires the exact target/Contract Index and plugin subject, runs the internal normalization/analysis/validation passes, and returns evidence-backed `compatible-in-scope`, `incompatible`, or `unproven` without executing candidate code. `plugin.verify` is the separate public runtime-verification boundary owned by M4: M4.1 supplies the isolated packed-artifact worker, M4.2 composes static evidence + worker evidence + final target re-resolution into the kernel-owned `VerificationReport`, and M4.3.1 adds optional live Host Service visibility assertions. For lifecycle-aware DSH trains the same reducer binds the initial worker observation and final re-resolution to the profile lifecycle fingerprint in addition to target-v2. Broader Tool/Client/behavior assertions and the transport-neutral long-operation lifecycle remain later M4 scope.
 
 The kernel defines no MCP, CLI, Typert, HTTP, Cordis, React, Node-runtime, or filesystem/process concepts.
 
@@ -132,7 +132,7 @@ Broken plugins are normal input. Static checking prefers partial results plus di
 
 Knows how to locate and interrogate a specific installed Harness target. Providers may use package metadata, profile composition, `--dump-config`, generated Cordis API metadata, and runtime inspection seams exposed by the installed DSH version.
 
-Version-specific differences are contained here. Version conditionals MUST NOT spread through analysis rules.
+Version-specific differences are contained here. Version conditionals MUST NOT spread through analysis rules. For DSH trains that expose `dsh.profile.patchReload`, acquisition resolves the effective `live | startup` policy and fails closed on invalid values; older trains remain without lifecycle metadata.
 
 ### Verification worker
 
@@ -164,13 +164,15 @@ normal profile launch -> exact marker + exit 0
 stage observations + cleanup outcome
 ```
 
-The worker binds observations to the supplied immutable starting target fingerprint. It does not re-resolve the caller's active target after execution and therefore cannot independently emit the final public `verified` / `stale` conclusion. M4.2 implements that final freshness reduction in application-kernel orchestration, and M4.3.1 reuses the same worker/runtime path for requested Host Service visibility assertions.
+The worker binds observations to the supplied immutable starting target fingerprint and echoes the supplied lifecycle fingerprint when the target is lifecycle-aware. It does not re-resolve the caller's active target after execution and therefore cannot independently emit the final public `verified` / `stale` conclusion. M4.2 implements final target/lifecycle freshness reduction in application-kernel orchestration, and M4.3.1 reuses the same worker/runtime path for requested Host Service visibility assertions.
 
 The disposable DSH home is configuration/credential isolation, not a malicious-code sandbox. Candidate runtime code still has whatever filesystem/network capabilities the operating system grants to the verifier process.
 
 ### DSH Host
 
 Provides a Cordis `toolchain` capability (`ctx.toolchain`) backed by the same application kernel. Its Loader composition row is namespaced as `dsh-toolchain`; Loader identity and Cordis capability identity are intentionally separate namespaces. It also projects a deliberately small set of model-facing native DSH tools.
+
+Live Host enrichment captures the Toolchain startup target and lifecycle epoch from one resolved startup snapshot. Enrichment may join a later resolved snapshot only when the target fingerprint matches and, on lifecycle-aware trains, the lifecycle fingerprint also matches. This prevents live observations from crossing a `patchReload` policy change while preserving target-v2 compatibility for older trains.
 
 Other DSH plugins may eventually consume stable Toolchain service methods and extension seams. Extension points are introduced only when a concrete second implementation requires them.
 
@@ -213,7 +215,7 @@ queued -> running -> { succeeded | failed | cancelled }
 
 A caller receives an `OperationRef` and can query/cancel it. Synchronous adapters MAY wait and return the final result when the execution completes within their policy.
 
-Operations capture the starting target snapshot. A target change that invalidates verification evidence is represented explicitly, not hidden.
+Operations capture the starting target snapshot. A target or lifecycle change that invalidates verification evidence is represented explicitly, not hidden.
 
 ## Extension model
 
