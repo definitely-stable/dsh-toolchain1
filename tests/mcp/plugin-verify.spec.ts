@@ -46,17 +46,25 @@ describe('plugin.verify MCP projection', () => {
     expect(tool.config.annotations).toEqual({ readOnlyHint: false, idempotentHint: false })
     expect(server.toolInputSchemaJson('plugin.verify')).toMatchObject({
       $ref: '#/$defs/pluginVerifyRequest',
-      $defs: expect.objectContaining({ pluginVerifyRequest: expect.any(Object) }),
+      $defs: expect.objectContaining({
+        pluginVerifyRequest: expect.any(Object),
+        pluginVisibilityAssertion: expect.objectContaining({
+          type: 'object',
+          additionalProperties: false,
+          required: ['kind', 'name'],
+        }),
+      }),
     })
   })
 
-  it('returns semantic stale as ordinary structured content and delegates the canonical request', async () => {
+  it('returns semantic stale as ordinary structured content and delegates visibility assertions unchanged', async () => {
     const app = kernel()
     const tool = createPluginVerifyMcpTool(app, () => 'plugin-verify-mcp')
     const request = {
       target: { profile: 'web' },
       subject: { kind: 'packed' as const, path: '/candidate/plugin.tgz' },
       executionPolicy: 'safe' as const,
+      visibilityAssertions: [{ kind: 'host-service' as const, name: 'exampleService' }],
     }
 
     const result = await tool.callback(request)

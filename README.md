@@ -18,7 +18,7 @@ normalized machine model
 contract intelligence / diagnostics / verification receipts / compatibility diff
 ```
 
-M1 establishes exact target identity. M1.1 projects the same target-resolution capability through the installed DSH Plugin and MCP. M2.1 adds an offline, target-bound Contract Index so agents can search and inspect installed package/declaration evidence without loading the complete DSH catalog or guessing from model memory. M2.2 enriches that same index inside real Agent-scoped native DSH tool calls with bounded official Host Inspect evidence. M2.3's controlled H1 execution is complete at 864/864 with immutable terminal result `INCONCLUSIVE`; M2 remains open because H1 did not establish the preregistered PASS claim, but no H1 rerun is authorized or required for normal product development. Contract Search v3 is frozen on the post-H1 path. Exact Target Plugin Check provides the static `plugin.check` operation, while M4.1/M4.2 add isolated packed-artifact execution and the public target-fresh `plugin.verify` receipt path.
+M1 establishes exact target identity. M1.1 projects the same target-resolution capability through the installed DSH Plugin and MCP. M2.1 adds an offline, target-bound Contract Index so agents can search and inspect installed package/declaration evidence without loading the complete DSH catalog or guessing from model memory. M2.2 enriches that same index inside real Agent-scoped native DSH tool calls with bounded official Host Inspect evidence. M2.3's controlled H1 execution is complete at 864/864 with immutable terminal result `INCONCLUSIVE`; M2 remains open because H1 did not establish the preregistered PASS claim, but no H1 rerun is authorized or required for normal product development. Contract Search v3 is frozen on the post-H1 path. Exact Target Plugin Check provides the static `plugin.check` operation. M4.1/M4.2 add isolated packed-artifact execution and the public target-fresh `plugin.verify` receipt path; M4.3.1 adds the first explicit live verification assertion by proving requested Host Services inside that isolated real DSH runtime.
 
 ## Installation model
 
@@ -34,7 +34,7 @@ For the canonical Web profile:
 dsh plugin --profile web add dsh-toolchain
 ```
 
-The incubator package is not published to npm. CI packs the exact `.tgz`, installs it into disposable DSH profiles, verifies minimal and Web composition, and boots a real DSH host with an external probe. The Web live probe creates a real Agent, executes native ToolRuntime contract search→inspect, proves Agent-scoped Host Tool Inspect evidence changes the Contract Index relative to the offline Service path, and preserves target/index continuity before launcher-owned shutdown. Separate artifact-truth lanes statically check the packed Toolchain, exercise the isolated M4.1 worker, and invoke the installed public `plugin verify` CLI against a packed candidate while proving the active profile remains unchanged.
+The incubator package is not published to npm. CI packs the exact `.tgz`, installs it into disposable DSH profiles, verifies minimal and Web composition, and boots a real DSH host with an external probe. The Web live probe creates a real Agent, executes native ToolRuntime contract search→inspect, proves Agent-scoped Host Tool Inspect evidence changes the Contract Index relative to the offline Service path, and preserves target/index continuity before launcher-owned shutdown. Separate artifact-truth lanes statically check the packed Toolchain, exercise the isolated verification worker, and invoke the installed public `plugin verify` CLI against a packed candidate while proving the active profile remains unchanged. The verification smoke also requires a candidate-provided Host Service to be observable through the Toolchain-owned live Cordis probe before the receipt can remain `verified`.
 
 ## Exact target resolution
 
@@ -177,7 +177,6 @@ The v2 fingerprint deliberately excludes absolute paths, timestamps, evidence lo
 `dsh-target-v2` supersedes the private pre-public v1 identity after corrective review found that v1 omitted some effective DSH composition layers. This correction is made before public release rather than preserving a known false-sameness case for compatibility.
 
 Target resolution is read-only: Toolchain does not initialize a missing profile, install packages, create fallback links, or rewrite profile state to make the operation succeed. CI verifies this against published DSH `0.1.1-rc.2` and `0.1.0-rc.8`, including equivalent profiles copied to another `DSH_HOME` and no-hint versus explicit-root DSH discovery.
-
 Expected acquisition failures are returned as stable Protocol diagnostics. CLI syntax errors remain CLI errors; raw DSH transport-invalid arguments are rejected at the tool boundary; unexpected infrastructure failures are not disguised as target diagnostics.
 
 ## Architecture baseline
@@ -207,7 +206,7 @@ M2 remains open because historical H1 did not establish the preregistered PASS c
 
 The package root still exposes only stable public product/protocol identities. `createApplicationKernel()` remains an internal composition primitive; CLI, DSH Host, and MCP construct or receive the required runtime adapters internally.
 
-Exact Target Plugin Check remains the static evidence layer and MUST NOT claim candidate code execution. M4.1 adds the isolated packed-artifact worker; M4.2 adds the shared-kernel public `plugin.verify` operation through CLI, native DSH and MCP. A `verified` receipt is bound to exact packed-artifact identity plus the initial exact target and is emitted only after required static/runtime checks, cleanup and final target freshness succeed. The current `safe` policy uses a disposable DSH environment and is explicitly not a malicious-code security sandbox.
+Exact Target Plugin Check remains the static evidence layer and MUST NOT claim candidate code execution. M4.1 adds the isolated packed-artifact worker; M4.2 adds the shared-kernel public `plugin.verify` operation through CLI, native DSH and MCP; M4.3.1 adds optional Host Service visibility assertions on that same operation. A requested Host Service assertion becomes a required runtime check and is proven only from the live isolated Cordis context after candidate composition/boot. A `verified` receipt remains bound to exact packed-artifact identity plus the initial exact target and is emitted only after all required requested checks, cleanup and final target freshness succeed. Tool/Client/behavior assertions remain deferred. The current `safe` policy uses a disposable DSH environment and is explicitly not a malicious-code security sandbox.
 
 ## License
 

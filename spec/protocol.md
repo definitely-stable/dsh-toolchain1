@@ -245,13 +245,16 @@ Frontend process status is not the Protocol application status. A CLI MAY return
 
 ### `plugin.verify`
 
-`plugin.verify` is the public M4.2 verification operation. It follows the stage/isolation contract in `spec/verification.md` and composes the existing static `plugin.check` semantics with the isolated packed-artifact worker; frontends MUST NOT implement a second verifier or a local verification-status reducer.
+`plugin.verify` is the public M4 verification operation. M4.2 establishes target-fresh packed-artifact verification; M4.3.1 extends that same operation with the first explicit Host Service visibility assertion. It follows the stage/isolation contract in `spec/verification.md` and composes the existing static `plugin.check` semantics with the isolated packed-artifact worker; frontends MUST NOT implement a second verifier or a local verification-status reducer.
 
-The closed `PluginVerifyRequest` contains exactly:
+The closed `PluginVerifyRequest` contains:
 
 - `target` — the same closed `TargetResolveRequest` used by the other target-bound operations;
 - `subject` — `{ "kind": "packed", "path": <non-empty path> }` identifying the packed `.tgz` artifact to verify;
-- `executionPolicy` — `"safe"` for the M4.2 alpha.
+- `executionPolicy` — `"safe"` for the current alpha;
+- optional `visibilityAssertions` — a non-empty array of at most 32 explicit visibility assertions.
+
+M4.3.1 supports exactly one visibility assertion shape: `{ "kind": "host-service", "name": <non-blank service name> }`. Service names are limited to 256 UTF-16 code units and duplicate `(kind, name)` assertions are invalid. Tool, Client/page, behavior, trusted-policy, and other assertion kinds are not accepted by this request shape.
 
 Directory subjects are not accepted by this operation. Supporting them would require a separately specified authoritative packing/byte-identity step and MUST NOT be inferred from directory support in `plugin.check`.
 
@@ -259,20 +262,25 @@ The application operation MUST:
 
 1. resolve one initial exact `TargetSnapshot` and corresponding Contract Index;
 2. acquire/analyze the same packed subject through static `plugin.check` semantics;
-3. bind the authoritative packed bytes to `dsh-plugin-artifact-v1:<sha256>` and pass the same exact content hash plus the initial `TargetSnapshot` to the isolated worker;
-4. execute the M4.1 worker under policy `safe` in a disposable DSH environment rather than the caller's active profile;
-5. re-resolve the same target request after execution before reducing the final report;
-6. reduce static evidence, worker observations, cleanup, artifact identity, and final target freshness in the shared application kernel.
+3. bind the authoritative packed bytes to `dsh-plugin-artifact-v1:<sha256>` and pass the same exact content hash plus the initial `TargetSnapshot`, execution policy, and any canonical visibility assertions to the isolated worker;
+4. execute the worker under policy `safe` in a disposable DSH environment rather than the caller's active profile;
+5. when Host Service assertions were requested, prove them through Toolchain-owned instrumentation in the same composed/booted DSH runtime rather than from static declarations;
+6. re-resolve the same target request after execution before reducing the final report;
+7. reduce static evidence, worker observations, cleanup, artifact identity, requested visibility, and final target freshness in the shared application kernel.
 
 The active DSH profile MUST NOT be mutated merely to perform verification. Policy `safe` describes Toolchain's isolation/environment policy; it MUST NOT be represented as a malicious-code security sandbox.
 
 `VerificationReport.artifactFingerprint` binds the exact packed bytes selected before execution. `VerificationReport.targetFingerprint` binds the initial exact target actually supplied to the worker. A worker-returned artifact identity, when present, MUST match the pre-bound artifact fingerprint; a mismatch fails closed. A worker target binding that differs from the initial target likewise fails closed.
 
-The M4.2 alpha preserves all eleven canonical verification checks in order. A `verified` report requires the covered static checks `structure`, `manifest`, `dependency`, and `contract` plus runtime checks `package`, `install`, `compose`, and `boot` to pass, worker execution to complete, cleanup to succeed, artifact/target bindings to remain coherent, and the final target fingerprint to equal the initial fingerprint. `build` and `behavior` are outside the M4.2 alpha claim. `visibility` remains explicitly skipped when no visibility assertions were requested and does not by itself block the baseline M4.2 verified claim.
+The operation preserves all eleven canonical verification checks in order. A `verified` report requires the covered static checks `structure`, `manifest`, `dependency`, and `contract` plus runtime checks `package`, `install`, `compose`, and `boot` to pass, worker execution to complete, cleanup to succeed, artifact/target bindings to remain coherent, and the final target fingerprint to equal the initial fingerprint. `build` and `behavior` remain outside the current alpha claim.
+
+When no visibility assertions are requested, `visibility` MUST retain the explicit baseline `{ id: "visibility", status: "skipped", reason: "no-visibility-assertions" }` and does not block the M4.2 verified claim. When one or more Host Service assertions are requested, `visibility` becomes a required check: it MUST pass before the report can be `verified`; a proven visibility failure yields `failed`, while requested visibility that could not be executed yields `partial` unless a stronger terminal status applies.
+
+Host Service visibility MUST be based on live runtime observation after candidate composition/boot. A package declaration, manifest entry, or TypeScript declaration MUST NOT by itself satisfy a requested visibility assertion.
 
 A proven static incompatibility or required runtime failure yields report status `failed`. Cancellation yields `cancelled`. A changed final target yields `stale` after non-cancelled execution. Cleanup failure, material unproven static evidence, or another incomplete covered check prevents `verified` and yields `partial` unless a stronger status applies. Static `compatible-in-scope` alone MUST NOT be relabelled as runtime verification.
 
-When the application can produce a semantic `VerificationReport`, `PluginVerifySuccessResponse` MUST use envelope `status: "ok"`, MUST carry the initial operation `snapshotFingerprint`, and MUST return the report in `data` even when `data.status` is `failed`, `partial`, `stale`, or `cancelled`. M4.2 therefore has no separate transport-envelope stale response: target drift is represented by `VerificationReport.status: "stale"`.
+When the application can produce a semantic `VerificationReport`, `PluginVerifySuccessResponse` MUST use envelope `status: "ok"`, MUST carry the initial operation `snapshotFingerprint`, and MUST return the report in `data` even when `data.status` is `failed`, `partial`, `stale`, or `cancelled`. The operation therefore has no separate transport-envelope stale response: target drift is represented by `VerificationReport.status: "stale"`.
 
 `PluginVerifyFailureResponse` with envelope `status: "failed"` is reserved for acquisition/application/infrastructure conditions that prevent production of the defined semantic report and MUST contain at least one diagnostic. Expected candidate incompatibility or runtime verification failure, when a report exists, MUST remain report data rather than being converted into transport failure.
 
@@ -308,7 +316,7 @@ M2 contract projections MUST call the same kernel search/inspect use cases. The 
 
 `toolchain_plugin_check` MUST project the shared kernel `plugin.check` use case and canonical request parser. The DSH adapter MUST NOT execute candidate code or implement a second compatibility reducer.
 
-`toolchain_plugin_verify` MUST project the shared kernel `plugin.verify` use case and canonical Protocol request parser. Candidate execution MUST remain behind the shared verification execution boundary; the native DSH adapter MUST NOT compute verification status locally or execute the candidate in the active profile.
+`toolchain_plugin_verify` MUST project the shared kernel `plugin.verify` use case and canonical Protocol request parser. Its published parameter schema MUST expose the supported Protocol visibility assertion shape so a native DSH Agent can request the same Host Service proof as CLI and MCP. Candidate execution MUST remain behind the shared verification execution boundary; the native DSH adapter MUST NOT compute verification status locally or execute the candidate in the active profile.
 
 ### DSH Web
 
@@ -318,7 +326,7 @@ Web MUST consume Host application semantics rather than implement static plugin-
 
 The MCP projection uses structured results conforming to the Toolchain Protocol. MCP-specific task support MAY map Toolchain Operations onto the current MCP Tasks extension without changing kernel semantics.
 
-Immediate post-M1 target parity MUST project the existing kernel `target.resolve` semantics rather than introducing an MCP-owned target DTO. M2 `contract.search` / `contract.inspect` likewise project Protocol DTOs and shared kernel behavior rather than MCP-owned ranking/acquisition logic. `plugin.check` likewise uses the canonical Protocol request/response schemas and shared kernel behavior. `plugin.verify` MUST likewise use the closed Protocol request/response schemas and shared kernel reducer; because it executes candidate code, it MUST NOT be advertised as read-only or idempotent merely because its active-profile contract is non-mutating.
+Immediate post-M1 target parity MUST project the existing kernel `target.resolve` semantics rather than introducing an MCP-owned target DTO. M2 `contract.search` / `contract.inspect` likewise project Protocol DTOs and shared kernel behavior rather than MCP-owned ranking/acquisition logic. `plugin.check` likewise uses the canonical Protocol request/response schemas and shared kernel behavior. `plugin.verify` MUST likewise use the closed Protocol request/response schemas, including `visibilityAssertions`, and the shared kernel reducer; because it executes candidate code, it MUST NOT be advertised as read-only or idempotent merely because its active-profile contract is non-mutating.
 
 ### CLI
 
@@ -326,7 +334,7 @@ Machine CLI output MUST be explicitly protocol-versioned. JSON/JSONL mode MUST k
 
 For `plugin check`, exit code `0` is reserved for `status: "ok"` with `verdict: "compatible-in-scope"`; `incompatible`, `unproven`, `failed`, and `stale` return a non-zero application/CI exit code while preserving the Protocol JSON response. Invalid CLI arguments are a separate command-line usage error.
 
-For `plugin verify`, exit code `0` is reserved for envelope `status: "ok"` with `data.status: "verified"`. Semantic `failed`, `partial`, `stale`, and `cancelled` reports return a non-zero application/CI exit code while preserving the Protocol JSON response. Invalid CLI arguments remain a separate command-line usage error.
+For `plugin verify`, exit code `0` is reserved for envelope `status: "ok"` with `data.status: "verified"`. The CLI MAY project each repeatable `--visibility-service <name>` argument to one canonical `{ kind: "host-service", name }` assertion, but validation MUST still be performed by the shared Protocol parser. Semantic `failed`, `partial`, `stale`, and `cancelled` reports return a non-zero application/CI exit code while preserving the Protocol JSON response. Invalid CLI arguments remain a separate command-line usage error.
 
 ## Compatibility status vocabulary
 

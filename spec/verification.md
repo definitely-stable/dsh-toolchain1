@@ -61,6 +61,30 @@ For this slice:
 
 The generated boot probe is verification instrumentation. Its marker is derived without host paths or credentials and does not redefine the candidate artifact or target identities.
 
+## M4.3.1 Host Service visibility assertion
+
+M4.3.1 adds the first explicit live visibility assertion to the public `plugin.verify` path while preserving the M4.2 no-assertion behavior.
+
+The only supported assertion vocabulary in this slice is:
+
+```json
+{ "kind": "host-service", "name": "<service-name>" }
+```
+
+When one or more Host Service assertions are requested:
+
+- the canonical Protocol request carries them unchanged through kernel and execution-port boundaries;
+- the same disposable DSH runtime that composed and booted the candidate runs Toolchain-owned verification instrumentation;
+- the probe emits the normal boot marker first and then evaluates each requested service through the live Cordis context using `ctx.get(name)`;
+- the `visibility` stage passes only when every requested Host Service resolves to a non-`undefined` value after candidate boot;
+- a clean boot without the exact visibility marker is a semantic visibility failure and yields `VERIFY_VISIBILITY_FAILED`;
+- requested visibility that is not executed cannot yield `verified`;
+- the no-assertion baseline remains exactly `visibility: skipped / no-visibility-assertions` and does not block the M4.2 verification claim.
+
+A Host Service declaration in package metadata or TypeScript declarations is not visibility evidence. M4.3.1 visibility is runtime evidence from the isolated composed target.
+
+Tool visibility is intentionally deferred because the current DSH Tool listing seam is Agent-scoped. Client/page visibility is deferred until Toolchain can bind observations to a deterministic page identity/lifetime. Behavior assertions are also outside M4.3.1.
+
 ## Isolation
 
 Default verification uses policy `safe` and MUST NOT intentionally mutate the user's active DSH profile.
