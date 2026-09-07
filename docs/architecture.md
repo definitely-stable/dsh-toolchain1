@@ -116,7 +116,7 @@ Owns transport-neutral use cases:
 - `operation.get`
 - `operation.cancel`
 
-`plugin.check` is the public static compatibility boundary. It acquires the exact target/Contract Index and plugin subject, runs the internal normalization/analysis/validation passes, and returns evidence-backed `compatible-in-scope`, `incompatible`, or `unproven` without executing candidate code. `plugin.verify` remains a separate execution boundary owned by M4. M4.1 implements the internal packed-artifact worker first; the public kernel operation, freshness reduction and operation lifecycle remain M4.2 work and MUST NOT be inferred from the worker merely returning a completed execution.
+`plugin.check` is the public static compatibility boundary. It acquires the exact target/Contract Index and plugin subject, runs the internal normalization/analysis/validation passes, and returns evidence-backed `compatible-in-scope`, `incompatible`, or `unproven` without executing candidate code. `plugin.verify` is the separate public runtime-verification boundary owned by M4: M4.1 supplies the isolated packed-artifact worker, M4.2 composes static evidence + worker evidence + final target re-resolution into the kernel-owned `VerificationReport`, and M4.3.1 adds optional live Host Service visibility assertions. Broader Tool/Client/behavior assertions and the transport-neutral long-operation lifecycle remain later M4 scope.
 
 The kernel defines no MCP, CLI, Typert, HTTP, Cordis, React, Node-runtime, or filesystem/process concepts.
 
@@ -164,7 +164,7 @@ normal profile launch -> exact marker + exit 0
 stage observations + cleanup outcome
 ```
 
-The worker binds observations to the supplied immutable starting target fingerprint. It does not re-resolve the caller's active target after execution and therefore cannot independently emit the final public `verified` / `stale` conclusion; that reduction belongs to M4.2 application orchestration.
+The worker binds observations to the supplied immutable starting target fingerprint. It does not re-resolve the caller's active target after execution and therefore cannot independently emit the final public `verified` / `stale` conclusion. M4.2 implements that final freshness reduction in application-kernel orchestration, and M4.3.1 reuses the same worker/runtime path for requested Host Service visibility assertions.
 
 The disposable DSH home is configuration/credential isolation, not a malicious-code sandbox. Candidate runtime code still has whatever filesystem/network capabilities the operating system grants to the verifier process.
 
