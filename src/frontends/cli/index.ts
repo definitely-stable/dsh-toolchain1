@@ -11,7 +11,9 @@ import {
   inspectContractResponse,
   resolveTargetResponse,
   searchContractsResponse,
+  verifyPluginResponse,
   type ApplicationKernel,
+  type VerificationApplicationKernel,
 } from '../../kernel/index.js'
 import {
   CONTRACT_INDEX_FINGERPRINT_PATTERN,
@@ -19,13 +21,16 @@ import {
   parseContractInspectRequest,
   parseContractSearchRequest,
   parsePluginCheckRequest,
+  parsePluginVerifyRequest,
   parseTargetResolveRequest,
   type ContractInspectRequest,
   type ContractKind,
   type ContractSearchRequest,
   type PluginCheckRequest,
+  type PluginVerifyRequest,
   type TargetResolveRequest,
 } from '../../protocol/index.js'
+import { createPackedPluginVerificationExecutionPort } from '../../verification/execution-port.js'
 
 export interface CliWriter {
   write(value: string): unknown
@@ -53,6 +58,7 @@ Usage:
   dsh-toolchain contract search --profile <name> --query <text> [--kind <kind> ...] [--limit <1-25>] [target hints]
   dsh-toolchain contract inspect --profile <name> --contract-index <fingerprint> --contract-id <id> [target hints]
   dsh-toolchain plugin check --profile <name> --subject <directory-or-tgz> [target hints]
+  dsh-toolchain plugin verify --profile <name> --subject <packed.tgz> [target hints]
 
 Commands:
   mcp                Serve DSH Toolchain over MCP stdio
@@ -60,6 +66,7 @@ Commands:
   contract search    Search deterministic contracts for one exact installed target
   contract inspect   Inspect one contract against an exact contract-index fingerprint
   plugin check       Check one plugin directory or packed .tgz against an exact installed DSH target
+  plugin verify      Execute one packed .tgz in an isolated temporary DSH environment and return a verification receipt
 
 Options:
   -h, --help                 Show help
@@ -75,17 +82,24 @@ Options:
       --contract-index <fingerprint>
                              Contract index fingerprint required by inspect
       --contract-id <id>     Contract id required by inspect
-      --subject <path>       Plugin directory or packed .tgz; candidate code is never executed
+      --subject <path>       Plugin directory or packed .tgz; plugin verify requires packed .tgz
 `
 
-function createNodeKernel(): ApplicationKernel {
+function createNodeKernel(): VerificationApplicationKernel {
   const digest = createNodeSha256Port()
   return createApplicationKernel({
     targetAcquisition: createDshFilesystemTargetAcquisition({ digest }),
     contractAcquisition: createDshContractFilesystemAcquisition({ digest }),
     pluginSubjectAcquisition: createPluginSubjectAcquisition(digest),
+    pluginVerificationExecution: createPackedPluginVerificationExecutionPort(),
     digest,
   })
+}
+
+function verificationKernel(kernel: ApplicationKernel): VerificationApplicationKernel | undefined {
+  return typeof kernel.verifyPlugin === 'function'
+    ? kernel as VerificationApplicationKernel
+    : undefined
 }
 
 async function launchMcp(): Promise<void> {
@@ -210,6 +224,26 @@ function pluginCheckRequest(values: CliOptionValues): PluginCheckRequest | undef
     return parsePluginCheckRequest({
       target,
       subject: { kind, path: subject },
+    })
+  } catch {
+    return undefined
+  }
+}
+
+function pluginVerifyRequest(values: CliOptionValues): PluginVerifyRequest | undefined {
+  const target = targetRequest(values)
+  const subject = values.subject
+  if (
+    target === undefined
+    || typeof subject !== 'string'
+    || subject.trim().length === 0
+    || !subject.toLowerCase().endsWith('.tgz')
+  ) return undefined
+  try {
+    return parsePluginVerifyRequest({
+      target,
+      subject: { kind: 'packed', path: subject },
+      executionPolicy: 'safe',
     })
   } catch {
     return undefined
@@ -413,6 +447,44 @@ export async function runCli(
     const response = await checkPluginResponse(kernel, request, requestId)
     writeJson(io, response)
     return response.status === 'ok' && response.data.verdict === 'compatible-in-scope' ? 0 : 1
+  }
+
+  if (
+    parsed.positionals.length === 2
+    && parsed.positionals[0] === 'plugin'
+    && parsed.positionals[1] === 'verify'
+  ) {
+    if (parsed.values.version || hasSearchOption(parsed.values) || hasInspectOption(parsed.values)) {
+      io.stderr.write('Error: plugin verify cannot be combined with --version or contract options\n')
+      return 2
+    }
+    if (targetRequest(parsed.values) === undefined) {
+      io.stderr.write('Error: --profile must be a valid profile for plugin verify\n')
+      return 2
+    }
+    if (typeof parsed.values.subject !== 'string' || parsed.values.subject.trim().length === 0) {
+      io.stderr.write('Error: --subject is required for plugin verify\n')
+      return 2
+    }
+    if (!parsed.values.subject.toLowerCase().endsWith('.tgz')) {
+      io.stderr.write('Error: plugin verify requires a packed .tgz subject\n')
+      return 2
+    }
+
+    const request = pluginVerifyRequest(parsed.values)
+    if (request === undefined) {
+      io.stderr.write('Error: invalid plugin verify request\n')
+      return 2
+    }
+    const requestId = (dependencies.requestId ?? randomUUID)()
+    const kernel = verificationKernel(dependencies.kernel ?? createNodeKernel())
+    if (kernel === undefined) {
+      io.stderr.write('Error: plugin verification execution is not configured\n')
+      return 1
+    }
+    const response = await verifyPluginResponse(kernel, request, requestId)
+    writeJson(io, response)
+    return response.status === 'ok' && response.data.status === 'verified' ? 0 : 1
   }
 
   const command = parsed.positionals.join(' ') || ''

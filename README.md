@@ -18,7 +18,7 @@ normalized machine model
 contract intelligence / diagnostics / verification receipts / compatibility diff
 ```
 
-M1 establishes exact target identity. M1.1 projects the same target-resolution capability through the installed DSH Plugin and MCP. M2.1 adds an offline, target-bound Contract Index so agents can search and inspect installed package/declaration evidence without loading the complete DSH catalog or guessing from model memory. M2.2 enriches that same index inside real Agent-scoped native DSH tool calls with bounded official Host Inspect evidence. M2.3's controlled H1 execution is complete at 864/864 with immutable terminal result `INCONCLUSIVE`; M2 remains open because H1 did not establish the preregistered PASS claim, but no H1 rerun is authorized or required for normal product development. Contract Search v3, staged evaluation hardening, and Exact Target Plugin Check now proceed on the post-H1 path defined by `docs/evaluation/m2/status.md`.
+M1 establishes exact target identity. M1.1 projects the same target-resolution capability through the installed DSH Plugin and MCP. M2.1 adds an offline, target-bound Contract Index so agents can search and inspect installed package/declaration evidence without loading the complete DSH catalog or guessing from model memory. M2.2 enriches that same index inside real Agent-scoped native DSH tool calls with bounded official Host Inspect evidence. M2.3's controlled H1 execution is complete at 864/864 with immutable terminal result `INCONCLUSIVE`; M2 remains open because H1 did not establish the preregistered PASS claim, but no H1 rerun is authorized or required for normal product development. Contract Search v3 is frozen on the post-H1 path. Exact Target Plugin Check provides the static `plugin.check` operation, while M4.1/M4.2 add isolated packed-artifact execution and the public target-fresh `plugin.verify` receipt path.
 
 ## Installation model
 
@@ -34,7 +34,7 @@ For the canonical Web profile:
 dsh plugin --profile web add dsh-toolchain
 ```
 
-The incubator package is not published to npm. CI packs the exact `.tgz`, installs it into disposable DSH profiles, verifies minimal and Web composition, and boots a real DSH host with an external probe. The Web live probe creates a real Agent, executes native ToolRuntime contract search→inspect, proves Agent-scoped Host Tool Inspect evidence changes the Contract Index relative to the offline Service path, and preserves target/index continuity before launcher-owned shutdown. A separate negative probe proves missing Inspect still falls back to valid offline Contract Intelligence.
+The incubator package is not published to npm. CI packs the exact `.tgz`, installs it into disposable DSH profiles, verifies minimal and Web composition, and boots a real DSH host with an external probe. The Web live probe creates a real Agent, executes native ToolRuntime contract search→inspect, proves Agent-scoped Host Tool Inspect evidence changes the Contract Index relative to the offline Service path, and preserves target/index continuity before launcher-owned shutdown. Separate artifact-truth lanes statically check the packed Toolchain, exercise the isolated M4.1 worker, and invoke the installed public `plugin verify` CLI against a packed candidate while proving the active profile remains unchanged.
 
 ## Exact target resolution
 
@@ -203,11 +203,11 @@ M0 Foundation, M1 Target Intelligence, M1.1 Target Frontend Parity, M2.1 Offline
 
 M2.3 H1 execution is complete: all `864 / 864` scheduled outcomes were executed. The canonical terminal result is immutable `INCONCLUSIVE` because the frozen measurement path left `227 / 576` B/C observations unresolved, so the preregistered confirmatory estimates were intentionally not computed. H1 MUST NOT be rerun merely to obtain another terminal label, and the disclosed H1 corpus is `DEVELOPMENT_ONLY`, not a future H2 holdout.
 
-M2 remains open because historical H1 did not establish the preregistered PASS claim. The permitted post-H1 path is Contract Search v3 development on a separate R2 corpus, staged measurement-health tooling before any future H2, and the first Exact Target Plugin Check product flow. The canonical current gate state is [`docs/evaluation/m2/status.md`](docs/evaluation/m2/status.md).
+M2 remains open because historical H1 did not establish the preregistered PASS claim. The permitted post-H1 path is frozen Contract Search v3 development evidence, staged measurement-health tooling before any future H2, and product work on Exact Target Plugin Check / isolated verification. The canonical current M2 gate state is [`docs/evaluation/m2/status.md`](docs/evaluation/m2/status.md).
 
 The package root still exposes only stable public product/protocol identities. `createApplicationKernel()` remains an internal composition primitive; CLI, DSH Host, and MCP construct or receive the required runtime adapters internally.
 
-Exact Target Plugin Check may proceed without rerunning H1 and without waiting for every Contract Search v3 ranking phase. Runtime verification remains a later M4 boundary; static Plugin Check MUST NOT claim that candidate code has been executed or verified.
+Exact Target Plugin Check remains the static evidence layer and MUST NOT claim candidate code execution. M4.1 adds the isolated packed-artifact worker; M4.2 adds the shared-kernel public `plugin.verify` operation through CLI, native DSH and MCP. A `verified` receipt is bound to exact packed-artifact identity plus the initial exact target and is emitted only after required static/runtime checks, cleanup and final target freshness succeed. The current `safe` policy uses a disposable DSH environment and is explicitly not a malicious-code security sandbox.
 
 ## License
 
