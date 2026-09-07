@@ -65,19 +65,25 @@ async function fingerprint(facts: AcquiredTargetFacts): Promise<string> {
 
 describe('TargetSemanticProjectionV2', () => {
   it('keeps startup target identity stable while patchReload lifecycle identity changes', async () => {
-    const live = baseFacts()
-    const startup = baseFacts()
-    live.profile.patchReload = 'live'
-    startup.profile.patchReload = 'startup'
+    const liveBase = baseFacts()
+    const startupBase = baseFacts()
+    const live: AcquiredTargetFacts = {
+      ...liveBase,
+      profile: { ...liveBase.profile, patchReload: 'live' },
+    }
+    const startup: AcquiredTargetFacts = {
+      ...startupBase,
+      profile: { ...startupBase.profile, patchReload: 'startup' },
+    }
 
     expect(await fingerprint(live)).toBe(await fingerprint(startup))
 
     const liveLifecycle = await fingerprintProfileLifecycle(
-      createProfileLifecycleSemanticProjectionV1(live.profile.patchReload),
+      createProfileLifecycleSemanticProjectionV1(live.profile.patchReload!),
       digest,
     )
     const startupLifecycle = await fingerprintProfileLifecycle(
-      createProfileLifecycleSemanticProjectionV1(startup.profile.patchReload),
+      createProfileLifecycleSemanticProjectionV1(startup.profile.patchReload!),
       digest,
     )
 
