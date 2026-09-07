@@ -12,12 +12,13 @@ import { assertTreeUnchanged, snapshotTree } from './smoke-plugin-check.mjs'
 
 export const PLUGIN_VERIFY_SMOKE_DSH_VERSION = '0.1.1-rc.2'
 export const PLUGIN_VERIFY_SMOKE_PROFILE = 'headless'
+export const PLUGIN_VERIFY_SMOKE_SERVICE = 'dshToolchainVerifySmokeService'
 
 const CANDIDATE_PACKAGE = 'dsh-toolchain-verify-smoke-candidate'
 const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/u
 const ARTIFACT_FINGERPRINT = /^dsh-plugin-artifact-v1:[0-9a-f]{64}$/u
 const CANONICAL_CHECK_IDS = Object.freeze(['structure', 'manifest', 'dependency', 'contract', 'build', 'package', 'install', 'compose', 'boot', 'visibility', 'behavior'])
-const REQUIRED_RUNTIME_CHECK_IDS = Object.freeze(['package', 'install', 'compose', 'boot'])
+const REQUIRED_RUNTIME_CHECK_IDS = Object.freeze(['package', 'install', 'compose', 'boot', 'visibility'])
 const REQUIRED_STATIC_CHECK_IDS = Object.freeze(['structure', 'manifest', 'dependency', 'contract'])
 
 function run(command, args, options = {}) {
@@ -49,6 +50,14 @@ async function createCandidate(root, env) {
   const packed = join(root, 'candidate.tgz')
   await mkdir(source, { recursive: true })
 
+  const pluginSource = [
+    `const PLUGIN_VERIFY_SMOKE_SERVICE = ${JSON.stringify(PLUGIN_VERIFY_SMOKE_SERVICE)}`,
+    'export function apply(ctx) {',
+    '  ctx.provide(PLUGIN_VERIFY_SMOKE_SERVICE, Object.freeze({ ready: true }))',
+    '}',
+    '',
+  ].join('\n')
+
   await Promise.all([
     writeFile(join(source, 'package.json'), `${JSON.stringify({
       name: CANDIDATE_PACKAGE,
@@ -63,7 +72,7 @@ async function createCandidate(root, env) {
       `- insert:\n    - id: ${CANDIDATE_PACKAGE}\n      name: '${CANDIDATE_PACKAGE}'\n`,
       { flag: 'wx' },
     ),
-    writeFile(join(source, 'plugin.mjs'), 'export function apply() {}\n', { flag: 'wx' }),
+    writeFile(join(source, 'plugin.mjs'), pluginSource, { flag: 'wx' }),
   ])
 
   run('pnpm', ['pack', '--out', packed], {
@@ -177,6 +186,7 @@ export async function smokePluginVerify(toolchainTarball) {
       '--dsh-home', home,
       '--dsh-package-root', dshPackageRoot,
       '--subject', candidate,
+      '--visibility-service', PLUGIN_VERIFY_SMOKE_SERVICE,
     ], {
       capture: true,
       timeout: 720_000,
@@ -193,7 +203,7 @@ export async function smokePluginVerify(toolchainTarball) {
     )
 
     process.stdout.write(
-      `Plugin Verify smoke: DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} ${PLUGIN_VERIFY_SMOKE_PROFILE} public CLI verified exact packed candidate in disposable worker\n`,
+      `Plugin Verify smoke: DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} ${PLUGIN_VERIFY_SMOKE_PROFILE} public CLI verified exact packed candidate and live Host Service visibility in disposable worker\n`,
     )
     return response
   } finally {
