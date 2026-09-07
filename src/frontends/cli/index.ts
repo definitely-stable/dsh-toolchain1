@@ -58,7 +58,7 @@ Usage:
   dsh-toolchain contract search --profile <name> --query <text> [--kind <kind> ...] [--limit <1-25>] [target hints]
   dsh-toolchain contract inspect --profile <name> --contract-index <fingerprint> --contract-id <id> [target hints]
   dsh-toolchain plugin check --profile <name> --subject <directory-or-tgz> [target hints]
-  dsh-toolchain plugin verify --profile <name> --subject <packed.tgz> [target hints]
+  dsh-toolchain plugin verify --profile <name> --subject <packed.tgz> [--visibility-service <name> ...] [target hints]
 
 Commands:
   mcp                Serve DSH Toolchain over MCP stdio
@@ -83,6 +83,8 @@ Options:
                              Contract index fingerprint required by inspect
       --contract-id <id>     Contract id required by inspect
       --subject <path>       Plugin directory or packed .tgz; plugin verify requires packed .tgz
+      --visibility-service <name>
+                             Require one Host Service to be visible during plugin verify; repeatable
 `
 
 function createNodeKernel(): VerificationApplicationKernel {
@@ -151,7 +153,7 @@ function hasInspectOption(values: CliOptionValues): boolean {
 }
 
 function hasPluginOption(values: CliOptionValues): boolean {
-  return values.subject !== undefined
+  return values.subject !== undefined || values['visibility-service'] !== undefined
 }
 
 function hasOperationOption(values: CliOptionValues): boolean {
@@ -239,11 +241,24 @@ function pluginVerifyRequest(values: CliOptionValues): PluginVerifyRequest | und
     || subject.trim().length === 0
     || !subject.toLowerCase().endsWith('.tgz')
   ) return undefined
+
+  const rawServices = values['visibility-service']
+  const serviceNames = rawServices === undefined
+    ? []
+    : Array.isArray(rawServices)
+      ? rawServices
+      : [rawServices]
+  const visibilityAssertions = serviceNames.map(name => ({
+    kind: 'host-service' as const,
+    name,
+  }))
+
   try {
     return parsePluginVerifyRequest({
       target,
       subject: { kind: 'packed', path: subject },
       executionPolicy: 'safe',
+      ...(visibilityAssertions.length === 0 ? {} : { visibilityAssertions }),
     })
   } catch {
     return undefined
@@ -275,6 +290,7 @@ export async function runCli(
         'contract-index': { type: 'string' },
         'contract-id': { type: 'string' },
         subject: { type: 'string' },
+        'visibility-service': { type: 'string', multiple: true },
       },
     })
   } catch (error) {
@@ -424,8 +440,13 @@ export async function runCli(
     && parsed.positionals[0] === 'plugin'
     && parsed.positionals[1] === 'check'
   ) {
-    if (parsed.values.version || hasSearchOption(parsed.values) || hasInspectOption(parsed.values)) {
-      io.stderr.write('Error: plugin check cannot be combined with --version or contract options\n')
+    if (
+      parsed.values.version
+      || hasSearchOption(parsed.values)
+      || hasInspectOption(parsed.values)
+      || parsed.values['visibility-service'] !== undefined
+    ) {
+      io.stderr.write('Error: plugin check cannot be combined with --version, contract, or verification options\n')
       return 2
     }
     if (targetRequest(parsed.values) === undefined) {
