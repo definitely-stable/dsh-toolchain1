@@ -48,6 +48,11 @@ export type TargetResolveRequest = {
   readonly "patches"?: Array<string>
 }
 
+export type ProfileLifecycle = {
+  readonly "patchReload": "live" | "startup"
+  readonly "fingerprint": string
+}
+
 export type TargetSnapshot = {
   readonly "fingerprint": string
   readonly "createdAt": string
@@ -68,6 +73,7 @@ export type TargetSnapshot = {
   readonly "homePatchHash": string
   readonly "overlayPatchHashes": Array<string>
 }
+  readonly "profileLifecycle"?: ProfileLifecycle
   readonly "supportStatus"?: "tested" | "supported" | "experimental" | "unsupported"
   readonly "evidence": Array<Evidence>
 }
@@ -185,6 +191,7 @@ export type VerificationReport = {
   readonly "status": "verified" | "failed" | "partial" | "stale" | "cancelled"
   readonly "artifactFingerprint": string
   readonly "targetFingerprint": string
+  readonly "lifecycleFingerprint"?: string
   readonly "executionPolicy": "safe" | "trusted"
   readonly "checks": Array<{
   readonly "id": "structure" | "manifest" | "dependency" | "contract" | "build" | "package" | "install" | "compose" | "boot" | "visibility" | "behavior"

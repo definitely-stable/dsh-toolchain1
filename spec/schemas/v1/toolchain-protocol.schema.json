@@ -80,6 +80,18 @@
         }
       }
     },
+    "profileLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["patchReload", "fingerprint"],
+      "properties": {
+        "patchReload": {"enum": ["live", "startup"]},
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^dsh-profile-lifecycle-v1:[0-9a-f]{64}$"
+        }
+      }
+    },
     "targetSnapshot": {
       "type": "object",
       "additionalProperties": false,
@@ -137,6 +149,7 @@
             }
           }
         },
+        "profileLifecycle": {"$ref": "#/$defs/profileLifecycle"},
         "supportStatus": {"enum": ["tested", "supported", "experimental", "unsupported"]},
         "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
       }
@@ -380,6 +393,10 @@
         "status": {"enum": ["verified", "failed", "partial", "stale", "cancelled"]},
         "artifactFingerprint": {"type": "string", "minLength": 16},
         "targetFingerprint": {"type": "string", "minLength": 16},
+        "lifecycleFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-profile-lifecycle-v1:[0-9a-f]{64}$"
+        },
         "executionPolicy": {"enum": ["safe", "trusted"]},
         "checks": {
           "type": "array",

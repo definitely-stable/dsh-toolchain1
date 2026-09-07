@@ -23,6 +23,7 @@ import type {
   PluginVerifyRequest,
   PluginVerifyResponse,
   PluginVerifySuccessResponse,
+  ProfileLifecycle,
   ResolvedBundleIdentity,
   ResolvedPackageIdentity,
   TargetResolveFailureResponse,
@@ -67,7 +68,9 @@ import {
   type PluginSubjectAcquisitionPort,
 } from '../model/plugin.js'
 import {
+  createProfileLifecycleSemanticProjectionV1,
   createTargetSemanticProjectionV2,
+  fingerprintProfileLifecycle,
   fingerprintTarget,
   TargetAcquisitionError,
   type AcquiredTargetFacts,
@@ -190,6 +193,7 @@ function createSnapshot(
   projection: TargetSemanticProjectionV2,
   fingerprint: string,
   createdAt: string,
+  profileLifecycle?: ProfileLifecycle,
 ): TargetSnapshot {
   const bundles = projection.profile.bundles.map(freezeBundleIdentity)
   const dependencies = projection.profile.dependencies.map(freezePackageIdentity)
@@ -213,6 +217,9 @@ function createSnapshot(
       homePatchHash: projection.profile.homePatchHash,
       overlayPatchHashes,
     }),
+    ...(profileLifecycle === undefined
+      ? {}
+      : { profileLifecycle: Object.freeze({ ...profileLifecycle }) }),
     ...(facts.supportStatus === undefined ? {} : { supportStatus: facts.supportStatus }),
     evidence,
   })
@@ -536,7 +543,16 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Veri
     const facts = await options.targetAcquisition.acquire(request)
     const projection = createTargetSemanticProjectionV2(facts)
     const fingerprint = await fingerprintTarget(projection, options.digest)
-    const snapshot = createSnapshot(facts, projection, fingerprint, now())
+    const profileLifecycle = facts.profile.patchReload === undefined
+      ? undefined
+      : {
+          patchReload: facts.profile.patchReload,
+          fingerprint: await fingerprintProfileLifecycle(
+            createProfileLifecycleSemanticProjectionV1(facts.profile.patchReload),
+            options.digest,
+          ),
+        }
+    const snapshot = createSnapshot(facts, projection, fingerprint, now(), profileLifecycle)
     return Object.freeze({ snapshot })
   }
 
