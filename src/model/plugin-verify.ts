@@ -2,6 +2,7 @@ import type { AcquiredPluginSubject } from './plugin.js'
 import type {
   Diagnostic,
   PluginCheckResult,
+  PluginVisibilityAssertion,
   TargetSnapshot,
   VerificationReport,
 } from '../protocol/index.js'
@@ -49,6 +50,7 @@ export interface PluginVerificationExecutionInput {
   readonly expectedContentHash: string
   readonly target: TargetSnapshot
   readonly executionPolicy: 'safe'
+  readonly visibilityAssertions?: readonly PluginVisibilityAssertion[]
 }
 
 export interface PluginVerificationExecutionPort {
