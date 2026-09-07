@@ -36,6 +36,20 @@ async function requestValidator() {
   return request
 }
 
+const invalidVisibilityAssertions: readonly unknown[] = [
+  [],
+  [{ kind: 'host-service', name: '' }],
+  [{ kind: 'host-service', name: '   ' }],
+  [{ kind: 'host-service', name: 'a'.repeat(257) }],
+  [{ kind: 'tool', name: 'alphaService' }],
+  [{ kind: 'host-service', name: 'alphaService', extra: true }],
+  [
+    { kind: 'host-service', name: 'alphaService' },
+    { kind: 'host-service', name: 'alphaService' },
+  ],
+  Array.from({ length: 33 }, (_, index) => ({ kind: 'host-service', name: `service-${index}` })),
+]
+
 describe('plugin.verify Host Service visibility assertions', () => {
   it('accepts and preserves a bounded ordered set of Host Service assertions', async () => {
     const candidate = {
@@ -50,21 +64,11 @@ describe('plugin.verify Host Service visibility assertions', () => {
     expect((await requestValidator())(candidate)).toBe(true)
   })
 
-  it.each([
-    [],
-    [{ kind: 'host-service', name: '' }],
-    [{ kind: 'host-service', name: '   ' }],
-    [{ kind: 'host-service', name: 'a'.repeat(257) }],
-    [{ kind: 'tool', name: 'alphaService' }],
-    [{ kind: 'host-service', name: 'alphaService', extra: true }],
-    [
-      { kind: 'host-service', name: 'alphaService' },
-      { kind: 'host-service', name: 'alphaService' },
-    ],
-    Array.from({ length: 33 }, (_, index) => ({ kind: 'host-service', name: `service-${index}` })),
-  ])('rejects invalid or duplicate visibility assertions %#', async (visibilityAssertions) => {
-    const candidate = { ...baseRequest(), visibilityAssertions }
-    expect(() => parsePluginVerifyRequest(candidate)).toThrow('Invalid plugin.verify arguments')
-    expect((await requestValidator())(candidate)).toBe(false)
+  invalidVisibilityAssertions.forEach((visibilityAssertions, index) => {
+    it(`rejects invalid or duplicate visibility assertions ${index}`, async () => {
+      const candidate = { ...baseRequest(), visibilityAssertions }
+      expect(() => parsePluginVerifyRequest(candidate)).toThrow('Invalid plugin.verify arguments')
+      expect((await requestValidator())(candidate)).toBe(false)
+    })
   })
 })
