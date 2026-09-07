@@ -59,6 +59,18 @@ function acquiredFacts(): AcquiredTargetFacts {
   }
 }
 
+function lifecycleAwareFacts(): AcquiredTargetFacts {
+  const legacy = acquiredFacts()
+  return {
+    ...legacy,
+    dsh: { ...legacy.dsh, version: '0.1.2-rc.1' },
+    profile: {
+      ...legacy.profile,
+      patchReload: 'live',
+    },
+  }
+}
+
 describe('application kernel target resolution', () => {
   it('acquires once and returns an immutable snapshot bound to semantic target identity', async () => {
     const request: TargetResolveRequest = {
@@ -94,6 +106,7 @@ describe('application kernel target resolution', () => {
     ])
     expect(result.snapshot.profile.overlayPatchHashes).toEqual(['d'.repeat(64)])
     expect(result.snapshot.supportStatus).toBe('tested')
+    expect('profileLifecycle' in result.snapshot).toBe(false)
     expect(digestInput).not.toContain('/private/acquisition/home')
     expect(digestInput).not.toContain('/private/acquisition/dsh')
     expect(digestInput).not.toContain('/private/acquisition/overlay.yml')
@@ -109,6 +122,34 @@ describe('application kernel target resolution', () => {
     expect(Object.isFrozen(result.snapshot.profile.overlayPatchHashes)).toBe(true)
     expect(Object.isFrozen(result.snapshot.evidence)).toBe(true)
     expect(Object.isFrozen(result.snapshot.evidence[0])).toBe(true)
+  })
+
+  it('projects a separate immutable lifecycle identity without changing target-v2 identity semantics', async () => {
+    const digest: Sha256Port = {
+      sha256Utf8: async value => value.includes('dsh-profile-lifecycle-v1')
+        ? 'b'.repeat(64)
+        : 'a'.repeat(64),
+    }
+    const kernel = createM1Kernel({
+      targetAcquisition: { acquire: async () => lifecycleAwareFacts() },
+      digest,
+      now: () => '2026-09-07T00:00:00.000Z',
+    })
+
+    const result = await kernel.resolveTarget({ profile: 'web' })
+    const snapshot = result.snapshot as typeof result.snapshot & {
+      readonly profileLifecycle?: {
+        readonly patchReload: 'live' | 'startup'
+        readonly fingerprint: string
+      }
+    }
+
+    expect(snapshot.fingerprint).toBe(`dsh-target-v2:${'a'.repeat(64)}`)
+    expect(snapshot.profileLifecycle).toEqual({
+      patchReload: 'live',
+      fingerprint: `dsh-profile-lifecycle-v1:${'b'.repeat(64)}`,
+    })
+    expect(Object.isFrozen(snapshot.profileLifecycle)).toBe(true)
   })
 
   it('does not let capture time change the semantic fingerprint', async () => {
