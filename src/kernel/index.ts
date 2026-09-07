@@ -702,6 +702,9 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Veri
         expectedContentHash: artifact.contentHash,
         target: snapshot,
         executionPolicy: request.executionPolicy,
+        ...(request.visibilityAssertions === undefined
+          ? {}
+          : { visibilityAssertions: request.visibilityAssertions }),
       }, signal)
       const { snapshot: finalSnapshot } = await resolveTarget(request.target)
       const data = reducePluginVerification({
