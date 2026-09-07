@@ -61,7 +61,7 @@ export class TargetAcquisitionError extends Error {
     super(message, options)
     this.name = 'TargetAcquisitionError'
     this.code = code
-    this.locations = locations
+    this.locations = Object.freeze([...locations])
   }
 }
 
