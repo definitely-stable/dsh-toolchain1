@@ -27,12 +27,14 @@ const supportedKeywords = new Set([
   'additionalProperties',
   'items',
   'minLength',
+  'maxLength',
   'minimum',
   'maximum',
   'pattern',
   'format',
   'uniqueItems',
   'minItems',
+  'maxItems',
   'oneOf',
 ])
 
