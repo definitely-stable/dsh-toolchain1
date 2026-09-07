@@ -171,9 +171,9 @@ R1 remains a hard regression/invariant corpus, not the tuning set. Embeddings, v
 
 ### First usable alpha gate — Exact Target Plugin Check
 
-**Status:** may proceed now on the post-H1 path; it does not require an H1 rerun and does not need to wait for every Contract Search v3 ranking phase.
+**Status:** implemented as the static product flow; it does not require an H1 rerun and does not need to wait for any further Contract Search ranking work.
 
-Ship the smallest source-directory static check path that proves the product loop before expanding architecture further:
+The static path proves the product loop before runtime execution:
 
 ```text
 plugin subject + exact TargetSnapshot + target-bound ContractIndex
@@ -206,15 +206,15 @@ Exit criteria:
 
 ## M4 — Isolated Verification Alpha
 
-**Status:** **in progress**. M4.1 establishes the internal packed-artifact execution worker; public verification orchestration remains M4.2.
+**Status:** **in progress**. M4.1 is merged; M4.2 implements the first public exact-target verification operation. Remaining M4 scope is explicit visibility/behavior coverage and a transport-neutral long-operation lifecycle when real needs justify it.
 
 **Goal:** prove whether the artifact users install composes and works in a real DSH target, producing portable evidence rather than a generic pass badge.
 
 ### M4.1 — Isolated packed-artifact worker
 
-**Status:** implemented on PR #189; final merge remains gated on exact-head CI and review.
+**Status:** implemented and merged via PR #189 / Issue #188.
 
-M4.1 is deliberately worker-first. It verifies a caller-supplied packed `.tgz` under execution policy `safe` and produces internal execution evidence without exposing a premature public `plugin.verify` operation.
+M4.1 is deliberately worker-first. It verifies a caller-supplied packed `.tgz` under execution policy `safe` and produces internal execution evidence consumed by the shared application layer.
 
 Implemented boundary:
 - exact-byte `dsh-plugin-artifact-v1:<sha256>` identity, separate from static `dsh-plugin-subject-v1`;
@@ -228,21 +228,31 @@ Implemented boundary:
 - deterministic package/install/compose/boot failure diagnostics with explicit downstream skips;
 - timeout, cancellation, bounded stdout/stderr and process-tree termination;
 - cleanup attempted on every terminal path and retained independently from semantic outcome;
-- cross-platform process-boundary CI on Windows/macOS and exact packed real-DSH worker smoke on the frozen `0.1.1-rc.2` Web train.
+- cross-platform process-boundary CI on Windows/macOS and exact packed real-DSH worker smoke on the frozen `0.1.1-rc.2` train.
 
-M4.1 does **not** itself produce a public `verified` claim. It binds execution observations to the starting TargetSnapshot fingerprint; active-target freshness re-resolution remains an application-layer responsibility.
+M4.1 does **not** itself produce a public `verified` claim. It binds execution observations to the starting TargetSnapshot fingerprint; M4.2 owns final active-target freshness and public report reduction.
 
 ### M4.2 — Public verification orchestration
 
-**Status:** not started.
+**Status:** implemented by Issue #190 / PR #191; acceptance is bound to exact-head Node 22/24/26, Windows/macOS boundary, packed-artifact, worker and public real-DSH CI evidence.
 
-Next scope:
-- compose static `plugin.check` evidence and M4.1 worker observations into the existing Protocol v1 `VerificationReport` semantics;
-- re-resolve the original target after execution and reduce fresh evidence to `verified | failed | partial | stale | cancelled` without weakening fail-closed behavior;
-- introduce the transport-neutral Operation lifecycle from proven worker needs;
-- project one shared `plugin.verify` application operation through CLI, native DSH and MCP;
-- add explicit visibility assertions and deterministic behavior fixtures only through reviewed contracts rather than synthetic success;
-- keep later DSH-train runtime claims gated by #33 lifecycle/target-identity governance.
+Implemented scope:
+- closed Protocol v1 packed-only `PluginVerifyRequest` / `PluginVerifyResponse` with execution policy `safe`;
+- kernel-owned orchestration `target.resolve -> plugin.check -> exact packed artifact -> M4.1 worker -> target re-resolve -> VerificationReport`;
+- deterministic reducer for `verified | failed | partial | stale | cancelled` with cancellation/freshness/failure precedence;
+- exact `dsh-plugin-artifact-v1` binding and worker identity mismatch fail-closed behavior;
+- final target re-resolution before any `verified` claim;
+- static structure/manifest/dependency/contract evidence folded into the same canonical eleven-stage receipt;
+- runtime package/install/compose/boot evidence retained from M4.1, with cleanup preserved independently;
+- one shared public `plugin.verify` application operation projected through CLI, native DSH and MCP without frontend-owned status logic;
+- real packed-candidate acceptance through the installed public CLI against published `@deepseek-ai/dsh@0.1.1-rc.2`, including exact artifact/target receipt binding and proof that the active profile remains unchanged.
+
+Deliberately deferred from M4.2:
+- explicit visibility assertion vocabulary and live visibility proof;
+- deterministic behavior fixture vocabulary;
+- build-stage execution policy;
+- a transport-neutral `Operation` lifecycle for progress/cancel when long-running UX requirements justify the added contract;
+- later DSH-train runtime claims until Issue #33 resolves lifecycle/target-identity governance.
 
 M4 capabilities across the full milestone:
 - artifact fingerprint and package preview/pack;
@@ -257,12 +267,13 @@ M4 capabilities across the full milestone:
 - cleanup/crash/cancel handling.
 
 M4 exit criteria:
-- active profile is untouched under the default isolation policy;
-- source-valid/package-broken and boot/visibility-broken fixtures are detected;
-- stale target or incompatible runtime cannot yield `verified`;
-- worker crash leaves active DSH healthy and yields diagnostics;
-- an unexecuted stage is never reported as passed;
-- community lifecycle runners may be integrated as verifier backends only behind Toolchain-owned evidence semantics.
+- [x] active profile is untouched under the current `safe` isolation policy for the M4.2 public acceptance path;
+- [ ] source-valid/package-broken and boot/visibility-broken fixture coverage is complete across the intended public M4 surface;
+- [x] stale target cannot yield `verified` in the shared reducer/kernel path;
+- [x] worker crash/failure remains fail-closed and cleanup is independently attempted;
+- [x] an unexecuted stage is never reported as passed;
+- [ ] explicit visibility/behavior contracts and any required Operation lifecycle are implemented before claiming the full M4 milestone complete;
+- [ ] community lifecycle runners, if adopted, are integrated only behind Toolchain-owned evidence semantics.
 
 ## CI adoption gate
 
