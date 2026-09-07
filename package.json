@@ -76,11 +76,11 @@
     "@deepseek-ai/cordis": "^4.0.1"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/cordis": "4.0.2",
     "@types/node": "^22.20.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
-    "oxlint": "1.76.0",
+    "oxlint": "1.81.0",
     "vitest": "4.1.8"
   }
 }
