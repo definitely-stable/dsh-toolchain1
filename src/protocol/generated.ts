@@ -305,10 +305,16 @@ export type PluginPackedSubjectRequest = {
   readonly "path": string
 }
 
+export type PluginVisibilityAssertion = {
+  readonly "kind": "host-service"
+  readonly "name": string
+}
+
 export type PluginVerifyRequest = {
   readonly "target": TargetResolveRequest
   readonly "subject": PluginPackedSubjectRequest
   readonly "executionPolicy": "safe"
+  readonly "visibilityAssertions"?: [PluginVisibilityAssertion, ...Array<PluginVisibilityAssertion>]
 }
 
 export type PluginVerifySuccessResponse = {
