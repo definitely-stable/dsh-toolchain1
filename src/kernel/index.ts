@@ -727,6 +727,12 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Veri
         artifactFingerprint: artifact.fingerprint,
         initialTargetFingerprint: snapshot.fingerprint,
         finalTargetFingerprint: finalSnapshot.fingerprint,
+        ...(snapshot.profileLifecycle === undefined
+          ? {}
+          : { initialLifecycleFingerprint: snapshot.profileLifecycle.fingerprint }),
+        ...(finalSnapshot.profileLifecycle === undefined
+          ? {}
+          : { finalLifecycleFingerprint: finalSnapshot.profileLifecycle.fingerprint }),
         staticResult: staticOutcome.data,
         staticDiagnostics: staticOutcome.diagnostics,
         execution,
