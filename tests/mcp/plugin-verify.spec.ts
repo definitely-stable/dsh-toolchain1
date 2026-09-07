@@ -60,11 +60,11 @@ describe('plugin.verify MCP projection', () => {
   it('returns semantic stale as ordinary structured content and delegates visibility assertions unchanged', async () => {
     const app = kernel()
     const tool = createPluginVerifyMcpTool(app, () => 'plugin-verify-mcp')
-    const request = {
+    const request: Parameters<typeof tool.callback>[0] = {
       target: { profile: 'web' },
-      subject: { kind: 'packed' as const, path: '/candidate/plugin.tgz' },
-      executionPolicy: 'safe' as const,
-      visibilityAssertions: [{ kind: 'host-service' as const, name: 'exampleService' }],
+      subject: { kind: 'packed', path: '/candidate/plugin.tgz' },
+      executionPolicy: 'safe',
+      visibilityAssertions: [{ kind: 'host-service', name: 'exampleService' }],
     }
 
     const result = await tool.callback(request)
