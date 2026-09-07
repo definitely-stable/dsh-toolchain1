@@ -5,6 +5,7 @@ import type {
   PluginCheckRequest,
   PluginSubjectRequest,
   PluginVerifyRequest,
+  PluginVisibilityAssertion,
   TargetResolveRequest,
 } from './generated.js'
 
@@ -34,10 +35,18 @@ const inspectKeys = new Set<keyof ContractInspectRequest>([
   'contractId',
 ])
 const pluginCheckKeys = new Set<keyof PluginCheckRequest>(['target', 'subject'])
-const pluginVerifyKeys = new Set<keyof PluginVerifyRequest>(['target', 'subject', 'executionPolicy'])
+const pluginVerifyKeys = new Set<keyof PluginVerifyRequest>([
+  'target',
+  'subject',
+  'executionPolicy',
+  'visibilityAssertions',
+])
 const pluginSubjectKeys = new Set<keyof PluginSubjectRequest>(['kind', 'path'])
 const pluginSubjectKinds = new Set<PluginSubjectRequest['kind']>(['directory', 'packed'])
+const pluginVisibilityAssertionKeys = new Set<keyof PluginVisibilityAssertion>(['kind', 'name'])
 const profilePattern = /^(?!\.{1,2}$)(?!node_modules$)[^/\\]+$/u
+const MAX_VISIBILITY_ASSERTIONS = 32
+const MAX_VISIBILITY_ASSERTION_NAME_LENGTH = 256
 
 function invalid(message: string): never {
   throw new TypeError(message)
@@ -71,6 +80,42 @@ function parseTargetResolveRequestWithMessage(value: unknown, message: string): 
     ...(dshPackageRoot === undefined ? {} : { dshPackageRoot }),
     ...(patches === undefined ? {} : { patches: [...patches] }),
   }
+}
+
+function parsePluginVisibilityAssertions(
+  value: unknown,
+  message: string,
+): PluginVerifyRequest['visibilityAssertions'] | undefined {
+  if (value === undefined) return undefined
+  if (
+    !Array.isArray(value)
+    || value.length < 1
+    || value.length > MAX_VISIBILITY_ASSERTIONS
+  ) invalid(message)
+
+  const assertions: PluginVisibilityAssertion[] = []
+  const seen = new Set<string>()
+  for (const assertion of value) {
+    if (!isRecord(assertion)) invalid(message)
+    if (
+      Object.keys(assertion).some(
+        key => !pluginVisibilityAssertionKeys.has(key as keyof PluginVisibilityAssertion),
+      )
+    ) invalid(message)
+    if (
+      assertion.kind !== 'host-service'
+      || typeof assertion.name !== 'string'
+      || assertion.name.trim().length === 0
+      || assertion.name.length > MAX_VISIBILITY_ASSERTION_NAME_LENGTH
+    ) invalid(message)
+
+    const identity = `${assertion.kind}\u0000${assertion.name}`
+    if (seen.has(identity)) invalid(message)
+    seen.add(identity)
+    assertions.push({ kind: 'host-service', name: assertion.name })
+  }
+
+  return assertions as [PluginVisibilityAssertion, ...PluginVisibilityAssertion[]]
 }
 
 export function parseTargetResolveRequest(value: unknown): TargetResolveRequest {
@@ -157,8 +202,9 @@ export function parsePluginVerifyRequest(value: unknown): PluginVerifyRequest {
   if (!isRecord(value)) invalid(message)
   if (Object.keys(value).some(key => !pluginVerifyKeys.has(key as keyof PluginVerifyRequest))) invalid(message)
 
-  const { target, subject, executionPolicy } = value
+  const { target, subject, executionPolicy, visibilityAssertions } = value
   const parsedTarget = parseTargetResolveRequestWithMessage(target, message)
+  const parsedVisibilityAssertions = parsePluginVisibilityAssertions(visibilityAssertions, message)
   if (!isRecord(subject)) invalid(message)
   if (Object.keys(subject).some(key => !pluginSubjectKeys.has(key as keyof PluginSubjectRequest))) invalid(message)
   if (subject.kind !== 'packed' || !nonEmptyString(subject.path) || executionPolicy !== 'safe') invalid(message)
@@ -170,5 +216,8 @@ export function parsePluginVerifyRequest(value: unknown): PluginVerifyRequest {
       path: subject.path,
     },
     executionPolicy: 'safe',
+    ...(parsedVisibilityAssertions === undefined ? {} : {
+      visibilityAssertions: parsedVisibilityAssertions,
+    }),
   }
 }
