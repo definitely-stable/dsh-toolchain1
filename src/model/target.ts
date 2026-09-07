@@ -8,6 +8,8 @@ import type { Sha256Port } from './digest.js'
 
 export type { Sha256Port } from './digest.js'
 
+export type ProfilePatchReload = 'live' | 'startup'
+
 export interface AcquiredTargetFacts {
   readonly dsh: {
     readonly name: '@deepseek-ai/dsh'
@@ -25,6 +27,7 @@ export interface AcquiredTargetFacts {
     readonly profilePatchHash: string
     readonly homePatchHash: string
     readonly overlayPatchHashes: readonly string[]
+    readonly patchReload?: ProfilePatchReload
   }
   readonly evidence: readonly Evidence[]
   readonly supportStatus?: 'tested' | 'supported' | 'experimental' | 'unsupported'
@@ -58,7 +61,7 @@ export class TargetAcquisitionError extends Error {
     super(message, options)
     this.name = 'TargetAcquisitionError'
     this.code = code
-    this.locations = Object.freeze([...locations])
+    this.locations = locations
   }
 }
 
@@ -81,6 +84,11 @@ export interface TargetSemanticProjectionV2 {
     readonly homePatchHash: string
     readonly overlayPatchHashes: readonly string[]
   }
+}
+
+export interface ProfileLifecycleSemanticProjectionV1 {
+  readonly schema: 'dsh-profile-lifecycle-v1'
+  readonly patchReload: ProfilePatchReload
 }
 
 function freezeBundleIdentity(identity: ResolvedBundleIdentity): ResolvedBundleIdentity {
@@ -140,6 +148,15 @@ export function createTargetSemanticProjectionV2(
   })
 }
 
+export function createProfileLifecycleSemanticProjectionV1(
+  patchReload: ProfilePatchReload,
+): ProfileLifecycleSemanticProjectionV1 {
+  return Object.freeze({
+    schema: 'dsh-profile-lifecycle-v1',
+    patchReload,
+  })
+}
+
 type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue }
 
 function canonicalizeValue(value: JsonValue): JsonValue {
@@ -157,13 +174,32 @@ export function canonicalizeTargetProjection(projection: TargetSemanticProjectio
   return JSON.stringify(canonicalizeValue(projection as unknown as JsonValue))
 }
 
+export function canonicalizeProfileLifecycleProjection(
+  projection: ProfileLifecycleSemanticProjectionV1,
+): string {
+  return JSON.stringify(canonicalizeValue(projection as unknown as JsonValue))
+}
+
+async function validatedDigest(value: string, digest: Sha256Port): Promise<string> {
+  const hashed = await digest.sha256Utf8(value)
+  if (!/^[0-9a-f]{64}$/.test(hashed)) {
+    throw new Error('SHA-256 digest port must return exactly 64 lowercase hexadecimal characters')
+  }
+  return hashed
+}
+
 export async function fingerprintTarget(
   projection: TargetSemanticProjectionV2,
   digest: Sha256Port,
 ): Promise<string> {
-  const value = await digest.sha256Utf8(canonicalizeTargetProjection(projection))
-  if (!/^[0-9a-f]{64}$/.test(value)) {
-    throw new Error('SHA-256 digest port must return exactly 64 lowercase hexadecimal characters')
-  }
+  const value = await validatedDigest(canonicalizeTargetProjection(projection), digest)
   return `dsh-target-v2:${value}`
+}
+
+export async function fingerprintProfileLifecycle(
+  projection: ProfileLifecycleSemanticProjectionV1,
+  digest: Sha256Port,
+): Promise<string> {
+  const value = await validatedDigest(canonicalizeProfileLifecycleProjection(projection), digest)
+  return `dsh-profile-lifecycle-v1:${value}`
 }
