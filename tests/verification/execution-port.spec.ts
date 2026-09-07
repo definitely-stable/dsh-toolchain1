@@ -29,7 +29,7 @@ function target(): TargetSnapshot {
 }
 
 describe('packed plugin verification execution port', () => {
-  it('maps the runtime-neutral kernel input to the M4.1 worker and strips worker-only runtime metadata', async () => {
+  it('maps runtime-neutral visibility assertions to the worker and strips worker-only runtime metadata', async () => {
     const signal = new AbortController().signal
     const runner: PackedPluginVerificationRunner = vi.fn(async () => ({
       artifactFingerprint,
@@ -43,12 +43,16 @@ describe('packed plugin verification execution port', () => {
     } as const))
     const port = createPackedPluginVerificationExecutionPort(runner)
     const snapshot = target()
+    const visibilityAssertions = [
+      { kind: 'host-service' as const, name: 'candidateService' },
+    ]
 
     const result = await port.verify({
       artifactPath: '/candidate/plugin.tgz',
       expectedContentHash: artifactHash,
       target: snapshot,
       executionPolicy: 'safe',
+      visibilityAssertions,
     }, signal)
 
     expect(runner).toHaveBeenCalledWith({
@@ -58,6 +62,7 @@ describe('packed plugin verification execution port', () => {
       },
       target: snapshot,
       executionPolicy: 'safe',
+      visibilityAssertions,
     }, signal)
     expect(result).toEqual({
       artifactFingerprint,
