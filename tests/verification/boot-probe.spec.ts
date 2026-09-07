@@ -35,6 +35,7 @@ describe('verification boot probe', () => {
     expect(probe.marker).toMatch(/^DSH_TOOLCHAIN_VERIFY_BOOT_PROBE_V1:[0-9a-f]{64}$/u)
     expect(probe.marker).not.toContain(root)
     expect(probe.marker).not.toMatch(/(?:token|secret|key|credential)/iu)
+    expect(probe.visibility).toBeUndefined()
 
     const manifest = JSON.parse(await readFile(path.join(probe.packagePath, 'package.json'), 'utf8')) as Record<string, unknown>
     expect(manifest).toEqual({
@@ -66,6 +67,51 @@ describe('verification boot probe', () => {
     expect(source).not.toContain('node:http')
     expect(source).not.toContain('node:https')
     expect(source).not.toContain('XMLHttpRequest')
+  })
+
+  it('adds deterministic PASS/FAIL markers for requested Host Service visibility without logging service names', async () => {
+    const root = await fixtureRoot()
+    const assertions = [
+      { kind: 'host-service' as const, name: 'candidateService' },
+      { kind: 'host-service' as const, name: 'another/service' },
+    ]
+
+    const probe = await createVerificationBootProbe(root, 'web', assertions)
+    const source = await readFile(path.join(probe.packagePath, 'probe.mjs'), 'utf8')
+
+    expect(probe.visibility).toBeDefined()
+    expect(probe.visibility?.passedMarker).toMatch(/^DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V1:[0-9a-f]{64}:PASS$/u)
+    expect(probe.visibility?.failedMarker).toMatch(/^DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V1:[0-9a-f]{64}:FAIL$/u)
+    expect(probe.visibility?.passedMarker).not.toContain('candidateService')
+    expect(probe.visibility?.failedMarker).not.toContain('another/service')
+    expect(source).toContain(JSON.stringify(assertions))
+    expect(source).toContain('rootCtx.get(assertion.name, false)')
+    expect(source).toContain(JSON.stringify(`${probe.visibility?.passedMarker}\n`))
+    expect(source).toContain(JSON.stringify(`${probe.visibility?.failedMarker}\n`))
+    expect(source).toContain(`process.stdout.write(${JSON.stringify(`${probe.marker}\n`)})`)
+    expect(source).toContain('appExit(0)')
+  })
+
+  it('binds visibility marker identity to the ordered assertion set', async () => {
+    const firstRoot = await fixtureRoot()
+    const secondRoot = await fixtureRoot()
+    const reversedRoot = await fixtureRoot()
+
+    const first = await createVerificationBootProbe(firstRoot, 'web', [
+      { kind: 'host-service', name: 'alphaService' },
+      { kind: 'host-service', name: 'betaService' },
+    ])
+    const second = await createVerificationBootProbe(secondRoot, 'web', [
+      { kind: 'host-service', name: 'alphaService' },
+      { kind: 'host-service', name: 'betaService' },
+    ])
+    const reversed = await createVerificationBootProbe(reversedRoot, 'web', [
+      { kind: 'host-service', name: 'betaService' },
+      { kind: 'host-service', name: 'alphaService' },
+    ])
+
+    expect(first.visibility?.passedMarker).toBe(second.visibility?.passedMarker)
+    expect(first.visibility?.passedMarker).not.toBe(reversed.visibility?.passedMarker)
   })
 
   it('binds the marker to profile identity without embedding the profile string', async () => {
