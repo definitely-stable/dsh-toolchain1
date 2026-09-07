@@ -224,6 +224,27 @@ function requiredCheckIncomplete(checks: readonly VerificationCheck[]): boolean 
   return checks.some(check => REQUIRED_CHECK_IDS.has(check.id) && check.status !== 'passed')
 }
 
+function visibilityCheck(checks: readonly VerificationCheck[]): VerificationCheck {
+  const visibility = checks.find(check => check.id === 'visibility')
+  if (visibility === undefined) {
+    return Object.freeze({
+      id: 'visibility',
+      status: 'skipped',
+      reason: 'worker-check-missing',
+    })
+  }
+  return visibility
+}
+
+function visibilityFailed(checks: readonly VerificationCheck[]): boolean {
+  return visibilityCheck(checks).status === 'failed'
+}
+
+function visibilityIncomplete(checks: readonly VerificationCheck[]): boolean {
+  const visibility = visibilityCheck(checks)
+  return visibility.status === 'skipped' && visibility.reason !== 'no-visibility-assertions'
+}
+
 export function reducePluginVerification(
   input: PluginVerificationReductionInput,
 ): VerificationReport {
@@ -269,6 +290,15 @@ export function reducePluginVerification(
     ))
   }
 
+  const visibilityUnproven = visibilityIncomplete(checks)
+  if (visibilityUnproven) {
+    reducerDiagnostics.push(diagnostic(
+      'VERIFY_VISIBILITY_UNPROVEN',
+      'warning',
+      'A requested runtime visibility assertion was not executed to a proven pass or fail outcome.',
+    ))
+  }
+
   const status: VerificationReport['status'] = input.execution.terminal === 'cancelled'
     ? 'cancelled'
     : targetStale
@@ -278,10 +308,12 @@ export function reducePluginVerification(
         || input.execution.terminal === 'failed'
         || input.staticResult.verdict === 'incompatible'
         || requiredCheckFailed(checks)
+        || visibilityFailed(checks)
         ? 'failed'
         : input.execution.cleanup !== 'succeeded'
           || staticUnproven
           || requiredCheckIncomplete(checks)
+          || visibilityUnproven
           ? 'partial'
           : 'verified'
 
