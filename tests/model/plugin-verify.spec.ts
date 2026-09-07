@@ -13,6 +13,8 @@ import type {
 const ARTIFACT = `dsh-plugin-artifact-v1:${'a'.repeat(64)}`
 const TARGET = `dsh-target-v2:${'b'.repeat(64)}`
 const DRIFTED_TARGET = `dsh-target-v2:${'c'.repeat(64)}`
+const LIFECYCLE = `dsh-profile-lifecycle-v1:${'f'.repeat(64)}`
+const DRIFTED_LIFECYCLE = `dsh-profile-lifecycle-v1:${'0'.repeat(64)}`
 
 function staticResult(overrides: Partial<PluginCheckResult> = {}): PluginCheckResult {
   return {
@@ -254,6 +256,49 @@ describe('M4.2 public verification reducer', () => {
     expect(report.targetFingerprint).toBe(TARGET)
     expect(report.diagnostics).toContainEqual(expect.objectContaining({
       code: 'VERIFY_TARGET_STALE',
+      severity: 'error',
+      domain: 'verification',
+    }))
+  })
+
+  it('returns stale when profile lifecycle changes while target-v2 remains unchanged', () => {
+    const base = input()
+    const report = reducePluginVerification({
+      ...base,
+      initialLifecycleFingerprint: LIFECYCLE,
+      finalLifecycleFingerprint: DRIFTED_LIFECYCLE,
+      execution: {
+        ...base.execution,
+        lifecycleFingerprint: LIFECYCLE,
+      },
+    } as PluginVerificationReductionInput)
+
+    expect(report.status).toBe('stale')
+    expect(report.targetFingerprint).toBe(TARGET)
+    expect(report.lifecycleFingerprint).toBe(LIFECYCLE)
+    expect(report.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'VERIFY_LIFECYCLE_STALE',
+      severity: 'error',
+      domain: 'verification',
+    }))
+  })
+
+  it('fails closed when worker lifecycle identity does not match the initial lifecycle binding', () => {
+    const base = input()
+    const report = reducePluginVerification({
+      ...base,
+      initialLifecycleFingerprint: LIFECYCLE,
+      finalLifecycleFingerprint: LIFECYCLE,
+      execution: {
+        ...base.execution,
+        lifecycleFingerprint: DRIFTED_LIFECYCLE,
+      },
+    } as PluginVerificationReductionInput)
+
+    expect(report.status).toBe('failed')
+    expect(report.lifecycleFingerprint).toBe(LIFECYCLE)
+    expect(report.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'VERIFY_LIFECYCLE_BINDING_MISMATCH',
       severity: 'error',
       domain: 'verification',
     }))
