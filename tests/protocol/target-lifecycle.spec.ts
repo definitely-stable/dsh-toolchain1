@@ -42,10 +42,12 @@ function snapshot(profileLifecycle?: unknown): Record<string, unknown> {
 describe('Protocol v1 profile lifecycle metadata', () => {
   it('defines closed lifecycle metadata and verification receipt identity', async () => {
     const schema = await protocolSchema()
-    const defs = schema.$defs as Record<string, Record<string, unknown>>
+    const defs = schema.$defs as Record<string, Record<string, unknown> | undefined>
     const lifecycle = defs.profileLifecycle
     const target = defs.targetSnapshot
     const verification = defs.verificationReport
+    if (target === undefined) throw new Error('targetSnapshot schema is unavailable')
+    if (verification === undefined) throw new Error('verificationReport schema is unavailable')
 
     expect(lifecycle).toEqual({
       type: 'object',
