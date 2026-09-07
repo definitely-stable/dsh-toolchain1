@@ -91,6 +91,11 @@ describe('M4.2 public verification reducer', () => {
     expect(check(report, 'manifest').status).toBe('passed')
     expect(check(report, 'dependency').status).toBe('passed')
     expect(check(report, 'contract').status).toBe('passed')
+    expect(check(report, 'visibility')).toEqual({
+      id: 'visibility',
+      status: 'skipped',
+      reason: 'no-visibility-assertions',
+    })
   })
 
   it('keeps proven static incompatibility failed even when runtime stages pass', () => {
@@ -135,6 +140,63 @@ describe('M4.2 public verification reducer', () => {
 
     expect(report.status).toBe('failed')
     expect(report.diagnostics).toContainEqual(diagnostic)
+  })
+
+  it('treats an explicitly requested visibility failure as a required verification failure', () => {
+    const diagnostic: Diagnostic = {
+      code: 'VERIFY_VISIBILITY_FAILED',
+      severity: 'error',
+      domain: 'verification',
+      summary: 'requested service is not visible',
+    }
+    const report = reducePluginVerification(input({
+      execution: {
+        artifactFingerprint: ARTIFACT,
+        targetFingerprint: TARGET,
+        executionPolicy: 'safe',
+        checks: runtimeChecks({
+          visibility: { id: 'visibility', status: 'failed', reason: 'verify-visibility-failed' },
+        }),
+        diagnostics: [diagnostic],
+        cleanup: 'succeeded',
+        terminal: 'completed',
+      },
+    }))
+
+    expect(report.status).toBe('failed')
+    expect(check(report, 'visibility')).toEqual({
+      id: 'visibility',
+      status: 'failed',
+      reason: 'verify-visibility-failed',
+    })
+    expect(report.diagnostics).toContainEqual(diagnostic)
+  })
+
+  it('returns partial when requested visibility was not executed', () => {
+    const report = reducePluginVerification(input({
+      execution: {
+        artifactFingerprint: ARTIFACT,
+        targetFingerprint: TARGET,
+        executionPolicy: 'safe',
+        checks: runtimeChecks({
+          visibility: {
+            id: 'visibility',
+            status: 'skipped',
+            reason: 'visibility-assertions-not-executed',
+          },
+        }),
+        diagnostics: [],
+        cleanup: 'succeeded',
+        terminal: 'completed',
+      },
+    }))
+
+    expect(report.status).toBe('partial')
+    expect(check(report, 'visibility')).toEqual({
+      id: 'visibility',
+      status: 'skipped',
+      reason: 'visibility-assertions-not-executed',
+    })
   })
 
   it('returns partial when cleanup fails after otherwise completed verification', () => {

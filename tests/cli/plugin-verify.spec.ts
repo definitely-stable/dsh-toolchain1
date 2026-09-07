@@ -45,7 +45,7 @@ function dependencies(status: VerificationReport['status']): CliDependencies {
 }
 
 describe('plugin.verify CLI projection', () => {
-  it('accepts only a packed artifact and delegates the canonical safe request', async () => {
+  it('accepts a packed artifact with repeated Host Service assertions and delegates the canonical safe request', async () => {
     const streams = io()
     const deps = dependencies('verified')
 
@@ -55,6 +55,8 @@ describe('plugin.verify CLI projection', () => {
       '--subject', '/candidate/plugin.tgz',
       '--dsh-home', '/tmp/dsh-home',
       '--patch', '/tmp/overlay.yml',
+      '--visibility-service', 'candidateService',
+      '--visibility-service', 'another/service',
     ], streams.value, deps)
 
     expect(code).toBe(0)
@@ -67,6 +69,10 @@ describe('plugin.verify CLI projection', () => {
       },
       subject: { kind: 'packed', path: '/candidate/plugin.tgz' },
       executionPolicy: 'safe',
+      visibilityAssertions: [
+        { kind: 'host-service', name: 'candidateService' },
+        { kind: 'host-service', name: 'another/service' },
+      ],
     })
     const response = JSON.parse(streams.stdout()) as PluginVerifyResponse
     expect(response).toMatchObject({
@@ -99,6 +105,21 @@ describe('plugin.verify CLI projection', () => {
       deps,
     )).toBe(2)
     expect(streams.stderr()).toContain('packed .tgz')
+    expect(deps.kernel?.verifyPlugin).not.toHaveBeenCalled()
+  })
+
+  it('rejects duplicate Host Service assertions before invoking the kernel', async () => {
+    const streams = io()
+    const deps = dependencies('verified')
+
+    expect(await runCli([
+      'plugin', 'verify',
+      '--profile', 'web',
+      '--subject', '/candidate/plugin.tgz',
+      '--visibility-service', 'candidateService',
+      '--visibility-service', 'candidateService',
+    ], streams.value, deps)).toBe(2)
+    expect(streams.stderr()).toContain('invalid plugin verify request')
     expect(deps.kernel?.verifyPlugin).not.toHaveBeenCalled()
   })
 })

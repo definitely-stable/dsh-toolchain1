@@ -28,6 +28,9 @@ export function createPackedPluginVerificationExecutionPort(
         },
         target: input.target,
         executionPolicy: input.executionPolicy,
+        ...(input.visibilityAssertions === undefined
+          ? {}
+          : { visibilityAssertions: input.visibilityAssertions }),
       }, signal)
 
       return Object.freeze({

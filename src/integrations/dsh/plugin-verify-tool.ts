@@ -19,7 +19,7 @@ export function createPluginVerifyToolDefinition(
 ): DshToolDefinition {
   return {
     name: PLUGIN_VERIFY_TOOL_NAME,
-    description: 'Verify one packed plugin against an exact installed DSH target. This executes candidate code in an isolated temporary DSH environment under the safe policy and does not mutate the active profile.',
+    description: 'Verify one packed plugin against an exact installed DSH target. This executes candidate code in an isolated temporary DSH environment under the safe policy and can prove explicitly requested Host Service visibility without mutating the active profile.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -35,6 +35,20 @@ export function createPluginVerifyToolDefinition(
           required: ['kind', 'path'],
         },
         executionPolicy: { enum: ['safe'] },
+        visibilityAssertions: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 32,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              kind: { enum: ['host-service'] },
+              name: { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' },
+            },
+            required: ['kind', 'name'],
+          },
+        },
       },
       required: ['target', 'subject', 'executionPolicy'],
     },

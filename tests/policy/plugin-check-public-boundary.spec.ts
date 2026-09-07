@@ -16,7 +16,8 @@ describe('public plugin operation boundary', () => {
     expect(protocol).not.toContain('`plugin.analyze` produces')
     expect(protocol).not.toContain('`plugin.validate` applies')
     expect(protocol).toContain('### `plugin.verify`')
-    expect(protocol).toContain('`plugin.verify` is the public M4.2 verification operation')
+    expect(protocol).toContain('`plugin.verify` is the public M4 verification operation')
+    expect(protocol).toContain('M4.3.1 extends that same operation with the first explicit Host Service visibility assertion')
     expect(protocol).toContain('follows the stage/isolation contract in `spec/verification.md`')
   })
 

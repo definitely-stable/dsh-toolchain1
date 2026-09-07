@@ -7,7 +7,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { runPackedPluginVerification } from '../../src/verification/packed-worker.js'
 import type { VerificationProcessOutcome, VerificationProcessRequest } from '../../src/verification/process.js'
-import type { Diagnostic, TargetSnapshot, VerificationReport } from '../../src/protocol/index.js'
+import type {
+  Diagnostic,
+  PluginVisibilityAssertion,
+  TargetSnapshot,
+  VerificationReport,
+} from '../../src/protocol/index.js'
 
 const roots: string[] = []
 
@@ -44,6 +49,18 @@ function sha256(bytes: Uint8Array): string {
 
 function bootMarker(profile: string): string {
   return `DSH_TOOLCHAIN_VERIFY_BOOT_PROBE_V1:${sha256(Buffer.from(`profile:${profile}`))}`
+}
+
+function visibilityMarkers(
+  profile: string,
+  assertions: readonly PluginVisibilityAssertion[],
+): { readonly passedMarker: string; readonly failedMarker: string } {
+  const digest = sha256(Buffer.from(`profile:${profile}\nvisibility:${JSON.stringify(assertions)}`))
+  const prefix = `DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V1:${digest}`
+  return {
+    passedMarker: `${prefix}:PASS`,
+    failedMarker: `${prefix}:FAIL`,
+  }
 }
 
 function target(): TargetSnapshot {
@@ -104,6 +121,7 @@ async function runWith(
     readonly artifactHash?: string
     readonly cleanup?: (temporaryRoot: string) => Promise<void>
     readonly signal?: AbortSignal
+    readonly visibilityAssertions?: readonly PluginVisibilityAssertion[]
   } = {},
 ): Promise<{ readonly execution: ExecutionView; readonly workerRoot: string }> {
   const artifact = await candidate(root)
@@ -115,6 +133,9 @@ async function runWith(
     },
     target: target(),
     executionPolicy: 'safe' as const,
+    ...(outcomes.visibilityAssertions === undefined
+      ? {}
+      : { visibilityAssertions: outcomes.visibilityAssertions }),
   }
 
   const execution = await runPackedPluginVerification(input, {
@@ -140,13 +161,13 @@ function check(execution: ExecutionView, id: string): VerificationCheck | undefi
   return execution.checks.find(item => item.id === id)
 }
 
-function successfulOutcomes(): readonly VerificationProcessOutcome[] {
+function successfulOutcomes(stdout = `${bootMarker('web')}\n`): readonly VerificationProcessOutcome[] {
   return [
     { kind: 'exited', code: 0, stdout: '', stderr: '' },
     { kind: 'exited', code: 0, stdout: '', stderr: '' },
     { kind: 'exited', code: 0, stdout: 'composed', stderr: '' },
     { kind: 'exited', code: 0, stdout: '', stderr: '' },
-    { kind: 'exited', code: 0, stdout: `${bootMarker('web')}\n`, stderr: '' },
+    { kind: 'exited', code: 0, stdout, stderr: '' },
   ]
 }
 
@@ -217,6 +238,62 @@ describe('packed plugin verification worker', () => {
       expect(call.env.HOME).toBe(path.join(workerRoot, 'home'))
       expect(call.env.TMP).toBe(path.join(workerRoot, 'tmp'))
     }
+  })
+
+  it('passes requested Host Service visibility only after the boot marker is proven', async () => {
+    const root = await fixtureRoot()
+    const visibilityAssertions = [{ kind: 'host-service' as const, name: 'candidateService' }]
+    const visibility = visibilityMarkers('web', visibilityAssertions)
+    const runner = fakeRunner(successfulOutcomes(
+      `${bootMarker('web')}\n${visibility.passedMarker}\n`,
+    ))
+
+    const { execution } = await runWith(root, runner, { visibilityAssertions })
+
+    expect(execution.terminal).toBe('completed')
+    expect(execution.diagnostics).toEqual([])
+    expect(check(execution, 'boot')).toEqual({ id: 'boot', status: 'passed' })
+    expect(check(execution, 'visibility')).toEqual({ id: 'visibility', status: 'passed' })
+  })
+
+  it('keeps boot passed but fails visibility when any requested Host Service is missing', async () => {
+    const root = await fixtureRoot()
+    const visibilityAssertions = [{ kind: 'host-service' as const, name: 'missingService' }]
+    const visibility = visibilityMarkers('web', visibilityAssertions)
+    const runner = fakeRunner(successfulOutcomes(
+      `${bootMarker('web')}\n${visibility.failedMarker}\n`,
+    ))
+
+    const { execution } = await runWith(root, runner, { visibilityAssertions })
+
+    expect(execution.terminal).toBe('completed')
+    expect(check(execution, 'boot')).toEqual({ id: 'boot', status: 'passed' })
+    expect(check(execution, 'visibility')).toEqual({
+      id: 'visibility',
+      status: 'failed',
+      reason: 'verify-visibility-failed',
+    })
+    expect(execution.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'VERIFY_VISIBILITY_FAILED',
+      severity: 'error',
+      domain: 'verification',
+    }))
+  })
+
+  it('does not claim requested visibility when the booted probe emits no visibility marker', async () => {
+    const root = await fixtureRoot()
+    const visibilityAssertions = [{ kind: 'host-service' as const, name: 'candidateService' }]
+    const runner = fakeRunner(successfulOutcomes())
+
+    const { execution } = await runWith(root, runner, { visibilityAssertions })
+
+    expect(execution.terminal).toBe('completed')
+    expect(check(execution, 'boot')).toEqual({ id: 'boot', status: 'passed' })
+    expect(check(execution, 'visibility')).toEqual({
+      id: 'visibility',
+      status: 'skipped',
+      reason: 'visibility-assertions-not-executed',
+    })
   })
 
   it('fails before subprocess execution when the packed artifact changed after acquisition', async () => {

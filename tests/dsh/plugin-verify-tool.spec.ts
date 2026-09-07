@@ -34,6 +34,7 @@ describe('native DSH plugin verify tool', () => {
       target: { profile: 'web' },
       subject: { kind: 'packed' as const, path: '/candidate/plugin.tgz' },
       executionPolicy: 'safe' as const,
+      visibilityAssertions: [{ kind: 'host-service' as const, name: 'exampleService' }],
     }
 
     expect(tool.name).toBe(PLUGIN_VERIFY_TOOL_NAME)
@@ -44,6 +45,22 @@ describe('native DSH plugin verify tool', () => {
       type: 'object',
       additionalProperties: false,
       required: ['target', 'subject', 'executionPolicy'],
+      properties: {
+        visibilityAssertions: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 32,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['kind', 'name'],
+            properties: {
+              kind: { enum: ['host-service'] },
+              name: { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' },
+            },
+          },
+        },
+      },
     })
 
     await expect(tool.execute(request)).resolves.toEqual(response())

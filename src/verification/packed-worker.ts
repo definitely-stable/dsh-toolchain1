@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import type { Diagnostic, TargetSnapshot, VerificationReport } from '../protocol/index.js'
+import type {
+  Diagnostic,
+  PluginVisibilityAssertion,
+  TargetSnapshot,
+  VerificationReport,
+} from '../protocol/index.js'
 import {
   fingerprintPackedArtifact,
   VerificationArtifactError,
@@ -59,7 +64,7 @@ export interface PackedPluginVerificationInput {
   readonly artifact: PackedVerificationArtifactInput
   readonly target: TargetSnapshot
   readonly executionPolicy: 'safe'
-  readonly visibilityAssertions?: readonly unknown[]
+  readonly visibilityAssertions?: readonly PluginVisibilityAssertion[]
 }
 
 export interface PackedPluginVerificationExecution {
@@ -115,7 +120,7 @@ function bootLauncherArgs(profile: string): readonly string[] {
   ])
 }
 
-function hasExactBootMarker(stdout: string, marker: string): boolean {
+function hasExactMarker(stdout: string, marker: string): boolean {
   return stdout.split(/\r?\n/u).some(line => line === marker)
 }
 
@@ -228,7 +233,7 @@ function recordProcessFailure(
 }
 
 /**
- * Executes the M4.1 packed-artifact runtime boundary under the safe policy.
+ * Executes the M4 packed-artifact runtime boundary under the safe policy.
  *
  * The temporary DSH home isolates candidate configuration and credentials from
  * the user's active profile. It is not a malicious-code security sandbox.
@@ -239,7 +244,7 @@ export async function runPackedPluginVerification(
   signal?: AbortSignal,
 ): Promise<PackedPluginVerificationExecution> {
   if (input.executionPolicy !== 'safe') {
-    throw new Error('M4.1 packed verification supports only the safe execution policy.')
+    throw new Error('M4 packed verification supports only the safe execution policy.')
   }
 
   const processRunner = dependencies.processRunner ?? runVerificationProcess
@@ -367,7 +372,11 @@ export async function runPackedPluginVerification(
     let bootProbe: Awaited<ReturnType<typeof createVerificationBootProbe>> | undefined
     if (!stopped) {
       try {
-        bootProbe = await createVerificationBootProbe(root, input.target.profile.name)
+        bootProbe = await createVerificationBootProbe(
+          root,
+          input.target.profile.name,
+          input.visibilityAssertions ?? [],
+        )
       } catch {
         const diagnostic = verificationDiagnostic(
           'VERIFY_BOOT_FAILED',
@@ -444,7 +453,7 @@ export async function runPackedPluginVerification(
       } else if (
         bootOutcome.kind !== 'exited'
         || bootOutcome.code !== 0
-        || !hasExactBootMarker(bootOutcome.stdout, bootProbe.marker)
+        || !hasExactMarker(bootOutcome.stdout, bootProbe.marker)
       ) {
         const diagnostic = verificationDiagnostic(
           'VERIFY_BOOT_FAILED',
@@ -457,10 +466,26 @@ export async function runPackedPluginVerification(
       }
     }
 
-    if (!stopped) {
+    if (!stopped && bootProbe !== undefined && bootOutcome?.kind === 'exited') {
       checks = passVerificationStage(checks, 'boot')
+
       if ((input.visibilityAssertions?.length ?? 0) > 0) {
-        checks = skipVerificationStage(checks, 'visibility', 'visibility-assertions-not-supported-in-m4.1')
+        const visibility = bootProbe.visibility
+        const passed = visibility !== undefined && hasExactMarker(bootOutcome.stdout, visibility.passedMarker)
+        const failed = visibility !== undefined && hasExactMarker(bootOutcome.stdout, visibility.failedMarker)
+
+        if (passed && !failed) {
+          checks = passVerificationStage(checks, 'visibility')
+        } else if (failed && !passed) {
+          const diagnostic = verificationDiagnostic(
+            'VERIFY_VISIBILITY_FAILED',
+            'One or more requested Host Services were not visible in the live DSH probe context.',
+          )
+          diagnostics.push(diagnostic)
+          checks = failStage(checks, 'visibility', diagnostic)
+        } else {
+          checks = skipVerificationStage(checks, 'visibility', 'visibility-assertions-not-executed')
+        }
       }
       terminal = 'completed'
     }

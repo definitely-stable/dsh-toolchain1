@@ -7,6 +7,7 @@ import type { AcquiredTargetFacts } from '../../src/model/target.js'
 import type {
   ContractDefinition,
   Evidence,
+  PluginVisibilityAssertion,
   TargetSnapshot,
 } from '../../src/protocol/index.js'
 import type { PluginVerificationExecutionObservation } from '../../src/model/plugin-verify.js'
@@ -81,7 +82,10 @@ function packedSubject(overrides: Partial<AcquiredPluginSubject> = {}): Acquired
   }
 }
 
-function completedExecution(target: TargetSnapshot): PluginVerificationExecutionObservation {
+function completedExecution(
+  target: TargetSnapshot,
+  visibilityRequested = false,
+): PluginVerificationExecutionObservation {
   return {
     artifactFingerprint: ARTIFACT_FINGERPRINT,
     targetFingerprint: target.fingerprint,
@@ -96,7 +100,9 @@ function completedExecution(target: TargetSnapshot): PluginVerificationExecution
       { id: 'install', status: 'passed' },
       { id: 'compose', status: 'passed' },
       { id: 'boot', status: 'passed' },
-      { id: 'visibility', status: 'skipped', reason: 'no-visibility-assertions' },
+      visibilityRequested
+        ? { id: 'visibility', status: 'passed' }
+        : { id: 'visibility', status: 'skipped', reason: 'no-visibility-assertions' },
       { id: 'behavior', status: 'skipped', reason: 'not-supported-in-m4.1' },
     ],
     diagnostics: [],
@@ -118,15 +124,19 @@ function digest() {
 }
 
 describe('plugin.verify kernel orchestration', () => {
-  it('passes one exact initial snapshot and same-pass authoritative packed hash to the execution port, then re-resolves freshness', async () => {
+  it('passes the exact target, artifact identity, policy, and visibility assertions to execution, then re-resolves freshness', async () => {
     let targetAcquisitions = 0
     let contractAcquisitions = 0
     let pluginAcquisitions = 0
+    const visibilityAssertions: [PluginVisibilityAssertion] = [
+      { kind: 'host-service', name: 'exampleService' },
+    ]
     const executionInputs: Array<{
       artifactPath: string
       expectedContentHash: string
       target: TargetSnapshot
       executionPolicy: 'safe'
+      visibilityAssertions?: readonly PluginVisibilityAssertion[]
     }> = []
 
     const kernel = createApplicationKernel({
@@ -152,7 +162,7 @@ describe('plugin.verify kernel orchestration', () => {
       pluginVerificationExecution: {
         verify: async input => {
           executionInputs.push(input)
-          return completedExecution(input.target)
+          return completedExecution(input.target, input.visibilityAssertions !== undefined)
         },
       },
       digest: digest(),
@@ -163,6 +173,7 @@ describe('plugin.verify kernel orchestration', () => {
       target: { profile: 'web' },
       subject: { kind: 'packed', path: '/candidate.tgz' },
       executionPolicy: 'safe',
+      visibilityAssertions,
     })
 
     expect(targetAcquisitions).toBe(2)
@@ -174,6 +185,7 @@ describe('plugin.verify kernel orchestration', () => {
       expectedContentHash: ARTIFACT_HASH,
       executionPolicy: 'safe',
       target: { fingerprint: INITIAL_TARGET_FINGERPRINT },
+      visibilityAssertions,
     })
     expect(outcome.snapshotFingerprint).toBe(INITIAL_TARGET_FINGERPRINT)
     expect(outcome.data).toMatchObject({
@@ -181,6 +193,7 @@ describe('plugin.verify kernel orchestration', () => {
       artifactFingerprint: ARTIFACT_FINGERPRINT,
       targetFingerprint: INITIAL_TARGET_FINGERPRINT,
       cleanup: 'succeeded',
+      checks: expect.arrayContaining([{ id: 'visibility', status: 'passed' }]),
     })
   })
 
