@@ -8,14 +8,16 @@ async function repositoryText(relativePath: string): Promise<string> {
 }
 
 describe('public plugin operation boundary', () => {
-  it('keeps plugin.check as the static public operation in the normative Protocol', async () => {
+  it('keeps plugin.check static and plugin.verify as the separate M4 execution operation', async () => {
     const protocol = await repositoryText('spec/protocol.md')
 
     expect(protocol).toContain('### `plugin.check`')
     expect(protocol).toContain('Normalize/analyze/validate are internal implementation passes')
     expect(protocol).not.toContain('`plugin.analyze` produces')
     expect(protocol).not.toContain('`plugin.validate` applies')
-    expect(protocol).toContain('`plugin.verify` follows `spec/verification.md` and is a separate M4 execution boundary')
+    expect(protocol).toContain('### `plugin.verify`')
+    expect(protocol).toContain('`plugin.verify` is the public M4.2 verification operation')
+    expect(protocol).toContain('follows the stage/isolation contract in `spec/verification.md`')
   })
 
   it('does not advertise analyze or validate as transport-neutral kernel use cases', async () => {
