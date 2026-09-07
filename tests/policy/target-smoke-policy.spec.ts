@@ -13,10 +13,19 @@ describe('Target Intelligence smoke policy', () => {
     const smoke = await import('../../scripts/smoke-target-resolve.mjs') as Record<string, unknown>
 
     expect(smoke.TARGET_SMOKE_DSH_VERSIONS).toEqual([
+      '0.1.2-rc.1',
       '0.1.1-rc.2',
       '0.1.0-rc.8',
     ])
     expect(smoke.TARGET_SMOKE_PROFILE).toBe('headless')
+  })
+
+  it('requires lifecycle identity on the lifecycle-aware train without changing target-v2', async () => {
+    const source = await readRepo('scripts/smoke-target-resolve.mjs')
+
+    expect(source).toContain('dsh-profile-lifecycle-v1:')
+    expect(source).toContain("patchReload, 'startup'")
+    expect(source).toContain('profileLifecycle')
   })
 
   it('requires path-stability, v2 fingerprinting, read-only evidence, and one no-hint DSH resolution', async () => {

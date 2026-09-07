@@ -10,12 +10,13 @@ import { pathToFileURL } from 'node:url'
 
 import { assertTreeUnchanged, snapshotTree } from './smoke-plugin-check.mjs'
 
-export const PLUGIN_VERIFY_SMOKE_DSH_VERSION = '0.1.1-rc.2'
+export const PLUGIN_VERIFY_SMOKE_DSH_VERSION = '0.1.2-rc.1'
 export const PLUGIN_VERIFY_SMOKE_PROFILE = 'headless'
 export const PLUGIN_VERIFY_SMOKE_SERVICE = 'dshToolchainVerifySmokeService'
 
 const CANDIDATE_PACKAGE = 'dsh-toolchain-verify-smoke-candidate'
 const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/u
+const LIFECYCLE_FINGERPRINT = /^dsh-profile-lifecycle-v1:[0-9a-f]{64}$/u
 const ARTIFACT_FINGERPRINT = /^dsh-plugin-artifact-v1:[0-9a-f]{64}$/u
 const CANONICAL_CHECK_IDS = Object.freeze(['structure', 'manifest', 'dependency', 'contract', 'build', 'package', 'install', 'compose', 'boot', 'visibility', 'behavior'])
 const REQUIRED_RUNTIME_CHECK_IDS = Object.freeze(['package', 'install', 'compose', 'boot', 'visibility'])
@@ -99,6 +100,11 @@ function parseResponse(stdout) {
   assert.equal(response.data?.status, 'verified', `Plugin Verify smoke: verification status=${String(response.data?.status)}`)
   assert.equal(response.data?.cleanup, 'succeeded', 'Plugin Verify smoke: disposable verification cleanup did not succeed')
   assert.match(response.data?.artifactFingerprint ?? '', ARTIFACT_FINGERPRINT, 'Plugin Verify smoke: artifact fingerprint missing')
+  assert.match(
+    response.data?.lifecycleFingerprint ?? '',
+    LIFECYCLE_FINGERPRINT,
+    'Plugin Verify smoke: lifecycleFingerprint missing from lifecycle-aware verification receipt',
+  )
   assert.equal(
     response.data?.targetFingerprint,
     response.snapshotFingerprint,
@@ -203,7 +209,7 @@ export async function smokePluginVerify(toolchainTarball) {
     )
 
     process.stdout.write(
-      `Plugin Verify smoke: DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} ${PLUGIN_VERIFY_SMOKE_PROFILE} public CLI verified exact packed candidate and live Host Service visibility in disposable worker\n`,
+      `Plugin Verify smoke: DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} ${PLUGIN_VERIFY_SMOKE_PROFILE} public CLI verified exact packed candidate, lifecycle epoch, and live Host Service visibility in disposable worker\n`,
     )
     return response
   } finally {

@@ -18,6 +18,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const TARGET_SMOKE_DSH_VERSIONS = Object.freeze([
+  '0.1.2-rc.1',
   '0.1.1-rc.2',
   '0.1.0-rc.8',
 ])
@@ -25,6 +26,8 @@ export const TARGET_SMOKE_PROFILE = 'headless'
 
 const TOOLCHAIN_TARBALL = fileURLToPath(new URL('../.artifacts/dsh-toolchain.tgz', import.meta.url))
 const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/
+const LIFECYCLE_FINGERPRINT = /^dsh-profile-lifecycle-v1:[0-9a-f]{64}$/
+const LIFECYCLE_AWARE_DSH_VERSION = '0.1.2-rc.1'
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -114,6 +117,25 @@ function parseTargetResponse(stdout, version) {
   assert.equal(response.data?.snapshot?.dsh?.name, '@deepseek-ai/dsh')
   assert.equal(response.data?.snapshot?.dsh?.version, version)
   assert.equal(response.data?.snapshot?.profile?.name, TARGET_SMOKE_PROFILE)
+
+  if (version === LIFECYCLE_AWARE_DSH_VERSION) {
+    assert.equal(
+      response.data?.snapshot?.profileLifecycle?.patchReload, 'startup',
+      `Target smoke ${version}: headless profile did not expose effective startup patchReload`,
+    )
+    assert.match(
+      response.data?.snapshot?.profileLifecycle?.fingerprint ?? '',
+      LIFECYCLE_FINGERPRINT,
+      `Target smoke ${version}: lifecycle fingerprint missing`,
+    )
+  } else {
+    assert.equal(
+      response.data?.snapshot?.profileLifecycle,
+      undefined,
+      `Target smoke ${version}: pre-lifecycle DSH train unexpectedly exposed profileLifecycle`,
+    )
+  }
+
   return response
 }
 
@@ -193,6 +215,11 @@ async function smokeTrain(version) {
       second.snapshotFingerprint,
       first.snapshotFingerprint,
       `DSH ${version}: equivalent targets in different homes/discovery paths produced different fingerprints`,
+    )
+    assert.equal(
+      second.data?.snapshot?.profileLifecycle?.fingerprint,
+      first.data?.snapshot?.profileLifecycle?.fingerprint,
+      `DSH ${version}: equivalent targets in different homes/discovery paths produced different lifecycle identities`,
     )
 
     process.stdout.write(

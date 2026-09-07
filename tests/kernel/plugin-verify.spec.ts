@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createApplicationKernel } from '../../src/kernel/index.js'
 import type { AcquiredContractFacts } from '../../src/model/contract.js'
 import type { AcquiredPluginSubject } from '../../src/model/plugin.js'
-import type { AcquiredTargetFacts } from '../../src/model/target.js'
+import type { AcquiredTargetFacts, ProfilePatchReload } from '../../src/model/target.js'
 import type {
   ContractDefinition,
   Evidence,
@@ -16,8 +16,13 @@ const ARTIFACT_HASH = '9'.repeat(64)
 const ARTIFACT_FINGERPRINT = `dsh-plugin-artifact-v1:${ARTIFACT_HASH}`
 const INITIAL_TARGET_FINGERPRINT = `dsh-target-v2:${'a'.repeat(64)}`
 const DRIFTED_TARGET_FINGERPRINT = `dsh-target-v2:${'f'.repeat(64)}`
+const LIVE_LIFECYCLE_FINGERPRINT = `dsh-profile-lifecycle-v1:${'d'.repeat(64)}`
+const STARTUP_LIFECYCLE_FINGERPRINT = `dsh-profile-lifecycle-v1:${'e'.repeat(64)}`
 
-function targetFacts(version = '0.1.1-rc.2'): AcquiredTargetFacts {
+function targetFacts(
+  version = '0.1.1-rc.2',
+  patchReload?: ProfilePatchReload,
+): AcquiredTargetFacts {
   return {
     dsh: { name: '@deepseek-ai/dsh', version },
     runtime: { nodeVersion: '24.19.0', platform: 'linux', arch: 'x64' },
@@ -28,6 +33,7 @@ function targetFacts(version = '0.1.1-rc.2'): AcquiredTargetFacts {
       profilePatchHash: '1'.repeat(64),
       homePatchHash: '2'.repeat(64),
       overlayPatchHashes: [],
+      ...(patchReload === undefined ? {} : { patchReload }),
     },
     evidence: [],
   }
@@ -89,6 +95,9 @@ function completedExecution(
   return {
     artifactFingerprint: ARTIFACT_FINGERPRINT,
     targetFingerprint: target.fingerprint,
+    ...(target.profileLifecycle === undefined
+      ? {}
+      : { lifecycleFingerprint: target.profileLifecycle.fingerprint }),
     executionPolicy: 'safe',
     checks: [
       { id: 'structure', status: 'skipped', reason: 'handled-by-static-check' },
@@ -117,9 +126,13 @@ function digest() {
       ? 'c'.repeat(64)
       : value.includes('dsh-contract-index-v1')
         ? 'b'.repeat(64)
-        : value.includes('0.1.2-drift')
-          ? 'f'.repeat(64)
-          : 'a'.repeat(64),
+        : value.includes('dsh-profile-lifecycle-v1')
+          ? value.includes('"live"')
+            ? 'd'.repeat(64)
+            : 'e'.repeat(64)
+          : value.includes('0.1.2-drift')
+            ? 'f'.repeat(64)
+            : 'a'.repeat(64),
   }
 }
 
@@ -229,6 +242,74 @@ describe('plugin.verify kernel orchestration', () => {
       code: 'VERIFY_TARGET_STALE',
     }))
     expect(DRIFTED_TARGET_FINGERPRINT).not.toBe(outcome.data.targetFingerprint)
+  })
+
+  it('returns semantic stale when only the lifecycle epoch changes after execution', async () => {
+    let targetAcquisitions = 0
+    const kernel = createApplicationKernel({
+      targetAcquisition: {
+        acquire: async () => {
+          targetAcquisitions += 1
+          return targetAcquisitions === 1
+            ? targetFacts('0.1.2-rc.1', 'live')
+            : targetFacts('0.1.2-rc.1', 'startup')
+        },
+      },
+      contractAcquisition: { acquire: async () => contractFacts() },
+      pluginSubjectAcquisition: { acquire: async () => packedSubject() },
+      pluginVerificationExecution: {
+        verify: async input => completedExecution(input.target),
+      },
+      digest: digest(),
+      now: () => '2026-09-06T00:00:00.000Z',
+    })
+
+    const outcome = await kernel.verifyPlugin({
+      target: { profile: 'web' },
+      subject: { kind: 'packed', path: '/candidate.tgz' },
+      executionPolicy: 'safe',
+    })
+
+    expect(targetAcquisitions).toBe(2)
+    expect(outcome.snapshotFingerprint).toBe(INITIAL_TARGET_FINGERPRINT)
+    expect(outcome.data.status).toBe('stale')
+    expect(outcome.data.targetFingerprint).toBe(INITIAL_TARGET_FINGERPRINT)
+    expect(outcome.data.lifecycleFingerprint).toBe(LIVE_LIFECYCLE_FINGERPRINT)
+    expect(outcome.data.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'VERIFY_LIFECYCLE_STALE',
+    }))
+    expect(outcome.data.diagnostics).not.toContainEqual(expect.objectContaining({
+      code: 'VERIFY_TARGET_STALE',
+    }))
+  })
+
+  it('fails closed when worker lifecycle binding differs from the starting snapshot', async () => {
+    const kernel = createApplicationKernel({
+      targetAcquisition: { acquire: async () => targetFacts('0.1.2-rc.1', 'live') },
+      contractAcquisition: { acquire: async () => contractFacts() },
+      pluginSubjectAcquisition: { acquire: async () => packedSubject() },
+      pluginVerificationExecution: {
+        verify: async input => ({
+          ...completedExecution(input.target),
+          lifecycleFingerprint: STARTUP_LIFECYCLE_FINGERPRINT,
+        }),
+      },
+      digest: digest(),
+      now: () => '2026-09-06T00:00:00.000Z',
+    })
+
+    const outcome = await kernel.verifyPlugin({
+      target: { profile: 'web' },
+      subject: { kind: 'packed', path: '/candidate.tgz' },
+      executionPolicy: 'safe',
+    })
+
+    expect(outcome.snapshotFingerprint).toBe(INITIAL_TARGET_FINGERPRINT)
+    expect(outcome.data.status).toBe('failed')
+    expect(outcome.data.lifecycleFingerprint).toBe(LIVE_LIFECYCLE_FINGERPRINT)
+    expect(outcome.data.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'VERIFY_LIFECYCLE_BINDING_MISMATCH',
+    }))
   })
 
   it('fails before execution when the packed acquisition cannot prove one exact authoritative artifact', async () => {

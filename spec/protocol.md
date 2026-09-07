@@ -107,6 +107,19 @@ The `runtime` field is the Node/platform/architecture under which Toolchain reso
 
 Search, inspection, plugin-check, and verification results that make target-specific claims MUST identify the snapshot fingerprint.
 
+### `dsh-profile-lifecycle-v1` runtime lifecycle identity
+
+`dsh-target-v2` intentionally remains the identity of startup composition inputs. It MUST NOT be silently redefined to include `dsh.profile.patchReload`, because `patchReload` changes post-boot reload policy without changing the startup patch bytes represented by target-v2.
+
+For DSH trains whose launcher contract supports `dsh.profile.patchReload`, a successful target resolution MUST additionally expose `TargetSnapshot.profileLifecycle` with:
+
+- `patchReload` — the effective `live | startup` policy;
+- `fingerprint` — `dsh-profile-lifecycle-v1:<sha256>` over the canonical projection `{ "schema": "dsh-profile-lifecycle-v1", "patchReload": <effective-policy> }`.
+
+On those lifecycle-aware trains, an omitted manifest value is normalized to the upstream compatibility default `live`; any other present value fails target acquisition as an invalid manifest. Older DSH trains legitimately omit `profileLifecycle` and MUST NOT be retroactively backfilled with either policy.
+
+The lifecycle fingerprint is orthogonal to target-v2 and is interpreted together with the snapshot carrying it. A lifecycle-only change MUST NOT by itself rename an otherwise identical `dsh-target-v2`, Contract Index, search result, inspect result, or static `plugin.check` result. Runtime/freshness claims, however, MUST bind `profileLifecycle.fingerprint` whenever it is present.
+
 ## Evidence
 
 Evidence records have:
@@ -266,21 +279,21 @@ The application operation MUST:
 4. execute the worker under policy `safe` in a disposable DSH environment rather than the caller's active profile;
 5. when Host Service assertions were requested, prove them through Toolchain-owned instrumentation in the same composed/booted DSH runtime rather than from static declarations;
 6. re-resolve the same target request after execution before reducing the final report;
-7. reduce static evidence, worker observations, cleanup, artifact identity, requested visibility, and final target freshness in the shared application kernel.
+7. reduce static evidence, worker observations, cleanup, artifact identity, requested visibility, and final target/lifecycle freshness in the shared application kernel.
 
 The active DSH profile MUST NOT be mutated merely to perform verification. Policy `safe` describes Toolchain's isolation/environment policy; it MUST NOT be represented as a malicious-code security sandbox.
 
-`VerificationReport.artifactFingerprint` binds the exact packed bytes selected before execution. `VerificationReport.targetFingerprint` binds the initial exact target actually supplied to the worker. A worker-returned artifact identity, when present, MUST match the pre-bound artifact fingerprint; a mismatch fails closed. A worker target binding that differs from the initial target likewise fails closed.
+`VerificationReport.artifactFingerprint` binds the exact packed bytes selected before execution. `VerificationReport.targetFingerprint` binds the initial exact target actually supplied to the worker. On lifecycle-aware targets `VerificationReport.lifecycleFingerprint` binds the initial `TargetSnapshot.profileLifecycle.fingerprint`. A worker-returned artifact identity, when present, MUST match the pre-bound artifact fingerprint; a mismatch fails closed. A worker target binding that differs from the initial target likewise fails closed. When the initial snapshot has lifecycle metadata, the worker MUST return the same lifecycle fingerprint; omission or mismatch fails closed with `VERIFY_LIFECYCLE_BINDING_MISMATCH`.
 
-The operation preserves all eleven canonical verification checks in order. A `verified` report requires the covered static checks `structure`, `manifest`, `dependency`, and `contract` plus runtime checks `package`, `install`, `compose`, and `boot` to pass, worker execution to complete, cleanup to succeed, artifact/target bindings to remain coherent, and the final target fingerprint to equal the initial fingerprint. `build` and `behavior` remain outside the current alpha claim.
+The operation preserves all eleven canonical verification checks in order. A `verified` report requires the covered static checks `structure`, `manifest`, `dependency`, and `contract` plus runtime checks `package`, `install`, `compose`, and `boot` to pass, worker execution to complete, cleanup to succeed, artifact/target/lifecycle bindings to remain coherent, and the final target fingerprint to equal the initial fingerprint. When lifecycle metadata is present in either the initial or final snapshot, the final lifecycle fingerprint MUST also equal the initial lifecycle fingerprint. `build` and `behavior` remain outside the current alpha claim.
 
 When no visibility assertions are requested, `visibility` MUST retain the explicit baseline `{ id: "visibility", status: "skipped", reason: "no-visibility-assertions" }` and does not block the M4.2 verified claim. When one or more Host Service assertions are requested, `visibility` becomes a required check: it MUST pass before the report can be `verified`; a proven visibility failure yields `failed`, while requested visibility that could not be executed yields `partial` unless a stronger terminal status applies.
 
 Host Service visibility MUST be based on live runtime observation after candidate composition/boot. A package declaration, manifest entry, or TypeScript declaration MUST NOT by itself satisfy a requested visibility assertion.
 
-A proven static incompatibility or required runtime failure yields report status `failed`. Cancellation yields `cancelled`. A changed final target yields `stale` after non-cancelled execution. Cleanup failure, material unproven static evidence, or another incomplete covered check prevents `verified` and yields `partial` unless a stronger status applies. Static `compatible-in-scope` alone MUST NOT be relabelled as runtime verification.
+A proven static incompatibility or required runtime failure yields report status `failed`. Cancellation yields `cancelled`. A changed final target yields `stale` after non-cancelled execution with `VERIFY_TARGET_STALE`. A changed, added, or removed final lifecycle fingerprint relative to the initial lifecycle epoch also yields `stale`, even when target-v2 is unchanged, with `VERIFY_LIFECYCLE_STALE`. Cleanup failure, material unproven static evidence, or another incomplete covered check prevents `verified` and yields `partial` unless a stronger status applies. Static `compatible-in-scope` alone MUST NOT be relabelled as runtime verification.
 
-When the application can produce a semantic `VerificationReport`, `PluginVerifySuccessResponse` MUST use envelope `status: "ok"`, MUST carry the initial operation `snapshotFingerprint`, and MUST return the report in `data` even when `data.status` is `failed`, `partial`, `stale`, or `cancelled`. The operation therefore has no separate transport-envelope stale response: target drift is represented by `VerificationReport.status: "stale"`.
+When the application can produce a semantic `VerificationReport`, `PluginVerifySuccessResponse` MUST use envelope `status: "ok"`, MUST carry the initial operation `snapshotFingerprint`, and MUST return the report in `data` even when `data.status` is `failed`, `partial`, `stale`, or `cancelled`. The operation therefore has no separate transport-envelope stale response: target or lifecycle drift is represented by `VerificationReport.status: "stale"`.
 
 `PluginVerifyFailureResponse` with envelope `status: "failed"` is reserved for acquisition/application/infrastructure conditions that prevent production of the defined semantic report and MUST contain at least one diagnostic. Expected candidate incompatibility or runtime verification failure, when a report exists, MUST remain report data rather than being converted into transport failure.
 
@@ -312,7 +325,7 @@ The DSH bundle MUST expose the same application semantics through a Cordis Toolc
 
 The M1 CLI vertical slice proves `target.resolve`; immediate post-M1 frontend parity projects that same kernel call through the Toolchain Service/native DSH tool rather than reimplementing target acquisition in the adapter.
 
-M2 contract projections MUST call the same kernel search/inspect use cases. The DSH adapter MAY enrich live evidence through the host-owned Inspect capability when a real Agent scope exists; it MUST NOT create a second identity-sensitive tools/Inspect runtime merely for Toolchain.
+M2 contract projections MUST call the same kernel search/inspect use cases. The DSH adapter MAY enrich live evidence through the host-owned Inspect capability when a real Agent scope exists; it MUST NOT create a second identity-sensitive tools/Inspect runtime merely for Toolchain. On lifecycle-aware targets that live enrichment MUST also match the immutable startup lifecycle fingerprint before joining the resolved snapshot; target-v2 equality alone is insufficient.
 
 `toolchain_plugin_check` MUST project the shared kernel `plugin.check` use case and canonical request parser. The DSH adapter MUST NOT execute candidate code or implement a second compatibility reducer.
 

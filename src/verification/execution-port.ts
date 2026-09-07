@@ -38,6 +38,9 @@ export function createPackedPluginVerificationExecutionPort(
           ? {}
           : { artifactFingerprint: execution.artifactFingerprint }),
         targetFingerprint: execution.targetFingerprint,
+        ...(execution.lifecycleFingerprint === undefined
+          ? {}
+          : { lifecycleFingerprint: execution.lifecycleFingerprint }),
         executionPolicy: execution.executionPolicy,
         checks: execution.checks,
         diagnostics: execution.diagnostics,

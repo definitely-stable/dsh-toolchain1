@@ -20,6 +20,11 @@ export interface DshRuntimeTargetBindingOptions {
    * Absence fails closed; path identity alone is never sufficient for live evidence.
    */
   readonly startupTargetFingerprint?: string | Promise<string | undefined>
+  /**
+   * Immutable profile lifecycle fingerprint captured from the same startup snapshot.
+   * Legacy trains omit both this value and snapshot lifecycle metadata.
+   */
+  readonly startupLifecycleFingerprint?: string | Promise<string | undefined>
   /** Exact running process argv, including Node script path. */
   readonly argv?: readonly string[]
   /** Working directory used by the official launcher to resolve `--patch` paths. */
@@ -175,12 +180,25 @@ async function matchesStartupFingerprint(
   }
 }
 
+async function matchesStartupLifecycleFingerprint(
+  startupLifecycleFingerprint: DshRuntimeTargetBindingOptions['startupLifecycleFingerprint'],
+  snapshot: TargetSnapshot,
+): Promise<boolean> {
+  const snapshotFingerprint = snapshot.profileLifecycle?.fingerprint
+  if (startupLifecycleFingerprint === undefined) return snapshotFingerprint === undefined
+  try {
+    return await startupLifecycleFingerprint === snapshotFingerprint
+  } catch {
+    return false
+  }
+}
+
 /**
  * Build a conservative automatic binding for the official DSH launcher.
  *
  * Path/runtime checks prove this is the same process/profile installation.
- * The startup fingerprint additionally freezes the M1 semantic target observed
- * when Toolchain mounted; a later same-path filesystem/HMR drift therefore
+ * Startup composition and lifecycle fingerprints freeze the semantic epochs
+ * observed when Toolchain mounted; later same-path filesystem/HMR drift therefore
  * disables live enrichment instead of mixing old runtime evidence with a new
  * TargetSnapshot. Current upstream still lacks a launcher-owned composition
  * generation attestation, so explicit overlays remain unsupported here.
@@ -203,9 +221,10 @@ export function createDshRuntimeTargetBinding(
 
   return Object.freeze({
     async matches(snapshot: TargetSnapshot): Promise<boolean> {
-      // The frozen startup semantic baseline is the byte-sensitive M1 guard.
-      // Never upgrade a path-only match to live evidence when it is unavailable.
+      // Frozen startup semantic baselines are the byte- and lifecycle-sensitive guards.
+      // Never upgrade a path-only match to live evidence when either required epoch differs.
       if (!await matchesStartupFingerprint(options.startupTargetFingerprint, snapshot)) return false
+      if (!await matchesStartupLifecycleFingerprint(options.startupLifecycleFingerprint, snapshot)) return false
 
       // Upstream does not publish boot-time overlay hashes. Reject rather than
       // compare the requested target against mutable overlay files after boot.

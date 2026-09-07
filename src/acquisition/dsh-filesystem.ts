@@ -11,6 +11,7 @@ import type {
 } from '../protocol/index.js'
 import {
   TargetAcquisitionError,
+  type ProfilePatchReload,
   type TargetAcquisitionErrorCode,
   type TargetAcquisitionPort,
 } from '../model/target.js'
@@ -244,6 +245,35 @@ function profilePackageNames(manifest: ManifestRecord): {
   return { bundles, dependencies: Object.keys(dependencies) }
 }
 
+function supportsProfilePatchReload(dshVersion: string): boolean {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/u.exec(dshVersion)
+  if (match === null) return false
+
+  const major = Number(match[1])
+  const minor = Number(match[2])
+  const patchVersion = Number(match[3])
+  return major > 0 || minor > 1 || (minor === 1 && patchVersion >= 2)
+}
+
+function profilePatchReload(
+  manifest: ManifestRecord,
+  dshVersion: string,
+): ProfilePatchReload | undefined {
+  if (!supportsProfilePatchReload(dshVersion)) return undefined
+
+  const dsh = manifest.value.dsh
+  const profile = isRecord(dsh) ? dsh.profile : undefined
+  const patchReload = isRecord(profile) ? profile.patchReload : undefined
+  if (patchReload === undefined) return 'live'
+  if (patchReload === 'live' || patchReload === 'startup') return patchReload
+
+  throw acquisitionError(
+    'TARGET_MANIFEST_INVALID',
+    `DSH profile patchReload must be "live" or "startup": ${manifest.location}`,
+    [manifest.location],
+  )
+}
+
 async function manifestEvidence(
   id: string,
   source: string,
@@ -386,6 +416,7 @@ export function createDshFilesystemTargetAcquisition(
       const dshIdentity = packageIdentity(dshManifest, DSH_PACKAGE)
       const dsh = { name: DSH_PACKAGE, version: dshIdentity.version } as const
       const names = profilePackageNames(profileManifest)
+      const patchReload = profilePatchReload(profileManifest, dsh.version)
 
       const profilePatch = await optionalPatch(
         'patch:profile',
@@ -458,6 +489,7 @@ export function createDshFilesystemTargetAcquisition(
           profilePatchHash: profilePatch.hash,
           homePatchHash: homePatch.hash,
           overlayPatchHashes: overlays.map(record => record.hash),
+          ...(patchReload === undefined ? {} : { patchReload }),
         },
         evidence: capturedEvidence,
       }

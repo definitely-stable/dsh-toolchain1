@@ -10,15 +10,15 @@ async function readRepo(path: string): Promise<string> {
 }
 
 describe('Plugin Verify public-path real-DSH smoke policy', () => {
-  it('binds one exact published DSH train, lightweight headless target, and explicit Host Service assertion', async () => {
+  it('binds the current published DSH train, lightweight headless target, and explicit Host Service assertion', async () => {
     const smoke = await import('../../scripts/smoke-plugin-verify.mjs') as Record<string, unknown>
 
-    expect(smoke.PLUGIN_VERIFY_SMOKE_DSH_VERSION).toBe('0.1.1-rc.2')
+    expect(smoke.PLUGIN_VERIFY_SMOKE_DSH_VERSION).toBe('0.1.2-rc.1')
     expect(smoke.PLUGIN_VERIFY_SMOKE_PROFILE).toBe('headless')
     expect(smoke.PLUGIN_VERIFY_SMOKE_SERVICE).toBe('dshToolchainVerifySmokeService')
   })
 
-  it('invokes the installed public CLI and asserts a fully verified exact-artifact receipt with live Host Service visibility', async () => {
+  it('invokes the installed public CLI and asserts a lifecycle-bound fully verified exact-artifact receipt', async () => {
     const source = await readRepo('scripts/smoke-plugin-verify.mjs')
 
     expect(source).toContain("ctx.provide(PLUGIN_VERIFY_SMOKE_SERVICE")
@@ -31,6 +31,8 @@ describe('Plugin Verify public-path real-DSH smoke policy', () => {
     expect(source).toContain("['package', 'install', 'compose', 'boot', 'visibility']")
     expect(source).toContain('dsh-plugin-artifact-v1:')
     expect(source).toContain('dsh-target-v2:')
+    expect(source).toContain('dsh-profile-lifecycle-v1:')
+    expect(source).toContain('lifecycleFingerprint')
     expect(source).not.toContain('runPackedPluginVerification')
     expect(source).not.toContain("../lib/verification/packed-worker.js")
   })

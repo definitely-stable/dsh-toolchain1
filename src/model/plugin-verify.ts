@@ -38,6 +38,7 @@ const REQUIRED_CHECK_IDS = Object.freeze(new Set<VerificationCheckId>([
 export interface PluginVerificationExecutionObservation {
   readonly artifactFingerprint?: string
   readonly targetFingerprint: string
+  readonly lifecycleFingerprint?: string
   readonly executionPolicy: 'safe'
   readonly checks: readonly VerificationCheck[]
   readonly diagnostics: readonly Diagnostic[]
@@ -117,6 +118,8 @@ export interface PluginVerificationReductionInput {
   readonly artifactFingerprint: string
   readonly initialTargetFingerprint: string
   readonly finalTargetFingerprint: string
+  readonly initialLifecycleFingerprint?: string
+  readonly finalLifecycleFingerprint?: string
   readonly staticResult: PluginCheckResult
   readonly staticDiagnostics: readonly Diagnostic[]
   readonly execution: PluginVerificationExecutionObservation
@@ -272,12 +275,36 @@ export function reducePluginVerification(
     ))
   }
 
+  const lifecycleBindingPresent = input.initialLifecycleFingerprint !== undefined
+    || input.execution.lifecycleFingerprint !== undefined
+  const workerLifecycleMismatch = lifecycleBindingPresent
+    && input.execution.lifecycleFingerprint !== input.initialLifecycleFingerprint
+  if (workerLifecycleMismatch) {
+    reducerDiagnostics.push(diagnostic(
+      'VERIFY_LIFECYCLE_BINDING_MISMATCH',
+      'error',
+      'Verification worker observation is not bound to the initial profile lifecycle fingerprint.',
+    ))
+  }
+
   const targetStale = input.finalTargetFingerprint !== input.initialTargetFingerprint
   if (targetStale) {
     reducerDiagnostics.push(diagnostic(
       'VERIFY_TARGET_STALE',
       'error',
       'The exact target changed after verification execution and the result cannot be claimed for the current target epoch.',
+    ))
+  }
+
+  const lifecycleEpochPresent = input.initialLifecycleFingerprint !== undefined
+    || input.finalLifecycleFingerprint !== undefined
+  const lifecycleStale = lifecycleEpochPresent
+    && input.finalLifecycleFingerprint !== input.initialLifecycleFingerprint
+  if (lifecycleStale) {
+    reducerDiagnostics.push(diagnostic(
+      'VERIFY_LIFECYCLE_STALE',
+      'error',
+      'The profile lifecycle changed after verification execution and the result cannot be claimed for the current lifecycle epoch.',
     ))
   }
 
@@ -303,10 +330,11 @@ export function reducePluginVerification(
 
   const status: VerificationReport['status'] = input.execution.terminal === 'cancelled'
     ? 'cancelled'
-    : targetStale
+    : targetStale || lifecycleStale
       ? 'stale'
       : artifactIdentityMismatch
         || workerTargetMismatch
+        || workerLifecycleMismatch
         || input.execution.terminal === 'failed'
         || input.staticResult.verdict === 'incompatible'
         || requiredCheckFailed(checks)
@@ -323,6 +351,9 @@ export function reducePluginVerification(
     status,
     artifactFingerprint: input.artifactFingerprint,
     targetFingerprint: input.initialTargetFingerprint,
+    ...(input.initialLifecycleFingerprint === undefined
+      ? {}
+      : { lifecycleFingerprint: input.initialLifecycleFingerprint }),
     executionPolicy: 'safe',
     checks,
     diagnostics: uniqueDiagnostics([
