@@ -128,7 +128,7 @@ describe('plugin.verify kernel orchestration', () => {
     let targetAcquisitions = 0
     let contractAcquisitions = 0
     let pluginAcquisitions = 0
-    const visibilityAssertions: PluginVisibilityAssertion[] = [
+    const visibilityAssertions: [PluginVisibilityAssertion] = [
       { kind: 'host-service', name: 'exampleService' },
     ]
     const executionInputs: Array<{
