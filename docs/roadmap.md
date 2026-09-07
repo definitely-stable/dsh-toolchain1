@@ -206,7 +206,7 @@ Exit criteria:
 
 ## M4 — Isolated Verification Alpha
 
-**Status:** **in progress**. M4.1 is merged; M4.2 implements the first public exact-target verification operation. Remaining M4 scope is explicit visibility/behavior coverage and a transport-neutral long-operation lifecycle when real needs justify it.
+**Status:** **in progress**. M4.1 and M4.2 establish isolated packed-artifact execution plus the public target-fresh verification receipt. M4.3.1 adds the first explicit live visibility assertion. Remaining M4 scope is broader visibility/behavior coverage and a transport-neutral long-operation lifecycle when real needs justify it.
 
 **Goal:** prove whether the artifact users install composes and works in a real DSH target, producing portable evidence rather than a generic pass badge.
 
@@ -247,8 +247,25 @@ Implemented scope:
 - one shared public `plugin.verify` application operation projected through CLI, native DSH and MCP without frontend-owned status logic;
 - real packed-candidate acceptance through the installed public CLI against published `@deepseek-ai/dsh@0.1.1-rc.2`, including exact artifact/target receipt binding and proof that the active profile remains unchanged.
 
-Deliberately deferred from M4.2:
-- explicit visibility assertion vocabulary and live visibility proof;
+### M4.3.1 — Host Service visibility assertion
+
+**Status:** implemented by Issue #193 / PR #194; acceptance is bound to exact-head Protocol/parser/reducer/worker/frontend tests plus the public real-DSH visibility smoke.
+
+Implemented scope:
+- optional closed `visibilityAssertions` on the existing packed-only `PluginVerifyRequest`;
+- first supported assertion is exactly `{ kind: 'host-service', name }`, with bounded count/name length and duplicate rejection in the canonical parser;
+- assertions flow through the shared kernel/execution port without frontend-owned verification logic;
+- Toolchain-owned instrumentation observes the same disposable composed/booted DSH runtime and resolves requested Host Services through the live Cordis context;
+- boot evidence is established before visibility evidence; process success alone cannot satisfy visibility;
+- a missing requested service fails `visibility` with stable `VERIFY_VISIBILITY_FAILED` and blocks `verified`;
+- requested-but-unexecuted visibility yields incomplete verification rather than false success;
+- no-assertion requests preserve the M4.2 `visibility: skipped / no-visibility-assertions` baseline exactly;
+- CLI exposes repeatable `--visibility-service`, native DSH publishes the canonical Host Service assertion shape, and MCP projects the canonical Protocol schema;
+- exact packed-candidate acceptance on published `@deepseek-ai/dsh@0.1.1-rc.2` proves a candidate-provided Host Service is visible through the public installed CLI path while the active profile remains unchanged.
+
+Deliberately deferred after M4.3.1:
+- Agent-scoped Tool visibility assertions;
+- Client/page visibility until deterministic page identity/lifetime exists;
 - deterministic behavior fixture vocabulary;
 - build-stage execution policy;
 - a transport-neutral `Operation` lifecycle for progress/cancel when long-running UX requirements justify the added contract;
@@ -258,7 +275,8 @@ M4 capabilities across the full milestone:
 - artifact fingerprint and package preview/pack;
 - temporary DSH home;
 - install, composition, actual boot and runtime probe;
-- service/tool/client capability visibility assertions;
+- Host Service capability visibility assertions;
+- future Tool/Client visibility assertions where authoritative runtime seams exist;
 - explicitly declared deterministic behavior checks;
 - transport-neutral `Operation` evolved from real worker needs;
 - `VerificationReport` / receipt bound to artifact + TargetSnapshot;
@@ -267,12 +285,13 @@ M4 capabilities across the full milestone:
 - cleanup/crash/cancel handling.
 
 M4 exit criteria:
-- [x] active profile is untouched under the current `safe` isolation policy for the M4.2 public acceptance path;
+- [x] active profile is untouched under the current `safe` isolation policy for the public acceptance path;
+- [x] first explicit Host Service visibility contract is projected through Protocol/kernel/CLI/native DSH/MCP and proven in real DSH;
 - [ ] source-valid/package-broken and boot/visibility-broken fixture coverage is complete across the intended public M4 surface;
 - [x] stale target cannot yield `verified` in the shared reducer/kernel path;
 - [x] worker crash/failure remains fail-closed and cleanup is independently attempted;
 - [x] an unexecuted stage is never reported as passed;
-- [ ] explicit visibility/behavior contracts and any required Operation lifecycle are implemented before claiming the full M4 milestone complete;
+- [ ] Tool/Client visibility, behavior contracts and any required Operation lifecycle are implemented before claiming the full M4 milestone complete;
 - [ ] community lifecycle runners, if adopted, are integrated only behind Toolchain-owned evidence semantics.
 
 ## CI adoption gate
