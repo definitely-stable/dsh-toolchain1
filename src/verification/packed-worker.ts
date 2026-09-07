@@ -70,6 +70,7 @@ export interface PackedPluginVerificationInput {
 export interface PackedPluginVerificationExecution {
   readonly artifactFingerprint?: string
   readonly targetFingerprint: string
+  readonly lifecycleFingerprint?: string
   readonly executionPolicy: 'safe'
   readonly runtime: {
     readonly nodeVersion: string
@@ -151,6 +152,9 @@ function freezeExecution(
   return Object.freeze({
     ...(artifactFingerprint === undefined ? {} : { artifactFingerprint }),
     targetFingerprint: input.target.fingerprint,
+    ...(input.target.profileLifecycle === undefined
+      ? {}
+      : { lifecycleFingerprint: input.target.profileLifecycle.fingerprint }),
     executionPolicy: 'safe' as const,
     runtime: Object.freeze({
       nodeVersion: process.version,
