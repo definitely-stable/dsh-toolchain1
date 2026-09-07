@@ -586,6 +586,15 @@
         "path": {"type": "string", "minLength": 1, "pattern": "\\S"}
       }
     },
+    "pluginVisibilityAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": {"const": "host-service"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}
+      }
+    },
     "pluginVerifyRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -593,7 +602,14 @@
       "properties": {
         "target": {"$ref": "#/$defs/targetResolveRequest"},
         "subject": {"$ref": "#/$defs/pluginPackedSubjectRequest"},
-        "executionPolicy": {"const": "safe"}
+        "executionPolicy": {"const": "safe"},
+        "visibilityAssertions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/pluginVisibilityAssertion"}
+        }
       }
     },
     "pluginVerifySuccessResponse": {
