@@ -30,6 +30,9 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 | Contract Search / Inspect compactness baseline | **COMPLETE / MEASUREMENT-ONLY** | Provider-free exhaustive baseline: 36 Search cases, all 184 Inspect contracts and 30 actual Search→top-1 Inspect paths. Inspect, not Search, is the compactness hotspot. |
 | Contract Inspect lossless compaction | **COMPLETE / PROVIDER-FREE PRODUCT MEASUREMENT** | #186 / PR #187: 184/184 exact lossless parity; production serializer improves all 184 frozen Inspect responses, 0 ties/regressions; aggregate exact-byte reduction 33.7983%. |
 | Exact Target Plugin Check alpha | **COMPLETE** | Static/read-only exact-target plugin verdict path is merged. |
+| M4.1 isolated verification worker | **COMPLETE** | Exact packed-artifact execution uses a disposable DSH environment with bounded install/compose/boot evidence and cleanup. |
+| M4.2 public `plugin.verify` | **COMPLETE** | Kernel-owned verification reduction binds static evidence, exact artifact identity, isolated runtime evidence and final target freshness. |
+| M4.3.1 Host Service visibility | **COMPLETE** | Requested Host Service assertions are proven from the live isolated Cordis context before a receipt may remain `verified`. |
 | H2 | **NOT READY** | Requires a fresh hidden dataset and independently specified end-to-end success endpoint before outcomes exist. |
 
 ## Canonical receipts
@@ -118,7 +121,7 @@ Contract Search v3 and the lossless Inspect projection should remain frozen afte
 
 A provider/model measurement of compaction impact is a separate future experiment and requires explicit authorization. It is not required to continue product development.
 
-The next product-level roadmap work remains **M4 isolated runtime verification (`plugin.verify`)**: execute candidate verification only in a disposable exact-target composition, bind receipts to the candidate artifact and TargetSnapshot, preserve cleanup/cancellation/fail-closed semantics, and never reinterpret static `plugin.check` as runtime verification.
+M4 isolated runtime verification is now implemented through M4.3.1: public `plugin.verify` executes only in a disposable exact-target composition, binds receipts to the exact packed artifact and starting/final TargetSnapshot, preserves cleanup/cancellation/fail-closed semantics, and can require live Host Service visibility. The next product-level M4 work is deliberately narrower: broader runtime visibility/behavior assertions and a transport-neutral long-operation lifecycle only when their identity/lifetime contracts are proven. Later DSH-train support remains a separate compatibility decision under #33 and must not rewrite the frozen rc.2 evidence path.
 
 ## H2 boundary
 
