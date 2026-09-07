@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   canonicalizeTargetProjection,
+  createProfileLifecycleSemanticProjectionV1,
   createTargetSemanticProjectionV2,
+  fingerprintProfileLifecycle,
   fingerprintTarget,
   type AcquiredTargetFacts,
   type Sha256Port,
@@ -62,6 +64,28 @@ async function fingerprint(facts: AcquiredTargetFacts): Promise<string> {
 }
 
 describe('TargetSemanticProjectionV2', () => {
+  it('keeps startup target identity stable while patchReload lifecycle identity changes', async () => {
+    const live = baseFacts()
+    const startup = baseFacts()
+    live.profile.patchReload = 'live'
+    startup.profile.patchReload = 'startup'
+
+    expect(await fingerprint(live)).toBe(await fingerprint(startup))
+
+    const liveLifecycle = await fingerprintProfileLifecycle(
+      createProfileLifecycleSemanticProjectionV1(live.profile.patchReload),
+      digest,
+    )
+    const startupLifecycle = await fingerprintProfileLifecycle(
+      createProfileLifecycleSemanticProjectionV1(startup.profile.patchReload),
+      digest,
+    )
+
+    expect(liveLifecycle).toMatch(/^dsh-profile-lifecycle-v1:[0-9a-f]{64}$/)
+    expect(startupLifecycle).toMatch(/^dsh-profile-lifecycle-v1:[0-9a-f]{64}$/)
+    expect(liveLifecycle).not.toBe(startupLifecycle)
+  })
+
   it('is stable across paths, evidence locations and Toolchain observer version/content', async () => {
     const left = baseFacts()
     const rightBase = baseFacts()
