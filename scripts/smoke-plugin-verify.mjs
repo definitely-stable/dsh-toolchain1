@@ -99,6 +99,14 @@ async function createCandidate(root, env) {
   return realpath(packed)
 }
 
+function assertArtifactBinding(response, stage, candidateHash) {
+  assert.equal(
+    response.data.artifactFingerprint,
+    `dsh-plugin-artifact-v1:${candidateHash}`,
+    `Plugin Verify smoke: ${stage} receipt is not bound to exact candidate .tgz bytes`,
+  )
+}
+
 function parseEnvelope(stdout) {
   let response
   try {
@@ -260,11 +268,7 @@ export async function smokePluginVerify(toolchainTarball) {
     await requireProfileUnchanged('Host Service visibility')
 
     const serviceResponse = parseResponse(serviceExecution.stdout)
-    assert.equal(
-      serviceResponse.data.artifactFingerprint,
-      `dsh-plugin-artifact-v1:${candidateHash}`,
-      'Plugin Verify smoke: receipt is not bound to exact candidate .tgz bytes',
-    )
+    assertArtifactBinding(serviceResponse, 'Host Service visibility', candidateHash)
 
     const mixedExecution = verifyCandidate(
       ['--visibility-service', PLUGIN_VERIFY_SMOKE_SERVICE, '--visibility-tool', PLUGIN_VERIFY_SMOKE_TOOL],
@@ -273,21 +277,13 @@ export async function smokePluginVerify(toolchainTarball) {
     await requireProfileUnchanged('mixed Host Service and Agent Tool visibility')
 
     const mixedResponse = parseResponse(mixedExecution.stdout)
-    assert.equal(
-      mixedResponse.data.artifactFingerprint,
-      `dsh-plugin-artifact-v1:${candidateHash}`,
-      'Plugin Verify smoke: mixed visibility receipt is not bound to exact candidate .tgz bytes',
-    )
+    assertArtifactBinding(mixedResponse, 'mixed Host Service and Agent Tool visibility', candidateHash)
 
     const missingExecution = verifyCandidate(['--visibility-tool', PLUGIN_VERIFY_SMOKE_MISSING_TOOL], [1])
     await requireProfileUnchanged('missing Agent Tool visibility')
 
     const missingResponse = parseFailedVisibilityResponse(missingExecution.stdout)
-    assert.equal(
-      missingResponse.data.artifactFingerprint,
-      `dsh-plugin-artifact-v1:${candidateHash}`,
-      'Plugin Verify smoke: failed visibility receipt is not bound to exact candidate .tgz bytes',
-    )
+    assertArtifactBinding(missingResponse, 'missing Agent Tool visibility', candidateHash)
 
     process.stdout.write(
       `Plugin Verify smoke: DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} ${PLUGIN_VERIFY_SMOKE_PROFILE} public CLI verified exact packed candidate, lifecycle epoch, live Host Service visibility, present Agent Tool visibility, and missing Agent Tool failure in disposable worker\n`,
