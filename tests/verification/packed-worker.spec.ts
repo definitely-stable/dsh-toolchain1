@@ -277,6 +277,7 @@ describe('packed plugin verification worker', () => {
       code: 'VERIFY_VISIBILITY_FAILED',
       severity: 'error',
       domain: 'verification',
+      summary: 'One or more requested visibility assertions were not satisfied in the live DSH probe context.',
     }))
   })
 
@@ -317,6 +318,7 @@ describe('packed plugin verification worker', () => {
       code: 'VERIFY_VISIBILITY_FAILED',
       severity: 'error',
       domain: 'verification',
+      summary: 'One or more requested visibility assertions were not satisfied in the live DSH probe context.',
     }))
   })
 
