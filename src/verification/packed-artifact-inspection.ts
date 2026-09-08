@@ -193,7 +193,12 @@ function declaredRuntimeEntrypoint(manifest: Record<string, unknown>): DeclaredR
 function hasInvalidExportsSegment(value: string): boolean {
   if (!value.startsWith('./')) return true
   const relative = value.slice(2)
-  if (relative.length === 0 || relative.includes('%')) return true
+  if (
+    relative.length === 0
+    || relative.includes('%')
+    || relative.includes('?')
+    || relative.includes('#')
+  ) return true
   return relative.split('/').some(segment =>
     segment.length === 0
     || segment === '.'
