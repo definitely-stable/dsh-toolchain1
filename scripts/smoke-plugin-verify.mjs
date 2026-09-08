@@ -49,37 +49,40 @@ function run(command, args, options = {}) {
   })
 }
 
-async function createCandidate(root, env) {
-  const source = join(root, 'candidate-source')
-  const packed = join(root, 'candidate.tgz')
+async function createCandidate(root, env, options = {}) {
+  const withTool = options.withTool === true
+  const source = join(root, withTool ? 'candidate-tools-source' : 'candidate-source')
+  const packed = join(root, withTool ? 'candidate-tools.tgz' : 'candidate.tgz')
   await mkdir(source, { recursive: true })
 
+  // The inject declaration is required for live Tool registration: without
+  // it the candidate apply context does not expose the ToolRuntime and the
+  // registration below never becomes visible. On agent-less compositions the
+  // same declaration gates candidate application entirely, so the
+  // service-only headless candidate below stays inject-free.
   const pluginSource = [
     `const PLUGIN_VERIFY_SMOKE_SERVICE = ${JSON.stringify(PLUGIN_VERIFY_SMOKE_SERVICE)}`,
     `const PLUGIN_VERIFY_SMOKE_TOOL = ${JSON.stringify(PLUGIN_VERIFY_SMOKE_TOOL)}`,
-    // The inject declaration is required: without it the candidate apply
-    // context does not expose the live ToolRuntime and the Tool registration
-    // below would never become visible to verification Agents.
-    "export const inject = ['tools']",
+    ...(withTool ? ["export const inject = ['tools']", ''] : []),
     'export function apply(ctx) {',
     '  ctx.provide(PLUGIN_VERIFY_SMOKE_SERVICE, Object.freeze({ ready: true }))',
-    '  ctx.tools.register({',
-    '    name: PLUGIN_VERIFY_SMOKE_TOOL,',
-    "    description: 'Disposable Plugin Verify smoke Tool; registered for Agent capability visibility only and never executed.',",
-    "    parameters: { type: 'object', additionalProperties: false, properties: {} },",
-    '    output: {',
-    "      schema: { type: 'object', description: 'Disposable smoke Tool output.' },",
-    '      render: (args, value) => [{ type: \'text\', text: JSON.stringify(value) }],',
-    '    },',
-    '    async execute() { return { ready: true } },',
-    '  })',
+    ...(withTool ? ['  ctx.tools.register({'] : []),
+    ...(withTool ? ['    name: PLUGIN_VERIFY_SMOKE_TOOL,'] : []),
+    ...(withTool ? ["    description: 'Disposable Plugin Verify smoke Tool; registered for Agent capability visibility only and never executed.',"] : []),
+    ...(withTool ? ["    parameters: { type: 'object', additionalProperties: false, properties: {} },"] : []),
+    ...(withTool ? ['    output: {'] : []),
+    ...(withTool ? ["      schema: { type: 'object', description: 'Disposable smoke Tool output.' },"] : []),
+    ...(withTool ? ["      render: (args, value) => [{ type: 'text', text: JSON.stringify(value) }],"] : []),
+    ...(withTool ? ['    },'] : []),
+    ...(withTool ? ['    async execute() { return { ready: true } },'] : []),
+    ...(withTool ? ['  })'] : []),
     '}',
     '',
   ].join('\n')
 
   await Promise.all([
     writeFile(join(source, 'package.json'), `${JSON.stringify({
-      name: CANDIDATE_PACKAGE,
+      name: withTool ? `${CANDIDATE_PACKAGE}-tools` : CANDIDATE_PACKAGE,
       version: '0.0.0',
       type: 'module',
       exports: './plugin.mjs',
@@ -88,7 +91,7 @@ async function createCandidate(root, env) {
     }, undefined, 2)}\n`, { flag: 'wx' }),
     writeFile(
       join(source, 'cordis.patch.yml'),
-      `- insert:\n    - id: ${CANDIDATE_PACKAGE}\n      name: '${CANDIDATE_PACKAGE}'\n`,
+      `- insert:\n    - id: ${withTool ? `${CANDIDATE_PACKAGE}-tools` : CANDIDATE_PACKAGE}\n      name: '${withTool ? `${CANDIDATE_PACKAGE}-tools` : CANDIDATE_PACKAGE}'\n`,
       { flag: 'wx' },
     ),
     writeFile(join(source, 'plugin.mjs'), pluginSource, { flag: 'wx' }),
@@ -212,6 +215,8 @@ export async function smokePluginVerify(toolchainTarball) {
 
     const candidate = await createCandidate(root, env)
     const candidateHash = createHash('sha256').update(await readFile(candidate)).digest('hex')
+    const toolsCandidate = await createCandidate(root, env, { withTool: true })
+    const toolsCandidateHash = createHash('sha256').update(await readFile(toolsCandidate)).digest('hex')
 
     run('pnpm', [
       'add',
@@ -246,21 +251,23 @@ export async function smokePluginVerify(toolchainTarball) {
     const dshPackageRoot = await realpath(resolve(runner, 'node_modules', '@deepseek-ai', 'dsh'))
     // Agent Tool assertions require an agent-capable target composition:
     // the minimal headless profile registers no agent loop, so the
-    // Agent-capability runs below resolve the web profile while the
-    // Host-Service-only run keeps the lightweight headless target.
+    // Agent-capability runs below resolve the web profile with a second
+    // Tool-registering candidate, while the Host-Service-only run keeps the
+    // lightweight headless target and the original service-only candidate.
+    // Each run binds its receipt to its own exact candidate bytes.
     const profileRoots = new Map()
     for (const profile of [PLUGIN_VERIFY_SMOKE_PROFILE, PLUGIN_VERIFY_SMOKE_AGENT_PROFILE]) {
       profileRoots.set(profile, await snapshotTree(join(home, 'profiles', profile)))
     }
 
-    function verifyCandidate(profile, visibilityArgs, allowedStatuses) {
+    function verifyCandidate(profile, subject, visibilityArgs, allowedStatuses) {
       const execution = run(process.execPath, [
         installedToolchainCli,
         'plugin', 'verify',
         '--profile', profile,
         '--dsh-home', home,
         '--dsh-package-root', dshPackageRoot,
-        '--subject', candidate,
+        '--subject', subject,
         ...visibilityArgs,
       ], {
         capture: true,
@@ -282,6 +289,7 @@ export async function smokePluginVerify(toolchainTarball) {
 
     const serviceExecution = verifyCandidate(
       PLUGIN_VERIFY_SMOKE_PROFILE,
+      candidate,
       ['--visibility-service', PLUGIN_VERIFY_SMOKE_SERVICE],
       [0],
     )
@@ -292,23 +300,25 @@ export async function smokePluginVerify(toolchainTarball) {
 
     const mixedExecution = verifyCandidate(
       PLUGIN_VERIFY_SMOKE_AGENT_PROFILE,
+      toolsCandidate,
       ['--visibility-service', PLUGIN_VERIFY_SMOKE_SERVICE, '--visibility-tool', PLUGIN_VERIFY_SMOKE_TOOL],
       [0],
     )
     await requireProfileUnchanged(PLUGIN_VERIFY_SMOKE_AGENT_PROFILE, 'mixed Host Service and Agent Tool visibility')
 
     const mixedResponse = parseResponse(mixedExecution.stdout)
-    assertArtifactBinding(mixedResponse, 'mixed Host Service and Agent Tool visibility', candidateHash)
+    assertArtifactBinding(mixedResponse, 'mixed Host Service and Agent Tool visibility', toolsCandidateHash)
 
     const missingExecution = verifyCandidate(
       PLUGIN_VERIFY_SMOKE_AGENT_PROFILE,
+      toolsCandidate,
       ['--visibility-tool', PLUGIN_VERIFY_SMOKE_MISSING_TOOL],
       [1],
     )
     await requireProfileUnchanged(PLUGIN_VERIFY_SMOKE_AGENT_PROFILE, 'missing Agent Tool visibility')
 
     const missingResponse = parseFailedVisibilityResponse(missingExecution.stdout)
-    assertArtifactBinding(missingResponse, 'missing Agent Tool visibility', candidateHash)
+    assertArtifactBinding(missingResponse, 'missing Agent Tool visibility', toolsCandidateHash)
 
     process.stdout.write(
       `Plugin Verify smoke: DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} public CLI verified exact packed candidate, lifecycle epoch, live Host Service visibility, present Agent Tool visibility, and missing Agent Tool failure in disposable worker\n`,

@@ -145,7 +145,7 @@ All must assert exact artifact/target/lifecycle binding, cleanup success, and ac
 
 **GREEN**
 
-Implement the minimum smoke integration, preferably reusing an existing primary-only DSH installation path rather than adding a second redundant registry-heavy job.
+Implement the minimum smoke integration, preferably reusing an existing primary-only DSH installation path rather than adding a second redundant registry-heavy job. The smoke packs two exact candidates from one fixture source shape: a service-only candidate for the `headless` run (no inject declaration, preserving M4.3.1 behavior) and a service+tool candidate with `export const inject = ['tools']` for the `web` runs; each run binds its receipt to its own exact candidate bytes.
 
 ### Task 6: Synchronize normative documentation and close governance
 
