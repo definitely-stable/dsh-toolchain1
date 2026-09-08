@@ -80,8 +80,8 @@ describe('verification boot probe', () => {
     const source = await readFile(path.join(probe.packagePath, 'probe.mjs'), 'utf8')
 
     expect(probe.visibility).toBeDefined()
-    expect(probe.visibility?.passedMarker).toMatch(/^DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V1:[0-9a-f]{64}:PASS$/u)
-    expect(probe.visibility?.failedMarker).toMatch(/^DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V1:[0-9a-f]{64}:FAIL$/u)
+    expect(probe.visibility?.passedMarker).toMatch(/^DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2:[0-9a-f]{64}:PASS$/u)
+    expect(probe.visibility?.failedMarker).toMatch(/^DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2:[0-9a-f]{64}:FAIL$/u)
     expect(probe.visibility?.passedMarker).not.toContain('candidateService')
     expect(probe.visibility?.failedMarker).not.toContain('another/service')
     expect(source).toContain(JSON.stringify(assertions))
@@ -90,6 +90,53 @@ describe('verification boot probe', () => {
     expect(source).toContain(JSON.stringify(`${probe.visibility?.failedMarker}\n`))
     expect(source).toContain(`process.stdout.write(${JSON.stringify(`${probe.marker}\n`)})`)
     expect(source).toContain('appExit(0)')
+    expect(source).not.toContain("rootCtx.get('agents')")
+    expect(source).not.toContain("rootCtx.get('tools')")
+  })
+
+  it('creates one owned Agent capability epoch for Agent Tool assertions and disposes it before the visibility outcome', async () => {
+    const root = await fixtureRoot()
+    const assertions = [
+      { kind: 'agent-tool' as const, name: 'candidate_tool' },
+      { kind: 'agent-tool' as const, name: 'another_tool' },
+    ]
+
+    const probe = await createVerificationBootProbe(root, 'headless', assertions)
+    const source = await readFile(path.join(probe.packagePath, 'probe.mjs'), 'utf8')
+
+    expect(probe.visibility?.passedMarker).toMatch(/^DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2:[0-9a-f]{64}:PASS$/u)
+    expect(probe.visibility?.failedMarker).toMatch(/^DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2:[0-9a-f]{64}:FAIL$/u)
+    expect(source).toContain('export async function apply(rootCtx)')
+    expect(source).toContain("rootCtx.get('agents')")
+    expect(source).toContain("rootCtx.get('tools')")
+    expect(source).toContain('randomUUID')
+    expect(source.match(/agents\.create\(/gu)).toHaveLength(1)
+    expect(source.match(/tools\.schemas\(handle\.agent\)/gu)).toHaveLength(1)
+    expect(source).toContain('await handle.dispose()')
+
+    const dispose = source.indexOf('await handle.dispose()')
+    const passMarkerWrite = source.indexOf(JSON.stringify(`${probe.visibility?.passedMarker}\n`))
+    const failedMarkerWrite = source.indexOf(JSON.stringify(`${probe.visibility?.failedMarker}\n`))
+    expect(dispose).toBeGreaterThanOrEqual(0)
+    expect(passMarkerWrite).toBeGreaterThan(dispose)
+    expect(failedMarkerWrite).toBeGreaterThan(dispose)
+  })
+
+  it('uses one Agent epoch for a mixed Host Service and Agent Tool assertion batch', async () => {
+    const root = await fixtureRoot()
+    const assertions = [
+      { kind: 'host-service' as const, name: 'candidateService' },
+      { kind: 'agent-tool' as const, name: 'candidate_tool' },
+      { kind: 'agent-tool' as const, name: 'another_tool' },
+    ]
+
+    const probe = await createVerificationBootProbe(root, 'headless', assertions)
+    const source = await readFile(path.join(probe.packagePath, 'probe.mjs'), 'utf8')
+
+    expect(source).toContain('rootCtx.get(assertion.name, false)')
+    expect(source.match(/agents\.create\(/gu)).toHaveLength(1)
+    expect(source.match(/tools\.schemas\(handle\.agent\)/gu)).toHaveLength(1)
+    expect(source).toContain('await handle.dispose()')
   })
 
   it('binds visibility marker identity to the ordered assertion set', async () => {
