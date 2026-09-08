@@ -112,6 +112,21 @@ describe('packed artifact runtime entrypoint inspection', () => {
     }
   })
 
+  it('does not reinterpret URL-suffixed exports targets as literal archive member paths', () => {
+    for (const exportsValue of ['./plugin.mjs?mode=dsh', './plugin.mjs#runtime']) {
+      for (const runtimeFiles of [['plugin.mjs'], []] as const) {
+        const bytes = artifact({
+          name: 'candidate',
+          version: '1.0.0',
+          type: 'module',
+          exports: exportsValue,
+        }, runtimeFiles)
+
+        expect(inspectPackedArtifactRuntimeEntrypoint(bytes)).toEqual({ status: 'not-checkable' })
+      }
+    }
+  })
+
   it('does not guess conditional exports that require Node condition resolution', () => {
     const bytes = artifact({
       name: 'candidate',
