@@ -212,13 +212,14 @@ Exit criteria:
 
 ### M4.1 — Isolated packed-artifact worker
 
-**Status:** implemented and merged via PR #189 / Issue #188.
+**Status:** implemented and merged via PR #189 / Issue #188, with negative package-integrity hardening extended by Issue #199 / PR #200.
 
 M4.1 is deliberately worker-first. It verifies a caller-supplied packed `.tgz` under execution policy `safe` and produces internal execution evidence consumed by the shared application layer.
 
 Implemented boundary:
 - exact-byte `dsh-plugin-artifact-v1:<sha256>` identity, separate from static `dsh-plugin-subject-v1`;
 - authoritative packed acquisition handoff only for complete subjects, followed by worker-side exact-hash revalidation;
+- exact artifact identity is established before semantic package-integrity checks; when an unambiguous explicit root runtime entrypoint (`main` or a simple root `exports` string) is absent from the exact tarball, `package` fails with `VERIFY_PACKAGE_ENTRYPOINT_MISSING`, the fingerprint remains in the failed receipt, and downstream execution is skipped;
 - unique disposable runner, `DSH_HOME`, user home and temp directory;
 - allowlisted child environment with Toolchain-owned temporary coordinates and no silent credential inheritance;
 - exact DSH train installation and candidate installation with lifecycle scripts disabled;
@@ -287,7 +288,7 @@ M4 capabilities across the full milestone:
 M4 exit criteria:
 - [x] active profile is untouched under the current `safe` isolation policy for the public acceptance path;
 - [x] first explicit Host Service visibility contract is projected through Protocol/kernel/CLI/native DSH/MCP and proven in real DSH;
-- [ ] source-valid/package-broken and boot/visibility-broken fixture coverage is complete across the intended public M4 surface;
+- [x] source-valid/package-broken and boot/visibility-broken fixture coverage is complete across the intended public M4 surface;
 - [x] stale target cannot yield `verified` in the shared reducer/kernel path;
 - [x] worker crash/failure remains fail-closed and cleanup is independently attempted;
 - [x] an unexecuted stage is never reported as passed;

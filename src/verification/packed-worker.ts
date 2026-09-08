@@ -19,6 +19,7 @@ import {
   verificationDiagnostic,
 } from './diagnostics.js'
 import { createSafeVerificationEnvironment } from './environment.js'
+import { inspectPackedArtifactRuntimeEntrypoint } from './packed-artifact-inspection.js'
 import {
   runVerificationProcess,
   type VerificationProcessOutcome,
@@ -291,7 +292,20 @@ export async function runPackedPluginVerification(
       artifactFingerprint = artifact.fingerprint
       await writeFile(candidateCopy, artifact.bytes, { flag: 'wx' })
       await fingerprintPackedArtifact(candidateCopy, artifact.contentHash)
-      checks = passVerificationStage(checks, 'package')
+
+      const entrypoint = inspectPackedArtifactRuntimeEntrypoint(artifact.bytes)
+      if (entrypoint.status === 'missing') {
+        const diagnostic = verificationDiagnostic(
+          'VERIFY_PACKAGE_ENTRYPOINT_MISSING',
+          `Packed verification artifact declares runtime entrypoint ${entrypoint.entrypoint.slice('package/'.length)} but does not contain that file.`,
+        )
+        diagnostics.push(diagnostic)
+        checks = failStage(checks, 'package', diagnostic)
+        terminal = 'failed'
+        stopped = true
+      } else {
+        checks = passVerificationStage(checks, 'package')
+      }
     } catch (cause) {
       const error = cause instanceof VerificationArtifactError
         ? cause

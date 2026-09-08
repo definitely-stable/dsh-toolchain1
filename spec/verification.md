@@ -52,7 +52,9 @@ M4.1 implements the first production execution slice for caller-supplied packed 
 For this slice:
 
 - packed acquisition remains the archive-validation authority and exposes an executable handoff only for a complete subject;
-- the worker revalidates the exact artifact content hash before staging it into a disposable workspace;
+- the worker revalidates the exact artifact content hash before staging it into a disposable workspace and establishes `dsh-plugin-artifact-v1` before semantic package checks;
+- after exact artifact identity is established and before any candidate installation, the `package` stage inspects the same packed bytes for an unambiguous declared root runtime entrypoint (`main` or a simple root `exports` string); when that file is absent, verification fails closed with `VERIFY_PACKAGE_ENTRYPOINT_MISSING`, preserves the exact artifact fingerprint in the receipt, and skips downstream runtime stages;
+- conditional exports, extension/directory resolution and transitive module-graph resolution are not guessed by this bounded package-integrity check; they remain runtime concerns for applicable later stages;
 - DSH and candidate installation use package-manager/DSH install paths with lifecycle scripts disabled through `--ignore-scripts`;
 - candidate-only composition is proven through the official DSH `--dump-config` route before boot instrumentation is added;
 - Toolchain then installs a generated private boot-probe package into the same disposable profile;
