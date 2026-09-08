@@ -158,7 +158,7 @@ Implement the minimum smoke integration, preferably reusing an existing primary-
 After production behavior and real acceptance are green:
 
 - document `agent-tool` as capability visibility, explicitly distinct from model presentation and Tool execution;
-- document one owned Agent epoch and exact handle disposal;
+- document one owned Agent epoch with process-boundary Agent lifetime (no exact-handle disposal exists on the `agentLoop` seam);
 - keep Client/page and behavior assertions deferred;
 - record upstream authority commit and final CI evidence;
 - mark issue acceptance complete only on final exact-head all-green CI.
