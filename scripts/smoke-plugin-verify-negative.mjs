@@ -93,8 +93,8 @@ async function createPackedRuntimeBrokenCandidate(root, env) {
   return packCandidate(root, env, {
     directory: 'packed-runtime-broken',
     packageName: PACKED_RUNTIME_BROKEN_PACKAGE,
-    // The source is valid, but the packed artifact intentionally omits the
-    // module referenced by exports. package.json and cordis.patch.yml remain.
+    // Source contains the declared runtime module, but the distributable
+    // intentionally omits it while retaining package.json and bundle patch.
     files: ['cordis.patch.yml'],
     pluginSource: 'export function apply() {}\n',
   })
@@ -138,10 +138,10 @@ function parseFailedResponse(stdout, candidate, label) {
 
   const checks = response.data?.checks
   assert.ok(Array.isArray(checks), `${label}: canonical checks missing`)
-  assert.deepEqual(checks.map(check => check.id), CANONICAL_CHECK_IDS, `${label}: canonical check order changed`)
+  assert.deepEqual(checks.map(item => item.id), CANONICAL_CHECK_IDS, `${label}: canonical check order changed`)
   for (const id of REQUIRED_STATIC_CHECK_IDS) {
     assert.deepEqual(
-      checks.find(check => check.id === id),
+      checks.find(item => item.id === id),
       { id, status: 'passed' },
       `${label}: static ${id} did not pass`,
     )
@@ -150,7 +150,7 @@ function parseFailedResponse(stdout, candidate, label) {
   return response
 }
 
-function check(response, id) {
+function verificationCheck(response, id) {
   return response.data.checks.find(candidate => candidate.id === id)
 }
 
@@ -233,7 +233,7 @@ export async function smokePluginVerifyNegative(toolchainTarball) {
     const dshPackageRoot = await realpath(resolve(runner, 'node_modules', '@deepseek-ai', 'dsh'))
     const profileRoot = join(home, 'profiles', PLUGIN_VERIFY_NEGATIVE_SMOKE_PROFILE)
 
-    const bootBroken = await executeFailedVerification({
+    const packageBroken = await executeFailedVerification({
       installedToolchainCli,
       dshPackageRoot,
       home,
@@ -241,22 +241,21 @@ export async function smokePluginVerifyNegative(toolchainTarball) {
       candidatePath: packedRuntimeBroken,
       label: 'packed-runtime-broken',
     })
-    assert.deepEqual(check(bootBroken, 'package'), { id: 'package', status: 'passed' })
-    assert.deepEqual(check(bootBroken, 'install'), { id: 'install', status: 'passed' })
-    assert.deepEqual(check(bootBroken, 'compose'), { id: 'compose', status: 'passed' })
-    assert.deepEqual(check(bootBroken, 'boot'), {
-      id: 'boot',
+    assert.deepEqual(verificationCheck(packageBroken, 'package'), {
+      id: 'package',
       status: 'failed',
-      reason: 'verify-boot-failed',
+      reason: 'verify-package-entrypoint-missing',
     })
-    assert.deepEqual(check(bootBroken, 'visibility'), {
-      id: 'visibility',
-      status: 'skipped',
-      reason: 'prerequisite-boot-failed',
-    })
+    for (const id of ['install', 'compose', 'boot', 'visibility']) {
+      assert.deepEqual(verificationCheck(packageBroken, id), {
+        id,
+        status: 'skipped',
+        reason: 'prerequisite-package-failed',
+      })
+    }
     assert.ok(
-      diagnosticCodes(bootBroken).has('VERIFY_BOOT_FAILED'),
-      'packed-runtime-broken: VERIFY_BOOT_FAILED missing',
+      diagnosticCodes(packageBroken).has('VERIFY_PACKAGE_ENTRYPOINT_MISSING'),
+      'packed-runtime-broken: VERIFY_PACKAGE_ENTRYPOINT_MISSING missing',
     )
 
     const visibilityFailed = await executeFailedVerification({
@@ -268,11 +267,11 @@ export async function smokePluginVerifyNegative(toolchainTarball) {
       visibilityService: MISSING_SERVICE,
       label: 'visibility-broken',
     })
-    assert.deepEqual(check(visibilityFailed, 'package'), { id: 'package', status: 'passed' })
-    assert.deepEqual(check(visibilityFailed, 'install'), { id: 'install', status: 'passed' })
-    assert.deepEqual(check(visibilityFailed, 'compose'), { id: 'compose', status: 'passed' })
-    assert.deepEqual(check(visibilityFailed, 'boot'), { id: 'boot', status: 'passed' })
-    assert.deepEqual(check(visibilityFailed, 'visibility'), {
+    assert.deepEqual(verificationCheck(visibilityFailed, 'package'), { id: 'package', status: 'passed' })
+    assert.deepEqual(verificationCheck(visibilityFailed, 'install'), { id: 'install', status: 'passed' })
+    assert.deepEqual(verificationCheck(visibilityFailed, 'compose'), { id: 'compose', status: 'passed' })
+    assert.deepEqual(verificationCheck(visibilityFailed, 'boot'), { id: 'boot', status: 'passed' })
+    assert.deepEqual(verificationCheck(visibilityFailed, 'visibility'), {
       id: 'visibility',
       status: 'failed',
       reason: 'verify-visibility-failed',
@@ -283,7 +282,7 @@ export async function smokePluginVerifyNegative(toolchainTarball) {
     )
 
     process.stdout.write(
-      `Plugin Verify negative smoke: DSH ${PLUGIN_VERIFY_NEGATIVE_SMOKE_DSH_VERSION} ${PLUGIN_VERIFY_NEGATIVE_SMOKE_PROFILE} proved boot and visibility failures through the installed public CLI\n`,
+      `Plugin Verify negative smoke: DSH ${PLUGIN_VERIFY_NEGATIVE_SMOKE_DSH_VERSION} ${PLUGIN_VERIFY_NEGATIVE_SMOKE_PROFILE} proved packed-entrypoint and visibility failures through the installed public CLI\n`,
     )
   } finally {
     await rm(root, { recursive: true, force: true })
