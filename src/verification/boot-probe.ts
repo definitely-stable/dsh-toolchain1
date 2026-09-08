@@ -7,7 +7,7 @@ import type { PluginVisibilityAssertion } from '../protocol/index.js'
 const BOOT_PROBE_PACKAGE_NAME = '@dsh-toolchain/verification-boot-probe'
 const BOOT_PROBE_ID = 'dsh-toolchain-verification-boot-probe'
 const BOOT_PROBE_MARKER_PREFIX = 'DSH_TOOLCHAIN_VERIFY_BOOT_PROBE_V1:'
-const VISIBILITY_PROBE_MARKER_PREFIX = 'DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V1:'
+const VISIBILITY_PROBE_MARKER_PREFIX = 'DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2:'
 
 export interface VerificationVisibilityProbe {
   readonly passedMarker: string
@@ -43,6 +43,14 @@ function visibilityMarkers(
   })
 }
 
+function hostVisibilitySource(): string {
+  return `  for (const assertion of assertions) {\n    if (assertion.kind !== 'host-service') continue\n    try {\n      if (rootCtx.get(assertion.name, false) === undefined) {\n        visibilityPassed = false\n      }\n    } catch {\n      visibilityPassed = false\n    }\n  }\n`
+}
+
+function agentToolVisibilitySource(): string {
+  return `  const toolAssertions = assertions.filter(assertion => assertion.kind === 'agent-tool')\n  let handle\n  try {\n    const agents = rootCtx.get('agents')\n    const tools = rootCtx.get('tools')\n    if (agents === undefined || tools === undefined) {\n      visibilityPassed = false\n    } else {\n      handle = await agents.create({\n        sessionId: \`dsh-toolchain-verify-\${randomUUID()}\`,\n      })\n      const visibleTools = new Set(tools.schemas(handle.agent).map(schema => schema.name))\n      for (const assertion of toolAssertions) {\n        if (!visibleTools.has(assertion.name)) visibilityPassed = false\n      }\n    }\n  } catch {\n    visibilityPassed = false\n  } finally {\n    if (handle !== undefined) {\n      try {\n        await handle.dispose()\n      } catch {\n        visibilityPassed = false\n      }\n    }\n  }\n`
+}
+
 export async function createVerificationBootProbe(
   root: string,
   profile: string,
@@ -55,6 +63,7 @@ export async function createVerificationBootProbe(
   const packagePath = path.join(root, 'boot-probe')
   const marker = profileMarker(profile)
   const visibility = visibilityMarkers(profile, visibilityAssertions)
+  const hasAgentToolAssertions = visibilityAssertions.some(assertion => assertion.kind === 'agent-tool')
   await mkdir(packagePath, { recursive: false })
 
   const manifest = {
@@ -69,8 +78,11 @@ export async function createVerificationBootProbe(
   const assertions = JSON.stringify(visibilityAssertions)
   const visibilitySource = visibility === undefined
     ? ''
-    : `  const assertions = ${assertions}\n  let visibilityPassed = true\n  for (const assertion of assertions) {\n    try {\n      if (rootCtx.get(assertion.name, false) === undefined) {\n        visibilityPassed = false\n        break\n      }\n    } catch {\n      visibilityPassed = false\n      break\n    }\n  }\n  process.stdout.write(visibilityPassed ? ${JSON.stringify(`${visibility.passedMarker}\n`)} : ${JSON.stringify(`${visibility.failedMarker}\n`)})\n`
-  const source = `export function apply(rootCtx) {\n  const appExit = rootCtx.get('appExit')\n  if (typeof appExit !== 'function') throw new Error('DSH verification boot probe requires launcher-owned ctx.appExit')\n  process.stdout.write(${JSON.stringify(`${marker}\n`)})\n${visibilitySource}  appExit(0)\n}\n`
+    : `  const assertions = ${assertions}\n  let visibilityPassed = true\n${hostVisibilitySource()}${hasAgentToolAssertions ? agentToolVisibilitySource() : ''}  process.stdout.write(visibilityPassed ? ${JSON.stringify(`${visibility.passedMarker}\n`)} : ${JSON.stringify(`${visibility.failedMarker}\n`)})\n`
+  const imports = hasAgentToolAssertions ? "import { randomUUID } from 'node:crypto'\n\n" : ''
+  const inject = hasAgentToolAssertions ? "export const inject = ['agents', 'tools']\n\n" : ''
+  const apply = hasAgentToolAssertions ? 'export async function apply(rootCtx)' : 'export function apply(rootCtx)'
+  const source = `${imports}${inject}${apply} {\n  const appExit = rootCtx.get('appExit')\n  if (typeof appExit !== 'function') throw new Error('DSH verification boot probe requires launcher-owned ctx.appExit')\n  process.stdout.write(${JSON.stringify(`${marker}\n`)})\n${visibilitySource}  appExit(0)\n}\n`
 
   await Promise.all([
     writeFile(path.join(packagePath, 'package.json'), `${JSON.stringify(manifest, undefined, 2)}\n`, { flag: 'wx' }),
