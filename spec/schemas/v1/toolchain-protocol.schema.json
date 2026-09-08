@@ -608,7 +608,7 @@
       "additionalProperties": false,
       "required": ["kind", "name"],
       "properties": {
-        "kind": {"const": "host-service"},
+        "kind": {"enum": ["host-service", "agent-tool"]},
         "name": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}
       }
     },
