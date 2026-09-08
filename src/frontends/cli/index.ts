@@ -58,7 +58,7 @@ Usage:
   dsh-toolchain contract search --profile <name> --query <text> [--kind <kind> ...] [--limit <1-25>] [target hints]
   dsh-toolchain contract inspect --profile <name> --contract-index <fingerprint> --contract-id <id> [target hints]
   dsh-toolchain plugin check --profile <name> --subject <directory-or-tgz> [target hints]
-  dsh-toolchain plugin verify --profile <name> --subject <packed.tgz> [--visibility-service <name> ...] [target hints]
+  dsh-toolchain plugin verify --profile <name> --subject <packed.tgz> [--visibility-service <name> ...] [--visibility-tool <name> ...] [target hints]
 
 Commands:
   mcp                Serve DSH Toolchain over MCP stdio
@@ -84,7 +84,10 @@ Options:
       --contract-id <id>     Contract id required by inspect
       --subject <path>       Plugin directory or packed .tgz; plugin verify requires packed .tgz
       --visibility-service <name>
-                             Require one Host Service to be visible during plugin verify; repeatable
+                              Require one Host Service to be visible during plugin verify; repeatable
+      --visibility-tool <name>
+                              Require one Agent Tool to be callable by a verifier-owned Agent during plugin verify; repeatable
+
 `
 
 function createNodeKernel(): VerificationApplicationKernel {
@@ -153,7 +156,9 @@ function hasInspectOption(values: CliOptionValues): boolean {
 }
 
 function hasPluginOption(values: CliOptionValues): boolean {
-  return values.subject !== undefined || values['visibility-service'] !== undefined
+  return values.subject !== undefined
+    || values['visibility-service'] !== undefined
+    || values['visibility-tool'] !== undefined
 }
 
 function hasOperationOption(values: CliOptionValues): boolean {
@@ -248,10 +253,16 @@ function pluginVerifyRequest(values: CliOptionValues): PluginVerifyRequest | und
     : Array.isArray(rawServices)
       ? rawServices
       : [rawServices]
-  const visibilityAssertions = serviceNames.map(name => ({
-    kind: 'host-service' as const,
-    name,
-  }))
+  const rawTools = values['visibility-tool']
+  const toolNames = rawTools === undefined
+    ? []
+    : Array.isArray(rawTools)
+      ? rawTools
+      : [rawTools]
+  const visibilityAssertions = [
+    ...serviceNames.map(name => ({ kind: 'host-service' as const, name })),
+    ...toolNames.map(name => ({ kind: 'agent-tool' as const, name })),
+  ]
 
   try {
     return parsePluginVerifyRequest({
@@ -291,6 +302,7 @@ export async function runCli(
         'contract-id': { type: 'string' },
         subject: { type: 'string' },
         'visibility-service': { type: 'string', multiple: true },
+        'visibility-tool': { type: 'string', multiple: true },
       },
     })
   } catch (error) {
@@ -445,6 +457,7 @@ export async function runCli(
       || hasSearchOption(parsed.values)
       || hasInspectOption(parsed.values)
       || parsed.values['visibility-service'] !== undefined
+      || parsed.values['visibility-tool'] !== undefined
     ) {
       io.stderr.write('Error: plugin check cannot be combined with --version, contract, or verification options\n')
       return 2
