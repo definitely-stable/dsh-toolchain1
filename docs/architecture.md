@@ -140,7 +140,7 @@ Performs the execution boundary: build/package checks when requested, actual pac
 
 Candidate-plugin execution occurs out of the user's active DSH process and uses a temporary DSH home by default. See `spec/verification.md` and `docs/security.md`.
 
-M4.1 establishes the first concrete worker slice for caller-supplied packed `.tgz` artifacts under `safe` policy. Runtime-capable implementation stays inside the declared `verification` layer; packed archive semantics stay in acquisition and the semantic kernel receives no Node/process/filesystem types.
+M4.1 establishes the first concrete worker slice for caller-supplied packed `.tgz` artifacts under `safe` policy. Runtime-capable implementation stays inside the declared `verification` layer; authoritative static packed-subject acquisition stays in `acquisition`, while execution-time inspection of the exact artifact bytes belongs to `verification`; the semantic kernel receives no Node/process/filesystem types.
 
 The M4.1 execution path is:
 
@@ -149,6 +149,9 @@ authoritative packed acquisition
         ↓ exact contentHash handoff
 worker re-hash / exact-byte artifact identity
         ↓
+bounded exact-tarball package-integrity check
+        ↓ missing unambiguous root entrypoint => failed receipt, no install
+        ↓ otherwise
 disposable runner + DSH_HOME + HOME + TMP
         ↓
 install exact DSH train
@@ -163,6 +166,8 @@ normal profile launch -> exact marker + exit 0
         ↓
 stage observations + cleanup outcome
 ```
+
+Exact artifact identity is established before semantic package-integrity failure is possible, so a source-valid but package-broken artifact still produces a receipt bound to its exact `dsh-plugin-artifact-v1` fingerprint. The bounded integrity check only resolves an unambiguous explicit root `main` or simple root `exports` file; conditional exports, extension/directory inference and transitive module loading are deliberately left to the applicable runtime stages rather than guessed statically.
 
 The worker binds observations to the supplied immutable starting target fingerprint and echoes the supplied lifecycle fingerprint when the target is lifecycle-aware. It does not re-resolve the caller's active target after execution and therefore cannot independently emit the final public `verified` / `stale` conclusion. M4.2 implements final target/lifecycle freshness reduction in application-kernel orchestration, and M4.3.1 reuses the same worker/runtime path for requested Host Service visibility assertions.
 
