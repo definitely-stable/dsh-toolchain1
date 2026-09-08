@@ -56,7 +56,7 @@ function visibilityMarkers(
   assertions: readonly PluginVisibilityAssertion[],
 ): { readonly passedMarker: string; readonly failedMarker: string } {
   const digest = sha256(Buffer.from(`profile:${profile}\nvisibility:${JSON.stringify(assertions)}`))
-  const prefix = `DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V1:${digest}`
+  const prefix = `DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2:${digest}`
   return {
     passedMarker: `${prefix}:PASS`,
     failedMarker: `${prefix}:FAIL`,
@@ -277,6 +277,48 @@ describe('packed plugin verification worker', () => {
       code: 'VERIFY_VISIBILITY_FAILED',
       severity: 'error',
       domain: 'verification',
+      summary: 'One or more requested visibility assertions were not satisfied in the live DSH probe context.',
+    }))
+  })
+
+  it('passes requested Agent Tool visibility after the V2 probe marker is proven', async () => {
+    const root = await fixtureRoot()
+    const visibilityAssertions = [{ kind: 'agent-tool' as const, name: 'candidate_tool' }]
+    const visibility = visibilityMarkers('web', visibilityAssertions)
+    const runner = fakeRunner(successfulOutcomes(
+      `${bootMarker('web')}\n${visibility.passedMarker}\n`,
+    ))
+
+    const { execution } = await runWith(root, runner, { visibilityAssertions })
+
+    expect(execution.terminal).toBe('completed')
+    expect(execution.diagnostics).toEqual([])
+    expect(check(execution, 'boot')).toEqual({ id: 'boot', status: 'passed' })
+    expect(check(execution, 'visibility')).toEqual({ id: 'visibility', status: 'passed' })
+  })
+
+  it('fails requested Agent Tool visibility when the V2 probe reports it missing', async () => {
+    const root = await fixtureRoot()
+    const visibilityAssertions = [{ kind: 'agent-tool' as const, name: 'missing_tool' }]
+    const visibility = visibilityMarkers('web', visibilityAssertions)
+    const runner = fakeRunner(successfulOutcomes(
+      `${bootMarker('web')}\n${visibility.failedMarker}\n`,
+    ))
+
+    const { execution } = await runWith(root, runner, { visibilityAssertions })
+
+    expect(execution.terminal).toBe('completed')
+    expect(check(execution, 'boot')).toEqual({ id: 'boot', status: 'passed' })
+    expect(check(execution, 'visibility')).toEqual({
+      id: 'visibility',
+      status: 'failed',
+      reason: 'verify-visibility-failed',
+    })
+    expect(execution.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'VERIFY_VISIBILITY_FAILED',
+      severity: 'error',
+      domain: 'verification',
+      summary: 'One or more requested visibility assertions were not satisfied in the live DSH probe context.',
     }))
   })
 

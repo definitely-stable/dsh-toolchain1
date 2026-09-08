@@ -102,17 +102,18 @@ function parsePluginVisibilityAssertions(
         key => !pluginVisibilityAssertionKeys.has(key as keyof PluginVisibilityAssertion),
       )
     ) invalid(message)
+    const kind = assertion.kind
     if (
-      assertion.kind !== 'host-service'
+      (kind !== 'host-service' && kind !== 'agent-tool')
       || typeof assertion.name !== 'string'
       || assertion.name.trim().length === 0
       || assertion.name.length > MAX_VISIBILITY_ASSERTION_NAME_LENGTH
     ) invalid(message)
 
-    const identity = `${assertion.kind}\u0000${assertion.name}`
+    const identity = `${kind}\u0000${assertion.name}`
     if (seen.has(identity)) invalid(message)
     seen.add(identity)
-    assertions.push({ kind: 'host-service', name: assertion.name })
+    assertions.push({ kind, name: assertion.name })
   }
 
   return assertions as [PluginVisibilityAssertion, ...PluginVisibilityAssertion[]]

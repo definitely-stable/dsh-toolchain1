@@ -52,6 +52,9 @@ describe('plugin.verify MCP projection', () => {
           type: 'object',
           additionalProperties: false,
           required: ['kind', 'name'],
+          properties: expect.objectContaining({
+            kind: expect.objectContaining({ enum: ['host-service', 'agent-tool'] }),
+          }),
         }),
       }),
     })
@@ -79,5 +82,25 @@ describe('plugin.verify MCP projection', () => {
     })
     expect(JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : 'null'))
       .toEqual(result.structuredContent)
+  })
+
+  it('delegates mixed Host Service and Agent Tool assertions unchanged', async () => {
+    const app = kernel()
+    const tool = createPluginVerifyMcpTool(app, () => 'plugin-verify-mcp')
+    const request: Parameters<typeof tool.callback>[0] = {
+      target: { profile: 'web' },
+      subject: { kind: 'packed', path: '/candidate/plugin.tgz' },
+      executionPolicy: 'safe',
+      visibilityAssertions: [
+        { kind: 'host-service', name: 'shared-name' },
+        { kind: 'agent-tool', name: 'shared-name' },
+      ],
+    }
+
+    const result = await tool.callback(request)
+
+    expect(app.verifyPlugin).toHaveBeenCalledWith(request)
+    expect(result).not.toHaveProperty('isError', true)
+    expect(result.structuredContent).toMatchObject({ status: 'ok', data: { status: 'stale' } })
   })
 })

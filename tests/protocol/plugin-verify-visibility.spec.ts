@@ -41,22 +41,58 @@ const invalidVisibilityAssertions: readonly unknown[] = [
   [{ kind: 'host-service', name: '' }],
   [{ kind: 'host-service', name: '   ' }],
   [{ kind: 'host-service', name: 'a'.repeat(257) }],
+  [{ kind: 'agent-tool', name: '' }],
+  [{ kind: 'agent-tool', name: '   ' }],
+  [{ kind: 'agent-tool', name: 'a'.repeat(257) }],
   [{ kind: 'tool', name: 'alphaService' }],
   [{ kind: 'host-service', name: 'alphaService', extra: true }],
   [
     { kind: 'host-service', name: 'alphaService' },
     { kind: 'host-service', name: 'alphaService' },
   ],
-  Array.from({ length: 33 }, (_, index) => ({ kind: 'host-service', name: `service-${index}` })),
+  [
+    { kind: 'agent-tool', name: 'alphaTool' },
+    { kind: 'agent-tool', name: 'alphaTool' },
+  ],
+  Array.from({ length: 33 }, (_, index) => ({
+    kind: index % 2 === 0 ? 'host-service' : 'agent-tool',
+    name: `capability-${index}`,
+  })),
 ]
 
-describe('plugin.verify Host Service visibility assertions', () => {
+describe('plugin.verify runtime visibility assertions', () => {
   it('accepts and preserves a bounded ordered set of Host Service assertions', async () => {
     const candidate = {
       ...baseRequest(),
       visibilityAssertions: [
         { kind: 'host-service', name: 'alphaService' },
         { kind: 'host-service', name: 'beta/service' },
+      ],
+    }
+
+    expect(parsePluginVerifyRequest(candidate)).toEqual(candidate)
+    expect((await requestValidator())(candidate)).toBe(true)
+  })
+
+  it('accepts and preserves Agent Tool assertions', async () => {
+    const candidate = {
+      ...baseRequest(),
+      visibilityAssertions: [
+        { kind: 'agent-tool', name: 'candidate_tool' },
+        { kind: 'agent-tool', name: 'mcp__github__search' },
+      ],
+    }
+
+    expect(parsePluginVerifyRequest(candidate)).toEqual(candidate)
+    expect((await requestValidator())(candidate)).toBe(true)
+  })
+
+  it('preserves mixed assertion kinds and allows the same name in distinct namespaces', async () => {
+    const candidate = {
+      ...baseRequest(),
+      visibilityAssertions: [
+        { kind: 'host-service', name: 'shared-name' },
+        { kind: 'agent-tool', name: 'shared-name' },
       ],
     }
 

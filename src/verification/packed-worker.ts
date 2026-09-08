@@ -497,7 +497,7 @@ export async function runPackedPluginVerification(
         } else if (failed && !passed) {
           const diagnostic = verificationDiagnostic(
             'VERIFY_VISIBILITY_FAILED',
-            'One or more requested Host Services were not visible in the live DSH probe context.',
+            'One or more requested visibility assertions were not satisfied in the live DSH probe context.',
           )
           diagnostics.push(diagnostic)
           checks = failStage(checks, 'visibility', diagnostic)

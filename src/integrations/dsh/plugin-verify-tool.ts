@@ -19,7 +19,7 @@ export function createPluginVerifyToolDefinition(
 ): DshToolDefinition {
   return {
     name: PLUGIN_VERIFY_TOOL_NAME,
-    description: 'Verify one packed plugin against an exact installed DSH target. This executes candidate code in an isolated temporary DSH environment under the safe policy and can prove explicitly requested Host Service visibility without mutating the active profile.',
+    description: 'Verify one packed plugin against an exact installed DSH target. This executes candidate code in an isolated temporary DSH environment under the safe policy and can prove explicitly requested Host Service visibility or Agent Tool callable-schema visibility without mutating the active profile.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -43,7 +43,7 @@ export function createPluginVerifyToolDefinition(
             type: 'object',
             additionalProperties: false,
             properties: {
-              kind: { enum: ['host-service'] },
+              kind: { enum: ['host-service', 'agent-tool'] },
               name: { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' },
             },
             required: ['kind', 'name'],

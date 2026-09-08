@@ -108,7 +108,36 @@ describe('plugin.verify CLI projection', () => {
     expect(deps.kernel?.verifyPlugin).not.toHaveBeenCalled()
   })
 
-  it('rejects duplicate Host Service assertions before invoking the kernel', async () => {
+  it('accepts repeated Agent Tool assertions after Host Service assertions', async () => {
+    const streams = io()
+    const deps = dependencies('verified')
+
+    const code = await runCli([
+      'plugin', 'verify',
+      '--profile', 'web',
+      '--subject', '/candidate/plugin.tgz',
+      '--visibility-service', 'candidateService',
+      '--visibility-tool', 'candidate_tool',
+      '--visibility-service', 'another/service',
+      '--visibility-tool', 'mcp__github__search',
+    ], streams.value, deps)
+
+    expect(code).toBe(0)
+    expect(streams.stderr()).toBe('')
+    expect(deps.kernel?.verifyPlugin).toHaveBeenCalledWith({
+      target: { profile: 'web' },
+      subject: { kind: 'packed', path: '/candidate/plugin.tgz' },
+      executionPolicy: 'safe',
+      visibilityAssertions: [
+        { kind: 'host-service', name: 'candidateService' },
+        { kind: 'host-service', name: 'another/service' },
+        { kind: 'agent-tool', name: 'candidate_tool' },
+        { kind: 'agent-tool', name: 'mcp__github__search' },
+      ],
+    })
+  })
+
+  it('rejects duplicate Agent Tool assertions before invoking the kernel', async () => {
     const streams = io()
     const deps = dependencies('verified')
 
@@ -116,10 +145,24 @@ describe('plugin.verify CLI projection', () => {
       'plugin', 'verify',
       '--profile', 'web',
       '--subject', '/candidate/plugin.tgz',
-      '--visibility-service', 'candidateService',
-      '--visibility-service', 'candidateService',
+      '--visibility-tool', 'candidate_tool',
+      '--visibility-tool', 'candidate_tool',
     ], streams.value, deps)).toBe(2)
     expect(streams.stderr()).toContain('invalid plugin verify request')
     expect(deps.kernel?.verifyPlugin).not.toHaveBeenCalled()
+  })
+
+  it('rejects Agent Tool assertions for plugin check before invoking the kernel', async () => {
+    const streams = io()
+    const deps = dependencies('verified')
+
+    expect(await runCli([
+      'plugin', 'check',
+      '--profile', 'web',
+      '--subject', '/candidate/plugin.tgz',
+      '--visibility-tool', 'candidate_tool',
+    ], streams.value, deps)).toBe(2)
+    expect(streams.stderr()).toContain('verification options')
+    expect(deps.kernel?.checkPlugin).not.toHaveBeenCalled()
   })
 })

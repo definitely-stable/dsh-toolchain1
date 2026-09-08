@@ -258,7 +258,7 @@ Frontend process status is not the Protocol application status. A CLI MAY return
 
 ### `plugin.verify`
 
-`plugin.verify` is the public M4 verification operation. M4.2 establishes target-fresh packed-artifact verification; M4.3.1 extends that same operation with the first explicit Host Service visibility assertion. It follows the stage/isolation contract in `spec/verification.md` and composes the existing static `plugin.check` semantics with the isolated packed-artifact worker; frontends MUST NOT implement a second verifier or a local verification-status reducer.
+`plugin.verify` is the public M4 verification operation. M4.2 establishes target-fresh packed-artifact verification; M4.3.1 extends that same operation with the first explicit Host Service visibility assertion; M4.3.2 extends the same closed assertion array with Agent-scoped Tool visibility. It follows the stage/isolation contract in `spec/verification.md` and composes the existing static `plugin.check` semantics with the isolated packed-artifact worker; frontends MUST NOT implement a second verifier or a local verification-status reducer.
 
 The closed `PluginVerifyRequest` contains:
 
@@ -267,7 +267,7 @@ The closed `PluginVerifyRequest` contains:
 - `executionPolicy` — `"safe"` for the current alpha;
 - optional `visibilityAssertions` — a non-empty array of at most 32 explicit visibility assertions.
 
-M4.3.1 supports exactly one visibility assertion shape: `{ "kind": "host-service", "name": <non-blank service name> }`. Service names are limited to 256 UTF-16 code units and duplicate `(kind, name)` assertions are invalid. Tool, Client/page, behavior, trusted-policy, and other assertion kinds are not accepted by this request shape.
+M4.3.1 supports exactly one visibility assertion shape: `{ "kind": "host-service", "name": <non-blank service name> }`. M4.3.2 adds exactly one more: `{ "kind": "agent-tool", "name": <non-blank tool name> }`. Names of either kind are limited to 256 UTF-16 code units and duplicate `(kind, name)` assertions are invalid; the same name under different kinds is valid because the namespaces are semantically distinct. At most 32 assertions are accepted in total across both kinds. Client/page, behavior, trusted-policy, and other assertion kinds are not accepted by this request shape.
 
 Directory subjects are not accepted by this operation. Supporting them would require a separately specified authoritative packing/byte-identity step and MUST NOT be inferred from directory support in `plugin.check`.
 
@@ -277,7 +277,7 @@ The application operation MUST:
 2. acquire/analyze the same packed subject through static `plugin.check` semantics;
 3. bind the authoritative packed bytes to `dsh-plugin-artifact-v1:<sha256>` and pass the same exact content hash plus the initial `TargetSnapshot`, execution policy, and any canonical visibility assertions to the isolated worker;
 4. execute the worker under policy `safe` in a disposable DSH environment rather than the caller's active profile;
-5. when Host Service assertions were requested, prove them through Toolchain-owned instrumentation in the same composed/booted DSH runtime rather than from static declarations;
+5. when visibility assertions were requested, prove them through Toolchain-owned instrumentation in the same composed/booted DSH runtime rather than from static declarations: Host Service assertions resolve through the live Cordis context, while Agent Tool assertions are evaluated against the capability catalog of one verifier-owned Agent created through the synchronous `agentLoop` seam and torn down with the disposable boot process;
 6. re-resolve the same target request after execution before reducing the final report;
 7. reduce static evidence, worker observations, cleanup, artifact identity, requested visibility, and final target/lifecycle freshness in the shared application kernel.
 
@@ -287,9 +287,9 @@ The active DSH profile MUST NOT be mutated merely to perform verification. Polic
 
 The operation preserves all eleven canonical verification checks in order. A `verified` report requires the covered static checks `structure`, `manifest`, `dependency`, and `contract` plus runtime checks `package`, `install`, `compose`, and `boot` to pass, worker execution to complete, cleanup to succeed, artifact/target/lifecycle bindings to remain coherent, and the final target fingerprint to equal the initial fingerprint. When lifecycle metadata is present in either the initial or final snapshot, the final lifecycle fingerprint MUST also equal the initial lifecycle fingerprint. `build` and `behavior` remain outside the current alpha claim.
 
-When no visibility assertions are requested, `visibility` MUST retain the explicit baseline `{ id: "visibility", status: "skipped", reason: "no-visibility-assertions" }` and does not block the M4.2 verified claim. When one or more Host Service assertions are requested, `visibility` becomes a required check: it MUST pass before the report can be `verified`; a proven visibility failure yields `failed`, while requested visibility that could not be executed yields `partial` unless a stronger terminal status applies.
+When no visibility assertions are requested, `visibility` MUST retain the explicit baseline `{ id: "visibility", status: "skipped", reason: "no-visibility-assertions" }` and does not block the M4.2 verified claim. When one or more visibility assertions of either kind are requested, `visibility` becomes a required check: it MUST pass before the report can be `verified`; a proven visibility failure yields `failed`, while requested visibility that could not be executed yields `partial` unless a stronger terminal status applies.
 
-Host Service visibility MUST be based on live runtime observation after candidate composition/boot. A package declaration, manifest entry, or TypeScript declaration MUST NOT by itself satisfy a requested visibility assertion.
+Host Service visibility MUST be based on live runtime observation after candidate composition/boot. Agent Tool visibility MUST be based on membership in the capability catalog of a real verifier-owned Agent observed after candidate composition/boot. A package declaration, manifest entry, or TypeScript declaration MUST NOT by itself satisfy a requested visibility assertion.
 
 A proven static incompatibility or required runtime failure yields report status `failed`. Cancellation yields `cancelled`. A changed final target yields `stale` after non-cancelled execution with `VERIFY_TARGET_STALE`. A changed, added, or removed final lifecycle fingerprint relative to the initial lifecycle epoch also yields `stale`, even when target-v2 is unchanged, with `VERIFY_LIFECYCLE_STALE`. Cleanup failure, material unproven static evidence, or another incomplete covered check prevents `verified` and yields `partial` unless a stronger status applies. Static `compatible-in-scope` alone MUST NOT be relabelled as runtime verification.
 
@@ -329,7 +329,7 @@ M2 contract projections MUST call the same kernel search/inspect use cases. The 
 
 `toolchain_plugin_check` MUST project the shared kernel `plugin.check` use case and canonical request parser. The DSH adapter MUST NOT execute candidate code or implement a second compatibility reducer.
 
-`toolchain_plugin_verify` MUST project the shared kernel `plugin.verify` use case and canonical Protocol request parser. Its published parameter schema MUST expose the supported Protocol visibility assertion shape so a native DSH Agent can request the same Host Service proof as CLI and MCP. Candidate execution MUST remain behind the shared verification execution boundary; the native DSH adapter MUST NOT compute verification status locally or execute the candidate in the active profile.
+`toolchain_plugin_verify` MUST project the shared kernel `plugin.verify` use case and canonical Protocol request parser. Its published parameter schema MUST expose the supported Protocol visibility assertion shapes so a native DSH Agent can request the same Host Service and Agent Tool proofs as CLI and MCP. Candidate execution MUST remain behind the shared verification execution boundary; the native DSH adapter MUST NOT compute verification status locally or execute the candidate in the active profile.
 
 ### DSH Web
 
@@ -347,7 +347,7 @@ Machine CLI output MUST be explicitly protocol-versioned. JSON/JSONL mode MUST k
 
 For `plugin check`, exit code `0` is reserved for `status: "ok"` with `verdict: "compatible-in-scope"`; `incompatible`, `unproven`, `failed`, and `stale` return a non-zero application/CI exit code while preserving the Protocol JSON response. Invalid CLI arguments are a separate command-line usage error.
 
-For `plugin verify`, exit code `0` is reserved for envelope `status: "ok"` with `data.status: "verified"`. The CLI MAY project each repeatable `--visibility-service <name>` argument to one canonical `{ kind: "host-service", name }` assertion, but validation MUST still be performed by the shared Protocol parser. Semantic `failed`, `partial`, `stale`, and `cancelled` reports return a non-zero application/CI exit code while preserving the Protocol JSON response. Invalid CLI arguments remain a separate command-line usage error.
+For `plugin verify`, exit code `0` is reserved for envelope `status: "ok"` with `data.status: "verified"`. The CLI MAY project each repeatable `--visibility-service <name>` argument to one canonical `{ kind: "host-service", name }` assertion and each repeatable `--visibility-tool <name>` argument to one canonical `{ kind: "agent-tool", name }` assertion, combining service assertions before tool assertions, but validation MUST still be performed by the shared Protocol parser. Semantic `failed`, `partial`, `stale`, and `cancelled` reports return a non-zero application/CI exit code while preserving the Protocol JSON response. Invalid CLI arguments remain a separate command-line usage error.
 
 ## Compatibility status vocabulary
 

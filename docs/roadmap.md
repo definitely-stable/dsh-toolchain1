@@ -206,7 +206,7 @@ Exit criteria:
 
 ## M4 — Isolated Verification Alpha
 
-**Status:** **in progress**. M4.1 and M4.2 establish isolated packed-artifact execution plus the public target-fresh verification receipt. M4.3.1 adds the first explicit live visibility assertion. Remaining M4 scope is broader visibility/behavior coverage and a transport-neutral long-operation lifecycle when real needs justify it.
+**Status:** **in progress**. M4.1 and M4.2 establish isolated packed-artifact execution plus the public target-fresh verification receipt. M4.3.1 adds the first explicit live visibility assertion. M4.3.2 adds Agent-scoped Tool visibility against one verifier-owned Agent epoch. Remaining M4 scope is broader visibility/behavior coverage and a transport-neutral long-operation lifecycle when real needs justify it.
 
 **Goal:** prove whether the artifact users install composes and works in a real DSH target, producing portable evidence rather than a generic pass badge.
 
@@ -265,19 +265,31 @@ Implemented scope:
 - exact packed-candidate acceptance on published `@deepseek-ai/dsh@0.1.1-rc.2` proves a candidate-provided Host Service is visible through the public installed CLI path while the active profile remains unchanged.
 
 Deliberately deferred after M4.3.1:
-- Agent-scoped Tool visibility assertions;
 - Client/page visibility until deterministic page identity/lifetime exists;
 - deterministic behavior fixture vocabulary;
 - build-stage execution policy;
 - a transport-neutral `Operation` lifecycle for progress/cancel when long-running UX requirements justify the added contract;
 - later DSH-train runtime claims until Issue #33 resolves lifecycle/target-identity governance.
 
+### M4.3.2 — Agent-scoped Tool visibility assertion
+
+**Status:** implemented by Issue #201 / PR #202; acceptance is bound to exact-head Protocol/parser/reducer/worker/frontend tests plus the public real-DSH Agent Tool visibility smoke.
+
+Implemented scope:
+- second supported assertion is exactly `{ kind: 'agent-tool', name }`, sharing the bounded count/name length and `(kind, name)` duplicate rules with `host-service`; the same name under different kinds remains valid;
+- one verifier-owned Agent epoch per verification boot when Agent Tool assertions exist: `agentLoop.create` with a deterministic verifier-owned id, one `tools.schemas(agent)` materialization for the batch (the `agents.create` handle seam has no registered factory on current DSH trains); the created Agent lives only in the disposable boot process, so worker teardown owns its lifetime;
+- Host Service-only requests create no Agent; mixed batches evaluate both kinds in one boot epoch and one Agent epoch;
+- missing/unprovable Agent Tool visibility fails `visibility` with the shared stable `VERIFY_VISIBILITY_FAILED` and blocks `verified`; no new report status or diagnostic code;
+- CLI exposes repeatable `--visibility-tool` (service assertions project before tool assertions), native DSH publishes both closed kinds, and MCP projects the canonical Protocol schema;
+- exact packed-candidate acceptance on published `@deepseek-ai/dsh@0.1.2-rc.1` proves one present Agent Tool (`verified`), one mixed Host Service + Agent Tool batch (`verified`), and one intentionally missing Agent Tool (`failed` with `VERIFY_VISIBILITY_FAILED`) through the public installed CLI path while the active profile remains unchanged; Agent-capability runs resolve the agent-capable web profile because the minimal headless composition registers no agent loop.
+
 M4 capabilities across the full milestone:
 - artifact fingerprint and package preview/pack;
 - temporary DSH home;
 - install, composition, actual boot and runtime probe;
 - Host Service capability visibility assertions;
-- future Tool/Client visibility assertions where authoritative runtime seams exist;
+- Agent-scoped Tool visibility assertions against one verifier-owned Agent epoch;
+- future Client visibility assertions where authoritative runtime seams exist;
 - explicitly declared deterministic behavior checks;
 - transport-neutral `Operation` evolved from real worker needs;
 - `VerificationReport` / receipt bound to artifact + TargetSnapshot;
@@ -288,11 +300,12 @@ M4 capabilities across the full milestone:
 M4 exit criteria:
 - [x] active profile is untouched under the current `safe` isolation policy for the public acceptance path;
 - [x] first explicit Host Service visibility contract is projected through Protocol/kernel/CLI/native DSH/MCP and proven in real DSH;
+- [x] Agent-scoped Tool visibility contract is projected through Protocol/kernel/CLI/native DSH/MCP and proven in real DSH without caller-Agent reuse;
 - [x] source-valid/package-broken and boot/visibility-broken fixture coverage is complete across the intended public M4 surface;
 - [x] stale target cannot yield `verified` in the shared reducer/kernel path;
 - [x] worker crash/failure remains fail-closed and cleanup is independently attempted;
 - [x] an unexecuted stage is never reported as passed;
-- [ ] Tool/Client visibility, behavior contracts and any required Operation lifecycle are implemented before claiming the full M4 milestone complete;
+- [ ] Client visibility, behavior contracts and any required Operation lifecycle are implemented before claiming the full M4 milestone complete;
 - [ ] community lifecycle runners, if adopted, are integrated only behind Toolchain-owned evidence semantics.
 
 ## CI adoption gate
