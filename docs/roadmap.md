@@ -277,11 +277,11 @@ Deliberately deferred after M4.3.1:
 
 Implemented scope:
 - second supported assertion is exactly `{ kind: 'agent-tool', name }`, sharing the bounded count/name length and `(kind, name)` duplicate rules with `host-service`; the same name under different kinds remains valid;
-- one verifier-owned Agent epoch per verification boot when Agent Tool assertions exist: `agents.create` with a verifier-owned session id, one `tools.schemas(handle.agent)` materialization for the batch, and awaited exact `handle.dispose()` before the V2 visibility marker;
+- one verifier-owned Agent epoch per verification boot when Agent Tool assertions exist: `agentLoop.create` with a deterministic verifier-owned id, one `tools.schemas(agent)` materialization for the batch (the `agents.create` handle seam has no registered factory on current DSH trains); the created Agent lives only in the disposable boot process, so worker teardown owns its lifetime;
 - Host Service-only requests create no Agent; mixed batches evaluate both kinds in one boot epoch and one Agent epoch;
 - missing/unprovable Agent Tool visibility fails `visibility` with the shared stable `VERIFY_VISIBILITY_FAILED` and blocks `verified`; no new report status or diagnostic code;
 - CLI exposes repeatable `--visibility-tool` (service assertions project before tool assertions), native DSH publishes both closed kinds, and MCP projects the canonical Protocol schema;
-- exact packed-candidate acceptance on published `@deepseek-ai/dsh@0.1.2-rc.1` proves one present Agent Tool (`verified`), one mixed Host Service + Agent Tool batch (`verified`), and one intentionally missing Agent Tool (`failed` with `VERIFY_VISIBILITY_FAILED`) through the public installed CLI path while the active profile remains unchanged.
+- exact packed-candidate acceptance on published `@deepseek-ai/dsh@0.1.2-rc.1` proves one present Agent Tool (`verified`), one mixed Host Service + Agent Tool batch (`verified`), and one intentionally missing Agent Tool (`failed` with `VERIFY_VISIBILITY_FAILED`) through the public installed CLI path while the active profile remains unchanged; Agent-capability runs resolve the agent-capable web profile because the minimal headless composition registers no agent loop.
 
 M4 capabilities across the full milestone:
 - artifact fingerprint and package preview/pack;

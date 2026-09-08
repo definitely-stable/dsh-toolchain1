@@ -277,7 +277,7 @@ The application operation MUST:
 2. acquire/analyze the same packed subject through static `plugin.check` semantics;
 3. bind the authoritative packed bytes to `dsh-plugin-artifact-v1:<sha256>` and pass the same exact content hash plus the initial `TargetSnapshot`, execution policy, and any canonical visibility assertions to the isolated worker;
 4. execute the worker under policy `safe` in a disposable DSH environment rather than the caller's active profile;
-5. when visibility assertions were requested, prove them through Toolchain-owned instrumentation in the same composed/booted DSH runtime rather than from static declarations: Host Service assertions resolve through the live Cordis context, while Agent Tool assertions are evaluated against the capability catalog of one verifier-owned Agent created and disposed inside the same boot epoch;
+5. when visibility assertions were requested, prove them through Toolchain-owned instrumentation in the same composed/booted DSH runtime rather than from static declarations: Host Service assertions resolve through the live Cordis context, while Agent Tool assertions are evaluated against the capability catalog of one verifier-owned Agent created through the synchronous `agentLoop` seam and torn down with the disposable boot process;
 6. re-resolve the same target request after execution before reducing the final report;
 7. reduce static evidence, worker observations, cleanup, artifact identity, requested visibility, and final target/lifecycle freshness in the shared application kernel.
 

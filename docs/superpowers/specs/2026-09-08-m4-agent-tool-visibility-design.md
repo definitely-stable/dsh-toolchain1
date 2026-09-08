@@ -22,7 +22,9 @@ ctx.tools.schemas(context.agent)
 
 `ToolRuntime.schemas(scope)` is therefore the capability catalog for that exact scope. A root/global lookup is not equivalent evidence because scoped registrations, inherited restrictions, and scoped shadowing can produce different visible Tool sets for different Agents.
 
-Programmatic Agent creation is owned by `ctx.agents.create(options)`, which returns an `AgentHandle`. The handle is the teardown capability for the exact Agent and its session; `dispose()` must be awaited by the verifier before the probe exits.
+Programmatic Agent creation for the probe uses the synchronous `agentLoop.create(id)` seam, which returns a registered Agent on agent-capable compositions and is the same seam backing the M2.2 live DSH smoke. `ctx.agents.create(options)` is not used: current DSH trains register no agent factory in verification boots (`agents.create` fails with "no agent factory registered"), and the returned `AgentHandle.dispose` teardown has no counterpart on the `agentLoop` seam — the created Agent lives only in the disposable boot process, so worker process teardown owns Agent lifetime.
+
+Agent services are unavailable in the probe root scope (`rootCtx.get('agentLoop')` is `undefined` there), so the generated probe declares `export const inject = ['tools', 'agentLoop']` and reads the services inside its synchronous `apply`. A bare `export const inject` naming unavailable services gates probe application, which fails closed through the missing-marker boot path.
 
 ## Request contract
 
@@ -75,21 +77,19 @@ The verifier must not create a second DSH process, call back into the user's act
 
 When at least one `agent-tool` assertion exists, the generated boot probe performs one Agent epoch inside the current disposable boot:
 
-1. obtain the live Agent registry and Tool runtime from the boot context;
-2. create one Toolchain-owned Agent through `ctx.agents.create(...)` with a fresh verifier-owned session id;
-3. obtain the exact returned `AgentHandle`;
-4. call `ctx.tools.schemas(handle.agent)` exactly once to materialize the Agent capability catalog for the assertion batch;
-5. require every requested `agent-tool` name to appear in that catalog;
-6. await `handle.dispose()` in `finally` before emitting the final visibility marker;
-7. never retain the Agent or session beyond the visibility probe.
+1. obtain the live Tool runtime and agent loop through the injected probe scope;
+2. create one Toolchain-owned Agent through the synchronous `agentLoop.create(...)` with a deterministic verifier-owned id;
+3. call `ctx.tools.schemas(agent)` exactly once to materialize the Agent capability catalog for the assertion batch;
+4. require every requested `agent-tool` name to appear in that catalog;
+5. never retain the Agent beyond the disposable boot process; worker teardown owns Agent lifetime.
 
 The verifier does not drive a model turn. Tool visibility is the only claim.
 
 If no `agent-tool` assertion exists, no Agent is created. Host Service-only verification therefore preserves the M4.3.1 runtime behavior and side-effect envelope.
 
-## Session identity
+## Agent identity
 
-DSH `SessionId` is a branded string at the TypeScript boundary. Runtime creation callers mint ordinary unique strings before branding; ACP and webhook callers use UUID-derived values. The generated JavaScript probe therefore uses a fresh verifier-owned UUID-derived string whose lifetime is bounded by the owned Agent handle.
+The probe creates its Agent through `agentLoop.create(id)` with a deterministic verifier-owned id (`dsh-toolchain-verify-agent-<profile>`). A fresh disposable DSH home per verification makes collisions impossible; no UUID import is needed in the generated probe.
 
 The id is not part of the public verification receipt, target identity, lifecycle identity, or artifact identity.
 
@@ -108,7 +108,7 @@ rootCtx.get(assertion.name, false) !== undefined
 The authoritative predicate is membership in the exact Agent capability schema set:
 
 ```ts
-ctx.tools.schemas(handle.agent).some(schema => schema.name === assertion.name)
+ctx.tools.schemas(agent).some(schema => schema.name === assertion.name)
 ```
 
 This intentionally proves capability visibility, not model-presentation form. A PTC presentation may collapse what is sent directly to the model while the underlying Agent capability catalog still contains the callable tools. That distinction matches upstream ToolRuntime semantics.
@@ -119,7 +119,7 @@ The outer `visibility` stage and stable diagnostic remain shared:
 
 - all requested assertions proven: `visibility = passed`;
 - any requested Host Service or Agent Tool missing: `visibility = failed`, diagnostic `VERIFY_VISIBILITY_FAILED`;
-- Agent creation fails, Tool catalog cannot be read, or owned Agent disposal cannot complete: visibility is not proven and therefore fails;
+- Agent creation fails, the agent seam is unavailable, or the Tool catalog cannot be read: visibility is not proven and therefore fails;
 - the probe cannot execute an unambiguous visibility outcome at all: existing `visibility-assertions-not-executed` / `VERIFY_VISIBILITY_UNPROVEN` reduction remains applicable.
 
 Agent lifecycle failures are not reclassified as a successful boot assertion. Boot has already been proven by the exact boot marker; the missing proof is visibility.
@@ -136,7 +136,7 @@ The visibility marker moves to `DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2` becaus
 
 There are two cleanup layers and both remain material:
 
-1. in-process Agent cleanup: exact `AgentHandle.dispose()` must settle before the visibility outcome is emitted;
+1. in-process Agent lifetime: the created Agent has no exact-handle disposal on this seam and never outlives the disposable boot process; emitting the visibility marker before `appExit(0)` keeps the claim inside that boundary;
 2. worker cleanup: the disposable verification root must still be removed and reported through existing `VerificationReport.cleanup`.
 
 A process kill/cancellation remains covered by the worker process boundary. The disposable DSH process may be terminated before in-process teardown completes, so cancellation still yields the existing cancelled/fail-closed result rather than an Agent Tool visibility claim.
@@ -158,12 +158,12 @@ Primary CI must exercise the installed public CLI against registry `@deepseek-ai
 
 The acceptance fixture must include:
 
-1. a candidate that registers a minimal valid Tool through the live `ctx.tools` runtime;
-2. `plugin verify --visibility-tool <present-name>` yielding a verified report with `visibility=passed`;
+1. a candidate that registers a minimal valid Tool through the live `ctx.tools` runtime (the candidate declares `export const inject = ['tools']`; without it the registration never becomes visible);
+2. `plugin verify --profile web --visibility-tool <present-name>` yielding a verified report with `visibility=passed`;
 3. the same boot-valid candidate checked for an intentionally absent Tool, yielding semantic `failed` with `boot=passed`, `visibility=failed`, `VERIFY_VISIBILITY_FAILED`;
 4. exact artifact/target/lifecycle binding, cleanup success, and unchanged active profile in both paths.
 
-The candidate Tool body need not be invoked. The test proves visibility only.
+Agent-capability runs resolve the agent-capable `web` profile: the minimal `headless` composition registers no agent loop, so Agent Tool assertions against it fail closed. The candidate Tool body need not be invoked. The test proves visibility only.
 
 ## Rejected alternatives
 

@@ -4,7 +4,7 @@
 
 **Goal:** Extend `plugin.verify` so one exact disposable DSH boot can prove requested Agent-scoped Tool capability visibility, while preserving Host Service visibility, exact artifact/target/lifecycle binding, and the existing verification reducer/status vocabulary.
 
-**Architecture:** Keep one Protocol request, one verification worker, one boot process, and one canonical `visibility` stage. `agent-tool` assertions create one verifier-owned Agent in the generated boot probe, read `ctx.tools.schemas(handle.agent)` once for the assertion batch, and await exact handle disposal before emitting a V2 visibility PASS/FAIL marker. Frontends only project the canonical Protocol vocabulary.
+**Architecture:** Keep one Protocol request, one verification worker, one boot process, and one canonical `visibility` stage. `agent-tool` assertions create one verifier-owned Agent in the generated boot probe through the synchronous `agentLoop.create` seam, read `ctx.tools.schemas(agent)` once for the assertion batch, and emit a V2 visibility PASS/FAIL marker; the disposable boot process owns Agent lifetime. Frontends only project the canonical Protocol vocabulary.
 
 **Tech Stack:** TypeScript 6, Node 22/24/26, Vitest, JSON Schema/Ajv, DSH/Cordis runtime, GitHub Actions, registry `@deepseek-ai/dsh@0.1.2-rc.1` acceptance.
 
@@ -18,7 +18,7 @@
 - No second verifier, no caller-Agent reuse, no Client/page visibility, no Tool execution.
 - At most one Toolchain-owned Agent per verification boot, regardless of Agent Tool assertion count.
 - Host Service-only requests must create zero Agents.
-- Agent handle disposal must settle before visibility PASS/FAIL is emitted.
+- The created Agent never outlives the disposable boot process that proves the claim.
 - Preserve the existing `visibility` check and `VERIFY_VISIBILITY_FAILED`; add no VerificationReport status.
 - Every production behavior change follows a focused RED → GREEN test.
 - Final merge requires fresh all-green CI on the exact final HEAD, including the real DSH public path.
@@ -62,12 +62,10 @@ Verify `check:generated`, Protocol conformance, typecheck, and the focused visib
 
 Require generated source for an `agent-tool` assertion to:
 
-- export an injection requirement for `agents` and `tools` only when Agent Tool assertions exist;
-- use an async `apply` path;
-- create exactly one Agent with a verifier-owned UUID-derived session id;
-- call the Tool capability catalog with the exact returned Agent;
-- dispose the exact handle in `finally`;
-- emit visibility outcome only after disposal;
+- export an injection requirement for `tools` and `agentLoop` only when Agent Tool assertions exist (agent services are unavailable in the probe root scope; `agents.create` has no registered factory on current trains, so the `agentLoop.create` seam is used instead);
+- stay on the synchronous `apply` path: the headless launcher requires a synchronous `appExit`, so no async probe shape is viable;
+- create exactly one Agent with a deterministic verifier-owned id;
+- call the Tool capability catalog with the exact returned Agent exactly once;
 - never create an Agent for Host Service-only assertions;
 - use `DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2` markers while leaving the boot marker V1.
 
@@ -75,7 +73,7 @@ Also test a mixed assertion batch generates only one Agent creation path.
 
 **GREEN**
 
-Split the generated visibility logic by kind. Preserve existing Host Service lookup. For Agent Tool assertions, obtain `agents`/`tools`, create one owned Agent, materialize `tools.schemas(handle.agent)` once, evaluate every requested name, and await `handle.dispose()` before marker emission. Treat create/catalog/dispose failure as visibility failure.
+Split the generated visibility logic by kind. Preserve existing Host Service lookup. For Agent Tool assertions, obtain `agentLoop`/`tools` through the injected scope, create one owned Agent, materialize `tools.schemas(agent)` once, and evaluate every requested name. Treat missing seam/create/catalog failure as visibility failure. The created Agent has no exact-handle disposal on this seam; the disposable boot process owns its lifetime.
 
 Do not execute any Tool body.
 
@@ -135,14 +133,15 @@ Add `--visibility-tool` to CLI help/options/request construction and plugin-opti
 
 Add policy/acceptance expectations before production smoke support. Avoid multiplying registry installs across Node compatibility lanes.
 
-The real fixture candidate must register a minimal valid Tool through current DSH ToolRuntime. Use the documented Tool registration surface and a Tool definition with valid parameters/output contract; the Tool body is never invoked.
+The real fixture candidate must register a minimal valid Tool through current DSH ToolRuntime: the candidate declares `export const inject = ['tools']` and registers a `ToolDefinition` with valid parameters/output contract mirroring the production `DshToolDefinition` shape; the Tool body is never invoked.
 
-Acceptance cases against `@deepseek-ai/dsh@0.1.2-rc.1`, profile `headless`:
+Acceptance cases against `@deepseek-ai/dsh@0.1.2-rc.1`:
 
-1. present Agent Tool → public CLI returns semantic `verified`, `boot=passed`, `visibility=passed`;
-2. intentionally missing Agent Tool → public CLI returns semantic `failed`, `boot=passed`, `visibility=failed`, `VERIFY_VISIBILITY_FAILED`.
+1. present Agent Tool on the agent-capable `web` profile (mixed Host Service + Agent Tool batch) → public CLI returns semantic `verified`, `boot=passed`, `visibility=passed`;
+2. intentionally missing Agent Tool on the `web` profile → public CLI returns semantic `failed`, `boot=passed`, `visibility=failed`, `VERIFY_VISIBILITY_FAILED`;
+3. Host Service-only on the lightweight `headless` profile → `verified` (unchanged M4.3.1 path, no Agent created).
 
-Both must assert exact artifact/target/lifecycle binding, cleanup success, and active-profile immutability.
+All must assert exact artifact/target/lifecycle binding, cleanup success, and active-profile immutability. One registry install serves all three runs; no new CI job.
 
 **GREEN**
 

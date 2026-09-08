@@ -98,11 +98,15 @@ Tool visibility is Agent-scoped: the authoritative predicate is membership of th
 
 When one or more Agent Tool assertions are requested:
 
-- the generated boot probe performs exactly one owned Agent epoch: it obtains the live `agents`/`tools` services, creates one Agent with a verifier-owned session id, materializes the Agent capability catalog once for the assertion batch, and awaits exact `AgentHandle.dispose()` in `finally` before emitting the V2 visibility marker;
+- the generated boot probe declares `export const inject = ['tools', 'agentLoop']` and performs exactly one owned Agent epoch in the same boot: it creates one Agent through the synchronous `agentLoop.create` seam with a deterministic verifier-owned id, materializes `tools.schemas(agent)` once for the assertion batch, and requires every requested name to be present;
+- `agents.create` is not used: current DSH trains register no agent factory in verification boots, while `agentLoop.create` returns a registered Agent on agent-capable compositions and is the same seam backing the M2.2 live DSH smoke;
 - Host Service assertions in the same request are evaluated in the same boot epoch through the live Cordis context; mixed batches use one boot epoch and one Agent epoch;
-- Host Service-only requests create no Agent and preserve the M4.3.1 runtime behavior;
-- Agent creation failure, unreadable Tool catalog, or incomplete owned Agent disposal fails `visibility` with the shared `VERIFY_VISIBILITY_FAILED` diagnostic; no new report status or diagnostic code is introduced;
+- Host Service-only requests declare no inject export, create no Agent, and preserve the M4.3.1 runtime behavior;
+- Agent creation failure, an unavailable agent seam, or an unreadable Tool catalog fails `visibility` with the shared `VERIFY_VISIBILITY_FAILED` diagnostic; no new report status or diagnostic code is introduced;
+- the created Agent exposes no exact-handle disposal on this seam; it lives only in the disposable boot process, so worker process teardown owns Agent lifetime, matching the M2.2 live smoke precedent;
 - the visibility marker namespace is `DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2` so an older Host-Service-only marker cannot be misread as Agent Tool evidence.
+
+Agent Tool assertions require an agent-capable target composition: the minimal headless profile registers no agent loop, so such assertions against it fail closed instead of producing a visibility claim. The public acceptance exercises them against the web profile.
 
 Client/page visibility remains deferred until Toolchain can bind observations to a deterministic page identity/lifetime. Behavior assertions are also outside M4.3.2. Verification MUST NOT reuse a caller Agent and MUST NOT retain the owned Agent or session beyond the visibility probe.
 
