@@ -99,6 +99,19 @@ describe('packed artifact runtime entrypoint inspection', () => {
     })
   })
 
+  it('does not reinterpret invalid exports targets as package-relative files', () => {
+    for (const exportsValue of ['plugin.mjs', './dist/../plugin.mjs']) {
+      const bytes = artifact({
+        name: 'candidate',
+        version: '1.0.0',
+        type: 'module',
+        exports: exportsValue,
+      }, [])
+
+      expect(inspectPackedArtifactRuntimeEntrypoint(bytes)).toEqual({ status: 'not-checkable' })
+    }
+  })
+
   it('does not guess conditional exports that require Node condition resolution', () => {
     const bytes = artifact({
       name: 'candidate',
