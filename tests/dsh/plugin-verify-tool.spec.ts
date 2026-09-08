@@ -41,6 +41,7 @@ describe('native DSH plugin verify tool', () => {
     expect(tool.name).toBe('toolchain_plugin_verify')
     expect(tool.description).toContain('executes candidate')
     expect(tool.description).toContain('isolated')
+    expect(tool.description).toContain('Agent Tool')
     expect(tool.parameters).toMatchObject({
       type: 'object',
       additionalProperties: false,
@@ -55,13 +56,30 @@ describe('native DSH plugin verify tool', () => {
             additionalProperties: false,
             required: ['kind', 'name'],
             properties: {
-              kind: { enum: ['host-service'] },
+              kind: { enum: ['host-service', 'agent-tool'] },
               name: { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' },
             },
           },
         },
       },
     })
+
+    await expect(tool.execute(request)).resolves.toEqual(response())
+    expect(resolve).toHaveBeenCalledWith(request)
+  })
+
+  it('passes Agent Tool assertions through the canonical parser unchanged', async () => {
+    const resolve = vi.fn(async () => response())
+    const tool = createPluginVerifyToolDefinition(resolve)
+    const request = {
+      target: { profile: 'web' },
+      subject: { kind: 'packed' as const, path: '/candidate/plugin.tgz' },
+      executionPolicy: 'safe' as const,
+      visibilityAssertions: [
+        { kind: 'host-service' as const, name: 'shared-name' },
+        { kind: 'agent-tool' as const, name: 'shared-name' },
+      ],
+    }
 
     await expect(tool.execute(request)).resolves.toEqual(response())
     expect(resolve).toHaveBeenCalledWith(request)
