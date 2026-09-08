@@ -13,6 +13,10 @@ interface TarEntryView {
   readonly content: Buffer
 }
 
+type DeclaredRuntimeEntrypoint =
+  | { readonly kind: 'exports'; readonly value: string }
+  | { readonly kind: 'main'; readonly value: string }
+
 export type PackedArtifactRuntimeEntrypointInspection =
   | { readonly status: 'present'; readonly entrypoint: string }
   | { readonly status: 'missing'; readonly entrypoint: string }
@@ -165,27 +169,46 @@ function parseTar(buffer: Buffer): ReadonlyMap<string, TarEntryView> {
   return entries
 }
 
-function declaredRuntimeEntrypoint(manifest: Record<string, unknown>): string | undefined {
+function declaredRuntimeEntrypoint(manifest: Record<string, unknown>): DeclaredRuntimeEntrypoint | undefined {
   const exportsValue = manifest.exports
   if (exportsValue !== undefined) {
-    if (typeof exportsValue === 'string' && exportsValue.length > 0) return exportsValue
+    if (typeof exportsValue === 'string' && exportsValue.length > 0) {
+      return Object.freeze({ kind: 'exports' as const, value: exportsValue })
+    }
     if (isRecord(exportsValue)) {
       const rootExport = exportsValue['.']
-      if (typeof rootExport === 'string' && rootExport.length > 0) return rootExport
+      if (typeof rootExport === 'string' && rootExport.length > 0) {
+        return Object.freeze({ kind: 'exports' as const, value: rootExport })
+      }
     }
     return undefined
   }
 
   const main = manifest.main
-  return typeof main === 'string' && main.length > 0 ? main : undefined
+  return typeof main === 'string' && main.length > 0
+    ? Object.freeze({ kind: 'main' as const, value: main })
+    : undefined
 }
 
-function entrypointArchivePath(value: string): string | undefined {
+function hasInvalidExportsSegment(value: string): boolean {
+  if (!value.startsWith('./')) return true
+  const relative = value.slice(2)
+  if (relative.length === 0 || relative.includes('%')) return true
+  return relative.split('/').some(segment =>
+    segment.length === 0
+    || segment === '.'
+    || segment === '..'
+    || segment.toLowerCase() === 'node_modules')
+}
+
+function entrypointArchivePath(declared: DeclaredRuntimeEntrypoint): string | undefined {
+  const { kind, value } = declared
   if (
     value.includes('\\')
     || value.includes('\0')
     || value.includes('*')
     || path.posix.isAbsolute(value)
+    || (kind === 'exports' && hasInvalidExportsSegment(value))
   ) return undefined
 
   const withoutDot = value.startsWith('./') ? value.slice(2) : value
