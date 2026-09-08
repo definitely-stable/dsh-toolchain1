@@ -59,13 +59,13 @@ function tarEntry(name: string, source: string): Buffer {
   ])
 }
 
-function brokenPackedCandidate(): Buffer {
+function brokenPackedCandidate(entrypoint = './plugin.mjs'): Buffer {
   return gzipSync(Buffer.concat([
     tarEntry('package/package.json', JSON.stringify({
       name: 'dsh-toolchain-worker-package-broken',
       version: '0.0.0',
       type: 'module',
-      exports: './plugin.mjs',
+      exports: entrypoint,
       dsh: { bundle: { patch: './cordis.patch.yml' } },
     })),
     tarEntry('package/cordis.patch.yml', '- insert: []\n'),
@@ -96,34 +96,43 @@ function target(): TargetSnapshot {
   }
 }
 
+async function runWithBytes(bytes: Buffer): Promise<{
+  readonly execution: Awaited<ReturnType<typeof runPackedPluginVerification>>
+  readonly calls: readonly VerificationProcessRequest[]
+  readonly contentHash: string
+}> {
+  const root = await fixtureRoot()
+  const workerRoot = path.join(root, 'worker')
+  const packedPath = path.join(root, 'candidate.tgz')
+  const contentHash = sha256(bytes)
+  const calls: VerificationProcessRequest[] = []
+  await writeFile(packedPath, bytes)
+
+  const execution = await runPackedPluginVerification({
+    artifact: { path: packedPath, expectedContentHash: contentHash },
+    target: target(),
+    executionPolicy: 'safe',
+  }, {
+    processRunner: async request => {
+      calls.push(request)
+      return { kind: 'exited', code: 0, stdout: '', stderr: '' }
+    },
+    parentEnv: { PATH: process.env.PATH },
+    createTemporaryRoot: async () => {
+      await mkdir(workerRoot, { recursive: true })
+      return workerRoot
+    },
+    cleanupTemporaryRoot: async temporaryRoot => {
+      await rm(temporaryRoot, { recursive: true, force: true })
+    },
+  })
+
+  return { execution, calls, contentHash }
+}
+
 describe('packed worker package integrity boundary', () => {
   it('retains exact artifact identity while failing package before any subprocess when an explicit root entrypoint is absent', async () => {
-    const root = await fixtureRoot()
-    const workerRoot = path.join(root, 'worker')
-    const packedPath = path.join(root, 'candidate.tgz')
-    const bytes = brokenPackedCandidate()
-    const contentHash = sha256(bytes)
-    const calls: VerificationProcessRequest[] = []
-    await writeFile(packedPath, bytes)
-
-    const execution = await runPackedPluginVerification({
-      artifact: { path: packedPath, expectedContentHash: contentHash },
-      target: target(),
-      executionPolicy: 'safe',
-    }, {
-      processRunner: async request => {
-        calls.push(request)
-        return { kind: 'exited', code: 0, stdout: '', stderr: '' }
-      },
-      parentEnv: { PATH: process.env.PATH },
-      createTemporaryRoot: async () => {
-        await mkdir(workerRoot, { recursive: true })
-        return workerRoot
-      },
-      cleanupTemporaryRoot: async temporaryRoot => {
-        await rm(temporaryRoot, { recursive: true, force: true })
-      },
-    })
+    const { execution, calls, contentHash } = await runWithBytes(brokenPackedCandidate())
 
     expect(calls).toEqual([])
     expect(execution.artifactFingerprint).toBe(`dsh-plugin-artifact-v1:${contentHash}`)
@@ -144,5 +153,33 @@ describe('packed worker package integrity boundary', () => {
         reason: 'prerequisite-package-failed',
       })
     }
+  })
+
+  it('fails package closed before subprocesses when archive inspection itself fails', async () => {
+    const bytes = gzipSync(Buffer.from('not a bounded tar archive', 'utf8'))
+    const { execution, calls, contentHash } = await runWithBytes(bytes)
+
+    expect(calls).toEqual([])
+    expect(execution.artifactFingerprint).toBe(`dsh-plugin-artifact-v1:${contentHash}`)
+    expect(execution.targetFingerprint).toBe(target().fingerprint)
+    expect(execution.lifecycleFingerprint).toBe(target().profileLifecycle?.fingerprint)
+    expect(execution.terminal).toBe('failed')
+    expect(execution.cleanup).toBe('succeeded')
+    expect(execution.diagnostics.map(item => item.code)).toEqual(['VERIFY_PACKAGE_INSPECTION_FAILED'])
+    expect(execution.checks.find(item => item.id === 'package')).toEqual({
+      id: 'package',
+      status: 'failed',
+      reason: 'verify-package-inspection-failed',
+    })
+  })
+
+  it('bounds user-controlled entrypoint text in missing-entrypoint diagnostics', async () => {
+    const declared = `./${'x'.repeat(1024)}.mjs`
+    const { execution } = await runWithBytes(brokenPackedCandidate(declared))
+    const diagnostic = execution.diagnostics.find(item => item.code === 'VERIFY_PACKAGE_ENTRYPOINT_MISSING')
+
+    expect(diagnostic).toBeDefined()
+    expect(diagnostic?.summary.length).toBeLessThanOrEqual(512)
+    expect(diagnostic?.summary).not.toContain('x'.repeat(512))
   })
 })
