@@ -7,6 +7,7 @@ import { inspectPackedArtifactRuntimeEntrypoint } from '../../src/verification/p
 interface TarEntryInput {
   readonly name: string
   readonly content: string
+  readonly type?: string
 }
 
 function writeTarString(buffer: Buffer, offset: number, length: number, value: string): void {
@@ -29,7 +30,7 @@ function tarEntry(input: TarEntryInput): Buffer {
   writeTarOctal(header, 124, 12, content.length)
   writeTarOctal(header, 136, 12, 0)
   header.fill(0x20, 148, 156)
-  header.write('0', 156, 1, 'ascii')
+  header.write(input.type ?? '0', 156, 1, 'ascii')
   writeTarString(header, 257, 6, 'ustar\0')
   writeTarString(header, 263, 2, '00')
 
@@ -39,6 +40,17 @@ function tarEntry(input: TarEntryInput): Buffer {
 
   const padding = Buffer.alloc((512 - (content.length % 512)) % 512)
   return Buffer.concat([header, content, padding])
+}
+
+function paxRecord(key: string, value: string): string {
+  const body = `${key}=${value}\n`
+  let length = Buffer.byteLength(body) + 2
+  for (;;) {
+    const record = `${length} ${body}`
+    const byteLength = Buffer.byteLength(record)
+    if (byteLength === length) return record
+    length = byteLength
+  }
 }
 
 function npmTgz(entries: readonly TarEntryInput[]): Buffer {
@@ -136,5 +148,34 @@ describe('packed artifact runtime entrypoint inspection', () => {
     }, [])
 
     expect(inspectPackedArtifactRuntimeEntrypoint(bytes)).toEqual({ status: 'not-checkable' })
+  })
+
+  it('uses PAX byte lengths when a UTF-8 path maps the runtime entry', () => {
+    const runtimePath = 'package/café/plugin.mjs'
+    const bytes = npmTgz([
+      {
+        name: 'package/package.json',
+        content: JSON.stringify({
+          name: 'candidate',
+          version: '1.0.0',
+          type: 'module',
+          main: 'café/plugin.mjs',
+        }),
+      },
+      { name: 'package/cordis.patch.yml', content: '- insert: []\n' },
+      { name: 'PaxHeaders.0/plugin.mjs', type: 'x', content: paxRecord('path', runtimePath) },
+      { name: 'package/placeholder.mjs', content: 'export function apply() {}\n' },
+    ])
+
+    expect(inspectPackedArtifactRuntimeEntrypoint(bytes)).toEqual({
+      status: 'present',
+      entrypoint: runtimePath,
+    })
+  })
+
+  it('distinguishes malformed archive inspection from intentional deferral', () => {
+    const bytes = gzipSync(Buffer.from('not a bounded tar archive', 'utf8'))
+
+    expect(inspectPackedArtifactRuntimeEntrypoint(bytes)).toEqual({ status: 'failed' })
   })
 })
