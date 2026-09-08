@@ -15,6 +15,7 @@ describe('Plugin Verify public-path real-DSH smoke policy', () => {
 
     expect(smoke.PLUGIN_VERIFY_SMOKE_DSH_VERSION).toBe('0.1.2-rc.1')
     expect(smoke.PLUGIN_VERIFY_SMOKE_PROFILE).toBe('headless')
+    expect(smoke.PLUGIN_VERIFY_SMOKE_AGENT_PROFILE).toBe('web')
     expect(smoke.PLUGIN_VERIFY_SMOKE_SERVICE).toBe('dshToolchainVerifySmokeService')
     expect(smoke.PLUGIN_VERIFY_SMOKE_TOOL).toBe('dsh_toolchain_verify_smoke_tool')
     expect(smoke.PLUGIN_VERIFY_SMOKE_MISSING_TOOL).toBe('dsh_toolchain_verify_smoke_missing_tool')
@@ -25,6 +26,9 @@ describe('Plugin Verify public-path real-DSH smoke policy', () => {
 
     expect(source).toContain("ctx.provide(PLUGIN_VERIFY_SMOKE_SERVICE")
     expect(source).toContain('ctx.tools.register({')
+    expect(source).toContain("export const inject = ['tools']")
+    expect(source).toContain("'--profile', profile,")
+    expect(source).toContain('PLUGIN_VERIFY_SMOKE_AGENT_PROFILE')
     expect(source).toContain('PLUGIN_VERIFY_SMOKE_TOOL')
     expect(source).toContain("'plugin', 'verify'")
     expect(source).toContain("'--subject'")

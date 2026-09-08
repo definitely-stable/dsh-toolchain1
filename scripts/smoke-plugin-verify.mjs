@@ -12,6 +12,7 @@ import { assertTreeUnchanged, snapshotTree } from './smoke-plugin-check.mjs'
 
 export const PLUGIN_VERIFY_SMOKE_DSH_VERSION = '0.1.2-rc.1'
 export const PLUGIN_VERIFY_SMOKE_PROFILE = 'headless'
+export const PLUGIN_VERIFY_SMOKE_AGENT_PROFILE = 'web'
 export const PLUGIN_VERIFY_SMOKE_SERVICE = 'dshToolchainVerifySmokeService'
 export const PLUGIN_VERIFY_SMOKE_TOOL = 'dsh_toolchain_verify_smoke_tool'
 export const PLUGIN_VERIFY_SMOKE_MISSING_TOOL = 'dsh_toolchain_verify_smoke_missing_tool'
@@ -56,6 +57,10 @@ async function createCandidate(root, env) {
   const pluginSource = [
     `const PLUGIN_VERIFY_SMOKE_SERVICE = ${JSON.stringify(PLUGIN_VERIFY_SMOKE_SERVICE)}`,
     `const PLUGIN_VERIFY_SMOKE_TOOL = ${JSON.stringify(PLUGIN_VERIFY_SMOKE_TOOL)}`,
+    // The inject declaration is required: without it the candidate apply
+    // context does not expose the live ToolRuntime and the Tool registration
+    // below would never become visible to verification Agents.
+    "export const inject = ['tools']",
     'export function apply(ctx) {',
     '  ctx.provide(PLUGIN_VERIFY_SMOKE_SERVICE, Object.freeze({ ready: true }))',
     '  ctx.tools.register({',
@@ -220,12 +225,14 @@ export async function smokePluginVerify(toolchainTarball) {
       timeout: 480_000,
     })
 
-    run('pnpm', ['exec', 'dsh', '--profile', PLUGIN_VERIFY_SMOKE_PROFILE, '--dump-config'], {
-      cwd: runner,
-      env,
-      capture: true,
-      timeout: 180_000,
-    })
+    for (const profile of [PLUGIN_VERIFY_SMOKE_PROFILE, PLUGIN_VERIFY_SMOKE_AGENT_PROFILE]) {
+      run('pnpm', ['exec', 'dsh', '--profile', profile, '--dump-config'], {
+        cwd: runner,
+        env,
+        capture: true,
+        timeout: 180_000,
+      })
+    }
 
     const installedToolchainCli = resolve(
       runner,
@@ -237,15 +244,20 @@ export async function smokePluginVerify(toolchainTarball) {
       'bin.js',
     )
     const dshPackageRoot = await realpath(resolve(runner, 'node_modules', '@deepseek-ai', 'dsh'))
-    const profileRoot = join(home, 'profiles', PLUGIN_VERIFY_SMOKE_PROFILE)
-    const profileLabel = `DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} profile ${PLUGIN_VERIFY_SMOKE_PROFILE}`
-    const before = await snapshotTree(profileRoot)
+    // Agent Tool assertions require an agent-capable target composition:
+    // the minimal headless profile registers no agent loop, so the
+    // Agent-capability runs below resolve the web profile while the
+    // Host-Service-only run keeps the lightweight headless target.
+    const profileRoots = new Map()
+    for (const profile of [PLUGIN_VERIFY_SMOKE_PROFILE, PLUGIN_VERIFY_SMOKE_AGENT_PROFILE]) {
+      profileRoots.set(profile, await snapshotTree(join(home, 'profiles', profile)))
+    }
 
-    function verifyCandidate(visibilityArgs, allowedStatuses) {
+    function verifyCandidate(profile, visibilityArgs, allowedStatuses) {
       const execution = run(process.execPath, [
         installedToolchainCli,
         'plugin', 'verify',
-        '--profile', PLUGIN_VERIFY_SMOKE_PROFILE,
+        '--profile', profile,
         '--dsh-home', home,
         '--dsh-package-root', dshPackageRoot,
         '--subject', candidate,
@@ -259,34 +271,47 @@ export async function smokePluginVerify(toolchainTarball) {
       return execution
     }
 
-    async function requireProfileUnchanged(stage) {
-      const after = await snapshotTree(profileRoot)
-      assertTreeUnchanged(before, after, `${profileLabel} (${stage})`)
+    async function requireProfileUnchanged(profile, stage) {
+      const after = await snapshotTree(join(home, 'profiles', profile))
+      assertTreeUnchanged(
+        profileRoots.get(profile),
+        after,
+        `DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} profile ${profile} (${stage})`,
+      )
     }
 
-    const serviceExecution = verifyCandidate(['--visibility-service', PLUGIN_VERIFY_SMOKE_SERVICE], [0])
-    await requireProfileUnchanged('Host Service visibility')
+    const serviceExecution = verifyCandidate(
+      PLUGIN_VERIFY_SMOKE_PROFILE,
+      ['--visibility-service', PLUGIN_VERIFY_SMOKE_SERVICE],
+      [0],
+    )
+    await requireProfileUnchanged(PLUGIN_VERIFY_SMOKE_PROFILE, 'Host Service visibility')
 
     const serviceResponse = parseResponse(serviceExecution.stdout)
     assertArtifactBinding(serviceResponse, 'Host Service visibility', candidateHash)
 
     const mixedExecution = verifyCandidate(
+      PLUGIN_VERIFY_SMOKE_AGENT_PROFILE,
       ['--visibility-service', PLUGIN_VERIFY_SMOKE_SERVICE, '--visibility-tool', PLUGIN_VERIFY_SMOKE_TOOL],
       [0],
     )
-    await requireProfileUnchanged('mixed Host Service and Agent Tool visibility')
+    await requireProfileUnchanged(PLUGIN_VERIFY_SMOKE_AGENT_PROFILE, 'mixed Host Service and Agent Tool visibility')
 
     const mixedResponse = parseResponse(mixedExecution.stdout)
     assertArtifactBinding(mixedResponse, 'mixed Host Service and Agent Tool visibility', candidateHash)
 
-    const missingExecution = verifyCandidate(['--visibility-tool', PLUGIN_VERIFY_SMOKE_MISSING_TOOL], [1])
-    await requireProfileUnchanged('missing Agent Tool visibility')
+    const missingExecution = verifyCandidate(
+      PLUGIN_VERIFY_SMOKE_AGENT_PROFILE,
+      ['--visibility-tool', PLUGIN_VERIFY_SMOKE_MISSING_TOOL],
+      [1],
+    )
+    await requireProfileUnchanged(PLUGIN_VERIFY_SMOKE_AGENT_PROFILE, 'missing Agent Tool visibility')
 
     const missingResponse = parseFailedVisibilityResponse(missingExecution.stdout)
     assertArtifactBinding(missingResponse, 'missing Agent Tool visibility', candidateHash)
 
     process.stdout.write(
-      `Plugin Verify smoke: DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} ${PLUGIN_VERIFY_SMOKE_PROFILE} public CLI verified exact packed candidate, lifecycle epoch, live Host Service visibility, present Agent Tool visibility, and missing Agent Tool failure in disposable worker\n`,
+      `Plugin Verify smoke: DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} public CLI verified exact packed candidate, lifecycle epoch, live Host Service visibility, present Agent Tool visibility, and missing Agent Tool failure in disposable worker\n`,
     )
     return serviceResponse
   } finally {
