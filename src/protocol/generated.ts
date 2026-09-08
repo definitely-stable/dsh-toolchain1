@@ -313,7 +313,7 @@ export type PluginPackedSubjectRequest = {
 }
 
 export type PluginVisibilityAssertion = {
-  readonly "kind": "host-service"
+  readonly "kind": "host-service" | "agent-tool"
   readonly "name": string
 }
 
