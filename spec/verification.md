@@ -86,7 +86,25 @@ When one or more Host Service assertions are requested:
 
 A Host Service declaration in package metadata or TypeScript declarations is not visibility evidence. M4.3.1 visibility is runtime evidence from the isolated composed target.
 
-Tool visibility is intentionally deferred because the current DSH Tool listing seam is Agent-scoped. Client/page visibility is deferred until Toolchain can bind observations to a deterministic page identity/lifetime. Behavior assertions are also outside M4.3.1.
+## M4.3.2 Agent Tool visibility assertion
+
+M4.3.2 extends the same `visibilityAssertions` array with a second closed assertion shape while preserving the M4.3.1 Host Service behavior and the M4.2 no-assertion baseline:
+
+```json
+{ "kind": "agent-tool", "name": "<tool-name>" }
+```
+
+Tool visibility is Agent-scoped: the authoritative predicate is membership of the requested name in the capability catalog of one real Toolchain-owned Agent (`ctx.tools.schemas(handle.agent)`), evaluated after candidate composition and boot in the same disposable DSH runtime. A global/root Tool lookup is not equivalent evidence. This proves callable-schema visibility only; it is distinct from model presentation form and from Tool execution.
+
+When one or more Agent Tool assertions are requested:
+
+- the generated boot probe performs exactly one owned Agent epoch: it obtains the live `agents`/`tools` services, creates one Agent with a verifier-owned session id, materializes the Agent capability catalog once for the assertion batch, and awaits exact `AgentHandle.dispose()` in `finally` before emitting the V2 visibility marker;
+- Host Service assertions in the same request are evaluated in the same boot epoch through the live Cordis context; mixed batches use one boot epoch and one Agent epoch;
+- Host Service-only requests create no Agent and preserve the M4.3.1 runtime behavior;
+- Agent creation failure, unreadable Tool catalog, or incomplete owned Agent disposal fails `visibility` with the shared `VERIFY_VISIBILITY_FAILED` diagnostic; no new report status or diagnostic code is introduced;
+- the visibility marker namespace is `DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2` so an older Host-Service-only marker cannot be misread as Agent Tool evidence.
+
+Client/page visibility remains deferred until Toolchain can bind observations to a deterministic page identity/lifetime. Behavior assertions are also outside M4.3.2. Verification MUST NOT reuse a caller Agent and MUST NOT retain the owned Agent or session beyond the visibility probe.
 
 ## Isolation
 
