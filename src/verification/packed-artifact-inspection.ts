@@ -4,7 +4,7 @@ import { gunzipSync } from 'node:zlib'
 import {
   MAX_PACKED_TAR_BYTES,
   parsePackedTarArchive,
-} from '../acquisition/packed-archive.js'
+} from '../runtime/packed-archive.js'
 
 const MAX_MANIFEST_BYTES = 1024 * 1024
 const NPM_PACKAGE_ROOT = 'package/'
