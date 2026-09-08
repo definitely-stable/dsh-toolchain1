@@ -17,7 +17,7 @@ describe('Plugin Verify negative public-path real-DSH smoke policy', () => {
     expect(source).toContain("export const PLUGIN_VERIFY_NEGATIVE_SMOKE_PROFILE = 'headless'")
   })
 
-  it('covers packed-runtime boot failure and requested Host Service visibility failure through the installed public CLI', async () => {
+  it('covers packed-entrypoint rejection and requested Host Service visibility failure through the installed public CLI', async () => {
     const source = await readRepo('scripts/smoke-plugin-verify-negative.mjs')
 
     expect(source).toContain('createPackedRuntimeBrokenCandidate')
@@ -28,7 +28,8 @@ describe('Plugin Verify negative public-path real-DSH smoke policy', () => {
     expect(source).toContain("allowedStatuses: [1]")
     expect(source).toContain("status, 'failed'")
     expect(source).toContain("cleanup, 'succeeded'")
-    expect(source).toContain("'VERIFY_BOOT_FAILED'")
+    expect(source).toContain("'VERIFY_PACKAGE_ENTRYPOINT_MISSING'")
+    expect(source).toContain("reason: 'prerequisite-package-failed'")
     expect(source).toContain("'VERIFY_VISIBILITY_FAILED'")
     expect(source).toContain('dsh-plugin-artifact-v1:')
     expect(source).toContain('dsh-target-v2:')
