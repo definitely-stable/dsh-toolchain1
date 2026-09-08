@@ -13,6 +13,8 @@ import { assertTreeUnchanged, snapshotTree } from './smoke-plugin-check.mjs'
 export const PLUGIN_VERIFY_SMOKE_DSH_VERSION = '0.1.2-rc.1'
 export const PLUGIN_VERIFY_SMOKE_PROFILE = 'headless'
 export const PLUGIN_VERIFY_SMOKE_SERVICE = 'dshToolchainVerifySmokeService'
+export const PLUGIN_VERIFY_SMOKE_TOOL = 'dsh_toolchain_verify_smoke_tool'
+export const PLUGIN_VERIFY_SMOKE_MISSING_TOOL = 'dsh_toolchain_verify_smoke_missing_tool'
 
 const CANDIDATE_PACKAGE = 'dsh-toolchain-verify-smoke-candidate'
 const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/u
@@ -53,8 +55,19 @@ async function createCandidate(root, env) {
 
   const pluginSource = [
     `const PLUGIN_VERIFY_SMOKE_SERVICE = ${JSON.stringify(PLUGIN_VERIFY_SMOKE_SERVICE)}`,
+    `const PLUGIN_VERIFY_SMOKE_TOOL = ${JSON.stringify(PLUGIN_VERIFY_SMOKE_TOOL)}`,
     'export function apply(ctx) {',
     '  ctx.provide(PLUGIN_VERIFY_SMOKE_SERVICE, Object.freeze({ ready: true }))',
+    '  ctx.tools.register({',
+    '    name: PLUGIN_VERIFY_SMOKE_TOOL,',
+    "    description: 'Disposable Plugin Verify smoke Tool; registered for Agent capability visibility only and never executed.',",
+    "    parameters: { type: 'object', additionalProperties: false, properties: {} },",
+    '    output: {',
+    "      schema: { type: 'object', description: 'Disposable smoke Tool output.' },",
+    '      render: (args, value) => [{ type: \'text\', text: JSON.stringify(value) }],',
+    '    },',
+    '    async execute() { return { ready: true } },',
+    '  })',
     '}',
     '',
   ].join('\n')
@@ -86,7 +99,7 @@ async function createCandidate(root, env) {
   return realpath(packed)
 }
 
-function parseResponse(stdout) {
+function parseEnvelope(stdout) {
   let response
   try {
     response = JSON.parse(stdout)
@@ -97,7 +110,6 @@ function parseResponse(stdout) {
   assert.equal(response.protocolVersion, '1', 'Plugin Verify smoke: wrong protocol version')
   assert.equal(response.status, 'ok', `Plugin Verify smoke: operation envelope failed: ${JSON.stringify(response)}`)
   assert.match(response.snapshotFingerprint ?? '', TARGET_FINGERPRINT, 'Plugin Verify smoke: target snapshot fingerprint missing')
-  assert.equal(response.data?.status, 'verified', `Plugin Verify smoke: verification status=${String(response.data?.status)}`)
   assert.equal(response.data?.cleanup, 'succeeded', 'Plugin Verify smoke: disposable verification cleanup did not succeed')
   assert.match(response.data?.artifactFingerprint ?? '', ARTIFACT_FINGERPRINT, 'Plugin Verify smoke: artifact fingerprint missing')
   assert.match(
@@ -115,6 +127,15 @@ function parseResponse(stdout) {
   const checks = response.data?.checks
   assert.ok(Array.isArray(checks), 'Plugin Verify smoke: canonical checks missing')
   assert.deepEqual(checks.map(check => check.id), CANONICAL_CHECK_IDS, 'Plugin Verify smoke: canonical check order changed')
+
+  return response
+}
+
+function parseResponse(stdout) {
+  const response = parseEnvelope(stdout)
+  assert.equal(response.data?.status, 'verified', `Plugin Verify smoke: verification status=${String(response.data?.status)}`)
+
+  const checks = response.data?.checks
   for (const id of REQUIRED_STATIC_CHECK_IDS) {
     assert.deepEqual(
       checks.find(check => check.id === id),
@@ -130,6 +151,32 @@ function parseResponse(stdout) {
     )
   }
   assert.deepEqual(response.data?.diagnostics, [], `Plugin Verify smoke diagnostics: ${JSON.stringify(response.data?.diagnostics)}`)
+
+  return response
+}
+
+function parseFailedVisibilityResponse(stdout) {
+  const response = parseEnvelope(stdout)
+  assert.equal(response.data?.status, 'failed', `Plugin Verify smoke: missing Tool must fail verification, status=${String(response.data?.status)}`)
+
+  const checks = response.data?.checks
+  for (const id of [...REQUIRED_STATIC_CHECK_IDS, 'package', 'install', 'compose', 'boot']) {
+    assert.deepEqual(
+      checks.find(check => check.id === id),
+      { id, status: 'passed' },
+      `Plugin Verify smoke: ${id} did not pass before the missing Tool failure`,
+    )
+  }
+  assert.equal(
+    checks.find(check => check.id === 'visibility')?.status,
+    'failed',
+    'Plugin Verify smoke: missing Tool must fail the visibility check',
+  )
+
+  const failure = (response.data?.diagnostics ?? []).find(diagnostic => diagnostic?.code === 'VERIFY_VISIBILITY_FAILED')
+  assert.ok(failure, 'Plugin Verify smoke: missing Tool must report VERIFY_VISIBILITY_FAILED')
+  assert.equal(failure.severity, 'error', 'Plugin Verify smoke: visibility failure severity changed')
+  assert.equal(failure.domain, 'verification', 'Plugin Verify smoke: visibility failure domain changed')
 
   return response
 }
@@ -183,35 +230,69 @@ export async function smokePluginVerify(toolchainTarball) {
     )
     const dshPackageRoot = await realpath(resolve(runner, 'node_modules', '@deepseek-ai', 'dsh'))
     const profileRoot = join(home, 'profiles', PLUGIN_VERIFY_SMOKE_PROFILE)
+    const profileLabel = `DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} profile ${PLUGIN_VERIFY_SMOKE_PROFILE}`
     const before = await snapshotTree(profileRoot)
 
-    const execution = run(process.execPath, [
-      installedToolchainCli,
-      'plugin', 'verify',
-      '--profile', PLUGIN_VERIFY_SMOKE_PROFILE,
-      '--dsh-home', home,
-      '--dsh-package-root', dshPackageRoot,
-      '--subject', candidate,
-      '--visibility-service', PLUGIN_VERIFY_SMOKE_SERVICE,
-    ], {
-      capture: true,
-      timeout: 720_000,
-    })
+    function verifyCandidate(visibilityArgs, allowedStatuses) {
+      const execution = run(process.execPath, [
+        installedToolchainCli,
+        'plugin', 'verify',
+        '--profile', PLUGIN_VERIFY_SMOKE_PROFILE,
+        '--dsh-home', home,
+        '--dsh-package-root', dshPackageRoot,
+        '--subject', candidate,
+        ...visibilityArgs,
+      ], {
+        capture: true,
+        timeout: 720_000,
+        allowedStatuses,
+      })
 
-    const after = await snapshotTree(profileRoot)
-    assertTreeUnchanged(before, after, `DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} profile ${PLUGIN_VERIFY_SMOKE_PROFILE}`)
+      return execution
+    }
 
-    const response = parseResponse(execution.stdout)
+    async function requireProfileUnchanged(stage) {
+      const after = await snapshotTree(profileRoot)
+      assertTreeUnchanged(before, after, `${profileLabel} (${stage})`)
+    }
+
+    const serviceExecution = verifyCandidate(['--visibility-service', PLUGIN_VERIFY_SMOKE_SERVICE], [0])
+    await requireProfileUnchanged('Host Service visibility')
+
+    const serviceResponse = parseResponse(serviceExecution.stdout)
     assert.equal(
-      response.data.artifactFingerprint,
+      serviceResponse.data.artifactFingerprint,
       `dsh-plugin-artifact-v1:${candidateHash}`,
       'Plugin Verify smoke: receipt is not bound to exact candidate .tgz bytes',
     )
 
-    process.stdout.write(
-      `Plugin Verify smoke: DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} ${PLUGIN_VERIFY_SMOKE_PROFILE} public CLI verified exact packed candidate, lifecycle epoch, and live Host Service visibility in disposable worker\n`,
+    const mixedExecution = verifyCandidate(
+      ['--visibility-service', PLUGIN_VERIFY_SMOKE_SERVICE, '--visibility-tool', PLUGIN_VERIFY_SMOKE_TOOL],
+      [0],
     )
-    return response
+    await requireProfileUnchanged('mixed Host Service and Agent Tool visibility')
+
+    const mixedResponse = parseResponse(mixedExecution.stdout)
+    assert.equal(
+      mixedResponse.data.artifactFingerprint,
+      `dsh-plugin-artifact-v1:${candidateHash}`,
+      'Plugin Verify smoke: mixed visibility receipt is not bound to exact candidate .tgz bytes',
+    )
+
+    const missingExecution = verifyCandidate(['--visibility-tool', PLUGIN_VERIFY_SMOKE_MISSING_TOOL], [1])
+    await requireProfileUnchanged('missing Agent Tool visibility')
+
+    const missingResponse = parseFailedVisibilityResponse(missingExecution.stdout)
+    assert.equal(
+      missingResponse.data.artifactFingerprint,
+      `dsh-plugin-artifact-v1:${candidateHash}`,
+      'Plugin Verify smoke: failed visibility receipt is not bound to exact candidate .tgz bytes',
+    )
+
+    process.stdout.write(
+      `Plugin Verify smoke: DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} ${PLUGIN_VERIFY_SMOKE_PROFILE} public CLI verified exact packed candidate, lifecycle epoch, live Host Service visibility, present Agent Tool visibility, and missing Agent Tool failure in disposable worker\n`,
+    )
+    return serviceResponse
   } finally {
     await rm(root, { recursive: true, force: true })
   }
