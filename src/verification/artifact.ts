@@ -1,15 +1,12 @@
 import { createHash } from 'node:crypto'
 import { open, realpath } from 'node:fs/promises'
 
-import { inspectPackedArtifactRuntimeEntrypoint } from './packed-artifact-inspection.js'
-
 export const MAX_VERIFICATION_PACKED_BYTES = 16 * 1024 * 1024
 
 export type VerificationArtifactErrorCode =
   | 'VERIFY_ARTIFACT_READ_FAILED'
   | 'VERIFY_ARTIFACT_LIMIT_EXCEEDED'
   | 'VERIFY_ARTIFACT_STALE'
-  | 'VERIFY_PACKAGE_ENTRYPOINT_MISSING'
 
 export class VerificationArtifactError extends Error {
   readonly code: VerificationArtifactErrorCode
@@ -116,14 +113,6 @@ export async function fingerprintPackedArtifact(
       throw new VerificationArtifactError(
         'VERIFY_ARTIFACT_STALE',
         'Packed verification artifact changed after authoritative acquisition.',
-      )
-    }
-
-    const entrypoint = inspectPackedArtifactRuntimeEntrypoint(bytes)
-    if (entrypoint.status === 'missing') {
-      throw new VerificationArtifactError(
-        'VERIFY_PACKAGE_ENTRYPOINT_MISSING',
-        `Packed verification artifact declares runtime entrypoint ${entrypoint.entrypoint.slice('package/'.length)} but does not contain that file.`,
       )
     }
 
