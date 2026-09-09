@@ -145,7 +145,8 @@ export function createVerificationOperationManager(
   ): void {
     if (isTerminal(entry.state)) return
     entry.state = state
-    entry.result = result === undefined ? undefined : cloneFrozen(result)
+    if (result === undefined) delete entry.result
+    else entry.result = cloneFrozen(result)
     entry.diagnostics = diagnostics.map(item => cloneFrozen(item))
     completedOrder.push(entry.id)
     pruneCompleted()
