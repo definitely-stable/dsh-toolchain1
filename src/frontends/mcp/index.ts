@@ -18,20 +18,32 @@ import {
   type ApplicationKernel,
   type VerificationApplicationKernel,
 } from '../../kernel/index.js'
+import {
+  cancelVerificationOperationResponse,
+  createVerificationOperationManager,
+  getVerificationOperationResponse,
+  startPluginVerificationResponse,
+  type VerificationOperationManager,
+} from '../../kernel/operation.js'
 import { serializeContractInspectModelResponse } from '../../model/contract-inspect-compact.js'
 import {
   parseContractInspectRequest,
   parseContractSearchRequest,
+  parseOperationRequest,
   parsePluginCheckRequest,
   parsePluginVerifyRequest,
   type ContractInspectRequest,
   type ContractInspectResponse,
   type ContractSearchRequest,
   type ContractSearchResponse,
+  type OperationCancelResponse,
+  type OperationGetResponse,
+  type OperationRequest,
   type PluginCheckRequest,
   type PluginCheckResponse,
   type PluginVerifyRequest,
   type PluginVerifyResponse,
+  type PluginVerifyStartResponse,
   type TargetResolveRequest,
   type TargetResolveResponse,
 } from '../../protocol/index.js'
@@ -42,6 +54,7 @@ export type ServeStdio = (factory: () => McpServer) => StdioServerHandle
 export interface BuildMcpServerOptions {
   readonly kernel?: ApplicationKernel
   readonly requestId?: () => string
+  readonly operationId?: () => string
 }
 
 interface ReadOnlyIdempotentAnnotations {
@@ -114,6 +127,45 @@ export interface PluginVerifyMcpTool {
   readonly callback: (request: PluginVerifyRequest) => Promise<McpStructuredResult<PluginVerifyResponse>>
 }
 
+export interface PluginVerifyStartMcpTool {
+  readonly name: 'plugin.verify.start'
+  readonly config: {
+    readonly description: string
+    readonly inputSchema: ReturnType<typeof fromJsonSchema<PluginVerifyRequest>>
+    readonly outputSchema: ReturnType<typeof fromJsonSchema<PluginVerifyStartResponse>>
+    readonly annotations: ExecutingAnnotations
+  }
+  readonly callback: (request: PluginVerifyRequest) => Promise<McpStructuredResult<PluginVerifyStartResponse>>
+}
+
+export interface OperationGetMcpTool {
+  readonly name: 'operation.get'
+  readonly config: {
+    readonly description: string
+    readonly inputSchema: ReturnType<typeof fromJsonSchema<OperationRequest>>
+    readonly outputSchema: ReturnType<typeof fromJsonSchema<OperationGetResponse>>
+    readonly annotations: ReadOnlyIdempotentAnnotations
+  }
+  readonly callback: (request: OperationRequest) => Promise<McpStructuredResult<OperationGetResponse>>
+}
+
+export interface OperationCancelMcpTool {
+  readonly name: 'operation.cancel'
+  readonly config: {
+    readonly description: string
+    readonly inputSchema: ReturnType<typeof fromJsonSchema<OperationRequest>>
+    readonly outputSchema: ReturnType<typeof fromJsonSchema<OperationCancelResponse>>
+    readonly annotations: ExecutingAnnotations
+  }
+  readonly callback: (request: OperationRequest) => Promise<McpStructuredResult<OperationCancelResponse>>
+}
+
+export interface VerificationOperationMcpTools {
+  readonly start: PluginVerifyStartMcpTool
+  readonly get: OperationGetMcpTool
+  readonly cancel: OperationCancelMcpTool
+}
+
 function createNodeKernel(): VerificationApplicationKernel {
   const digest = createNodeSha256Port()
   return createApplicationKernel({
@@ -142,6 +194,10 @@ type ProtocolDefinition =
   | 'pluginCheckResponse'
   | 'pluginVerifyRequest'
   | 'pluginVerifyResponse'
+  | 'pluginVerifyStartResponse'
+  | 'operationRequest'
+  | 'operationGetResponse'
+  | 'operationCancelResponse'
 
 function protocolDefinitionSchema(definition: ProtocolDefinition) {
   return {
@@ -318,10 +374,104 @@ export function createPluginVerifyMcpTool(
   }
 }
 
+function operationManagerOrThrow(
+  manager: VerificationOperationManager | undefined,
+): VerificationOperationManager {
+  if (manager === undefined) {
+    throw new Error('Plugin verification execution is not configured for this MCP server')
+  }
+  return manager
+}
+
+export function createVerificationOperationMcpTools(
+  kernel: ApplicationKernel,
+  requestId: () => string = randomUUID,
+  operationId: () => string = randomUUID,
+): VerificationOperationMcpTools {
+  const verification = verificationKernel(kernel)
+  const manager = verification === undefined
+    ? undefined
+    : createVerificationOperationManager({
+        operationId,
+        execute: (request, operationRequestId, signal) => verifyPluginResponse(
+          verification,
+          request,
+          operationRequestId,
+          signal,
+        ),
+      })
+
+  const start: PluginVerifyStartMcpTool = {
+    name: 'plugin.verify.start',
+    config: {
+      description: 'Start one packed-plugin verification operation in this persistent MCP server. Use operation.get for status and operation.cancel for cooperative cancellation.',
+      inputSchema: fromJsonSchema<PluginVerifyRequest>(
+        protocolDefinitionSchema('pluginVerifyRequest'),
+      ),
+      outputSchema: fromJsonSchema<PluginVerifyStartResponse>(
+        protocolDefinitionSchema('pluginVerifyStartResponse'),
+      ),
+      annotations: executing,
+    },
+    callback: async (request) => structuredResult(
+      startPluginVerificationResponse(
+        operationManagerOrThrow(manager),
+        parsePluginVerifyRequest(request),
+        requestId(),
+      ),
+    ),
+  }
+
+  const get: OperationGetMcpTool = {
+    name: 'operation.get',
+    config: {
+      description: 'Read the current snapshot of one verification operation owned by this persistent MCP server.',
+      inputSchema: fromJsonSchema<OperationRequest>(
+        protocolDefinitionSchema('operationRequest'),
+      ),
+      outputSchema: fromJsonSchema<OperationGetResponse>(
+        protocolDefinitionSchema('operationGetResponse'),
+      ),
+      annotations: readOnlyIdempotent,
+    },
+    callback: async (request) => structuredResult(
+      getVerificationOperationResponse(
+        operationManagerOrThrow(manager),
+        parseOperationRequest(request),
+        requestId(),
+      ),
+    ),
+  }
+
+  const cancel: OperationCancelMcpTool = {
+    name: 'operation.cancel',
+    config: {
+      description: 'Request cooperative cancellation of one verification operation owned by this persistent MCP server.',
+      inputSchema: fromJsonSchema<OperationRequest>(
+        protocolDefinitionSchema('operationRequest'),
+      ),
+      outputSchema: fromJsonSchema<OperationCancelResponse>(
+        protocolDefinitionSchema('operationCancelResponse'),
+      ),
+      annotations: executing,
+    },
+    callback: async (request) => structuredResult(
+      cancelVerificationOperationResponse(
+        operationManagerOrThrow(manager),
+        parseOperationRequest(request),
+        requestId(),
+      ),
+    ),
+  }
+
+  return Object.freeze({ start, get, cancel })
+}
+
 export function buildMcpServer(options: BuildMcpServerOptions = {}): McpServer {
   const kernel = options.kernel ?? createNodeKernel()
   const descriptor = kernel.describe()
   const requestId = options.requestId ?? randomUUID
+  const operationId = options.operationId ?? randomUUID
   const server = new McpServer({
     name: descriptor.product,
     version: descriptor.version,
@@ -332,12 +482,16 @@ export function buildMcpServer(options: BuildMcpServerOptions = {}): McpServer {
   const contractInspect = createContractInspectMcpTool(kernel, requestId)
   const pluginCheck = createPluginCheckMcpTool(kernel, requestId)
   const pluginVerify = createPluginVerifyMcpTool(kernel, requestId)
+  const operations = createVerificationOperationMcpTools(kernel, requestId, operationId)
 
   server.registerTool(targetResolve.name, targetResolve.config, targetResolve.callback)
   server.registerTool(contractSearch.name, contractSearch.config, contractSearch.callback)
   server.registerTool(contractInspect.name, contractInspect.config, contractInspect.callback)
   server.registerTool(pluginCheck.name, pluginCheck.config, pluginCheck.callback)
   server.registerTool(pluginVerify.name, pluginVerify.config, pluginVerify.callback)
+  server.registerTool(operations.start.name, operations.start.config, operations.start.callback)
+  server.registerTool(operations.get.name, operations.get.config, operations.get.callback)
+  server.registerTool(operations.cancel.name, operations.cancel.config, operations.cancel.callback)
 
   return server
 }
