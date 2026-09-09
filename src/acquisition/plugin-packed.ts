@@ -16,7 +16,7 @@ import {
   parsePackedTarArchive,
   type PackedArchiveEntry,
   type ParsedPackedArchive,
-} from './packed-archive.js'
+} from '../runtime/packed-archive.js'
 
 const MAX_PACKED_BYTES = 16 * 1024 * 1024
 const MAX_MANIFEST_BYTES = 1024 * 1024
