@@ -48,6 +48,7 @@ const OUTPUT_LIMIT_BYTES = 128 * 1024
 const INSTALL_TIMEOUT_MS = 300_000
 const COMPOSE_TIMEOUT_MS = 120_000
 const BOOT_TIMEOUT_MS = 120_000
+const ENTRYPOINT_DIAGNOSTIC_LIMIT = 240
 const WORKER_FAILURE_STAGES = Object.freeze([
   'package',
   'install',
@@ -136,6 +137,12 @@ async function defaultCleanupTemporaryRoot(root: string): Promise<void> {
 
 function artifactDiagnostic(error: VerificationArtifactError): Diagnostic {
   return verificationDiagnostic(error.code, error.message)
+}
+
+function boundedDiagnosticText(value: string): string {
+  const normalized = value.replace(/[\r\n\t]/gu, ' ')
+  if (normalized.length <= ENTRYPOINT_DIAGNOSTIC_LIMIT) return normalized
+  return `${normalized.slice(0, ENTRYPOINT_DIAGNOSTIC_LIMIT - 1)}…`
 }
 
 function stageFailureReason(diagnostic: Diagnostic): string {
@@ -295,9 +302,19 @@ export async function runPackedPluginVerification(
 
       const entrypoint = inspectPackedArtifactRuntimeEntrypoint(artifact.bytes)
       if (entrypoint.status === 'missing') {
+        const displayEntrypoint = boundedDiagnosticText(entrypoint.entrypoint.slice('package/'.length))
         const diagnostic = verificationDiagnostic(
           'VERIFY_PACKAGE_ENTRYPOINT_MISSING',
-          `Packed verification artifact declares runtime entrypoint ${entrypoint.entrypoint.slice('package/'.length)} but does not contain that file.`,
+          `Packed verification artifact declares runtime entrypoint ${displayEntrypoint} but does not contain that file.`,
+        )
+        diagnostics.push(diagnostic)
+        checks = failStage(checks, 'package', diagnostic)
+        terminal = 'failed'
+        stopped = true
+      } else if (entrypoint.status === 'failed') {
+        const diagnostic = verificationDiagnostic(
+          'VERIFY_PACKAGE_INSPECTION_FAILED',
+          'Packed verification artifact could not be inspected safely for runtime package integrity.',
         )
         diagnostics.push(diagnostic)
         checks = failStage(checks, 'package', diagnostic)

@@ -27,7 +27,7 @@ afterEach(async () => {
 interface TarEntryInput {
   readonly name: string
   readonly content?: string
-  readonly type?: '0' | '2'
+  readonly type?: '0' | '2' | 'x'
   readonly linkName?: string
 }
 
@@ -42,7 +42,7 @@ function writeTarOctal(buffer: Buffer, offset: number, length: number, value: nu
 
 function tarEntry(input: TarEntryInput): Buffer {
   const type = input.type ?? '0'
-  const content = type === '0' ? Buffer.from(input.content ?? '', 'utf8') : Buffer.alloc(0)
+  const content = type === '2' ? Buffer.alloc(0) : Buffer.from(input.content ?? '', 'utf8')
   const header = Buffer.alloc(512)
 
   writeTarString(header, 0, 100, input.name)
@@ -63,6 +63,17 @@ function tarEntry(input: TarEntryInput): Buffer {
 
   const padding = Buffer.alloc((512 - (content.length % 512)) % 512)
   return Buffer.concat([header, content, padding])
+}
+
+function paxRecord(key: string, value: string): string {
+  const body = `${key}=${value}\n`
+  let length = Buffer.byteLength(body) + 2
+  for (;;) {
+    const record = `${length} ${body}`
+    const byteLength = Buffer.byteLength(record)
+    if (byteLength === length) return record
+    length = byteLength
+  }
 }
 
 function npmTgz(entries: readonly TarEntryInput[]): Buffer {
@@ -207,6 +218,31 @@ describe('packed plugin acquisition', () => {
         domain: 'plugin',
         severity: 'error',
       }],
+    })
+  })
+
+  it('uses byte-counted PAX paths for UTF-8 bundle patch members', async () => {
+    const root = await fixture()
+    const packed = path.join(root, 'unicode-pax.tgz')
+    const patchPath = 'package/config/плагин.patch.yml'
+    await writeFile(packed, npmTgz([
+      {
+        name: 'package/package.json',
+        content: JSON.stringify({
+          name: 'unicode-pax-plugin',
+          version: '1.0.0',
+          dsh: { bundle: { patch: './config/плагин.patch.yml' } },
+        }),
+      },
+      { name: 'PaxHeaders.0/patch', type: 'x', content: paxRecord('path', patchPath) },
+      { name: 'package/config/placeholder.patch.yml', content: '- name: unicode\n' },
+    ]))
+
+    await expect(acquirePluginPacked(packed, createNodeSha256Port())).resolves.toMatchObject({
+      completeness: 'complete',
+      packageName: 'unicode-pax-plugin',
+      packageVersion: '1.0.0',
+      diagnostics: [],
     })
   })
 })

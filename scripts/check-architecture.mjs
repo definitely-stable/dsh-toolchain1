@@ -25,8 +25,9 @@ const allowedInternalDependencies = new Map([
   ['protocol', new Set(['protocol'])],
   ['model', new Set(['model', 'product', 'protocol'])],
   ['kernel', new Set(['kernel', 'model', 'product', 'protocol'])],
-  ['acquisition', new Set(['acquisition', 'model', 'product', 'protocol'])],
-  ['verification', new Set(['verification', 'model', 'product', 'protocol'])],
+  ['runtime', new Set(['runtime'])],
+  ['acquisition', new Set(['acquisition', 'runtime', 'model', 'product', 'protocol'])],
+  ['verification', new Set(['verification', 'runtime', 'model', 'product', 'protocol'])],
   ['dsh', new Set(['dsh', 'acquisition', 'verification', 'kernel', 'model', 'product', 'protocol'])],
   ['cli', new Set(['cli', 'mcp', 'acquisition', 'verification', 'kernel', 'model', 'product', 'protocol'])],
   ['mcp', new Set(['mcp', 'acquisition', 'verification', 'kernel', 'model', 'product', 'protocol'])],
@@ -47,6 +48,7 @@ function classifySourceLayer(file) {
   if (file.startsWith('src/protocol/')) return 'protocol'
   if (file.startsWith('src/model/')) return 'model'
   if (file.startsWith('src/kernel/')) return 'kernel'
+  if (file.startsWith('src/runtime/')) return 'runtime'
   if (file.startsWith('src/acquisition/')) return 'acquisition'
   if (file.startsWith('src/verification/')) return 'verification'
   if (file.startsWith('src/integrations/dsh/')) return 'dsh'
