@@ -236,6 +236,7 @@ export class ToolchainService extends Service {
         signal,
       ),
     })
+    ctx.effect(() => () => this.operations.close())
     // Capture composition and lifecycle from one immutable startup snapshot.
     // The baseline is never refreshed from mutable filesystem state later in this Host.
     this.startupTargetIdentity = captureStartupTargetBindingIdentity(ctx, this.kernel)
