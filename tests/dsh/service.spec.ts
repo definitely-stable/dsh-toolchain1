@@ -4,6 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 
 import ToolchainService from '../../src/integrations/dsh/index.js'
+import type { VerificationOperationManager } from '../../src/kernel/operation.js'
 import type {
   OperationCancelResponse,
   OperationGetResponse,
@@ -228,5 +229,34 @@ describe('ToolchainService lifecycle', () => {
     })
 
     await fiber.dispose()
+  })
+
+  it('closes the host-owned operation manager when the Toolchain service unloads', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(ToolchainService)
+    const operations = (ctx.toolchain as unknown as {
+      readonly operations: VerificationOperationManager
+    }).operations
+
+    await fiber.dispose()
+
+    const request: PluginVerifyRequest = {
+      target: {
+        profile: 'missing',
+        dshHome,
+        dshPackageRoot,
+      },
+      subject: { kind: 'packed', path: '/candidate/not-reached.tgz' },
+      executionPolicy: 'safe',
+    }
+    let error: unknown
+    try {
+      const started = operations.start(request, 'after-service-dispose')
+      operations.cancel(started.id)
+    } catch (cause) {
+      error = cause
+    }
+
+    expect(error).toMatchObject({ code: 'OPERATION_EXECUTION_FAILED' })
   })
 })
