@@ -2,9 +2,9 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const smokeModule = await import('../../scripts/smoke-dsh-package.mjs') as Record<string, unknown>
+const smokeModule = await import('../../scripts/smoke-operation-lifecycle.mjs') as Record<string, unknown>
 const smokeSource = await readFile(
-  fileURLToPath(new URL('../../scripts/smoke-dsh-package.mjs', import.meta.url)),
+  fileURLToPath(new URL('../../scripts/smoke-operation-lifecycle.mjs', import.meta.url)),
   'utf8',
 )
 
@@ -19,10 +19,11 @@ describe('real DSH verification operation smoke policy', () => {
     expect(smokeSource).toContain("operation.state === 'queued' || operation.state === 'running'")
   })
 
-  it('accepts only a succeeded operation containing the canonical verified exact-target receipt', () => {
+  it('accepts only a succeeded operation containing the canonical verified exact-artifact/exact-target receipt', () => {
     const assertVerificationOperationReceipt = smokeModule.assertVerificationOperationReceipt as (
       receipt: unknown,
       targetFingerprint: string,
+      artifactFingerprint: string,
     ) => void
     const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
     const artifactFingerprint = `dsh-plugin-artifact-v1:${'b'.repeat(64)}`
@@ -51,18 +52,22 @@ describe('real DSH verification operation smoke policy', () => {
       },
     }
 
-    expect(() => assertVerificationOperationReceipt(receipt, targetFingerprint)).not.toThrow()
+    expect(() => assertVerificationOperationReceipt(receipt, targetFingerprint, artifactFingerprint)).not.toThrow()
     expect(() => assertVerificationOperationReceipt({
       ...receipt,
       terminal: { ...receipt.terminal, state: 'failed' },
-    }, targetFingerprint)).toThrow(/operation lifecycle/i)
+    }, targetFingerprint, artifactFingerprint)).toThrow(/operation lifecycle/i)
     expect(() => assertVerificationOperationReceipt({
       ...receipt,
       terminal: { ...receipt.terminal, targetFingerprint: `dsh-target-v2:${'c'.repeat(64)}` },
-    }, targetFingerprint)).toThrow(/operation lifecycle/i)
+    }, targetFingerprint, artifactFingerprint)).toThrow(/operation lifecycle/i)
+    expect(() => assertVerificationOperationReceipt({
+      ...receipt,
+      terminal: { ...receipt.terminal, artifactFingerprint: `dsh-plugin-artifact-v1:${'d'.repeat(64)}` },
+    }, targetFingerprint, artifactFingerprint)).toThrow(/operation lifecycle/i)
     expect(() => assertVerificationOperationReceipt({
       ...receipt,
       terminal: { ...receipt.terminal, verificationStatus: 'partial' },
-    }, targetFingerprint)).toThrow(/operation lifecycle/i)
+    }, targetFingerprint, artifactFingerprint)).toThrow(/operation lifecycle/i)
   })
 })
