@@ -62,6 +62,7 @@ async function operationModule(): Promise<{
     start(request: PluginVerifyRequest, requestId: string): Operation
     get(id: string): Operation
     cancel(id: string): Operation
+    close(): Promise<void>
   }
 }> {
   const path = '../../src/kernel/operation.js'
@@ -75,6 +76,7 @@ async function operationModule(): Promise<{
       start(request: PluginVerifyRequest, requestId: string): Operation
       get(id: string): Operation
       cancel(id: string): Operation
+      close(): Promise<void>
     }
   }>
 }
@@ -188,6 +190,44 @@ describe('M4.4 verification operation manager', () => {
     expect(terminal.diagnostics).toEqual([
       expect.objectContaining({ code: 'OPERATION_EXECUTION_FAILED', domain: 'operation' }),
     ])
+  })
+
+  it('closes by cancelling active operations and waits for canonical settlement', async () => {
+    const { createVerificationOperationManager } = await operationModule()
+    let observedSignal: AbortSignal | undefined
+    let resolve!: (value: PluginVerifyResponse) => void
+    const pending = new Promise<PluginVerifyResponse>(resolvePromise => {
+      resolve = resolvePromise
+    })
+    const manager = createVerificationOperationManager({
+      execute: async (_request, _requestId, signal) => {
+        observedSignal = signal
+        return pending
+      },
+      operationId: () => 'op-close',
+    })
+
+    manager.start(request, 'start-request')
+    await flush()
+    expect(manager.get('op-close').state).toBe('running')
+
+    let closed = false
+    const closing = manager.close().then(() => { closed = true })
+    expect(observedSignal?.aborted).toBe(true)
+    expect(manager.get('op-close')).toMatchObject({
+      state: 'running',
+      cancellationRequested: true,
+    })
+    await flush()
+    expect(closed).toBe(false)
+
+    resolve(response('cancelled'))
+    await closing
+    expect(manager.get('op-close')).toMatchObject({
+      state: 'cancelled',
+      cancellationRequested: true,
+    })
+    expect(() => manager.start(request, 'after-close')).toThrowError(/OPERATION_EXECUTION_FAILED/u)
   })
 
   it('enforces active capacity without creating a queued backlog', async () => {
