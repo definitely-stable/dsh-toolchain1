@@ -1,0 +1,43 @@
+{
+  "protocolVersion": "1",
+  "requestId": "request-get-1",
+  "status": "ok",
+  "data": {
+    "operation": {
+      "id": "operation-1",
+      "kind": "plugin.verify",
+      "state": "succeeded",
+      "cancellationRequested": false,
+      "result": {
+        "protocolVersion": "1",
+        "requestId": "request-start-1",
+        "snapshotFingerprint": "dsh-target-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "ok",
+        "data": {
+          "status": "verified",
+          "artifactFingerprint": "dsh-plugin-artifact-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "targetFingerprint": "dsh-target-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "executionPolicy": "safe",
+          "checks": [
+            {"id": "structure", "status": "passed"},
+            {"id": "manifest", "status": "passed"},
+            {"id": "dependency", "status": "passed"},
+            {"id": "contract", "status": "passed"},
+            {"id": "build", "status": "skipped", "reason": "not-covered"},
+            {"id": "package", "status": "passed"},
+            {"id": "install", "status": "passed"},
+            {"id": "compose", "status": "passed"},
+            {"id": "boot", "status": "passed"},
+            {"id": "visibility", "status": "skipped", "reason": "no-visibility-assertions"},
+            {"id": "behavior", "status": "skipped", "reason": "not-covered"}
+          ],
+          "diagnostics": [],
+          "cleanup": "succeeded"
+        },
+        "diagnostics": []
+      },
+      "diagnostics": []
+    }
+  },
+  "diagnostics": []
+}
