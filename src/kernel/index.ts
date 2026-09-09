@@ -489,7 +489,9 @@ export async function verifyPluginResponse(
   signal?: AbortSignal,
 ): Promise<PluginVerifyResponse> {
   try {
-    const outcome = await kernel.verifyPlugin(request, signal)
+    const outcome = signal === undefined
+      ? await kernel.verifyPlugin(request)
+      : await kernel.verifyPlugin(request, signal)
     const response: PluginVerifySuccessResponse = {
       protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
       requestId,
