@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   PackedArchiveError,
   parsePackedTarArchive,
-} from '../../src/acquisition/packed-archive.js'
+} from '../../src/runtime/packed-archive.js'
 
 interface TarEntryInput {
   readonly name: string
