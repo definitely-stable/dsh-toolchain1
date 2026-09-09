@@ -50,6 +50,7 @@ export interface VerificationOperationManager {
   start(request: PluginVerifyRequest, requestId: string): Operation
   get(id: string): Operation
   cancel(id: string): Operation
+  close(): Promise<void>
 }
 
 interface MutableOperationEntry {
@@ -130,6 +131,8 @@ export function createVerificationOperationManager(
 
   const entries = new Map<string, MutableOperationEntry>()
   const completedOrder: string[] = []
+  const running = new Set<Promise<void>>()
+  let closed = false
 
   function activeCount(): number {
     let count = 0
@@ -201,6 +204,12 @@ export function createVerificationOperationManager(
   }
 
   function start(request: PluginVerifyRequest, requestId: string): Operation {
+    if (closed) {
+      throw new VerificationOperationError(
+        'OPERATION_EXECUTION_FAILED',
+        'Verification operation manager is closed and cannot accept new work.',
+      )
+    }
     if (activeCount() >= maxActive) {
       throw new VerificationOperationError(
         'OPERATION_CAPACITY_EXCEEDED',
@@ -228,7 +237,9 @@ export function createVerificationOperationManager(
     entries.set(id, entry)
     const queued = snapshot(entry)
     queueMicrotask(() => {
-      void run(entry)
+      const task = run(entry)
+      running.add(task)
+      void task.finally(() => running.delete(task))
     })
     return queued
   }
@@ -247,7 +258,18 @@ export function createVerificationOperationManager(
     return snapshot(entry)
   }
 
-  return Object.freeze({ start, get, cancel })
+  async function close(): Promise<void> {
+    closed = true
+    for (const entry of entries.values()) {
+      if (isTerminal(entry.state)) continue
+      entry.cancellationRequested = true
+      if (!entry.controller.signal.aborted) entry.controller.abort()
+      if (entry.state === 'queued') commitTerminal(entry, 'cancelled')
+    }
+    await Promise.all([...running])
+  }
+
+  return Object.freeze({ start, get, cancel, close })
 }
 
 export function startPluginVerificationResponse(
