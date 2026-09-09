@@ -367,12 +367,32 @@
     "operation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "state"],
+      "required": ["id", "kind", "state", "cancellationRequested", "diagnostics"],
       "properties": {
-        "id": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+        "kind": {"const": "plugin.verify"},
         "state": {"enum": ["queued", "running", "input-required", "succeeded", "failed", "cancelled"]},
+        "cancellationRequested": {"type": "boolean"},
         "progress": {"type": "number", "minimum": 0, "maximum": 1},
-        "message": {"type": "string"}
+        "message": {"type": "string", "maxLength": 512},
+        "result": {"$ref": "#/$defs/pluginVerifyResponse"},
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "operationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"}
+      }
+    },
+    "operationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation"],
+      "properties": {
+        "operation": {"$ref": "#/$defs/operation"}
       }
     },
     "validationReport": {
@@ -657,6 +677,93 @@
       "oneOf": [
         {"$ref": "#/$defs/pluginVerifySuccessResponse"},
         {"$ref": "#/$defs/pluginVerifyFailureResponse"}
+      ]
+    },
+    "pluginVerifyStartSuccessResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "status", "data", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "status": {"const": "ok"},
+        "data": {"$ref": "#/$defs/operationResult"},
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "pluginVerifyStartFailureResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "status": {"const": "failed"},
+        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "pluginVerifyStartResponse": {
+      "oneOf": [
+        {"$ref": "#/$defs/pluginVerifyStartSuccessResponse"},
+        {"$ref": "#/$defs/pluginVerifyStartFailureResponse"}
+      ]
+    },
+    "operationGetSuccessResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "status", "data", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "status": {"const": "ok"},
+        "data": {"$ref": "#/$defs/operationResult"},
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "operationGetFailureResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "status": {"const": "failed"},
+        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "operationGetResponse": {
+      "oneOf": [
+        {"$ref": "#/$defs/operationGetSuccessResponse"},
+        {"$ref": "#/$defs/operationGetFailureResponse"}
+      ]
+    },
+    "operationCancelSuccessResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "status", "data", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "status": {"const": "ok"},
+        "data": {"$ref": "#/$defs/operationResult"},
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "operationCancelFailureResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "properties": {
+        "protocolVersion": {"const": "1"},
+        "requestId": {"type": "string", "minLength": 1},
+        "status": {"const": "failed"},
+        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+      }
+    },
+    "operationCancelResponse": {
+      "oneOf": [
+        {"$ref": "#/$defs/operationCancelSuccessResponse"},
+        {"$ref": "#/$defs/operationCancelFailureResponse"}
       ]
     }
   },
