@@ -4,7 +4,7 @@
 
 **Goal:** Remove divergent TAR/PAX semantics between packed acquisition and verification, make PAX parsing byte-correct for UTF-8 values, and ensure internal verification-inspector faults fail closed instead of being silently downgraded to `not-checkable`.
 
-**Architecture:** Introduce one bounded archive-index implementation in the acquisition/runtime-IO layer and reuse it from both packed acquisition and verification. Acquisition remains authoritative for static subject validity; verification consumes the exact already-fingerprinted bytes only to add package-integrity evidence. Unsupported Node resolution semantics continue to return `not-checkable`; malformed archive/manifest inspection returns an explicit failure result that the worker maps to a package-stage failure. No kernel or Protocol transport dependency is introduced.
+**Architecture:** Introduce one bounded archive-index implementation in the closed internal `runtime` utility layer and reuse it from both packed acquisition and verification. Acquisition remains authoritative for static subject validity; verification consumes the exact already-fingerprinted bytes only to add package-integrity evidence. Unsupported Node resolution semantics continue to return `not-checkable`; malformed archive/manifest inspection returns an explicit failure result that the worker maps to a package-stage failure. No kernel or Protocol transport dependency is introduced.
 
 **Tech Stack:** TypeScript, Node Buffer/zlib, Vitest, GitHub Actions.
 
@@ -40,9 +40,12 @@
 ### Task 2: Establish one bounded archive index
 
 **Files:**
-- Add: `src/acquisition/packed-archive.ts`
+- Add: `src/runtime/packed-archive.ts`
+- Add: `tests/runtime/packed-archive.spec.ts`
 - Modify: `src/acquisition/plugin-packed.ts`
 - Modify: `src/verification/packed-artifact-inspection.ts`
+- Modify: `scripts/check-architecture.mjs`
+- Add: `tests/policy/runtime-layer.spec.ts`
 
 - [ ] Move TAR header parsing, checksum validation, canonical-path validation, PAX handling, GNU long-name handling, duplicate detection and bounded archive indexing into one exported runtime-IO module.
 - [ ] Parse PAX records against `Buffer` byte offsets. Record length is a byte count; decode key/value only after record boundaries are validated.
@@ -51,6 +54,7 @@
 - [ ] Keep gzip decompression bounded at existing limits in both consumers.
 - [ ] Make acquisition consume the shared index without changing public acquisition results.
 - [ ] Make verification consume the same shared index and remove its handwritten TAR/PAX parser.
+- [ ] Keep the `runtime` layer closed to semantic code; only explicit runtime-boundary consumers may depend on it.
 
 ---
 
