@@ -210,7 +210,13 @@ describe('packed plugin verification worker', () => {
     const probePath = path.join(workerRoot, 'boot-probe')
 
     expect(installDsh).toMatchObject({
-      args: ['add', '--save-exact', '--ignore-scripts', '@deepseek-ai/dsh@0.1.1-rc.2'],
+      args: [
+        'add',
+        '--save-exact',
+        '--ignore-scripts',
+        '--fetch-timeout=300000',
+        '@deepseek-ai/dsh@0.1.1-rc.2',
+      ],
       cwd: runnerDir,
     })
     expect(installCandidate).toMatchObject({
