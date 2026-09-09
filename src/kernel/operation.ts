@@ -1,8 +1,19 @@
+import { TOOLCHAIN_PROTOCOL_VERSION } from '../protocol/index.js'
 import type {
   Diagnostic,
   Operation,
+  OperationCancelFailureResponse,
+  OperationCancelResponse,
+  OperationCancelSuccessResponse,
+  OperationGetFailureResponse,
+  OperationGetResponse,
+  OperationGetSuccessResponse,
+  OperationRequest,
   PluginVerifyRequest,
   PluginVerifyResponse,
+  PluginVerifyStartFailureResponse,
+  PluginVerifyStartResponse,
+  PluginVerifyStartSuccessResponse,
 } from '../protocol/index.js'
 
 const DEFAULT_MAX_ACTIVE = 4
@@ -97,6 +108,15 @@ function operationExecutionDiagnostic(): Diagnostic {
     severity: 'error',
     domain: 'operation',
     summary: 'Verification operation failed before producing a canonical response.',
+  })
+}
+
+function operationLifecycleDiagnostic(error: VerificationOperationError): Diagnostic {
+  return Object.freeze({
+    code: error.code,
+    severity: 'error',
+    domain: 'operation',
+    summary: error.message,
   })
 }
 
@@ -228,4 +248,82 @@ export function createVerificationOperationManager(
   }
 
   return Object.freeze({ start, get, cancel })
+}
+
+export function startPluginVerificationResponse(
+  manager: VerificationOperationManager,
+  request: PluginVerifyRequest,
+  requestId: string,
+): PluginVerifyStartResponse {
+  try {
+    const response: PluginVerifyStartSuccessResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'ok',
+      data: { operation: manager.start(request, requestId) },
+      diagnostics: [],
+    }
+    return response
+  } catch (error) {
+    if (!(error instanceof VerificationOperationError)) throw error
+    const response: PluginVerifyStartFailureResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'failed',
+      diagnostics: [operationLifecycleDiagnostic(error)],
+    }
+    return response
+  }
+}
+
+export function getVerificationOperationResponse(
+  manager: VerificationOperationManager,
+  request: OperationRequest,
+  requestId: string,
+): OperationGetResponse {
+  try {
+    const response: OperationGetSuccessResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'ok',
+      data: { operation: manager.get(request.id) },
+      diagnostics: [],
+    }
+    return response
+  } catch (error) {
+    if (!(error instanceof VerificationOperationError)) throw error
+    const response: OperationGetFailureResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'failed',
+      diagnostics: [operationLifecycleDiagnostic(error)],
+    }
+    return response
+  }
+}
+
+export function cancelVerificationOperationResponse(
+  manager: VerificationOperationManager,
+  request: OperationRequest,
+  requestId: string,
+): OperationCancelResponse {
+  try {
+    const response: OperationCancelSuccessResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'ok',
+      data: { operation: manager.cancel(request.id) },
+      diagnostics: [],
+    }
+    return response
+  } catch (error) {
+    if (!(error instanceof VerificationOperationError)) throw error
+    const response: OperationCancelFailureResponse = {
+      protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
+      requestId,
+      status: 'failed',
+      diagnostics: [operationLifecycleDiagnostic(error)],
+    }
+    return response
+  }
 }
