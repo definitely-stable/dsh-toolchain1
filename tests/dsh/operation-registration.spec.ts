@@ -20,12 +20,6 @@ class TestToolsService extends Service {
   }
 }
 
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    tools: TestToolsService
-  }
-}
-
 describe('native DSH verification operation registration', () => {
   it('registers start/get/cancel in the same host-owned tools lifecycle', async () => {
     const ctx = new Context()
@@ -33,7 +27,11 @@ describe('native DSH verification operation registration', () => {
     expect(ctx.get('tools')).toBeUndefined()
 
     const toolsFiber = await ctx.plugin(TestToolsService)
-    expect([...ctx.tools.definitions.keys()]).toEqual([
+    const tools = ctx.get('tools') as TestToolsService | undefined
+    expect(tools).toBeDefined()
+    if (tools === undefined) throw new Error('tools capability was not mounted')
+
+    expect([...tools.definitions.keys()]).toEqual([
       'toolchain_target_resolve',
       'toolchain_contract_search',
       'toolchain_contract_inspect',
@@ -45,7 +43,7 @@ describe('native DSH verification operation registration', () => {
     ])
 
     await toolsFiber.dispose()
-    expect(ctx.tools).toBeUndefined()
+    expect(ctx.get('tools')).toBeUndefined()
     await toolchainFiber.dispose()
   })
 })
