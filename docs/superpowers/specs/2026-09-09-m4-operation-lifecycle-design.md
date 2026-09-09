@@ -85,6 +85,19 @@ VerificationOperationManager
                  existing worker port
 ```
 
+The existing canonical response mapper is extended only to accept the already-supported cancellation signal:
+
+```ts
+verifyPluginResponse(
+  kernel,
+  request,
+  requestId,
+  signal?,
+)
+```
+
+Direct `plugin.verify` calls it without a signal. The operation manager calls the **same** mapper with its owned controller signal. This avoids duplicating mapped failure diagnostics or report-envelope semantics in the lifecycle layer.
+
 This is preferable to embedding operation state in each frontend because frontend-owned managers would drift on cancellation and terminal-state mapping. It is also preferable to replacing direct `plugin.verify` with async-only semantics because the CLI/CI path is already useful and stable.
 
 ### Rejected: async-only `plugin.verify`
@@ -171,7 +184,15 @@ type Operation = {
 
 `message` is optional human status text and is not machine authority. If emitted, it is bounded to 512 characters. Machine behavior uses `state`, `cancellationRequested`, `result`, and diagnostics.
 
-`diagnostics` is required and bounded by the same safe diagnostic conventions as other Toolchain responses. It is empty for normal queued/running/succeeded operation lifecycle. It exists because a background operation can encounter an unexpected infrastructure exception after the start transport call has already returned; a later `operation.get` must be able to explain that failure without pretending it was a plugin verification report.
+`diagnostics` is required. It is empty for normal queued/running/succeeded/cancelled lifecycle. It exists because a background operation can encounter an unexpected infrastructure exception after the start transport call has already returned; a later `operation.get` must be able to explain that failure without pretending it was a plugin verification report.
+
+Schema/conformance tests must enforce the state-specific invariants that matter to callers:
+
+- `queued | running`: no terminal `result`;
+- `succeeded`: canonical `PluginVerifySuccessResponse` result is required;
+- `failed`: either a canonical `PluginVerifyFailureResponse` result or lifecycle diagnostics explaining an unexpected background failure;
+- `cancelled`: a canonical cancelled `PluginVerifySuccessResponse` may be present, but pre-run cancellation may legitimately have no result;
+- terminal snapshots are immutable and never transition again.
 
 ## Operation-specific requests
 
@@ -181,7 +202,7 @@ The request payload is exactly the existing canonical `PluginVerifyRequest`; no 
 
 The application parser validates it before allocating an operation.
 
-A successful start returns an `Operation` snapshot. The first returned snapshot is `queued`, even though execution may advance to `running` immediately after acceptance.
+A successful start returns an immutable `queued` Operation snapshot. The manager registers that state before scheduling background execution, so the start response is a real accepted-state snapshot rather than a fabricated progress value. Execution may move the registry entry to `running` immediately after the start snapshot has been captured.
 
 Start does not resolve the target synchronously merely to populate a snapshot fingerprint. Target acquisition is part of the operation. Therefore the start response is not itself target-bound and does not carry a `snapshotFingerprint`.
 
@@ -209,7 +230,9 @@ Request:
 
 Cancellation is idempotent.
 
-For `queued` or `running` operations it sets `cancellationRequested = true` and aborts that operation's controller exactly once. It does **not** immediately claim terminal `cancelled` for a running verification. The state remains non-terminal until the underlying use case reaches a terminal outcome.
+For a `queued` operation, cancel sets `cancellationRequested = true`, aborts the owned controller, commits terminal `cancelled` immediately, and guarantees the scheduled runner never invokes verification.
+
+For a `running` operation, cancel sets `cancellationRequested = true` and aborts that operation's controller exactly once. It does **not** immediately claim terminal `cancelled`. The state remains `running` until the underlying verification use case produces a canonical terminal response.
 
 For an already terminal `succeeded | failed | cancelled` operation, cancel is a no-op and returns the unchanged terminal snapshot. A late cancel must never rewrite an already produced verification receipt.
 
@@ -229,9 +252,7 @@ running -> cancelled
 
 No transition leaves a terminal state.
 
-The manager inserts the queued entry before execution is launched. The queued snapshot returned by `start` is therefore real state, not a fabricated progress event.
-
-Before changing queued -> running, the runner checks the operation controller. If the operation was cancelled while still queued, it becomes `cancelled` without starting verification.
+The runner starts only if the entry it owns is still the original queued entry. If cancel committed queued -> cancelled first, the runner exits without invoking verification.
 
 ## Terminal state mapping
 
@@ -252,15 +273,16 @@ This preserves the existing M4.2 distinction between "verification ran and prove
 
 ### `cancelled`
 
-`state = 'cancelled'` is used when:
+`state = 'cancelled'` is used only when:
 
 1. the operation is cancelled before verification begins; or
-2. the canonical success response contains `VerificationReport.status = 'cancelled'`; or
-3. execution terminates without a semantic response because the operation's own AbortSignal was already aborted and the thrown condition is attributable to that cancellation boundary.
+2. the canonical success response contains `VerificationReport.status = 'cancelled'`.
 
 When a canonical cancelled `PluginVerifySuccessResponse` exists, it is retained in `result`.
 
-A mere `cancellationRequested = true` does not force this terminal state. If the underlying verification has already won the race and produces a non-cancelled result, that result wins and the operation may finish `succeeded` with `cancellationRequested = true`. This accurately represents cooperative cancellation.
+A mere `cancellationRequested = true` does not force terminal cancellation. If the underlying verification wins the race and produces a non-cancelled result, that result wins and the operation may finish `succeeded` with `cancellationRequested = true`. This accurately represents cooperative cancellation.
+
+An unexpected exception is **not** reclassified as cancelled merely because the controller had already been aborted. Unless the existing verification path produced its canonical cancelled report, an unexpected reject remains an infrastructure failure. This fail-closed rule prevents cancellation races from masking defects.
 
 ### `failed`
 
@@ -277,7 +299,7 @@ M4.4 must not convert such an exception into `VerificationReport.status = 'faile
 For the same validated `PluginVerifyRequest`, exact evidence epoch, verification ports, and Protocol request id:
 
 - direct `plugin.verify` and async `plugin.verify.start` must call the same verification kernel;
-- when async produces a `result`, that `PluginVerifyResponse` must be byte/structure-equivalent to the response the direct response mapper would produce for the same outcome;
+- when async produces a `result`, that `PluginVerifyResponse` must be deep-structurally equivalent under Toolchain canonical JSON semantics to the response the direct response mapper would produce for the same outcome;
 - no async-only reducer may alter report check order, diagnostics, artifact binding, target/lifecycle freshness, cleanup, or status.
 
 The operation wrapper adds lifecycle metadata only.
@@ -286,15 +308,17 @@ The operation wrapper adds lifecycle metadata only.
 
 Each active operation owns exactly one `AbortController`.
 
-The signal is passed into the existing `verifyPlugin(request, signal)` call and therefore reaches the existing `PluginVerificationExecutionPort.verify(..., signal)` / worker boundary. M4.4 must not add a second cancellation channel.
+The signal is passed through the single canonical `verifyPluginResponse(..., signal?)` mapper into the existing `verifyPlugin(request, signal)` call and therefore reaches the existing `PluginVerificationExecutionPort.verify(..., signal)` / worker boundary. M4.4 must not add a second cancellation channel.
 
 Race discipline:
 
-1. `operation.cancel` never writes a terminal state for a running operation.
-2. The verification promise's actual terminal response decides whether the final state is succeeded/failed/cancelled.
-3. An abort request received after a terminal entry is committed is ignored.
-4. An abort requested while the promise is running remains visible as `cancellationRequested = true` even if completion wins.
-5. Finalization is single-assignment; one background completion path cannot overwrite another terminal snapshot.
+1. queued cancellation commits `cancelled` before kernel invocation and prevents the runner from starting;
+2. running `operation.cancel` never writes a terminal state;
+3. the verification promise's actual canonical response decides whether a running operation finishes succeeded/failed/cancelled;
+4. an abort request received after a terminal entry is committed is ignored;
+5. an abort requested while the promise is running remains visible as `cancellationRequested = true` even if completion wins;
+6. finalization is single-assignment; one background completion path cannot overwrite another terminal snapshot;
+7. unexpected rejection remains `failed` even when cancellation had been requested, unless the canonical verification response itself established `cancelled`.
 
 These rules prevent "cancel after success" from rewriting durable evidence and prevent UI optimism from claiming cancellation before the worker has quiesced.
 
@@ -304,12 +328,12 @@ M4.4 is not a scheduler. It does not add priorities, retries, delayed jobs, or d
 
 However async start creates a new resource-amplification surface, so both active and completed entries must be bounded.
 
-Production defaults:
+Initial production defaults:
 
 - maximum active plugin verification operations: **4**;
 - maximum retained completed operations: **32**.
 
-The limits are explicit application options/test seams so policy can be revised later without changing Protocol.
+`active` means queued plus running. The limits are explicit application options/test seams so policy can be revised later without changing Protocol. The initial values are intentionally conservative because each verification may install packages and boot a disposable DSH runtime; M4.4 does not have evidence justifying unbounded fan-out.
 
 When the active limit is reached, `plugin.verify.start` fails before allocating an operation with `OPERATION_CAPACITY_EXCEEDED`. It does not create a permanently queued backlog.
 
@@ -319,7 +343,7 @@ When a new terminal entry causes retained completed operations to exceed the com
 
 Eviction removes only the registry entry. Any `PluginVerifyResponse` already returned to a caller remains self-contained and unchanged.
 
-The registry must also enforce the completed bound when operations finish concurrently; pruning happens synchronously with terminal commit.
+The registry must also enforce the completed bound when operations finish in closely interleaved order; pruning happens synchronously with terminal commit in the JavaScript event-loop execution model.
 
 ## Immutability
 
@@ -464,7 +488,7 @@ Pin:
 - semantic verification `failed|partial|stale` -> operation `succeeded`;
 - semantic cancelled report -> operation `cancelled` with result retained;
 - mapped `PluginVerifyFailureResponse` -> operation `failed`;
-- unexpected exception -> operation `failed` + `OPERATION_EXECUTION_FAILED`, not fabricated verification report;
+- unexpected exception -> operation `failed` + `OPERATION_EXECUTION_FAILED`, not fabricated verification report, including when cancellation was requested;
 - queued cancellation prevents kernel invocation;
 - running cancellation forwards exactly the owned signal and does not claim terminal cancellation early;
 - late cancellation does not rewrite terminal result;
@@ -527,7 +551,7 @@ On implementation merge:
 
 - Protocol normative Operations section becomes concrete for `plugin.verify`;
 - architecture documents identify the application-owned ephemeral operation manager and persistent-host lifetime;
-- roadmap marks M4 Operation lifecycle complete but keeps the full M4 milestone open until Client visibility and deterministic behavior-contract decisions are resolved;
+- roadmap marks the M4 operation-lifecycle requirement complete, but full M4 remains open until Client visibility and deterministic behavior-contract decisions are resolved;
 - docs explicitly state standalone CLI remains synchronous until a persistent host/daemon exists.
 
 ## Non-goals
