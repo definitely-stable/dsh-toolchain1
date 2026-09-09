@@ -54,6 +54,11 @@ import {
   createDshLiveContractEnrichment,
   type DshCordisInspectRegistryPort,
 } from './live-inspect.js'
+import {
+  createOperationCancelToolDefinition,
+  createOperationGetToolDefinition,
+  createPluginVerifyStartToolDefinition,
+} from './operation-tool.js'
 import { createPluginCheckToolDefinition } from './plugin-check-tool.js'
 import { createPluginVerifyToolDefinition } from './plugin-verify-tool.js'
 import {
@@ -193,6 +198,15 @@ function registerNativeTools(
     )))
     disposers.push(tools.register(createPluginVerifyToolDefinition(
       request => ctx.toolchain.verifyPlugin(request),
+    )))
+    disposers.push(tools.register(createPluginVerifyStartToolDefinition(
+      request => ctx.toolchain.startPluginVerification(request),
+    )))
+    disposers.push(tools.register(createOperationGetToolDefinition(
+      request => ctx.toolchain.getOperation(request),
+    )))
+    disposers.push(tools.register(createOperationCancelToolDefinition(
+      request => ctx.toolchain.cancelOperation(request),
     )))
   } catch (error) {
     for (const dispose of disposers.toReversed()) dispose()
