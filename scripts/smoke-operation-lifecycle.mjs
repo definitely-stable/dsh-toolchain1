@@ -84,6 +84,7 @@ async function createProbe(root) {
   await writeFile(join(probe, 'probe.mjs'), `
 const MARKER = ${JSON.stringify(PROBE_MARKER)}
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled'])
+const OPERATION_POLL_TIMEOUT_MS = 240_000
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -131,8 +132,14 @@ export function apply(rootCtx) {
 
       let getResult
       let operation = started
-      for (let attempt = 0; attempt < 360; attempt += 1) {
-        if (!(operation.state === 'queued' || operation.state === 'running')) break
+      let attempt = 0
+      const deadline = Date.now() + OPERATION_POLL_TIMEOUT_MS
+      while (operation.state === 'queued' || operation.state === 'running') {
+        if (Date.now() >= deadline) {
+          throw new Error(
+            'Operation smoke timed out waiting for a terminal operation: ' + JSON.stringify(operation),
+          )
+        }
         await sleep(250)
         getResult = await ctx.tools.execute({
           callId: 'operation-smoke-get-' + String(attempt),
@@ -141,6 +148,7 @@ export function apply(rootCtx) {
           agent,
           signal: new AbortController().signal,
         })
+        attempt += 1
         if (getResult.isError) break
         operation = getResult.value?.data?.operation
         if (operation === undefined || TERMINAL.has(operation.state)) break
