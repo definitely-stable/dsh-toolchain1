@@ -13,15 +13,17 @@ import { summarizeNumbers } from './statistics.mjs'
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const SUMMARY_SCHEMA = 'dsh-perf-v1'
 const BASE_CONTRACT_COUNT = 184
-const SEARCH_QUERIES = Object.freeze([
+const STRICT_SEARCH_QUERIES = Object.freeze([
   'PluginService7',
   '@dsh/perf/plugin-31.PluginService31',
-  'lifecycle capability plugin profile 43',
-  'configuration channel profile 61',
   'PluginService97',
-  'lifecycle capability plugin profile 127',
-  'configuration channel profile 151',
   'PluginService173',
+])
+const INTENT_SEARCH_QUERIES = Object.freeze([
+  'unindexedrequest lifecycle capability plugin profile 43',
+  'unindexedrequest configuration channel profile 61 capability',
+  'unindexedrequest lifecycle capability plugin profile 127',
+  'unindexedrequest configuration channel profile 151 capability',
 ])
 
 function compareCodePoints(left, right) {
@@ -41,6 +43,20 @@ function canonicalize(value) {
 function fingerprintValue(value) {
   const serialized = JSON.stringify(canonicalize(value)) ?? 'undefined'
   return createHash('sha256').update(serialized, 'utf8').digest('hex')
+}
+
+/**
+ * Fail closed when a benchmark query does not exercise the production lane it claims to measure.
+ * @param {{ lane: string }} explanation
+ * @param {'strict' | 'intent' | 'none'} expectedLane
+ * @param {string} query
+ */
+export function requireSearchLane(explanation, expectedLane, query) {
+  if (explanation.lane !== expectedLane) {
+    throw new Error(
+      `Search benchmark expected ${expectedLane} lane for ${JSON.stringify(query)} but received ${explanation.lane}`,
+    )
+  }
 }
 
 function createSyntheticContractIndex(scale) {
@@ -92,11 +108,18 @@ async function createDefaultCases(profile) {
   const index = createSyntheticContractIndex(profile.scale)
   const derived = searchIndexModule.createContractSearchIndex(index)
 
-  const search = searchDerived => SEARCH_QUERIES.map(query => {
+  for (const query of STRICT_SEARCH_QUERIES) {
+    requireSearchLane(contractModule.explainContractSearch(index, query, undefined, 5, derived), 'strict', query)
+  }
+  for (const query of INTENT_SEARCH_QUERIES) {
+    requireSearchLane(contractModule.explainContractSearch(index, query, undefined, 5, derived), 'intent', query)
+  }
+
+  const search = (queries, searchDerived) => queries.map(query => {
     const selection = contractModule.searchContractIndex(index, query, undefined, 5, searchDerived)
     return selection.matches.map(match => `${match.id}:${match.score}`)
   })
-  const coldReference = search(undefined)
+  const intentReference = search(INTENT_SEARCH_QUERIES, derived)
   const inspectIds = [0, 7, 31, 61, 97, 127, 151, 173]
     .map(value => `perf-contract-${Math.min(value, index.contracts.length - 1)}`)
   const controlPayload = 'dsh-perf-control:'.repeat(4096 * profile.scale)
@@ -115,15 +138,19 @@ async function createDefaultCases(profile) {
       },
     }),
     Object.freeze({
-      name: 'contract-search-cold',
-      run: async () => search(undefined),
+      name: 'contract-search-strict',
+      run: async () => search(STRICT_SEARCH_QUERIES, undefined),
     }),
     Object.freeze({
-      name: 'contract-search-warm',
+      name: 'contract-search-intent-cold',
+      run: async () => search(INTENT_SEARCH_QUERIES, undefined),
+    }),
+    Object.freeze({
+      name: 'contract-search-intent-warm',
       run: async () => {
-        const warm = search(derived)
-        if (JSON.stringify(warm) !== JSON.stringify(coldReference)) {
-          throw new Error('Warm Contract Search selection drifted from the cold deterministic reference')
+        const warm = search(INTENT_SEARCH_QUERIES, derived)
+        if (JSON.stringify(warm) !== JSON.stringify(intentReference)) {
+          throw new Error('Warm Contract Search selection drifted from the deterministic intent reference')
         }
         return warm
       },
