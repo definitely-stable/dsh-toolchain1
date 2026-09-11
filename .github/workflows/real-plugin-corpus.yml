@@ -20,16 +20,16 @@ permissions:
   contents: read
 
 concurrency:
-  group: real-plugin-corpus-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event_name == 'schedule' && 'full' || 'smoke' }}
+  group: real-plugin-corpus-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event_name == 'schedule' && 'full' || 'static' }}
   cancel-in-progress: true
 
 jobs:
   corpus:
-    name: real plugin corpus / ${{ github.event_name == 'pull_request' && 'smoke' || github.event_name == 'schedule' && 'full' || inputs.mode }} / node 24.19
+    name: real plugin corpus / ${{ github.event_name == 'pull_request' && 'static' || github.event_name == 'schedule' && 'full' || inputs.mode }} / node 24.19
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      CORPUS_MODE: ${{ github.event_name == 'pull_request' && 'smoke' || github.event_name == 'schedule' && 'full' || inputs.mode }}
+      CORPUS_MODE: ${{ github.event_name == 'pull_request' && 'static' || github.event_name == 'schedule' && 'full' || inputs.mode }}
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
