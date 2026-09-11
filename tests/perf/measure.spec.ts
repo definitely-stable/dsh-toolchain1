@@ -15,6 +15,7 @@ describe('performance sample measurement', () => {
       },
     })
 
+    expect(measured.error).toBeUndefined()
     expect(measured.value).toEqual({ fingerprint: 'stable' })
     expect(measured.sample).toMatchObject({
       schema: 'dsh-perf-sample-v1',
@@ -34,13 +35,30 @@ describe('performance sample measurement', () => {
     expect(measured.sample.eventLoop.utilization).toBeLessThanOrEqual(1)
   })
 
-  it('does not swallow operation failures', async () => {
-    await expect(measureSample({
-      caseName: 'failure-control',
-      phase: 'measure',
-      iteration: 1,
-      concurrency: 1,
-      operation: async () => { throw new Error('expected failure') },
-    })).rejects.toThrow('expected failure')
+  it('captures bounded sanitized failure evidence without swallowing the original error', async () => {
+    process.env.PERF_TEST_SECRET = 'do-not-leak-this-value'
+    const failure = new Error(`expected failure ${process.env.PERF_TEST_SECRET} ${process.cwd()} ${'x'.repeat(900)}`)
+
+    try {
+      const measured = await measureSample({
+        caseName: 'failure-control',
+        phase: 'measure',
+        iteration: 1,
+        concurrency: 1,
+        operation: async () => { throw failure },
+      })
+
+      expect(measured.error).toBe(failure)
+      expect(measured.value).toBeUndefined()
+      expect(measured.sample.outcome).toBe('error')
+      expect(measured.sample.elapsedMs).toBeGreaterThanOrEqual(0)
+      expect(measured.sample.memory.rssBytes).toBeGreaterThan(0)
+      expect(measured.sample.error?.name).toBe('Error')
+      expect(measured.sample.error?.message.length).toBeLessThanOrEqual(512)
+      expect(measured.sample.error?.message).not.toContain('do-not-leak-this-value')
+      expect(measured.sample.error?.message).not.toContain(process.cwd())
+    } finally {
+      delete process.env.PERF_TEST_SECRET
+    }
   })
 })
