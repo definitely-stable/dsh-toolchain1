@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { measureSample } from './measure.mjs'
+import { measureSample, perfErrorDetails } from './measure.mjs'
 import { getPerfProfile, listPerfProfiles } from './suites.mjs'
 import { summarizeNumbers } from './statistics.mjs'
 
@@ -224,21 +224,34 @@ function assertStableFingerprint(fingerprints, key, value) {
   return fingerprint
 }
 
+function failedSampleFromMeasured(measured, error) {
+  return Object.freeze({
+    ...measured.sample,
+    outcome: 'error',
+    error: perfErrorDetails(error),
+    outputFingerprint: measured.value === undefined ? undefined : fingerprintValue(measured.value),
+  })
+}
+
 function summarizeCase(caseName, samples) {
-  const selected = samples.filter(sample => sample.caseName === caseName && sample.outcome === 'ok')
-  if (selected.length === 0) throw new Error(`Performance case ${caseName} produced no successful measured samples`)
+  const selected = samples.filter(sample => sample.caseName === caseName)
+  if (selected.length === 0) throw new Error(`Performance case ${caseName} produced no samples`)
+  const successful = selected.filter(sample => sample.outcome === 'ok')
+  const failed = selected.filter(sample => sample.outcome === 'error')
   const elapsed = selected.map(sample => sample.elapsedMs)
-  const totalElapsedMs = elapsed.reduce((sum, value) => sum + value, 0)
-  const totalOperations = selected.reduce((sum, sample) => sum + sample.concurrency, 0)
+  const successfulElapsedMs = successful.reduce((sum, sample) => sum + sample.elapsedMs, 0)
+  const totalOperations = successful.reduce((sum, sample) => sum + sample.concurrency, 0)
   const userMicros = selected.reduce((sum, sample) => sum + sample.cpu.userMicros, 0)
   const systemMicros = selected.reduce((sum, sample) => sum + sample.cpu.systemMicros, 0)
   return Object.freeze({
     caseName,
-    outcome: 'ok',
+    outcome: failed.length === 0 ? 'ok' : 'error',
     samples: selected.length,
+    successfulSamples: successful.length,
+    errorSamples: failed.length,
     operations: totalOperations,
     latencyMs: summarizeNumbers(elapsed),
-    throughputOpsPerSecond: totalElapsedMs === 0 ? null : (totalOperations * 1000) / totalElapsedMs,
+    throughputOpsPerSecond: successfulElapsedMs === 0 ? null : (totalOperations * 1000) / successfulElapsedMs,
     cpu: Object.freeze({ userMicros, systemMicros }),
     memory: Object.freeze({
       peakRssBytes: Math.max(...selected.map(sample => sample.memory.rssBytes)),
@@ -249,18 +262,34 @@ function summarizeCase(caseName, samples) {
   })
 }
 
+function createSummary(profile, samples, selectedCases) {
+  const caseNamesWithEvidence = selectedCases
+    .map(perfCase => perfCase.name)
+    .filter(caseName => samples.some(sample => sample.caseName === caseName))
+  return Object.freeze({
+    schema: SUMMARY_SCHEMA,
+    profile: profile.name,
+    scale: profile.scale,
+    warmups: profile.warmups,
+    iterations: profile.iterations,
+    concurrency: profile.concurrency,
+    sampleCount: samples.length,
+    cases: Object.freeze(caseNamesWithEvidence.map(caseName => summarizeCase(caseName, samples))),
+  })
+}
+
 function markdownSummary(summary) {
   const lines = [
     '# DSH Toolchain performance',
     '',
     `Profile: \`${summary.profile}\` · samples: **${summary.sampleCount}** · cases: **${summary.cases.length}**`,
     '',
-    '| Case | p50 ms | p95 ms | p99 ms | ops/s | peak RSS MiB |',
-    '| --- | ---: | ---: | ---: | ---: | ---: |',
+    '| Case | outcome | errors | p50 ms | p95 ms | p99 ms | ops/s | peak RSS MiB |',
+    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
   ]
   for (const item of summary.cases) {
     const throughput = item.throughputOpsPerSecond === null ? 'n/a' : item.throughputOpsPerSecond.toFixed(2)
-    lines.push(`| ${item.caseName} | ${item.latencyMs.p50.toFixed(3)} | ${item.latencyMs.p95.toFixed(3)} | ${item.latencyMs.p99.toFixed(3)} | ${throughput} | ${(item.memory.peakRssBytes / (1024 * 1024)).toFixed(2)} |`)
+    lines.push(`| ${item.caseName} | ${item.outcome} | ${item.errorSamples} | ${item.latencyMs.p50.toFixed(3)} | ${item.latencyMs.p95.toFixed(3)} | ${item.latencyMs.p99.toFixed(3)} | ${throughput} | ${(item.memory.peakRssBytes / (1024 * 1024)).toFixed(2)} |`)
   }
   return `${lines.join('\n')}\n`
 }
@@ -273,6 +302,13 @@ async function writeEvidence(outputDir, environment, samples, summary) {
     writeFile(path.join(outputDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`, 'utf8'),
     writeFile(path.join(outputDir, 'summary.md'), markdownSummary(summary), 'utf8'),
   ])
+}
+
+async function persistEvidence(outputDir, environment, samples, profile, selectedCases) {
+  const summary = createSummary(profile, samples, selectedCases)
+  await writeEvidence(outputDir, environment, samples, summary)
+  process.stdout.write(`DSH_PERF_SUMMARY ${JSON.stringify({ schema: summary.schema, profile: summary.profile, sampleCount: summary.sampleCount, cases: summary.cases })}\n`)
+  return summary
 }
 
 /**
@@ -300,6 +336,11 @@ export async function runPerfSuite({ profileName, outputDir, cases, environmentO
   const fingerprints = new Map()
   const samples = []
 
+  const persistFailure = async error => {
+    await persistEvidence(outputDir, environment, samples, profile, selectedCases)
+    throw error
+  }
+
   for (const perfCase of selectedCases) {
     if (typeof perfCase?.name !== 'string' || perfCase.name === '' || typeof perfCase.run !== 'function') {
       throw new Error('Each performance case requires a name and run function')
@@ -308,8 +349,23 @@ export async function runPerfSuite({ profileName, outputDir, cases, environmentO
       const operation = concurrentOperation(perfCase, profile, concurrency)
       const fingerprintKey = `${perfCase.name}@${concurrency}`
       for (let warmup = 1; warmup <= profile.warmups; warmup += 1) {
-        const value = await operation()
-        assertStableFingerprint(fingerprints, fingerprintKey, value)
+        const measured = await measureSample({
+          caseName: perfCase.name,
+          phase: 'warmup',
+          iteration: warmup,
+          concurrency,
+          operation,
+        })
+        if (measured.sample.outcome === 'error') {
+          samples.push(measured.sample)
+          await persistFailure(measured.error)
+        }
+        try {
+          assertStableFingerprint(fingerprints, fingerprintKey, measured.value)
+        } catch (error) {
+          samples.push(failedSampleFromMeasured(measured, error))
+          await persistFailure(error)
+        }
       }
       for (let iteration = 1; iteration <= profile.iterations; iteration += 1) {
         const measured = await measureSample({
@@ -319,25 +375,22 @@ export async function runPerfSuite({ profileName, outputDir, cases, environmentO
           concurrency,
           operation,
         })
-        const outputFingerprint = assertStableFingerprint(fingerprints, fingerprintKey, measured.value)
-        samples.push(Object.freeze({ ...measured.sample, outputFingerprint }))
+        if (measured.sample.outcome === 'error') {
+          samples.push(measured.sample)
+          await persistFailure(measured.error)
+        }
+        try {
+          const outputFingerprint = assertStableFingerprint(fingerprints, fingerprintKey, measured.value)
+          samples.push(Object.freeze({ ...measured.sample, outputFingerprint }))
+        } catch (error) {
+          samples.push(failedSampleFromMeasured(measured, error))
+          await persistFailure(error)
+        }
       }
     }
   }
 
-  const summary = Object.freeze({
-    schema: SUMMARY_SCHEMA,
-    profile: profile.name,
-    scale: profile.scale,
-    warmups: profile.warmups,
-    iterations: profile.iterations,
-    concurrency: profile.concurrency,
-    sampleCount: samples.length,
-    cases: Object.freeze(selectedCases.map(perfCase => summarizeCase(perfCase.name, samples))),
-  })
-
-  await writeEvidence(outputDir, environment, samples, summary)
-  process.stdout.write(`DSH_PERF_SUMMARY ${JSON.stringify({ schema: summary.schema, profile: summary.profile, sampleCount: summary.sampleCount, cases: summary.cases })}\n`)
+  const summary = await persistEvidence(outputDir, environment, samples, profile, selectedCases)
   return Object.freeze({ environment, samples: Object.freeze([...samples]), summary })
 }
 
