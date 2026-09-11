@@ -30,6 +30,31 @@ function parseProtocolJson(stdout) {
   return envelope
 }
 
+function resultShape({
+  kind,
+  semanticOutcome,
+  targetFingerprint,
+  subjectFingerprint,
+  artifactFingerprint,
+  lifecycleFingerprint,
+  cleanup,
+  checks,
+  diagnostics,
+}) {
+  return Object.freeze({
+    kind,
+    semanticOutcome,
+    harnessFailure: false,
+    targetFingerprint,
+    subjectFingerprint,
+    artifactFingerprint,
+    lifecycleFingerprint,
+    cleanup,
+    checks,
+    diagnostics,
+  })
+}
+
 export function parseToolchainEnvelope(stdout, kind) {
   const envelope = parseProtocolJson(stdout)
 
@@ -48,12 +73,15 @@ export function parseToolchainEnvelope(stdout, kind) {
       throw new Error(`plugin.check subject completeness is ${String(envelope.data.subjectCompleteness)}`)
     }
 
-    return Object.freeze({
+    return resultShape({
       kind,
       semanticOutcome: verdict,
-      harnessFailure: false,
       targetFingerprint: envelope.snapshotFingerprint,
       subjectFingerprint: envelope.data.subjectFingerprint,
+      artifactFingerprint: undefined,
+      lifecycleFingerprint: undefined,
+      cleanup: undefined,
+      checks: undefined,
       diagnostics: Array.isArray(envelope.data.diagnostics) ? envelope.data.diagnostics : [],
     })
   }
@@ -76,11 +104,11 @@ export function parseToolchainEnvelope(stdout, kind) {
       throw new Error('plugin.verify is missing canonical checks')
     }
 
-    return Object.freeze({
+    return resultShape({
       kind,
       semanticOutcome: status,
-      harnessFailure: false,
       targetFingerprint: envelope.snapshotFingerprint,
+      subjectFingerprint: undefined,
       artifactFingerprint: envelope.data.artifactFingerprint,
       lifecycleFingerprint: envelope.data.lifecycleFingerprint,
       cleanup: envelope.data.cleanup,
