@@ -7,8 +7,6 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { assertTreeUnchanged, snapshotTree } from './smoke-plugin-check.mjs'
-
 export const OPERATION_SMOKE_DSH_VERSION = '0.1.2-rc.1'
 export const OPERATION_SMOKE_PROFILE = 'web'
 
@@ -82,12 +80,58 @@ async function createProbe(root) {
     { flag: 'wx' },
   )
   await writeFile(join(probe, 'probe.mjs'), `
+import { createHash } from 'node:crypto'
+import { readFile, readdir, readlink } from 'node:fs/promises'
+import { join, relative } from 'node:path'
+
 const MARKER = ${JSON.stringify(PROBE_MARKER)}
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled'])
 const OPERATION_POLL_TIMEOUT_MS = 240_000
+const PROFILE_CHANGED_PATH_LIMIT = 32
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function snapshotActiveProfile(dshHome, profile) {
+  const root = join(dshHome, 'profiles', profile)
+  const snapshot = {}
+
+  async function visit(directory) {
+    let entries
+    try {
+      entries = await readdir(directory, { withFileTypes: true })
+    } catch (error) {
+      if (error?.code === 'ENOENT') return
+      throw error
+    }
+
+    entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
+    for (const entry of entries) {
+      const absolute = join(directory, entry.name)
+      const key = relative(root, absolute).replaceAll('\\\\', '/')
+      if (entry.isDirectory()) {
+        snapshot[key + '/'] = 'directory'
+        await visit(absolute)
+      } else if (entry.isSymbolicLink()) {
+        snapshot[key] = 'symlink:' + await readlink(absolute)
+      } else {
+        const bytes = await readFile(absolute)
+        snapshot[key] = 'file:' + createHash('sha256').update(bytes).digest('hex')
+      }
+    }
+  }
+
+  await visit(root)
+  return snapshot
+}
+
+function changedProfilePaths(before, after) {
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+  return [...keys]
+    .filter(key => before[key] !== after[key])
+    .sort()
+    .slice(0, PROFILE_CHANGED_PATH_LIMIT)
 }
 
 export function apply(rootCtx) {
@@ -113,6 +157,7 @@ export function apply(rootCtx) {
       const startVisible = schemas.some(schema => schema.name === 'toolchain_plugin_verify_start')
       const getVisible = schemas.some(schema => schema.name === 'toolchain_operation_get')
       const cancelVisible = schemas.some(schema => schema.name === 'toolchain_operation_cancel')
+      const profileBefore = await snapshotActiveProfile(dshHome, profile)
 
       const startResult = await ctx.tools.execute({
         callId: 'operation-smoke-start',
@@ -157,11 +202,16 @@ export function apply(rootCtx) {
       const terminal = getResult?.isError === false ? getResult.value?.data?.operation : operation
       const nested = terminal?.result
       const report = nested?.status === 'ok' ? nested.data : undefined
+      const profileAfter = await snapshotActiveProfile(dshHome, profile)
+      const profileChangedPaths = changedProfilePaths(profileBefore, profileAfter)
+      const profileUnchanged = profileChangedPaths.length === 0
       const receipt = {
         baselineFingerprint: baseline.snapshotFingerprint,
         startVisible,
         getVisible,
         cancelVisible,
+        profileUnchanged,
+        profileChangedPaths,
         start: {
           isError: startResult.isError,
           status: startResult.isError ? undefined : startResult.value?.status,
@@ -183,7 +233,7 @@ export function apply(rootCtx) {
         },
       }
       process.stdout.write(MARKER + JSON.stringify(receipt) + '\\n')
-      appExit(0)
+      appExit(profileUnchanged ? 0 : 1)
     }).catch(error => {
       process.stderr.write('DSH_TOOLCHAIN_OPERATION_PROBE_ERROR ' + String(error?.stack ?? error) + '\\n')
       appExit(1)
@@ -204,6 +254,9 @@ export function assertVerificationOperationReceipt(
     receipt?.startVisible !== true
     || receipt?.getVisible !== true
     || receipt?.cancelVisible !== true
+    || receipt?.profileUnchanged !== true
+    || !Array.isArray(receipt?.profileChangedPaths)
+    || receipt.profileChangedPaths.length !== 0
     || receipt?.start?.isError !== false
     || receipt?.start?.status !== 'ok'
     || typeof receipt?.start?.id !== 'string'
@@ -277,8 +330,6 @@ export async function smokeOperationLifecycle(toolchainTarball) {
       })
     }
 
-    const profileDir = join(home, 'profiles', OPERATION_SMOKE_PROFILE)
-    const before = await snapshotTree(profileDir)
     const dshPackageRoot = await realpath(join(runner, 'node_modules', '@deepseek-ai', 'dsh'))
     const output = run('pnpm', [
       'exec', 'dsh', '--profile', OPERATION_SMOKE_PROFILE, '--no-open', '--port', '0',
@@ -293,8 +344,6 @@ export async function smokeOperationLifecycle(toolchainTarball) {
       capture: true,
       timeout: 720_000,
     })
-    const after = await snapshotTree(profileDir)
-    assertTreeUnchanged(before, after, 'real DSH verification operation Host profile')
 
     const receipt = parseReceipt(output)
     const targetFingerprint = receipt?.baselineFingerprint
@@ -307,7 +356,7 @@ export async function smokeOperationLifecycle(toolchainTarball) {
     assertVerificationOperationReceipt(receipt, targetFingerprint, artifactFingerprint)
 
     process.stdout.write(
-      `DSH operation lifecycle smoke: ${OPERATION_SMOKE_DSH_VERSION} persistent Host start/get succeeded with exact packed artifact and unchanged active profile\n`,
+      `DSH operation lifecycle smoke: ${OPERATION_SMOKE_DSH_VERSION} persistent Host start/get succeeded with exact packed artifact and unchanged active profile during operation\n`,
     )
   } finally {
     await rm(root, { recursive: true, force: true })
