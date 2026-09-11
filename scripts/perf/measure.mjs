@@ -16,7 +16,7 @@ function replaceAllLiteral(value, needle, replacement) {
 
 /**
  * Convert an arbitrary failure into bounded diagnostics safe for persisted benchmark evidence.
- * The original Error object is returned separately by measureSample and is never serialized.
+ * The original thrown value is returned separately by measureSample and is never serialized.
  * @param {unknown} error
  */
 export function perfErrorDetails(error) {
@@ -53,9 +53,11 @@ export async function measureSample({ caseName, phase, iteration, concurrency, o
   const started = performance.now()
   let value
   let error
+  let failed = false
   try {
     value = await operation()
   } catch (caught) {
+    failed = true
     error = caught
   }
   const elapsedMs = performance.now() - started
@@ -90,7 +92,7 @@ export async function measureSample({ caseName, phase, iteration, concurrency, o
     }),
   }
 
-  if (error === undefined) {
+  if (!failed) {
     return Object.freeze({
       value,
       error: undefined,
