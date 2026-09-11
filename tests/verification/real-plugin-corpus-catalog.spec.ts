@@ -29,7 +29,16 @@ describe('real plugin corpus catalog', () => {
       expect(entry.sourceRepo).toMatch(/^[^/]+\/[^/]+$/u)
       expect(entry.sourceRef).toMatch(commitSha)
       expect(entry.category.length).toBeGreaterThan(0)
+      expect(['npm', 'github-source']).toContain(entry.distribution)
     }
+  })
+
+  it('models source-distributed plugins explicitly instead of assuming npm publication', () => {
+    const corpus = listRealPluginCorpus()
+    const atFile = corpus.find(entry => entry.id === 'at-file')
+
+    expect(atFile?.distribution).toBe('github-source')
+    expect(corpus.filter(entry => entry.distribution === 'github-source').map(entry => entry.id)).toEqual(['at-file'])
   })
 
   it('keeps runtime verification opt-in and bounded to three entries', () => {
