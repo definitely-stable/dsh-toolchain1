@@ -8,6 +8,7 @@ const CORPUS = Object.freeze([
     sourceRepo: 'liustack/modlens',
     sourceRef: 'a1923d016c2b617ccd1d6ef3f9e9368622841e67',
     category: 'vision',
+    distribution: 'npm',
     runtimeVerify: false,
   }),
   Object.freeze({
@@ -17,6 +18,7 @@ const CORPUS = Object.freeze([
     sourceRepo: 'omdsh-dev/DSH-better-sidebar',
     sourceRef: '1fcf43ccbedd6e66370b7fb81df2b4dd0ef2604e',
     category: 'ui-productivity',
+    distribution: 'npm',
     runtimeVerify: false,
   }),
   Object.freeze({
@@ -26,6 +28,7 @@ const CORPUS = Object.freeze([
     sourceRepo: 'ccch1mneyyy/dsh-TUI',
     sourceRef: 'ece45c2eb3b861b768000675b840679ed90bd650',
     category: 'terminal',
+    distribution: 'npm',
     runtimeVerify: false,
   }),
   Object.freeze({
@@ -35,6 +38,7 @@ const CORPUS = Object.freeze([
     sourceRepo: 'dsh-market/dsh-market',
     sourceRef: 'f33c7fbe7dec0d826025383c3b76f5ade5583d04',
     category: 'ui-productivity',
+    distribution: 'npm',
     runtimeVerify: true,
   }),
   Object.freeze({
@@ -44,6 +48,7 @@ const CORPUS = Object.freeze([
     sourceRepo: 'NanmiCoder/dsh-agent-teams',
     sourceRef: '18fba6211fc3aac305fc9bb1c8a7faaf7273137a',
     category: 'skills-workflows',
+    distribution: 'npm',
     runtimeVerify: true,
   }),
   Object.freeze({
@@ -53,6 +58,7 @@ const CORPUS = Object.freeze([
     sourceRepo: 'FSMargoo/dsh-at-file',
     sourceRef: 'da602d1a8f1b417b8a1d8d4059e0f4cb1c353524',
     category: 'developer-tools',
+    distribution: 'github-source',
     runtimeVerify: true,
   }),
 ])
