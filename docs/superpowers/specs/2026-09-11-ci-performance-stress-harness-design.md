@@ -95,7 +95,7 @@ Runner policy:
 - no cross-OS performance comparison in the first cut because GitHub-hosted runner variance would make those numbers misleading;
 - existing CI retains Windows/macOS correctness coverage.
 
-The workflow writes the Markdown summary to `$GITHUB_STEP_SUMMARY` and uploads only measurement evidence, with 14-day retention. It must not upload `node_modules`, DSH homes, package tarballs, or other repository-truth artifacts prohibited by storage policy.
+The workflow writes the Markdown summary to `$GITHUB_STEP_SUMMARY` and uploads only measurement evidence, with 7-day retention, matching the repository-level artifact-retention maximum observed during implementation. It must not upload `node_modules`, DSH homes, package tarballs, or other repository-truth artifacts prohibited by storage policy.
 
 ### 5. Gating policy
 
