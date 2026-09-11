@@ -19,6 +19,13 @@ describe('real DSH verification operation smoke policy', () => {
     expect(smokeSource).toContain("operation.state === 'queued' || operation.state === 'running'")
   })
 
+  it('pins active-profile immutability to the operation interval inside the already-running Host', () => {
+    expect(smokeSource).toContain('snapshotActiveProfile(dshHome, profile)')
+    expect(smokeSource).toContain('profileUnchanged')
+    expect(smokeSource).toContain('profileChangedPaths')
+    expect(smokeSource).not.toContain("assertTreeUnchanged(before, after, 'real DSH verification operation Host profile')")
+  })
+
   it('accepts only a succeeded operation containing the canonical verified exact-artifact/exact-target receipt', () => {
     const assertVerificationOperationReceipt = smokeModule.assertVerificationOperationReceipt as (
       receipt: unknown,
@@ -31,6 +38,8 @@ describe('real DSH verification operation smoke policy', () => {
       startVisible: true,
       getVisible: true,
       cancelVisible: true,
+      profileUnchanged: true,
+      profileChangedPaths: [],
       start: {
         isError: false,
         status: 'ok',
@@ -68,6 +77,11 @@ describe('real DSH verification operation smoke policy', () => {
     expect(() => assertVerificationOperationReceipt({
       ...receipt,
       terminal: { ...receipt.terminal, verificationStatus: 'partial' },
+    }, targetFingerprint, artifactFingerprint)).toThrow(/operation lifecycle/i)
+    expect(() => assertVerificationOperationReceipt({
+      ...receipt,
+      profileUnchanged: false,
+      profileChangedPaths: ['cordis.patch.yml'],
     }, targetFingerprint, artifactFingerprint)).toThrow(/operation lifecycle/i)
   })
 })
