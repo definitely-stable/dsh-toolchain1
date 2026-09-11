@@ -170,11 +170,11 @@ Expected: all tests PASS; four evidence files exist and parse.
 - PR => `smoke`.
 - manual input => `smoke|benchmark|stress`.
 - schedule => benchmark/stress jobs selected by explicit event/cron conditions.
-- Evidence artifact => `.artifacts/perf/{environment.json,samples.jsonl,summary.json,summary.md}` with 14-day retention.
+- Evidence artifact => `.artifacts/perf/{environment.json,samples.jsonl,summary.json,summary.md}` with 7-day retention, matching the repository-level maximum observed during implementation.
 
 - [ ] **Step 1: Add failing workflow-policy tests**
 
-Assert Node `24.19.0`, frozen install, no direct `actions/cache`, no model/provider secret, 14-day evidence-only artifact retention, PR smoke, bounded manual modes, and scheduled benchmark/stress selection.
+Assert Node `24.19.0`, frozen install, no direct `actions/cache`, no model/provider secret, 7-day evidence-only artifact retention, PR smoke, bounded manual modes, and scheduled benchmark/stress selection.
 
 - [ ] **Step 2: Run and observe RED**
 
