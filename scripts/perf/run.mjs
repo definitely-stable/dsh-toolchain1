@@ -248,6 +248,21 @@ async function writeEvidence(outputDir, environment, samples, summary) {
   ])
 }
 
+/**
+ * @typedef {object} PerfCase
+ * @property {string} name
+ * @property {(context: { scale: number; concurrency: number }) => unknown | Promise<unknown>} run
+ */
+
+/**
+ * @typedef {object} RunPerfSuiteOptions
+ * @property {string} [profileName]
+ * @property {string} [outputDir]
+ * @property {readonly PerfCase[]} [cases]
+ * @property {{ gitSha?: string; gitRef?: string }} [environmentOverrides]
+ */
+
+/** @param {RunPerfSuiteOptions} [options] */
 export async function runPerfSuite({ profileName, outputDir, cases, environmentOverrides } = {}) {
   const profile = getPerfProfile(profileName ?? 'smoke')
   if (typeof outputDir !== 'string' || outputDir === '') throw new Error('Performance outputDir is required')
