@@ -4,7 +4,7 @@ import path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { runPerfSuite } from '../../scripts/perf/run.mjs'
+import { requireSearchLane, runPerfSuite } from '../../scripts/perf/run.mjs'
 
 const temporaryDirectories: string[] = []
 
@@ -77,5 +77,15 @@ describe('performance receipt runner', () => {
         run: async () => `value-${++invocation}`,
       }],
     })).rejects.toThrow(/deterministic output drift/i)
+  })
+})
+
+describe('search benchmark lane guard', () => {
+  it('accepts only the explicitly expected production search lane', () => {
+    expect(() => requireSearchLane({ lane: 'intent' }, 'intent', 'synthetic intent query')).not.toThrow()
+    expect(() => requireSearchLane({ lane: 'strict' }, 'intent', 'synthetic intent query'))
+      .toThrow(/expected intent.*received strict/i)
+    expect(() => requireSearchLane({ lane: 'none' }, 'intent', 'synthetic intent query'))
+      .toThrow(/expected intent.*received none/i)
   })
 })
