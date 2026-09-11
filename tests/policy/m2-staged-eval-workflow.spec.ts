@@ -30,6 +30,7 @@ describe('M2 staged development evaluation workflow policy', () => {
     const namedToolCheckIndex = source.indexOf("receipt.stagedNamedToolChoice !== 'verified'")
     const strictSchemaCheckIndex = source.indexOf("receipt.stagedStrictResultSchema !== 'verified'")
     const evalIndex = source.indexOf('pnpm eval:run --')
+    const resolvedMode = "${{ github.event_name == 'schedule' && 'canary' || inputs.mode }}"
 
     expect(source).toContain('OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}')
     expect(source).toContain('M2_STAGED_PROVIDER_PROBE: .artifacts/m2-staged-provider-probe.json')
@@ -43,7 +44,7 @@ describe('M2 staged development evaluation workflow policy', () => {
     expect(evalIndex).toBeGreaterThan(namedToolCheckIndex)
     expect(evalIndex).toBeGreaterThan(strictSchemaCheckIndex)
     expect(occurrences(source, 'pnpm eval:run --')).toBe(1)
-    expect(source).toContain('--mode ${{ inputs.mode }}')
+    expect(source).toContain(`--mode ${resolvedMode}`)
     expect(source).toContain('--manifest docs/evaluation/m2/h1-dev-corpus-v1/manifest.json')
     expect(source).toContain('--output .artifacts/m2-staged-eval-report.json')
   })
