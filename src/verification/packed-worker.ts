@@ -344,7 +344,7 @@ export async function runPackedPluginVerification(
       const installDsh = await runRequiredProcess(
         processRunner,
         processRequest(
-          ['add', '--save-exact', '--ignore-scripts', `@deepseek-ai/dsh@${input.target.dsh.version}`],
+          ['add', '--save-exact', '--ignore-scripts', `--fetch-timeout=${INSTALL_TIMEOUT_MS}`, `@deepseek-ai/dsh@${input.target.dsh.version}`],
           runnerDir,
           env,
           INSTALL_TIMEOUT_MS,

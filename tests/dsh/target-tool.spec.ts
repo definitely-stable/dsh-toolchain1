@@ -111,6 +111,9 @@ describe('native DSH Toolchain tools', () => {
       'toolchain_contract_inspect',
       'toolchain_plugin_check',
       'toolchain_plugin_verify',
+      'toolchain_plugin_verify_start',
+      'toolchain_operation_get',
+      'toolchain_operation_cancel',
     ])
     expect(definition).toBeDefined()
     expect(definition?.description).toContain('exact installed DSH target')

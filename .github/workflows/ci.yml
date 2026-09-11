@@ -79,6 +79,9 @@ jobs:
       - name: Prove broken packed candidates fail closed through public Toolchain path
         run: node scripts/smoke-plugin-verify-negative.mjs .artifacts/dsh-toolchain.tgz
 
+      - name: Verify persistent Host operation lifecycle
+        run: node scripts/smoke-operation-lifecycle.mjs .artifacts/dsh-toolchain.tgz
+
       - name: Compose exact tarball in minimal and Web DSH profiles
         env:
           NODE_OPTIONS: --max-old-space-size=4096

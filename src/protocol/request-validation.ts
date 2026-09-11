@@ -2,6 +2,7 @@ import type {
   ContractInspectRequest,
   ContractKind,
   ContractSearchRequest,
+  OperationRequest,
   PluginCheckRequest,
   PluginSubjectRequest,
   PluginVerifyRequest,
@@ -41,12 +42,14 @@ const pluginVerifyKeys = new Set<keyof PluginVerifyRequest>([
   'executionPolicy',
   'visibilityAssertions',
 ])
+const operationKeys = new Set<keyof OperationRequest>(['id'])
 const pluginSubjectKeys = new Set<keyof PluginSubjectRequest>(['kind', 'path'])
 const pluginSubjectKinds = new Set<PluginSubjectRequest['kind']>(['directory', 'packed'])
 const pluginVisibilityAssertionKeys = new Set<keyof PluginVisibilityAssertion>(['kind', 'name'])
 const profilePattern = /^(?!\.{1,2}$)(?!node_modules$)[^/\\]+$/u
 const MAX_VISIBILITY_ASSERTIONS = 32
 const MAX_VISIBILITY_ASSERTION_NAME_LENGTH = 256
+const MAX_OPERATION_ID_LENGTH = 128
 
 function invalid(message: string): never {
   throw new TypeError(message)
@@ -221,4 +224,17 @@ export function parsePluginVerifyRequest(value: unknown): PluginVerifyRequest {
       visibilityAssertions: parsedVisibilityAssertions,
     }),
   }
+}
+
+export function parseOperationRequest(value: unknown): OperationRequest {
+  const message = 'Invalid operation arguments'
+  if (!isRecord(value)) invalid(message)
+  if (Object.keys(value).some(key => !operationKeys.has(key as keyof OperationRequest))) invalid(message)
+  if (
+    typeof value.id !== 'string'
+    || value.id.trim().length === 0
+    || value.id.length > MAX_OPERATION_ID_LENGTH
+  ) invalid(message)
+
+  return { id: value.id }
 }

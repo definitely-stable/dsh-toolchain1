@@ -15,17 +15,32 @@ import {
   verifyPluginResponse,
   type KernelDescriptor,
 } from '../../kernel/index.js'
+import {
+  cancelVerificationOperationResponse,
+  createVerificationOperationManager,
+  getVerificationOperationResponse,
+  startPluginVerificationResponse,
+  type VerificationOperationManager,
+} from '../../kernel/operation.js'
 import type { ContractEnrichmentPort } from '../../model/contract.js'
 import type { Sha256Port } from '../../model/digest.js'
+import {
+  parseOperationRequest,
+  parsePluginVerifyRequest,
+} from '../../protocol/index.js'
 import type {
   ContractInspectRequest,
   ContractInspectResponse,
   ContractSearchRequest,
   ContractSearchResponse,
+  OperationCancelResponse,
+  OperationGetResponse,
+  OperationRequest,
   PluginCheckRequest,
   PluginCheckResponse,
   PluginVerifyRequest,
   PluginVerifyResponse,
+  PluginVerifyStartResponse,
   TargetResolveRequest,
   TargetResolveResponse,
 } from '../../protocol/index.js'
@@ -39,6 +54,11 @@ import {
   createDshLiveContractEnrichment,
   type DshCordisInspectRegistryPort,
 } from './live-inspect.js'
+import {
+  createOperationCancelToolDefinition,
+  createOperationGetToolDefinition,
+  createPluginVerifyStartToolDefinition,
+} from './operation-tool.js'
 import { createPluginCheckToolDefinition } from './plugin-check-tool.js'
 import { createPluginVerifyToolDefinition } from './plugin-verify-tool.js'
 import {
@@ -179,6 +199,15 @@ function registerNativeTools(
     disposers.push(tools.register(createPluginVerifyToolDefinition(
       request => ctx.toolchain.verifyPlugin(request),
     )))
+    disposers.push(tools.register(createPluginVerifyStartToolDefinition(
+      request => ctx.toolchain.startPluginVerification(request),
+    )))
+    disposers.push(tools.register(createOperationGetToolDefinition(
+      request => ctx.toolchain.getOperation(request),
+    )))
+    disposers.push(tools.register(createOperationCancelToolDefinition(
+      request => ctx.toolchain.cancelOperation(request),
+    )))
   } catch (error) {
     for (const dispose of disposers.toReversed()) dispose()
     throw error
@@ -191,12 +220,23 @@ function registerNativeTools(
 export class ToolchainService extends Service {
   private readonly digest: Sha256Port
   private readonly kernel: ReturnType<typeof createNodeKernel>
+  private readonly operations: VerificationOperationManager
   private readonly startupTargetIdentity: Promise<StartupTargetBindingIdentity | undefined>
 
   constructor(ctx: Context) {
     super(ctx, 'toolchain')
     this.digest = createNodeSha256Port()
     this.kernel = createNodeKernel(this.digest)
+    this.operations = createVerificationOperationManager({
+      operationId: randomUUID,
+      execute: (request, requestId, signal) => verifyPluginResponse(
+        this.kernel,
+        request,
+        requestId,
+        signal,
+      ),
+    })
+    ctx.effect(() => () => this.operations.close())
     // Capture composition and lifecycle from one immutable startup snapshot.
     // The baseline is never refreshed from mutable filesystem state later in this Host.
     this.startupTargetIdentity = captureStartupTargetBindingIdentity(ctx, this.kernel)
@@ -248,6 +288,39 @@ export class ToolchainService extends Service {
     requestId: string = randomUUID(),
   ): Promise<PluginVerifyResponse> {
     return verifyPluginResponse(this.kernel, request, requestId)
+  }
+
+  async startPluginVerification(
+    request: PluginVerifyRequest,
+    requestId: string = randomUUID(),
+  ): Promise<PluginVerifyStartResponse> {
+    return startPluginVerificationResponse(
+      this.operations,
+      parsePluginVerifyRequest(request),
+      requestId,
+    )
+  }
+
+  async getOperation(
+    request: OperationRequest,
+    requestId: string = randomUUID(),
+  ): Promise<OperationGetResponse> {
+    return getVerificationOperationResponse(
+      this.operations,
+      parseOperationRequest(request),
+      requestId,
+    )
+  }
+
+  async cancelOperation(
+    request: OperationRequest,
+    requestId: string = randomUUID(),
+  ): Promise<OperationCancelResponse> {
+    return cancelVerificationOperationResponse(
+      this.operations,
+      parseOperationRequest(request),
+      requestId,
+    )
   }
 
   private liveEnrichment(
