@@ -38,6 +38,8 @@ describe('performance receipt runner', () => {
     expect(result.summary.cases[0]).toMatchObject({
       caseName: 'stable-control',
       outcome: 'ok',
+      successfulSamples: 3,
+      errorSamples: 0,
     })
     expect(result.summary.cases[0]?.latencyMs.count).toBeGreaterThan(0)
 
@@ -64,7 +66,50 @@ describe('performance receipt runner', () => {
     }
   })
 
-  it('fails closed if a deterministic case changes its output fingerprint inside one run', async () => {
+  it('persists bounded partial evidence before failing a measured case', async () => {
+    process.env.PERF_TEST_SECRET = 'do-not-leak-this-value'
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), 'dsh-perf-failure-'))
+    temporaryDirectories.push(outputDir)
+    let invocation = 0
+
+    await expect(runPerfSuite({
+      profileName: 'smoke',
+      outputDir,
+      cases: [{
+        name: 'failure-control',
+        run: async () => {
+          invocation += 1
+          if (invocation >= 2) throw new Error(`synthetic failure ${process.env.PERF_TEST_SECRET}`)
+          return 'stable-before-failure'
+        },
+      }],
+    })).rejects.toThrow(/synthetic failure/i)
+
+    const samplesText = await readFile(path.join(outputDir, 'samples.jsonl'), 'utf8')
+    const summaryText = await readFile(path.join(outputDir, 'summary.json'), 'utf8')
+    const markdown = await readFile(path.join(outputDir, 'summary.md'), 'utf8')
+    const samples = samplesText.trim().split('\n').map(line => JSON.parse(line) as {
+      outcome: string
+      error?: { name: string; message: string }
+    })
+    const summary = JSON.parse(summaryText) as {
+      cases: Array<{ caseName: string; outcome: string; successfulSamples: number; errorSamples: number }>
+    }
+
+    expect(samples.some(sample => sample.outcome === 'error')).toBe(true)
+    expect(summary.cases[0]).toMatchObject({
+      caseName: 'failure-control',
+      outcome: 'error',
+      successfulSamples: 0,
+      errorSamples: 1,
+    })
+    expect(markdown).toContain('failure-control')
+    for (const text of [samplesText, summaryText, markdown]) {
+      expect(text).not.toContain('do-not-leak-this-value')
+    }
+  })
+
+  it('fails closed and persists evidence if a deterministic case changes its output fingerprint', async () => {
     const outputDir = await mkdtemp(path.join(os.tmpdir(), 'dsh-perf-drift-'))
     temporaryDirectories.push(outputDir)
     let invocation = 0
@@ -77,6 +122,13 @@ describe('performance receipt runner', () => {
         run: async () => `value-${++invocation}`,
       }],
     })).rejects.toThrow(/deterministic output drift/i)
+
+    const samplesText = await readFile(path.join(outputDir, 'samples.jsonl'), 'utf8')
+    const summary = JSON.parse(await readFile(path.join(outputDir, 'summary.json'), 'utf8')) as {
+      cases: Array<{ outcome: string; errorSamples: number }>
+    }
+    expect(samplesText).toContain('"outcome":"error"')
+    expect(summary.cases[0]).toMatchObject({ outcome: 'error', errorSamples: 1 })
   })
 })
 
