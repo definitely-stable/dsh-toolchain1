@@ -24,7 +24,7 @@ describe('performance receipt runner', () => {
       outputDir,
       cases: [{
         name: 'stable-control',
-        run: async ({ scale, concurrency }) => `stable:${scale}:${concurrency}`,
+        run: async ({ scale, concurrency }: { scale: number; concurrency: number }) => `stable:${scale}:${concurrency}`,
       }],
       environmentOverrides: {
         gitSha: '0123456789abcdef',
