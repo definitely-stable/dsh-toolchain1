@@ -204,6 +204,32 @@ export function createContractSearchIndex(source: ContractSearchIndexSource): Co
   })
 }
 
+export function contractSearchCandidateIds(
+  index: ContractSearchIndex,
+  queryTokens: readonly string[],
+  requiredMatches: number,
+): ReadonlySet<string> {
+  if (!Number.isInteger(requiredMatches) || requiredMatches < 1) {
+    throw new Error(`Contract Search requiredMatches must be a positive integer, got ${String(requiredMatches)}`)
+  }
+
+  const distinctTokens = [...new Set(queryTokens)]
+  if (distinctTokens.length < requiredMatches) return new Set()
+
+  const matchCounts = new Map<string, number>()
+  for (const token of distinctTokens) {
+    for (const posting of index.postings.get(token) ?? []) {
+      matchCounts.set(posting.contractId, (matchCounts.get(posting.contractId) ?? 0) + 1)
+    }
+  }
+
+  return new Set(
+    [...matchCounts.entries()]
+      .filter(([, count]) => count >= requiredMatches)
+      .map(([contractId]) => contractId),
+  )
+}
+
 export function searchDocument(
   index: ContractSearchIndex,
   contractId: string,
