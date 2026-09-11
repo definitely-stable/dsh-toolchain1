@@ -80,19 +80,7 @@ jobs:
         run: node scripts/smoke-plugin-verify-negative.mjs .artifacts/dsh-toolchain.tgz
 
       - name: Verify persistent Host operation lifecycle
-        run: |
-          mkdir -p .ci-diagnostics
-          set -o pipefail
-          node scripts/smoke-operation-lifecycle.mjs .artifacts/dsh-toolchain.tgz 2>&1 | tee .ci-diagnostics/operation-smoke-diagnostic.txt
-
-      - name: Upload operation lifecycle failure diagnostic
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: operation-lifecycle-diagnostic
-          path: .ci-diagnostics/operation-smoke-diagnostic.txt
-          if-no-files-found: ignore
-          retention-days: 1
+        run: node scripts/smoke-operation-lifecycle.mjs .artifacts/dsh-toolchain.tgz
 
       - name: Compose exact tarball in minimal and Web DSH profiles
         env:
