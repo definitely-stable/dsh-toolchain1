@@ -13,17 +13,19 @@ on:
           - dev
           - release
           - research
+  schedule:
+    - cron: '17 3 * * 3'
 
 permissions:
   contents: read
 
 concurrency:
-  group: m2-staged-eval-${{ github.ref }}-${{ inputs.mode }}
+  group: m2-staged-eval-${{ github.ref }}-${{ github.event_name == 'schedule' && 'canary' || inputs.mode }}
   cancel-in-progress: false
 
 jobs:
   evaluate:
-    name: staged eval / ${{ inputs.mode }} / opencode-go
+    name: staged eval / ${{ github.event_name == 'schedule' && 'canary' || inputs.mode }} / opencode-go
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
@@ -90,7 +92,7 @@ jobs:
           M2_STAGED_PROVIDER_PROBE: .artifacts/m2-staged-provider-probe.json
         run: >-
           pnpm eval:run --
-          --mode ${{ inputs.mode }}
+          --mode ${{ github.event_name == 'schedule' && 'canary' || inputs.mode }}
           --manifest docs/evaluation/m2/h1-dev-corpus-v1/manifest.json
           --output .artifacts/m2-staged-eval-report.json
 
