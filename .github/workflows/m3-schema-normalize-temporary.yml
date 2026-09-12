@@ -1,0 +1,69 @@
+name: M3.2 Schema Normalize Temporary
+
+on:
+  push:
+    branches:
+      - feat/m3-version-mismatch
+    paths:
+      - .github/workflows/m3-schema-normalize-temporary.yml
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: feat/m3-version-mismatch
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        with:
+          install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          package-manager-cache: false
+
+      - name: Restore canonical formatting and apply one-line enum change
+        shell: bash
+        run: |
+          git checkout origin/main -- spec/schemas/v1/toolchain-protocol.schema.json
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('spec/schemas/v1/toolchain-protocol.schema.json')
+          text = path.read_text(encoding='utf-8')
+          old = '      "enum": ["satisfied", "not-required-from-host", "missing", "unproven"]'
+          new = '      "enum": ["satisfied", "not-required-from-host", "missing", "version-mismatch", "unproven"]'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one status enum line, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8', newline='\n')
+          PY
+
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Regenerate and verify repository
+        run: |
+          pnpm generate
+          pnpm check
+
+      - name: Commit minimal schema normalization
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add spec/schemas/v1/toolchain-protocol.schema.json src/protocol/generated.ts
+          git diff --cached --check
+          git diff --cached --quiet && { echo "No normalization changes to commit"; exit 1; }
+          git commit -m "chore(protocol): keep M3.2 schema diff minimal"
+          git push origin HEAD:feat/m3-version-mismatch
