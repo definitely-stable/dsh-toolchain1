@@ -246,7 +246,7 @@ Package relationships have distinct semantics:
 - `host-peer-optional` — absence does not block the plugin, but if the peer is actually installed its relevant version relationship is checked;
 - `artifact-dependency` — ordinary artifact/package dependencies are not treated as requirements that must independently appear in the Host Contract Index.
 
-The static alpha range adapter proves exact string version equality only. Unsupported/broad semver expressions MUST yield `unproven` when a version relation matters; Toolchain MUST NOT guess compatibility with a partial home-grown semver implementation. A later npm-compatible semver adapter must preserve normal prerelease semantics and be reviewed as a separate semantic dependency decision.
+The static alpha range adapter preserves exact string version equality and MAY additionally prove `satisfied` when the exact target version satisfies the declared range under canonical npm SemVer semantics. The adapter MUST use normal npm prerelease semantics and MUST NOT enable prerelease inclusion, loose parsing, coercion, or DSH-specific range exceptions. A canonical non-match or malformed version/range remains `unproven` in this positive-proof slice; promoting a non-match to proven incompatibility requires a separately reviewed Protocol/reporting change.
 
 Verdict precedence is conservative: proven required-host incompatibility wins; otherwise any incomplete subject or material unproven relation yields `unproven`; only the checks actually covered by the current ruleset may yield `compatible-in-scope`. `compatible-in-scope` MUST NOT be presented as runtime verification or as proof that candidate code boots successfully.
 
