@@ -233,9 +233,9 @@ function failedSampleFromMeasured(measured, error) {
   })
 }
 
-function summarizeCase(caseName, samples) {
-  const selected = samples.filter(sample => sample.caseName === caseName)
-  if (selected.length === 0) throw new Error(`Performance case ${caseName} produced no samples`)
+function summarizeCase(caseName, concurrency, samples) {
+  const selected = samples.filter(sample => sample.caseName === caseName && sample.concurrency === concurrency)
+  if (selected.length === 0) throw new Error(`Performance case ${caseName}@${concurrency} produced no samples`)
   const successful = selected.filter(sample => sample.outcome === 'ok')
   const failed = selected.filter(sample => sample.outcome === 'error')
   const elapsed = selected.map(sample => sample.elapsedMs)
@@ -245,6 +245,7 @@ function summarizeCase(caseName, samples) {
   const systemMicros = selected.reduce((sum, sample) => sum + sample.cpu.systemMicros, 0)
   return Object.freeze({
     caseName,
+    concurrency,
     outcome: failed.length === 0 ? 'ok' : 'error',
     samples: selected.length,
     successfulSamples: successful.length,
@@ -263,9 +264,9 @@ function summarizeCase(caseName, samples) {
 }
 
 function createSummary(profile, samples, selectedCases) {
-  const caseNamesWithEvidence = selectedCases
-    .map(perfCase => perfCase.name)
-    .filter(caseName => samples.some(sample => sample.caseName === caseName))
+  const cases = selectedCases.flatMap(perfCase => profile.concurrency
+    .filter(concurrency => samples.some(sample => sample.caseName === perfCase.name && sample.concurrency === concurrency))
+    .map(concurrency => summarizeCase(perfCase.name, concurrency, samples)))
   return Object.freeze({
     schema: SUMMARY_SCHEMA,
     profile: profile.name,
@@ -274,7 +275,7 @@ function createSummary(profile, samples, selectedCases) {
     iterations: profile.iterations,
     concurrency: profile.concurrency,
     sampleCount: samples.length,
-    cases: Object.freeze(caseNamesWithEvidence.map(caseName => summarizeCase(caseName, samples))),
+    cases: Object.freeze(cases),
   })
 }
 
@@ -284,12 +285,12 @@ function markdownSummary(summary) {
     '',
     `Profile: \`${summary.profile}\` · samples: **${summary.sampleCount}** · cases: **${summary.cases.length}**`,
     '',
-    '| Case | outcome | errors | p50 ms | p95 ms | p99 ms | ops/s | peak RSS MiB |',
-    '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
+    '| Case | concurrency | outcome | errors | p50 ms | p95 ms | p99 ms | ops/s | peak RSS MiB |',
+    '| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
   ]
   for (const item of summary.cases) {
     const throughput = item.throughputOpsPerSecond === null ? 'n/a' : item.throughputOpsPerSecond.toFixed(2)
-    lines.push(`| ${item.caseName} | ${item.outcome} | ${item.errorSamples} | ${item.latencyMs.p50.toFixed(3)} | ${item.latencyMs.p95.toFixed(3)} | ${item.latencyMs.p99.toFixed(3)} | ${throughput} | ${(item.memory.peakRssBytes / (1024 * 1024)).toFixed(2)} |`)
+    lines.push(`| ${item.caseName} | ${item.concurrency} | ${item.outcome} | ${item.errorSamples} | ${item.latencyMs.p50.toFixed(3)} | ${item.latencyMs.p95.toFixed(3)} | ${item.latencyMs.p99.toFixed(3)} | ${throughput} | ${(item.memory.peakRssBytes / (1024 * 1024)).toFixed(2)} |`)
   }
   return `${lines.join('\n')}\n`
 }
