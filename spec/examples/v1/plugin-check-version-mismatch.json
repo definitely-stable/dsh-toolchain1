@@ -1,0 +1,33 @@
+{
+  "protocolVersion": "1",
+  "requestId": "example-plugin-version-mismatch",
+  "snapshotFingerprint": "dsh-target-v2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "ok",
+  "data": {
+    "contractIndexFingerprint": "dsh-contract-index-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "subjectCompleteness": "complete",
+    "ruleset": "plugin-static-alpha-v1",
+    "scopeComplete": false,
+    "verdict": "incompatible",
+    "requirements": [
+      {
+        "packageName": "@deepseek-ai/cordis",
+        "range": "^5.0.0",
+        "relationship": "host-peer-required",
+        "status": "version-mismatch",
+        "targetVersion": "4.0.2",
+        "evidenceIds": []
+      }
+    ],
+    "evidence": [],
+    "candidateCodeExecuted": false
+  },
+  "diagnostics": [
+    {
+      "code": "PLUGIN_DSH_VERSION_MISMATCH",
+      "severity": "error",
+      "domain": "plugin",
+      "summary": "Installed required Host peer @deepseek-ai/cordis@4.0.2 does not satisfy declared npm range ^5.0.0."
+    }
+  ]
+}

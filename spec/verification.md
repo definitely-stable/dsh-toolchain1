@@ -43,6 +43,8 @@ Protocol v1 recognizes the following stage identities:
 10. `visibility` — prove declared service/tool/client capability is visible through the relevant live DSH seam;
 11. `behavior` — explicitly declared safe fixture behavior.
 
+For application-level reduction of static Host peer evidence, the `dependency` stage MUST distinguish three cases in deterministic order: an absent required Host peer is `failed / static-host-requirement-missing`; otherwise any installed Host peer with `version-mismatch` is `failed / static-host-requirement-version-mismatch`; otherwise material `unproven` Host version evidence is `skipped / static-host-requirement-unproven`. A proven version mismatch MUST NOT be relabelled as static uncertainty, and successful runtime observations MUST NOT override the plugin's declared incompatible Host peer range.
+
 Implementations MAY skip stages that do not apply, but MUST record the skip and reason. They MUST NOT imply an unexecuted stage passed.
 
 ## M4.1 packed worker boundary

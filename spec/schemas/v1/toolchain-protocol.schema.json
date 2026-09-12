@@ -4,88 +4,195 @@
   "title": "DSH Toolchain Protocol v1",
   "$defs": {
     "severity": {
-      "enum": ["info", "warning", "error", "fatal"]
+      "enum": [
+        "info",
+        "warning",
+        "error",
+        "fatal"
+      ]
     },
     "evidenceStrength": {
-      "enum": ["authoritative", "observed", "derived", "heuristic"]
+      "enum": [
+        "authoritative",
+        "observed",
+        "derived",
+        "heuristic"
+      ]
     },
     "evidenceKind": {
-      "enum": ["runtime", "generated-catalog", "composed-config", "package", "manifest", "type-declaration", "source", "heuristic"]
+      "enum": [
+        "runtime",
+        "generated-catalog",
+        "composed-config",
+        "package",
+        "manifest",
+        "type-declaration",
+        "source",
+        "heuristic"
+      ]
     },
     "evidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "strength"],
+      "required": [
+        "id",
+        "kind",
+        "strength"
+      ],
       "properties": {
         "id": {
           "type": "string",
           "minLength": 1,
           "description": "Provenance evidence identifier. This is not an inspectable contract id and must not be passed as contract.inspect.contractId."
         },
-        "kind": {"$ref": "#/$defs/evidenceKind"},
-        "strength": {"$ref": "#/$defs/evidenceStrength"},
-        "source": {"type": "string"},
-        "contentHash": {"type": "string"},
-        "location": {"type": "string"}
+        "kind": {
+          "$ref": "#/$defs/evidenceKind"
+        },
+        "strength": {
+          "$ref": "#/$defs/evidenceStrength"
+        },
+        "source": {
+          "type": "string"
+        },
+        "contentHash": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        }
       }
     },
     "diagnostic": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["code", "severity", "domain", "summary"],
+      "required": [
+        "code",
+        "severity",
+        "domain",
+        "summary"
+      ],
       "properties": {
-        "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
-        "severity": {"$ref": "#/$defs/severity"},
-        "domain": {"type": "string", "minLength": 1},
-        "summary": {"type": "string", "minLength": 1},
-        "evidenceIds": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "locations": {"type": "array", "items": {"type": "string"}},
-        "repair": {"type": ["object", "null"], "additionalProperties": true}
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]+$"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "repair": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        }
       }
     },
     "resolvedPackageIdentity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "version"],
+      "required": [
+        "name",
+        "version"
+      ],
       "properties": {
-        "name": {"type": "string", "minLength": 1},
-        "version": {"type": "string", "minLength": 1}
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "resolvedBundleIdentity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "version", "patchHash"],
+      "required": [
+        "name",
+        "version",
+        "patchHash"
+      ],
       "properties": {
-        "name": {"type": "string", "minLength": 1},
-        "version": {"type": "string", "minLength": 1},
-        "patchHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "patchHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
       }
     },
     "targetResolveRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile"],
+      "required": [
+        "profile"
+      ],
       "properties": {
         "profile": {
           "type": "string",
           "minLength": 1,
           "pattern": "^(?!\\.{1,2}$)(?!node_modules$)[^/\\\\]+$"
         },
-        "dshHome": {"type": "string", "minLength": 1},
-        "dshPackageRoot": {"type": "string", "minLength": 1},
+        "dshHome": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dshPackageRoot": {
+          "type": "string",
+          "minLength": 1
+        },
         "patches": {
           "type": "array",
-          "items": {"type": "string", "minLength": 1}
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
     "profileLifecycle": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["patchReload", "fingerprint"],
+      "required": [
+        "patchReload",
+        "fingerprint"
+      ],
       "properties": {
-        "patchReload": {"enum": ["live", "startup"]},
+        "patchReload": {
+          "enum": [
+            "live",
+            "startup"
+          ]
+        },
         "fingerprint": {
           "type": "string",
           "pattern": "^dsh-profile-lifecycle-v1:[0-9a-f]{64}$"
@@ -95,45 +202,90 @@
     "targetSnapshot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fingerprint", "createdAt", "dsh", "runtime", "profile", "evidence"],
+      "required": [
+        "fingerprint",
+        "createdAt",
+        "dsh",
+        "runtime",
+        "profile",
+        "evidence"
+      ],
       "properties": {
         "fingerprint": {
           "type": "string",
           "pattern": "^dsh-target-v2:[0-9a-f]{64}$"
         },
-        "createdAt": {"type": "string", "format": "date-time"},
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
         "dsh": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name", "version"],
+          "required": [
+            "name",
+            "version"
+          ],
           "properties": {
-            "name": {"const": "@deepseek-ai/dsh"},
-            "version": {"type": "string", "minLength": 1}
+            "name": {
+              "const": "@deepseek-ai/dsh"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "runtime": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["nodeVersion", "platform", "arch"],
+          "required": [
+            "nodeVersion",
+            "platform",
+            "arch"
+          ],
           "properties": {
-            "nodeVersion": {"type": "string", "minLength": 1},
-            "platform": {"type": "string", "minLength": 1},
-            "arch": {"type": "string", "minLength": 1}
+            "nodeVersion": {
+              "type": "string",
+              "minLength": 1
+            },
+            "platform": {
+              "type": "string",
+              "minLength": 1
+            },
+            "arch": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "profile": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name", "bundles", "dependencies", "profilePatchHash", "homePatchHash", "overlayPatchHashes"],
+          "required": [
+            "name",
+            "bundles",
+            "dependencies",
+            "profilePatchHash",
+            "homePatchHash",
+            "overlayPatchHashes"
+          ],
           "properties": {
-            "name": {"type": "string", "minLength": 1},
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
             "bundles": {
               "type": "array",
-              "items": {"$ref": "#/$defs/resolvedBundleIdentity"}
+              "items": {
+                "$ref": "#/$defs/resolvedBundleIdentity"
+              }
             },
             "dependencies": {
               "type": "array",
-              "items": {"$ref": "#/$defs/resolvedPackageIdentity"}
+              "items": {
+                "$ref": "#/$defs/resolvedPackageIdentity"
+              }
             },
             "profilePatchHash": {
               "type": "string",
@@ -145,39 +297,84 @@
             },
             "overlayPatchHashes": {
               "type": "array",
-              "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
             }
           }
         },
-        "profileLifecycle": {"$ref": "#/$defs/profileLifecycle"},
-        "supportStatus": {"enum": ["tested", "supported", "experimental", "unsupported"]},
-        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+        "profileLifecycle": {
+          "$ref": "#/$defs/profileLifecycle"
+        },
+        "supportStatus": {
+          "enum": [
+            "tested",
+            "supported",
+            "experimental",
+            "unsupported"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
       }
     },
     "targetResolveResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["snapshot"],
+      "required": [
+        "snapshot"
+      ],
       "properties": {
-        "snapshot": {"$ref": "#/$defs/targetSnapshot"}
+        "snapshot": {
+          "$ref": "#/$defs/targetSnapshot"
+        }
       }
     },
     "contractKind": {
-      "enum": ["service", "method", "event", "tool", "client-slot", "config", "package"]
+      "enum": [
+        "service",
+        "method",
+        "event",
+        "tool",
+        "client-slot",
+        "config",
+        "package"
+      ]
     },
     "contractAvailability": {
-      "enum": ["available", "unavailable", "unknown"]
+      "enum": [
+        "available",
+        "unavailable",
+        "unknown"
+      ]
     },
     "contractFact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "value", "evidenceIds"],
+      "required": [
+        "key",
+        "value",
+        "evidenceIds"
+      ],
       "properties": {
-        "key": {"type": "string", "minLength": 1},
-        "value": {"type": "string"},
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string"
+        },
         "evidenceIds": {
           "type": "array",
-          "items": {"type": "string", "minLength": 1},
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "minItems": 1,
           "uniqueItems": true
         }
@@ -186,22 +383,48 @@
     "contractReference": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "name", "qualifiedName", "availability", "score", "evidenceIds"],
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "qualifiedName",
+        "availability",
+        "score",
+        "evidenceIds"
+      ],
       "properties": {
         "id": {
           "type": "string",
           "minLength": 1,
           "description": "Inspectable contract identifier. Pass this exact value as contract.inspect.contractId."
         },
-        "kind": {"$ref": "#/$defs/contractKind"},
-        "name": {"type": "string", "minLength": 1},
-        "qualifiedName": {"type": "string", "minLength": 1},
-        "availability": {"$ref": "#/$defs/contractAvailability"},
-        "score": {"type": "integer", "minimum": 0},
-        "summary": {"type": "string"},
+        "kind": {
+          "$ref": "#/$defs/contractKind"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "qualifiedName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "availability": {
+          "$ref": "#/$defs/contractAvailability"
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "summary": {
+          "type": "string"
+        },
         "evidenceIds": {
           "type": "array",
-          "items": {"type": "string", "minLength": 1},
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         }
       }
@@ -209,21 +432,49 @@
     "contractDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "name", "qualifiedName", "availability", "facts", "evidenceIds"],
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "qualifiedName",
+        "availability",
+        "facts",
+        "evidenceIds"
+      ],
       "properties": {
-        "id": {"type": "string", "minLength": 1},
-        "kind": {"$ref": "#/$defs/contractKind"},
-        "name": {"type": "string", "minLength": 1},
-        "qualifiedName": {"type": "string", "minLength": 1},
-        "availability": {"$ref": "#/$defs/contractAvailability"},
-        "summary": {"type": "string"},
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "$ref": "#/$defs/contractKind"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "qualifiedName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "availability": {
+          "$ref": "#/$defs/contractAvailability"
+        },
+        "summary": {
+          "type": "string"
+        },
         "facts": {
           "type": "array",
-          "items": {"$ref": "#/$defs/contractFact"}
+          "items": {
+            "$ref": "#/$defs/contractFact"
+          }
         },
         "evidenceIds": {
           "type": "array",
-          "items": {"type": "string", "minLength": 1},
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         }
       }
@@ -231,22 +482,41 @@
     "contractSearchRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["target", "query"],
+      "required": [
+        "target",
+        "query"
+      ],
       "properties": {
-        "target": {"$ref": "#/$defs/targetResolveRequest"},
-        "query": {"type": "string", "minLength": 1, "pattern": "\\S"},
+        "target": {
+          "$ref": "#/$defs/targetResolveRequest"
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
         "kinds": {
           "type": "array",
-          "items": {"$ref": "#/$defs/contractKind"},
+          "items": {
+            "$ref": "#/$defs/contractKind"
+          },
           "uniqueItems": true
         },
-        "limit": {"type": "integer", "minimum": 1, "maximum": 25}
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        }
       }
     },
     "contractSearchResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["contractIndexFingerprint", "matches", "evidence"],
+      "required": [
+        "contractIndexFingerprint",
+        "matches",
+        "evidence"
+      ],
       "properties": {
         "contractIndexFingerprint": {
           "type": "string",
@@ -254,20 +524,30 @@
         },
         "matches": {
           "type": "array",
-          "items": {"$ref": "#/$defs/contractReference"}
+          "items": {
+            "$ref": "#/$defs/contractReference"
+          }
         },
         "evidence": {
           "type": "array",
-          "items": {"$ref": "#/$defs/evidence"}
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
         }
       }
     },
     "contractInspectRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["target", "contractIndexFingerprint", "contractId"],
+      "required": [
+        "target",
+        "contractIndexFingerprint",
+        "contractId"
+      ],
       "properties": {
-        "target": {"$ref": "#/$defs/targetResolveRequest"},
+        "target": {
+          "$ref": "#/$defs/targetResolveRequest"
+        },
         "contractIndexFingerprint": {
           "type": "string",
           "pattern": "^dsh-contract-index-v1:[0-9a-f]{64}$"
@@ -282,56 +562,115 @@
     "contractInspectResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["contractIndexFingerprint", "contract", "evidence"],
+      "required": [
+        "contractIndexFingerprint",
+        "contract",
+        "evidence"
+      ],
       "properties": {
         "contractIndexFingerprint": {
           "type": "string",
           "pattern": "^dsh-contract-index-v1:[0-9a-f]{64}$"
         },
-        "contract": {"$ref": "#/$defs/contractDefinition"},
+        "contract": {
+          "$ref": "#/$defs/contractDefinition"
+        },
         "evidence": {
           "type": "array",
-          "items": {"$ref": "#/$defs/evidence"}
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
         }
       }
     },
     "pluginSubjectRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "path"],
+      "required": [
+        "kind",
+        "path"
+      ],
       "properties": {
-        "kind": {"enum": ["directory", "packed"]},
-        "path": {"type": "string", "minLength": 1, "pattern": "\\S"}
+        "kind": {
+          "enum": [
+            "directory",
+            "packed"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
       }
     },
     "pluginCheckRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["target", "subject"],
+      "required": [
+        "target",
+        "subject"
+      ],
       "properties": {
-        "target": {"$ref": "#/$defs/targetResolveRequest"},
-        "subject": {"$ref": "#/$defs/pluginSubjectRequest"}
+        "target": {
+          "$ref": "#/$defs/targetResolveRequest"
+        },
+        "subject": {
+          "$ref": "#/$defs/pluginSubjectRequest"
+        }
       }
     },
     "pluginPackageRelationship": {
-      "enum": ["host-peer-required", "host-peer-optional", "artifact-dependency"]
+      "enum": [
+        "host-peer-required",
+        "host-peer-optional",
+        "artifact-dependency"
+      ]
     },
     "pluginRequirementStatus": {
-      "enum": ["satisfied", "not-required-from-host", "missing", "unproven"]
+      "enum": [
+        "satisfied",
+        "not-required-from-host",
+        "missing",
+        "version-mismatch",
+        "unproven"
+      ]
     },
     "pluginRequirementAnalysis": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["packageName", "range", "relationship", "status", "evidenceIds"],
+      "required": [
+        "packageName",
+        "range",
+        "relationship",
+        "status",
+        "evidenceIds"
+      ],
       "properties": {
-        "packageName": {"type": "string", "minLength": 1},
-        "range": {"type": "string", "minLength": 1},
-        "relationship": {"$ref": "#/$defs/pluginPackageRelationship"},
-        "status": {"$ref": "#/$defs/pluginRequirementStatus"},
-        "targetVersion": {"type": "string", "minLength": 1},
+        "packageName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "range": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relationship": {
+          "$ref": "#/$defs/pluginPackageRelationship"
+        },
+        "status": {
+          "$ref": "#/$defs/pluginRequirementStatus"
+        },
+        "targetVersion": {
+          "type": "string",
+          "minLength": 1
+        },
         "evidenceIds": {
           "type": "array",
-          "items": {"type": "string", "minLength": 1},
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         }
       }
@@ -339,7 +678,16 @@
     "pluginCheckResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["contractIndexFingerprint", "subjectCompleteness", "ruleset", "scopeComplete", "verdict", "requirements", "evidence", "candidateCodeExecuted"],
+      "required": [
+        "contractIndexFingerprint",
+        "subjectCompleteness",
+        "ruleset",
+        "scopeComplete",
+        "verdict",
+        "requirements",
+        "evidence",
+        "candidateCodeExecuted"
+      ],
       "properties": {
         "contractIndexFingerprint": {
           "type": "string",
@@ -349,421 +697,1055 @@
           "type": "string",
           "pattern": "^dsh-plugin-subject-v1:[0-9a-f]{64}$"
         },
-        "subjectCompleteness": {"enum": ["complete", "partial", "invalid"]},
-        "ruleset": {"const": "plugin-static-alpha-v1"},
-        "scopeComplete": {"const": false},
-        "verdict": {"enum": ["compatible-in-scope", "incompatible", "unproven"]},
+        "subjectCompleteness": {
+          "enum": [
+            "complete",
+            "partial",
+            "invalid"
+          ]
+        },
+        "ruleset": {
+          "const": "plugin-static-alpha-v1"
+        },
+        "scopeComplete": {
+          "const": false
+        },
+        "verdict": {
+          "enum": [
+            "compatible-in-scope",
+            "incompatible",
+            "unproven"
+          ]
+        },
         "requirements": {
           "type": "array",
-          "items": {"$ref": "#/$defs/pluginRequirementAnalysis"}
+          "items": {
+            "$ref": "#/$defs/pluginRequirementAnalysis"
+          }
         },
         "evidence": {
           "type": "array",
-          "items": {"$ref": "#/$defs/evidence"}
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
         },
-        "candidateCodeExecuted": {"const": false}
+        "candidateCodeExecuted": {
+          "const": false
+        }
       }
     },
     "operation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "state", "cancellationRequested", "diagnostics"],
+      "required": [
+        "id",
+        "kind",
+        "state",
+        "cancellationRequested",
+        "diagnostics"
+      ],
       "properties": {
-        "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
-        "kind": {"const": "plugin.verify"},
-        "state": {"enum": ["queued", "running", "input-required", "succeeded", "failed", "cancelled"]},
-        "cancellationRequested": {"type": "boolean"},
-        "progress": {"type": "number", "minimum": 0, "maximum": 1},
-        "message": {"type": "string", "maxLength": 512},
-        "result": {"$ref": "#/$defs/pluginVerifyResponse"},
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        },
+        "kind": {
+          "const": "plugin.verify"
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "running",
+            "input-required",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "cancellationRequested": {
+          "type": "boolean"
+        },
+        "progress": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "result": {
+          "$ref": "#/$defs/pluginVerifyResponse"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "operationRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id"],
+      "required": [
+        "id"
+      ],
       "properties": {
-        "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"}
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "\\S"
+        }
       }
     },
     "operationResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["operation"],
+      "required": [
+        "operation"
+      ],
       "properties": {
-        "operation": {"$ref": "#/$defs/operation"}
+        "operation": {
+          "$ref": "#/$defs/operation"
+        }
       }
     },
     "validationReport": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "diagnostics"],
+      "required": [
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "status": {"enum": ["passed", "failed", "partial"]},
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
-        "checks": {"type": "array", "items": {"type": "string"}}
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "partial"
+          ]
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "verificationReport": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "artifactFingerprint", "targetFingerprint", "executionPolicy", "checks", "diagnostics", "cleanup"],
+      "required": [
+        "status",
+        "artifactFingerprint",
+        "targetFingerprint",
+        "executionPolicy",
+        "checks",
+        "diagnostics",
+        "cleanup"
+      ],
       "properties": {
-        "status": {"enum": ["verified", "failed", "partial", "stale", "cancelled"]},
-        "artifactFingerprint": {"type": "string", "minLength": 16},
-        "targetFingerprint": {"type": "string", "minLength": 16},
+        "status": {
+          "enum": [
+            "verified",
+            "failed",
+            "partial",
+            "stale",
+            "cancelled"
+          ]
+        },
+        "artifactFingerprint": {
+          "type": "string",
+          "minLength": 16
+        },
+        "targetFingerprint": {
+          "type": "string",
+          "minLength": 16
+        },
         "lifecycleFingerprint": {
           "type": "string",
           "pattern": "^dsh-profile-lifecycle-v1:[0-9a-f]{64}$"
         },
-        "executionPolicy": {"enum": ["safe", "trusted"]},
+        "executionPolicy": {
+          "enum": [
+            "safe",
+            "trusted"
+          ]
+        },
         "checks": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "status"],
+            "required": [
+              "id",
+              "status"
+            ],
             "properties": {
-              "id": {"enum": ["structure", "manifest", "dependency", "contract", "build", "package", "install", "compose", "boot", "visibility", "behavior"]},
-              "status": {"enum": ["passed", "failed", "skipped"]},
-              "reason": {"type": "string"}
+              "id": {
+                "enum": [
+                  "structure",
+                  "manifest",
+                  "dependency",
+                  "contract",
+                  "build",
+                  "package",
+                  "install",
+                  "compose",
+                  "boot",
+                  "visibility",
+                  "behavior"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "passed",
+                  "failed",
+                  "skipped"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
             }
           }
         },
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
-        "cleanup": {"enum": ["succeeded", "failed", "not-required"]}
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        },
+        "cleanup": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "not-required"
+          ]
+        }
       }
     },
     "responseEnvelope": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "snapshotFingerprint": {"type": "string", "minLength": 16},
-        "status": {"enum": ["ok", "failed", "partial", "stale", "cancelled"]},
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshotFingerprint": {
+          "type": "string",
+          "minLength": 16
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "failed",
+            "partial",
+            "stale",
+            "cancelled"
+          ]
+        },
         "data": {},
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "targetResolveSuccessResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "data", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "snapshotFingerprint",
+        "status",
+        "data",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
         "snapshotFingerprint": {
           "type": "string",
           "pattern": "^dsh-target-v2:[0-9a-f]{64}$"
         },
-        "status": {"const": "ok"},
-        "data": {"$ref": "#/$defs/targetResolveResult"},
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+        "status": {
+          "const": "ok"
+        },
+        "data": {
+          "$ref": "#/$defs/targetResolveResult"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "targetResolveFailureResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "status": {"const": "failed"},
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "failed"
+        },
         "diagnostics": {
           "type": "array",
           "minItems": 1,
-          "items": {"$ref": "#/$defs/diagnostic"}
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
         }
       }
     },
     "targetResolveResponse": {
       "oneOf": [
-        {"$ref": "#/$defs/targetResolveSuccessResponse"},
-        {"$ref": "#/$defs/targetResolveFailureResponse"}
+        {
+          "$ref": "#/$defs/targetResolveSuccessResponse"
+        },
+        {
+          "$ref": "#/$defs/targetResolveFailureResponse"
+        }
       ]
     },
     "contractSearchSuccessResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "data", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "snapshotFingerprint",
+        "status",
+        "data",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "snapshotFingerprint": {"type": "string", "pattern": "^dsh-target-v2:[0-9a-f]{64}$"},
-        "status": {"const": "ok"},
-        "data": {"$ref": "#/$defs/contractSearchResult"},
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshotFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-target-v2:[0-9a-f]{64}$"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "data": {
+          "$ref": "#/$defs/contractSearchResult"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "contractSearchFailureResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "status": {"const": "failed"},
-        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "failed"
+        },
+        "diagnostics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "contractSearchStaleResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "snapshotFingerprint",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "snapshotFingerprint": {"type": "string", "pattern": "^dsh-target-v2:[0-9a-f]{64}$"},
-        "status": {"const": "stale"},
-        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshotFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-target-v2:[0-9a-f]{64}$"
+        },
+        "status": {
+          "const": "stale"
+        },
+        "diagnostics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "contractSearchResponse": {
       "oneOf": [
-        {"$ref": "#/$defs/contractSearchSuccessResponse"},
-        {"$ref": "#/$defs/contractSearchFailureResponse"},
-        {"$ref": "#/$defs/contractSearchStaleResponse"}
+        {
+          "$ref": "#/$defs/contractSearchSuccessResponse"
+        },
+        {
+          "$ref": "#/$defs/contractSearchFailureResponse"
+        },
+        {
+          "$ref": "#/$defs/contractSearchStaleResponse"
+        }
       ]
     },
     "contractInspectSuccessResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "data", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "snapshotFingerprint",
+        "status",
+        "data",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "snapshotFingerprint": {"type": "string", "pattern": "^dsh-target-v2:[0-9a-f]{64}$"},
-        "status": {"const": "ok"},
-        "data": {"$ref": "#/$defs/contractInspectResult"},
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshotFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-target-v2:[0-9a-f]{64}$"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "data": {
+          "$ref": "#/$defs/contractInspectResult"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "contractInspectFailureResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "status": {"const": "failed"},
-        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "failed"
+        },
+        "diagnostics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "contractInspectStaleResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "snapshotFingerprint",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "snapshotFingerprint": {"type": "string", "pattern": "^dsh-target-v2:[0-9a-f]{64}$"},
-        "status": {"const": "stale"},
-        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshotFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-target-v2:[0-9a-f]{64}$"
+        },
+        "status": {
+          "const": "stale"
+        },
+        "diagnostics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "contractInspectResponse": {
       "oneOf": [
-        {"$ref": "#/$defs/contractInspectSuccessResponse"},
-        {"$ref": "#/$defs/contractInspectFailureResponse"},
-        {"$ref": "#/$defs/contractInspectStaleResponse"}
+        {
+          "$ref": "#/$defs/contractInspectSuccessResponse"
+        },
+        {
+          "$ref": "#/$defs/contractInspectFailureResponse"
+        },
+        {
+          "$ref": "#/$defs/contractInspectStaleResponse"
+        }
       ]
     },
     "pluginCheckSuccessResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "data", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "snapshotFingerprint",
+        "status",
+        "data",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "snapshotFingerprint": {"type": "string", "pattern": "^dsh-target-v2:[0-9a-f]{64}$"},
-        "status": {"const": "ok"},
-        "data": {"$ref": "#/$defs/pluginCheckResult"},
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshotFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-target-v2:[0-9a-f]{64}$"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "data": {
+          "$ref": "#/$defs/pluginCheckResult"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "pluginCheckFailureResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "status": {"const": "failed"},
-        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "failed"
+        },
+        "diagnostics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "pluginCheckStaleResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "snapshotFingerprint",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "snapshotFingerprint": {"type": "string", "pattern": "^dsh-target-v2:[0-9a-f]{64}$"},
-        "status": {"const": "stale"},
-        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshotFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-target-v2:[0-9a-f]{64}$"
+        },
+        "status": {
+          "const": "stale"
+        },
+        "diagnostics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "pluginCheckResponse": {
       "oneOf": [
-        {"$ref": "#/$defs/pluginCheckSuccessResponse"},
-        {"$ref": "#/$defs/pluginCheckFailureResponse"},
-        {"$ref": "#/$defs/pluginCheckStaleResponse"}
+        {
+          "$ref": "#/$defs/pluginCheckSuccessResponse"
+        },
+        {
+          "$ref": "#/$defs/pluginCheckFailureResponse"
+        },
+        {
+          "$ref": "#/$defs/pluginCheckStaleResponse"
+        }
       ]
     },
     "pluginPackedSubjectRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "path"],
+      "required": [
+        "kind",
+        "path"
+      ],
       "properties": {
-        "kind": {"const": "packed"},
-        "path": {"type": "string", "minLength": 1, "pattern": "\\S"}
+        "kind": {
+          "const": "packed"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
       }
     },
     "pluginVisibilityAssertion": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "name"],
+      "required": [
+        "kind",
+        "name"
+      ],
       "properties": {
-        "kind": {"enum": ["host-service", "agent-tool"]},
-        "name": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}
+        "kind": {
+          "enum": [
+            "host-service",
+            "agent-tool"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "\\S"
+        }
       }
     },
     "pluginVerifyRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["target", "subject", "executionPolicy"],
+      "required": [
+        "target",
+        "subject",
+        "executionPolicy"
+      ],
       "properties": {
-        "target": {"$ref": "#/$defs/targetResolveRequest"},
-        "subject": {"$ref": "#/$defs/pluginPackedSubjectRequest"},
-        "executionPolicy": {"const": "safe"},
+        "target": {
+          "$ref": "#/$defs/targetResolveRequest"
+        },
+        "subject": {
+          "$ref": "#/$defs/pluginPackedSubjectRequest"
+        },
+        "executionPolicy": {
+          "const": "safe"
+        },
         "visibilityAssertions": {
           "type": "array",
           "minItems": 1,
           "maxItems": 32,
           "uniqueItems": true,
-          "items": {"$ref": "#/$defs/pluginVisibilityAssertion"}
+          "items": {
+            "$ref": "#/$defs/pluginVisibilityAssertion"
+          }
         }
       }
     },
     "pluginVerifySuccessResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "snapshotFingerprint", "status", "data", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "snapshotFingerprint",
+        "status",
+        "data",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "snapshotFingerprint": {"type": "string", "pattern": "^dsh-target-v2:[0-9a-f]{64}$"},
-        "status": {"const": "ok"},
-        "data": {"$ref": "#/$defs/verificationReport"},
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshotFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-target-v2:[0-9a-f]{64}$"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "data": {
+          "$ref": "#/$defs/verificationReport"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "pluginVerifyFailureResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "status": {"const": "failed"},
-        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "failed"
+        },
+        "diagnostics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "pluginVerifyResponse": {
       "oneOf": [
-        {"$ref": "#/$defs/pluginVerifySuccessResponse"},
-        {"$ref": "#/$defs/pluginVerifyFailureResponse"}
+        {
+          "$ref": "#/$defs/pluginVerifySuccessResponse"
+        },
+        {
+          "$ref": "#/$defs/pluginVerifyFailureResponse"
+        }
       ]
     },
     "pluginVerifyStartSuccessResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "data", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "data",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "status": {"const": "ok"},
-        "data": {"$ref": "#/$defs/operationResult"},
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "ok"
+        },
+        "data": {
+          "$ref": "#/$defs/operationResult"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "pluginVerifyStartFailureResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "status": {"const": "failed"},
-        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "failed"
+        },
+        "diagnostics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "pluginVerifyStartResponse": {
       "oneOf": [
-        {"$ref": "#/$defs/pluginVerifyStartSuccessResponse"},
-        {"$ref": "#/$defs/pluginVerifyStartFailureResponse"}
+        {
+          "$ref": "#/$defs/pluginVerifyStartSuccessResponse"
+        },
+        {
+          "$ref": "#/$defs/pluginVerifyStartFailureResponse"
+        }
       ]
     },
     "operationGetSuccessResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "data", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "data",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "status": {"const": "ok"},
-        "data": {"$ref": "#/$defs/operationResult"},
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "ok"
+        },
+        "data": {
+          "$ref": "#/$defs/operationResult"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "operationGetFailureResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "status": {"const": "failed"},
-        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "failed"
+        },
+        "diagnostics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "operationGetResponse": {
       "oneOf": [
-        {"$ref": "#/$defs/operationGetSuccessResponse"},
-        {"$ref": "#/$defs/operationGetFailureResponse"}
+        {
+          "$ref": "#/$defs/operationGetSuccessResponse"
+        },
+        {
+          "$ref": "#/$defs/operationGetFailureResponse"
+        }
       ]
     },
     "operationCancelSuccessResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "data", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "data",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "status": {"const": "ok"},
-        "data": {"$ref": "#/$defs/operationResult"},
-        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "ok"
+        },
+        "data": {
+          "$ref": "#/$defs/operationResult"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "operationCancelFailureResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocolVersion", "requestId", "status", "diagnostics"],
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "status",
+        "diagnostics"
+      ],
       "properties": {
-        "protocolVersion": {"const": "1"},
-        "requestId": {"type": "string", "minLength": 1},
-        "status": {"const": "failed"},
-        "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/diagnostic"}}
+        "protocolVersion": {
+          "const": "1"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "failed"
+        },
+        "diagnostics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
       }
     },
     "operationCancelResponse": {
       "oneOf": [
-        {"$ref": "#/$defs/operationCancelSuccessResponse"},
-        {"$ref": "#/$defs/operationCancelFailureResponse"}
+        {
+          "$ref": "#/$defs/operationCancelSuccessResponse"
+        },
+        {
+          "$ref": "#/$defs/operationCancelFailureResponse"
+        }
       ]
     }
   },
