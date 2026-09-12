@@ -84,6 +84,7 @@ export async function measureSample({ caseName, phase, iteration, concurrency, o
       arrayBuffersBytes: memory.arrayBuffers,
     }),
     eventLoop: Object.freeze({
+      scope: 'coordinator-thread',
       utilization: eventLoop.utilization,
       activeMs: eventLoop.active,
       idleMs: eventLoop.idle,
