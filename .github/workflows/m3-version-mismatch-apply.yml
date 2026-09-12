@@ -1,0 +1,188 @@
+name: M3.2 Apply Temporary
+
+on:
+  push:
+    branches:
+      - feat/m3-version-mismatch
+    paths:
+      - .github/workflows/m3-version-mismatch-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: feat/m3-version-mismatch
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        with:
+          install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          package-manager-cache: false
+
+      - name: Apply bounded M3.2 source and Protocol changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one replacement target, found {count}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8', newline='\n')
+
+          replace_once(
+              'src/model/plugin-verify.ts',
+              """  const hasMissingRequirement = result.requirements.some(requirement => requirement.status === 'missing')
+          const hasUnprovenRequirement = result.requirements.some(requirement => requirement.status === 'unproven')
+          checks = replaceCheck(checks, hasMissingRequirement
+            ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-missing' }
+            : hasUnprovenRequirement
+              ? { id: 'dependency', status: 'skipped', reason: 'static-host-requirement-unproven' }
+              : { id: 'dependency', status: 'passed' })
+          """,
+              """  const hasMissingRequirement = result.requirements.some(requirement => requirement.status === 'missing')
+          const hasVersionMismatch = result.requirements.some(requirement => requirement.status === 'version-mismatch')
+          const hasUnprovenRequirement = result.requirements.some(requirement => requirement.status === 'unproven')
+          checks = replaceCheck(checks, hasMissingRequirement
+            ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-missing' }
+            : hasVersionMismatch
+              ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-version-mismatch' }
+              : hasUnprovenRequirement
+                ? { id: 'dependency', status: 'skipped', reason: 'static-host-requirement-unproven' }
+                : { id: 'dependency', status: 'passed' })
+          """,
+          )
+
+          schema_path = Path('spec/schemas/v1/toolchain-protocol.schema.json')
+          schema = json.loads(schema_path.read_text(encoding='utf-8'))
+          statuses = schema['$defs']['pluginRequirementStatus']['enum']
+          expected_statuses = ['satisfied', 'not-required-from-host', 'missing', 'unproven']
+          if statuses != expected_statuses:
+              raise SystemExit(f'unexpected pluginRequirementStatus enum: {statuses!r}')
+          schema['$defs']['pluginRequirementStatus']['enum'] = [
+              'satisfied',
+              'not-required-from-host',
+              'missing',
+              'version-mismatch',
+              'unproven',
+          ]
+          schema_path.write_text(
+              json.dumps(schema, indent=2, ensure_ascii=False) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+
+          old_range = """The static alpha range adapter preserves exact string version equality and MAY additionally prove `satisfied` when the exact target version satisfies the declared range under canonical npm SemVer semantics. The adapter MUST use normal npm prerelease semantics and MUST NOT enable prerelease inclusion, loose parsing, coercion, or DSH-specific range exceptions. A canonical non-match or malformed version/range remains `unproven` in this positive-proof slice; promoting a non-match to proven incompatibility requires a separately reviewed Protocol/reporting change.
+
+          Verdict precedence is conservative: proven required-host incompatibility wins; otherwise any incomplete subject or material unproven relation yields `unproven`; only the checks actually covered by the current ruleset may yield `compatible-in-scope`. `compatible-in-scope` MUST NOT be presented as runtime verification or as proof that candidate code boots successfully.
+          """
+          new_range = """The static alpha range adapter first preserves exact string version equality, including exact non-SemVer identities. Otherwise, when the exact target version and the declared relation are both valid under canonical npm SemVer parsing, the adapter MUST use normal npm prerelease semantics and MUST NOT enable prerelease inclusion, loose parsing, coercion, or DSH-specific range exceptions. A canonical satisfying relation is `satisfied`; a canonical valid non-match is `version-mismatch`; malformed, unparseable, or ambiguous version evidence remains `unproven` and MUST NOT throw.
+
+          `version-mismatch` is a proven incompatibility for an installed Host peer. A required Host peer with a mismatching exact version is incompatible. An optional Host peer remains non-blocking when absent, but once it is installed its declared range applies and a canonical non-match is likewise incompatible for that exact target. Such findings MUST emit `PLUGIN_DSH_VERSION_MISMATCH` with severity `error`; inconclusive version evidence continues to use `PLUGIN_DSH_VERSION_UNPROVEN` with severity `warning`.
+
+          Verdict precedence is conservative: any proven Host incompatibility wins, including an absent required Host peer or an installed required/optional Host peer with `version-mismatch`; otherwise any incomplete subject or material `unproven` relation yields `unproven`; only the checks actually covered by the current ruleset may yield `compatible-in-scope`. `compatible-in-scope` MUST NOT be presented as runtime verification or as proof that candidate code boots successfully.
+          """
+          replace_once('spec/protocol.md', old_range, new_range)
+
+          verification_marker = """Implementations MAY skip stages that do not apply, but MUST record the skip and reason. They MUST NOT imply an unexecuted stage passed.
+          """
+          verification_replacement = """For application-level reduction of static Host peer evidence, the `dependency` stage MUST distinguish three cases in deterministic order: an absent required Host peer is `failed / static-host-requirement-missing`; otherwise any installed Host peer with `version-mismatch` is `failed / static-host-requirement-version-mismatch`; otherwise material `unproven` Host version evidence is `skipped / static-host-requirement-unproven`. A proven version mismatch MUST NOT be relabelled as static uncertainty, and successful runtime observations MUST NOT override the plugin's declared incompatible Host peer range.
+
+          Implementations MAY skip stages that do not apply, but MUST record the skip and reason. They MUST NOT imply an unexecuted stage passed.
+          """
+          replace_once('spec/verification.md', verification_marker, verification_replacement)
+
+          example = {
+              'protocolVersion': '1',
+              'requestId': 'example-plugin-version-mismatch',
+              'snapshotFingerprint': 'dsh-target-v2:' + ('a' * 64),
+              'status': 'ok',
+              'data': {
+                  'contractIndexFingerprint': 'dsh-contract-index-v1:' + ('b' * 64),
+                  'subjectCompleteness': 'complete',
+                  'ruleset': 'plugin-static-alpha-v1',
+                  'scopeComplete': False,
+                  'verdict': 'incompatible',
+                  'requirements': [{
+                      'packageName': '@deepseek-ai/cordis',
+                      'range': '^5.0.0',
+                      'relationship': 'host-peer-required',
+                      'status': 'version-mismatch',
+                      'targetVersion': '4.0.2',
+                      'evidenceIds': [],
+                  }],
+                  'evidence': [],
+                  'candidateCodeExecuted': False,
+              },
+              'diagnostics': [{
+                  'code': 'PLUGIN_DSH_VERSION_MISMATCH',
+                  'severity': 'error',
+                  'domain': 'plugin',
+                  'summary': 'Installed required Host peer @deepseek-ai/cordis@4.0.2 does not satisfy declared npm range ^5.0.0.',
+              }],
+          }
+          example_path = Path('spec/examples/v1/plugin-check-version-mismatch.json')
+          example_path.write_text(
+              json.dumps(example, indent=2, ensure_ascii=False) + '\n',
+              encoding='utf-8',
+              newline='\n',
+          )
+
+          check_protocol_old = """  {
+            url: new URL('spec/examples/v1/target-failed.json', root),
+            envelopeRef: '#/$defs/targetResolveResponse',
+          },
+          ]
+          """
+          check_protocol_new = """  {
+            url: new URL('spec/examples/v1/target-failed.json', root),
+            envelopeRef: '#/$defs/targetResolveResponse',
+          },
+          {
+            url: new URL('spec/examples/v1/plugin-check-version-mismatch.json', root),
+            envelopeRef: '#/$defs/pluginCheckResponse',
+            dataRef: '#/$defs/pluginCheckResult',
+          },
+          ]
+          """
+          replace_once('scripts/check-protocol.mjs', check_protocol_old, check_protocol_new)
+          PY
+
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate Protocol types from canonical schema
+        run: pnpm generate
+
+      - name: Verify complete repository quality gate
+        run: pnpm check
+
+      - name: Commit generated M3.2 implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/model/plugin-verify.ts spec/protocol.md spec/verification.md spec/schemas/v1/toolchain-protocol.schema.json spec/examples/v1/plugin-check-version-mismatch.json scripts/check-protocol.mjs src/protocol/generated.ts
+          git diff --cached --check
+          git diff --cached --quiet && { echo "No generated changes to commit"; exit 1; }
+          git commit -m "feat(protocol): classify proven host version mismatches"
+          git push origin HEAD:feat/m3-version-mismatch
