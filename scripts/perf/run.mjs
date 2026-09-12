@@ -257,7 +257,6 @@ function summarizeCase(caseName, concurrency, samples) {
     memory: Object.freeze({
       peakRssBytes: Math.max(...selected.map(sample => sample.memory.rssBytes)),
       peakHeapUsedBytes: Math.max(...selected.map(sample => sample.memory.heapUsedBytes)),
-      peakMaxRssKiB: Math.max(...selected.map(sample => sample.memory.maxRssKiB)),
     }),
     eventLoopUtilization: summarizeNumbers(selected.map(sample => sample.eventLoop.utilization)),
   })
@@ -275,6 +274,9 @@ function createSummary(profile, samples, selectedCases) {
     iterations: profile.iterations,
     concurrency: profile.concurrency,
     sampleCount: samples.length,
+    runMemory: Object.freeze({
+      peakMaxRssKiB: process.resourceUsage().maxRSS,
+    }),
     cases: Object.freeze(cases),
   })
 }
@@ -284,6 +286,7 @@ function markdownSummary(summary) {
     '# DSH Toolchain performance',
     '',
     `Profile: \`${summary.profile}\` · samples: **${summary.sampleCount}** · cases: **${summary.cases.length}**`,
+    `Process max RSS: **${(summary.runMemory.peakMaxRssKiB / 1024).toFixed(2)} MiB**`,
     '',
     '| Case | concurrency | outcome | errors | p50 ms | p95 ms | p99 ms | ops/s | peak RSS MiB |',
     '| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
@@ -308,7 +311,7 @@ async function writeEvidence(outputDir, environment, samples, summary) {
 async function persistEvidence(outputDir, environment, samples, profile, selectedCases) {
   const summary = createSummary(profile, samples, selectedCases)
   await writeEvidence(outputDir, environment, samples, summary)
-  process.stdout.write(`DSH_PERF_SUMMARY ${JSON.stringify({ schema: summary.schema, profile: summary.profile, sampleCount: summary.sampleCount, cases: summary.cases })}\n`)
+  process.stdout.write(`DSH_PERF_SUMMARY ${JSON.stringify({ schema: summary.schema, profile: summary.profile, sampleCount: summary.sampleCount, runMemory: summary.runMemory, cases: summary.cases })}\n`)
   return summary
 }
 
