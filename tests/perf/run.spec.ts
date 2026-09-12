@@ -42,6 +42,8 @@ describe('performance receipt runner', () => {
       errorSamples: 0,
     })
     expect(result.summary.cases[0]?.latencyMs.count).toBeGreaterThan(0)
+    expect(result.summary.cases[0]?.memory).not.toHaveProperty('peakMaxRssKiB')
+    expect(result.summary.runMemory.peakMaxRssKiB).toBeGreaterThan(0)
 
     const environmentText = await readFile(path.join(outputDir, 'environment.json'), 'utf8')
     const samplesText = await readFile(path.join(outputDir, 'samples.jsonl'), 'utf8')
