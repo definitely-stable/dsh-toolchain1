@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  corpusProtocolEvidence,
   parseToolchainEnvelope,
   summarizeCorpusResults,
 } from '../../scripts/real-plugin-corpus/results.mjs'
 
-function staticEnvelope(verdict: 'compatible-in-scope' | 'incompatible' | 'unproven') {
+function staticEnvelope(
+  verdict: 'compatible-in-scope' | 'incompatible' | 'unproven',
+  options: { readonly subjectFingerprint?: string | null; readonly subjectCompleteness?: 'complete' | 'partial' | 'invalid' } = {},
+) {
   const diagnostic = verdict === 'compatible-in-scope'
     ? []
     : [{
@@ -14,15 +18,18 @@ function staticEnvelope(verdict: 'compatible-in-scope' | 'incompatible' | 'unpro
         domain: 'plugin',
         summary: 'compatibility reason',
       }]
+  const subjectFingerprint = options.subjectFingerprint === null
+    ? {}
+    : { subjectFingerprint: options.subjectFingerprint ?? `dsh-plugin-subject-v1:${'b'.repeat(64)}` }
   return JSON.stringify({
     protocolVersion: '1',
     status: 'ok',
     snapshotFingerprint: `dsh-target-v2:${'a'.repeat(64)}`,
     data: {
       verdict,
-      subjectFingerprint: `dsh-plugin-subject-v1:${'b'.repeat(64)}`,
+      ...subjectFingerprint,
       candidateCodeExecuted: false,
-      subjectCompleteness: 'complete',
+      subjectCompleteness: options.subjectCompleteness ?? 'complete',
       requirements: [
         {
           packageName: '@deepseek-ai/dsh-settings',
@@ -38,7 +45,7 @@ function staticEnvelope(verdict: 'compatible-in-scope' | 'incompatible' | 'unpro
   })
 }
 
-function verifyEnvelope(status: 'verified' | 'partial' | 'failed') {
+function verifyEnvelope(status: 'verified' | 'partial' | 'failed', artifactHash = 'd'.repeat(64)) {
   const failed = status === 'failed'
   const partial = status === 'partial'
   return JSON.stringify({
@@ -48,7 +55,7 @@ function verifyEnvelope(status: 'verified' | 'partial' | 'failed') {
     data: {
       status,
       cleanup: 'succeeded',
-      artifactFingerprint: `dsh-plugin-artifact-v1:${'d'.repeat(64)}`,
+      artifactFingerprint: `dsh-plugin-artifact-v1:${artifactHash}`,
       lifecycleFingerprint: `dsh-profile-lifecycle-v1:${'e'.repeat(64)}`,
       checks: [
         { id: 'structure', status: 'passed' },
@@ -91,6 +98,18 @@ describe('real plugin corpus evidence semantics', () => {
     },
   )
 
+  it('accepts observational unproven evidence when optional subject identity is unavailable', () => {
+    const parsed = parseToolchainEnvelope(staticEnvelope('unproven', {
+      subjectFingerprint: null,
+      subjectCompleteness: 'partial',
+    }), 'plugin.check')
+
+    expect(parsed.semanticOutcome).toBe('unproven')
+    expect(parsed.subjectFingerprint).toBeUndefined()
+    expect(parsed.subjectCompleteness).toBe('partial')
+    expect(parsed.harnessFailure).toBe(false)
+  })
+
   it.each(['verified', 'partial', 'failed'] as const)(
     'treats plugin.verify status %s as valid evidence when cleanup/evidence are present',
     status => {
@@ -102,6 +121,26 @@ describe('real plugin corpus evidence semantics', () => {
       expect(parsed.cleanup).toBe('succeeded')
     },
   )
+
+  it('binds verification artifact identity to the acquired artifact bytes', () => {
+    const acquiredHash = 'd'.repeat(64)
+    const parsed = parseToolchainEnvelope(verifyEnvelope('partial', acquiredHash), 'plugin.verify')
+
+    expect(() => corpusProtocolEvidence(parsed, acquiredHash)).not.toThrow()
+    expect(() => corpusProtocolEvidence(parsed, 'f'.repeat(64))).toThrow(/artifact fingerprint mismatch/i)
+  })
+
+  it('persists canonical verification checks in durable protocol evidence', () => {
+    const acquiredHash = 'd'.repeat(64)
+    const parsed = parseToolchainEnvelope(verifyEnvelope('partial', acquiredHash), 'plugin.verify')
+    const evidence = corpusProtocolEvidence(parsed, acquiredHash)
+
+    expect(evidence.checks).toEqual(parsed.checks)
+    expect(evidence.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'boot', status: 'passed' }),
+      expect.objectContaining({ id: 'contract', status: 'skipped' }),
+    ]))
+  })
 
   it('rejects malformed or non-Protocol child output as harness failure', () => {
     expect(() => parseToolchainEnvelope('not-json', 'plugin.check')).toThrow(/protocol json/i)
