@@ -42,11 +42,17 @@ describe('architecture import policy', () => {
     ])
   })
 
-  it('allows only the explicitly reviewed semver dependency from semantic core', () => {
+  it('allows the reviewed semver dependency only from the model layer', () => {
     expect(checkSourceImportPolicy([
       { path: 'src/model/version.ts', source: "import { satisfies } from 'semver'\nexport const accepted = satisfies('4.0.2', '^4.0.1')\n" },
+      { path: 'src/kernel/version.ts', source: "import { satisfies } from 'semver'\nexport const accepted = satisfies('4.0.2', '^4.0.1')\n" },
       { path: 'src/model/arbitrary.ts', source: "import 'left-pad'\n" },
     ])).toEqual([
+      {
+        file: 'src/kernel/version.ts',
+        specifier: 'semver',
+        rule: 'semantic-external-dependency',
+      },
       {
         file: 'src/model/arbitrary.ts',
         specifier: 'left-pad',
