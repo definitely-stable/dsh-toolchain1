@@ -49,28 +49,28 @@ jobs:
                   raise SystemExit(f'{path}: expected one replacement target, found {count}')
               p.write_text(text.replace(old, new, 1), encoding='utf-8', newline='\n')
 
-          replace_once(
-              'src/model/plugin-verify.ts',
-              """  const hasMissingRequirement = result.requirements.some(requirement => requirement.status === 'missing')
-          const hasUnprovenRequirement = result.requirements.some(requirement => requirement.status === 'unproven')
-          checks = replaceCheck(checks, hasMissingRequirement
-            ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-missing' }
-            : hasUnprovenRequirement
-              ? { id: 'dependency', status: 'skipped', reason: 'static-host-requirement-unproven' }
-              : { id: 'dependency', status: 'passed' })
-          """,
-              """  const hasMissingRequirement = result.requirements.some(requirement => requirement.status === 'missing')
-          const hasVersionMismatch = result.requirements.some(requirement => requirement.status === 'version-mismatch')
-          const hasUnprovenRequirement = result.requirements.some(requirement => requirement.status === 'unproven')
-          checks = replaceCheck(checks, hasMissingRequirement
-            ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-missing' }
-            : hasVersionMismatch
-              ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-version-mismatch' }
-              : hasUnprovenRequirement
-                ? { id: 'dependency', status: 'skipped', reason: 'static-host-requirement-unproven' }
-                : { id: 'dependency', status: 'passed' })
-          """,
-          )
+          old_verify = '\n'.join([
+              "  const hasMissingRequirement = result.requirements.some(requirement => requirement.status === 'missing')",
+              "  const hasUnprovenRequirement = result.requirements.some(requirement => requirement.status === 'unproven')",
+              "  checks = replaceCheck(checks, hasMissingRequirement",
+              "    ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-missing' }",
+              "    : hasUnprovenRequirement",
+              "      ? { id: 'dependency', status: 'skipped', reason: 'static-host-requirement-unproven' }",
+              "      : { id: 'dependency', status: 'passed' })",
+          ])
+          new_verify = '\n'.join([
+              "  const hasMissingRequirement = result.requirements.some(requirement => requirement.status === 'missing')",
+              "  const hasVersionMismatch = result.requirements.some(requirement => requirement.status === 'version-mismatch')",
+              "  const hasUnprovenRequirement = result.requirements.some(requirement => requirement.status === 'unproven')",
+              "  checks = replaceCheck(checks, hasMissingRequirement",
+              "    ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-missing' }",
+              "    : hasVersionMismatch",
+              "      ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-version-mismatch' }",
+              "      : hasUnprovenRequirement",
+              "        ? { id: 'dependency', status: 'skipped', reason: 'static-host-requirement-unproven' }",
+              "        : { id: 'dependency', status: 'passed' })",
+          ])
+          replace_once('src/model/plugin-verify.ts', old_verify, new_verify)
 
           schema_path = Path('spec/schemas/v1/toolchain-protocol.schema.json')
           schema = json.loads(schema_path.read_text(encoding='utf-8'))
@@ -147,23 +147,25 @@ jobs:
               newline='\n',
           )
 
-          check_protocol_old = """  {
-            url: new URL('spec/examples/v1/target-failed.json', root),
-            envelopeRef: '#/$defs/targetResolveResponse',
-          },
-          ]
-          """
-          check_protocol_new = """  {
-            url: new URL('spec/examples/v1/target-failed.json', root),
-            envelopeRef: '#/$defs/targetResolveResponse',
-          },
-          {
-            url: new URL('spec/examples/v1/plugin-check-version-mismatch.json', root),
-            envelopeRef: '#/$defs/pluginCheckResponse',
-            dataRef: '#/$defs/pluginCheckResult',
-          },
-          ]
-          """
+          check_protocol_old = '\n'.join([
+              '  {',
+              "    url: new URL('spec/examples/v1/target-failed.json', root),",
+              "    envelopeRef: '#/$defs/targetResolveResponse',",
+              '  },',
+              ']',
+          ])
+          check_protocol_new = '\n'.join([
+              '  {',
+              "    url: new URL('spec/examples/v1/target-failed.json', root),",
+              "    envelopeRef: '#/$defs/targetResolveResponse',",
+              '  },',
+              '  {',
+              "    url: new URL('spec/examples/v1/plugin-check-version-mismatch.json', root),",
+              "    envelopeRef: '#/$defs/pluginCheckResponse',",
+              "    dataRef: '#/$defs/pluginCheckResult',",
+              '  },',
+              ']',
+          ])
           replace_once('scripts/check-protocol.mjs', check_protocol_old, check_protocol_new)
           PY
 
