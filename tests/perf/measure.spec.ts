@@ -31,6 +31,7 @@ describe('performance sample measurement', () => {
     expect(measured.sample.memory.rssBytes).toBeGreaterThan(0)
     expect(measured.sample.memory.heapUsedBytes).toBeGreaterThan(0)
     expect(measured.sample.memory).not.toHaveProperty('maxRssKiB')
+    expect(measured.sample.eventLoop.scope).toBe('coordinator-thread')
     expect(measured.sample.eventLoop.utilization).toBeGreaterThanOrEqual(0)
     expect(measured.sample.eventLoop.utilization).toBeLessThanOrEqual(1)
   })

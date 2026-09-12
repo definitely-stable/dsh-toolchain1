@@ -188,6 +188,32 @@ describe('performance receipt runner', () => {
     expect(samplesText).toContain('"outcome":"error"')
     expect(summary.cases[0]).toMatchObject({ outcome: 'error', errorSamples: 1 })
   })
+
+  it('persists partial evidence when a deterministic output cannot be JSON fingerprinted', async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), 'dsh-perf-invalid-fingerprint-'))
+    temporaryDirectories.push(outputDir)
+
+    await expect(runPerfSuite({
+      profileName: 'smoke',
+      outputDir,
+      cases: [{
+        name: 'bigint-control',
+        run: async () => 1n,
+      }],
+    })).rejects.toThrow()
+
+    const samplesText = await readFile(path.join(outputDir, 'samples.jsonl'), 'utf8')
+    const summary = JSON.parse(await readFile(path.join(outputDir, 'summary.json'), 'utf8')) as {
+      cases: Array<{ caseName: string; outcome: string; errorSamples: number }>
+    }
+
+    expect(samplesText).toContain('"outcome":"error"')
+    expect(summary.cases[0]).toMatchObject({
+      caseName: 'bigint-control',
+      outcome: 'error',
+      errorSamples: 1,
+    })
+  })
 })
 
 describe('search benchmark lane guard', () => {
