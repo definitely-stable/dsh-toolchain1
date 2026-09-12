@@ -16,6 +16,7 @@ import {
   initializeCorpusEvidence,
 } from './evidence.mjs'
 import {
+  corpusProtocolEvidence,
   parseToolchainEnvelope,
   summarizeCorpusResults,
 } from './results.mjs'
@@ -211,6 +212,7 @@ function harnessFailureRecord(entry, operation, error, extra = {}) {
 }
 
 function semanticRecord(entry, operation, parsed, artifact) {
+  const protocolEvidence = corpusProtocolEvidence(parsed, artifact.sha256)
   return Object.freeze({
     pluginId: entry.id,
     packageName: entry.packageName,
@@ -224,13 +226,7 @@ function semanticRecord(entry, operation, parsed, artifact) {
     harnessFailure: false,
     acquisition: artifact.acquisition,
     artifactSha256: artifact.sha256,
-    targetFingerprint: parsed.targetFingerprint,
-    ...(parsed.subjectFingerprint ? { subjectFingerprint: parsed.subjectFingerprint } : {}),
-    ...(parsed.artifactFingerprint ? { artifactFingerprint: parsed.artifactFingerprint } : {}),
-    ...(parsed.lifecycleFingerprint ? { lifecycleFingerprint: parsed.lifecycleFingerprint } : {}),
-    ...(parsed.cleanup ? { cleanup: parsed.cleanup } : {}),
-    ...(Array.isArray(parsed.requirements) ? { requirements: parsed.requirements } : {}),
-    diagnostics: parsed.diagnostics,
+    ...protocolEvidence,
   })
 }
 
