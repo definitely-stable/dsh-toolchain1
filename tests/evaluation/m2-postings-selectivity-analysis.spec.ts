@@ -9,9 +9,8 @@ import { M2_RETRIEVAL_R1 } from './m2-retrieval-corpus.js'
 import { createFrozenM2RetrievalIndex } from './m2-retrieval-index.js'
 
 function requiredIntentMatches(tokenCount: number): number {
-  if (tokenCount <= 1) return 1
-  if (tokenCount <= 3) return 2
-  return 3
+  if (tokenCount <= 1) return tokenCount
+  return Math.min(3, Math.max(2, Math.ceil(tokenCount * 0.4)))
 }
 
 describe('M2 Contract Search postings selectivity analysis', () => {
