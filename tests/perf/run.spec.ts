@@ -2,9 +2,9 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { requireSearchLane, runPerfSuite } from '../../scripts/perf/run.mjs'
+import { createConcurrentOperation, requireSearchLane, runPerfSuite } from '../../scripts/perf/run.mjs'
 
 const temporaryDirectories: string[] = []
 
@@ -96,6 +96,32 @@ describe('performance receipt runner', () => {
         operations: 40,
       }),
     ]))
+  })
+
+  it('routes worker-backed concurrency through the worker pool instead of invoking the case on the main thread', async () => {
+    const runMany = vi.fn(async (payloads: Array<{ caseName: string; scale: number; concurrency: number }>) =>
+      payloads.map(payload => `${payload.caseName}:${payload.scale}:${payload.concurrency}`))
+    const workerPool = { runMany }
+    const perfCase = {
+      name: 'cpu-control',
+      run: vi.fn(async () => { throw new Error('main-thread case must not execute') }),
+    }
+
+    const operation = createConcurrentOperation({
+      perfCase,
+      profile: { scale: 2 },
+      concurrency: 4,
+      workerPool,
+    })
+
+    await expect(operation()).resolves.toEqual(Array.from({ length: 4 }, () => 'cpu-control:2:4'))
+    expect(perfCase.run).not.toHaveBeenCalled()
+    expect(runMany).toHaveBeenCalledTimes(1)
+    expect(runMany.mock.calls[0]?.[0]).toEqual(Array.from({ length: 4 }, () => ({
+      caseName: 'cpu-control',
+      scale: 2,
+      concurrency: 4,
+    })))
   })
 
   it('persists bounded partial evidence before failing a measured case', async () => {
