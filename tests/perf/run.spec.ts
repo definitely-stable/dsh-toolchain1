@@ -66,6 +66,36 @@ describe('performance receipt runner', () => {
     }
   })
 
+  it('keeps latency and throughput evidence separate for every concurrency level', async () => {
+    const outputDir = await mkdtemp(path.join(os.tmpdir(), 'dsh-perf-concurrency-summary-'))
+    temporaryDirectories.push(outputDir)
+
+    const result = await runPerfSuite({
+      profileName: 'benchmark',
+      outputDir,
+      cases: [{
+        name: 'stable-control',
+        run: async () => 'stable',
+      }],
+    })
+
+    expect(result.summary.cases).toHaveLength(2)
+    expect(result.summary.cases).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        caseName: 'stable-control',
+        concurrency: 1,
+        samples: 10,
+        operations: 10,
+      }),
+      expect.objectContaining({
+        caseName: 'stable-control',
+        concurrency: 4,
+        samples: 10,
+        operations: 40,
+      }),
+    ]))
+  })
+
   it('persists bounded partial evidence before failing a measured case', async () => {
     process.env.PERF_TEST_SECRET = 'do-not-leak-this-value'
     const outputDir = await mkdtemp(path.join(os.tmpdir(), 'dsh-perf-failure-'))
