@@ -1,3 +1,5 @@
+import { satisfies } from 'semver'
+
 import type { ContractDefinition, Diagnostic } from '../protocol/index.js'
 import type { ContractIndex } from './contract.js'
 import type { AcquiredPluginRequirement, AcquiredPluginSubject } from './plugin.js'
@@ -111,6 +113,15 @@ function combinedEvidenceIds(
   return Object.freeze([...subjectEvidenceIds, ...targetOnly])
 }
 
+function provesVersionRelation(targetVersion: string, declaredRange: string): boolean {
+  if (targetVersion === declaredRange) return true
+  try {
+    return satisfies(targetVersion, declaredRange)
+  } catch {
+    return false
+  }
+}
+
 function pluginDiagnostic(
   code: string,
   severity: Diagnostic['severity'],
@@ -183,7 +194,7 @@ export function analyzePluginCompatibility(
     }
 
     const evidenceIds = combinedEvidenceIds(subjectEvidenceIds, installed.evidenceIds)
-    if (installed.version !== undefined && installed.version === requirement.range) {
+    if (installed.version !== undefined && provesVersionRelation(installed.version, requirement.range)) {
       requirements.push(Object.freeze({
         packageName: requirement.packageName,
         range: requirement.range,
@@ -212,7 +223,7 @@ export function analyzePluginCompatibility(
       'warning',
       installed.version === undefined
         ? `The exact target does not expose one unambiguous version fact for ${peerKind} ${requirement.packageName}.`
-        : `Compatibility of ${peerKind} ${requirement.packageName} range ${requirement.range} with target version ${installed.version} is not proven by the static alpha range adapter.`,
+        : `Compatibility of ${peerKind} ${requirement.packageName} range ${requirement.range} with target version ${installed.version} is not proven by the current positive npm SemVer adapter.`,
     ))
   }
 
