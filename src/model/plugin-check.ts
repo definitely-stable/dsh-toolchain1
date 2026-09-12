@@ -1,4 +1,4 @@
-import { satisfies } from 'semver'
+import { satisfies, valid, validRange } from 'semver'
 
 import type { ContractDefinition, Diagnostic } from '../protocol/index.js'
 import type { ContractIndex } from './contract.js'
@@ -13,6 +13,7 @@ export type PluginRequirementStatus =
   | 'satisfied'
   | 'not-required-from-host'
   | 'missing'
+  | 'version-mismatch'
   | 'unproven'
 
 export interface PluginRequirementAnalysis {
@@ -113,12 +114,16 @@ function combinedEvidenceIds(
   return Object.freeze([...subjectEvidenceIds, ...targetOnly])
 }
 
-function provesVersionRelation(targetVersion: string, declaredRange: string): boolean {
-  if (targetVersion === declaredRange) return true
+type VersionRelation = 'satisfied' | 'version-mismatch' | 'unproven'
+
+function classifyVersionRelation(targetVersion: string, declaredRange: string): VersionRelation {
+  if (targetVersion === declaredRange) return 'satisfied'
+
   try {
-    return satisfies(targetVersion, declaredRange)
+    if (valid(targetVersion) === null || validRange(declaredRange) === null) return 'unproven'
+    return satisfies(targetVersion, declaredRange) ? 'satisfied' : 'version-mismatch'
   } catch {
-    return false
+    return 'unproven'
   }
 }
 
@@ -194,7 +199,11 @@ export function analyzePluginCompatibility(
     }
 
     const evidenceIds = combinedEvidenceIds(subjectEvidenceIds, installed.evidenceIds)
-    if (installed.version !== undefined && provesVersionRelation(installed.version, requirement.range)) {
+    const relation = installed.version === undefined
+      ? 'unproven'
+      : classifyVersionRelation(installed.version, requirement.range)
+
+    if (relation === 'satisfied') {
       requirements.push(Object.freeze({
         packageName: requirement.packageName,
         range: requirement.range,
@@ -203,6 +212,27 @@ export function analyzePluginCompatibility(
         targetVersion: installed.version,
         evidenceIds,
       }))
+      continue
+    }
+
+    if (relation === 'version-mismatch') {
+      provenIncompatible = true
+      requirements.push(Object.freeze({
+        packageName: requirement.packageName,
+        range: requirement.range,
+        relationship: requirement.relationship,
+        status: 'version-mismatch' as const,
+        targetVersion: installed.version,
+        evidenceIds,
+      }))
+      const peerKind = requirement.relationship === 'host-peer-optional'
+        ? 'optional Host peer'
+        : 'required Host peer'
+      diagnostics.push(pluginDiagnostic(
+        'PLUGIN_DSH_VERSION_MISMATCH',
+        'error',
+        `Installed ${peerKind} ${requirement.packageName}@${installed.version} does not satisfy declared npm range ${requirement.range}.`,
+      ))
       continue
     }
 
@@ -223,7 +253,7 @@ export function analyzePluginCompatibility(
       'warning',
       installed.version === undefined
         ? `The exact target does not expose one unambiguous version fact for ${peerKind} ${requirement.packageName}.`
-        : `Compatibility of ${peerKind} ${requirement.packageName} range ${requirement.range} with target version ${installed.version} is not proven by the current positive npm SemVer adapter.`,
+        : `Compatibility of ${peerKind} ${requirement.packageName} range ${requirement.range} with target version ${installed.version} cannot be concluded by the canonical npm SemVer adapter.`,
     ))
   }
 
