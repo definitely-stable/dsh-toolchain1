@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { measureSample } from '../../scripts/perf/measure.mjs'
 
 describe('performance sample measurement', () => {
-  it('records elapsed, CPU, memory, ELU, metadata, and the operation value', async () => {
+  it('records elapsed, CPU, point-in-time memory, ELU, metadata, and the operation value', async () => {
     const measured = await measureSample({
       caseName: 'unit-control',
       phase: 'measure',
@@ -30,7 +30,7 @@ describe('performance sample measurement', () => {
     expect(measured.sample.cpu.systemMicros).toBeGreaterThanOrEqual(0)
     expect(measured.sample.memory.rssBytes).toBeGreaterThan(0)
     expect(measured.sample.memory.heapUsedBytes).toBeGreaterThan(0)
-    expect(measured.sample.memory.maxRssKiB).toBeGreaterThan(0)
+    expect(measured.sample.memory).not.toHaveProperty('maxRssKiB')
     expect(measured.sample.eventLoop.utilization).toBeGreaterThanOrEqual(0)
     expect(measured.sample.eventLoop.utilization).toBeLessThanOrEqual(1)
   })
