@@ -2,9 +2,11 @@ const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/u
 const SUBJECT_FINGERPRINT = /^dsh-plugin-subject-v1:[0-9a-f]{64}$/u
 const ARTIFACT_FINGERPRINT = /^dsh-plugin-artifact-v1:[0-9a-f]{64}$/u
 const LIFECYCLE_FINGERPRINT = /^dsh-profile-lifecycle-v1:[0-9a-f]{64}$/u
+const SHA256 = /^[0-9a-f]{64}$/u
 
 const STATIC_OUTCOMES = new Set(['compatible-in-scope', 'incompatible', 'unproven'])
 const VERIFY_OUTCOMES = new Set(['verified', 'partial', 'failed'])
+const SUBJECT_COMPLETENESS = new Set(['complete', 'partial', 'invalid'])
 
 function parseProtocolJson(stdout) {
   let envelope
@@ -35,6 +37,7 @@ function resultShape({
   semanticOutcome,
   targetFingerprint,
   subjectFingerprint,
+  subjectCompleteness,
   artifactFingerprint,
   lifecycleFingerprint,
   cleanup,
@@ -48,6 +51,7 @@ function resultShape({
     harnessFailure: false,
     targetFingerprint,
     subjectFingerprint,
+    subjectCompleteness,
     artifactFingerprint,
     lifecycleFingerprint,
     cleanup,
@@ -65,14 +69,16 @@ export function parseToolchainEnvelope(stdout, kind) {
     if (!STATIC_OUTCOMES.has(verdict)) {
       throw new Error(`Invalid plugin.check verdict: ${String(verdict)}`)
     }
-    if (!SUBJECT_FINGERPRINT.test(envelope.data.subjectFingerprint ?? '')) {
-      throw new Error('plugin.check is missing a valid subject fingerprint')
+    const subjectFingerprint = envelope.data.subjectFingerprint
+    if (subjectFingerprint !== undefined && !SUBJECT_FINGERPRINT.test(subjectFingerprint)) {
+      throw new Error('plugin.check has an invalid subject fingerprint')
+    }
+    const subjectCompleteness = envelope.data.subjectCompleteness
+    if (!SUBJECT_COMPLETENESS.has(subjectCompleteness)) {
+      throw new Error(`Invalid plugin.check subject completeness: ${String(subjectCompleteness)}`)
     }
     if (envelope.data.candidateCodeExecuted !== false) {
       throw new Error('plugin.check unexpectedly executed candidate code')
-    }
-    if (envelope.data.subjectCompleteness !== 'complete') {
-      throw new Error(`plugin.check subject completeness is ${String(envelope.data.subjectCompleteness)}`)
     }
     if (!Array.isArray(envelope.data.requirements)) {
       throw new Error('plugin.check is missing requirement analysis')
@@ -85,7 +91,8 @@ export function parseToolchainEnvelope(stdout, kind) {
       kind,
       semanticOutcome: verdict,
       targetFingerprint: envelope.snapshotFingerprint,
-      subjectFingerprint: envelope.data.subjectFingerprint,
+      subjectFingerprint,
+      subjectCompleteness,
       artifactFingerprint: undefined,
       lifecycleFingerprint: undefined,
       cleanup: undefined,
@@ -118,6 +125,7 @@ export function parseToolchainEnvelope(stdout, kind) {
       semanticOutcome: status,
       targetFingerprint: envelope.snapshotFingerprint,
       subjectFingerprint: undefined,
+      subjectCompleteness: undefined,
       artifactFingerprint: envelope.data.artifactFingerprint,
       lifecycleFingerprint: envelope.data.lifecycleFingerprint,
       cleanup: envelope.data.cleanup,
@@ -128,6 +136,33 @@ export function parseToolchainEnvelope(stdout, kind) {
   }
 
   throw new Error(`Unknown Toolchain operation kind: ${String(kind)}`)
+}
+
+export function corpusProtocolEvidence(parsed, artifactSha256) {
+  if (typeof artifactSha256 !== 'string' || !SHA256.test(artifactSha256)) {
+    throw new Error('Corpus artifact SHA-256 is invalid')
+  }
+
+  if (parsed?.kind === 'plugin.verify') {
+    const expected = `dsh-plugin-artifact-v1:${artifactSha256}`
+    if (parsed.artifactFingerprint !== expected) {
+      throw new Error(
+        `Verification artifact fingerprint mismatch: expected ${expected}, received ${String(parsed.artifactFingerprint)}`,
+      )
+    }
+  }
+
+  return Object.freeze({
+    targetFingerprint: parsed.targetFingerprint,
+    ...(parsed.subjectFingerprint === undefined ? {} : { subjectFingerprint: parsed.subjectFingerprint }),
+    ...(parsed.subjectCompleteness === undefined ? {} : { subjectCompleteness: parsed.subjectCompleteness }),
+    ...(parsed.artifactFingerprint === undefined ? {} : { artifactFingerprint: parsed.artifactFingerprint }),
+    ...(parsed.lifecycleFingerprint === undefined ? {} : { lifecycleFingerprint: parsed.lifecycleFingerprint }),
+    ...(parsed.cleanup === undefined ? {} : { cleanup: parsed.cleanup }),
+    ...(Array.isArray(parsed.checks) ? { checks: parsed.checks } : {}),
+    ...(Array.isArray(parsed.requirements) ? { requirements: parsed.requirements } : {}),
+    diagnostics: parsed.diagnostics,
+  })
 }
 
 export function summarizeCorpusResults(records) {
