@@ -239,7 +239,7 @@ function failedSampleFromMeasured(measured, error) {
     ...measured.sample,
     outcome: 'error',
     error: perfErrorDetails(error),
-    outputFingerprint: measured.value === undefined ? undefined : fingerprintValue(measured.value),
+    outputFingerprint: undefined,
   })
 }
 
@@ -276,6 +276,7 @@ function summarizeCase(caseName, concurrency, samples) {
       peakHeapUsedBytes: Math.max(...selected.map(sample => sample.memory.heapUsedBytes)),
       heapUsedDeltaBytes: lastMemory.heapUsedBytes - firstMemory.heapUsedBytes,
     }),
+    eventLoopUtilizationScope: 'coordinator-thread',
     eventLoopUtilization: summarizeNumbers(selected.map(sample => sample.eventLoop.utilization)),
   })
 }
@@ -305,6 +306,7 @@ function markdownSummary(summary) {
     '',
     `Profile: \`${summary.profile}\` · samples: **${summary.sampleCount}** · cases: **${summary.cases.length}**`,
     `Process max RSS: **${(summary.runMemory.peakMaxRssKiB / 1024).toFixed(2)} MiB**`,
+    'Event-loop utilization scope: **coordinator thread only** (worker-thread ELU is not aggregated).',
     '',
     '| Case | concurrency | outcome | errors | p50 ms | p95 ms | p99 ms | ops/s | peak RSS MiB | RSS Δ MiB | heap Δ MiB |',
     '| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
