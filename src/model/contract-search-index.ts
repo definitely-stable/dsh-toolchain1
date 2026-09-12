@@ -204,6 +204,65 @@ export function createContractSearchIndex(source: ContractSearchIndexSource): Co
   })
 }
 
+export function contractSearchCandidateIds(
+  index: ContractSearchIndex,
+  queryTokens: readonly string[],
+  requiredMatches: number,
+): ReadonlySet<string> {
+  if (!Number.isInteger(requiredMatches) || requiredMatches < 1) {
+    throw new Error(`Contract Search requiredMatches must be a positive integer, got ${String(requiredMatches)}`)
+  }
+
+  const distinctTokens = [...new Set(queryTokens)]
+  if (distinctTokens.length < requiredMatches) return new Set()
+
+  const matchCounts = new Map<string, number>()
+  for (const token of distinctTokens) {
+    for (const posting of index.postings.get(token) ?? []) {
+      matchCounts.set(posting.contractId, (matchCounts.get(posting.contractId) ?? 0) + 1)
+    }
+  }
+
+  return new Set(
+    [...matchCounts.entries()]
+      .filter(([, count]) => count >= requiredMatches)
+      .map(([contractId]) => contractId),
+  )
+}
+
+export function contractSearchCandidatesForRanking(
+  index: ContractSearchIndex,
+  contracts: readonly ContractDefinition[],
+  queryTokens: readonly string[],
+  requiredMatches: number,
+): readonly ContractDefinition[] {
+  if (!Number.isInteger(requiredMatches) || requiredMatches < 1) {
+    throw new Error(`Contract Search requiredMatches must be a positive integer, got ${String(requiredMatches)}`)
+  }
+
+  const distinctTokens = [...new Set(queryTokens)]
+  if (distinctTokens.length < requiredMatches) return Object.freeze([])
+  if (contracts.length === 0) return contracts
+
+  const postingsToCoverEveryMatch = distinctTokens.length - requiredMatches + 1
+  const rarestTokens = distinctTokens
+    .map(token => Object.freeze({ token, frequency: index.documentFrequency.get(token) ?? 0 }))
+    .toSorted((left, right) => left.frequency - right.frequency || compareCodePoints(left.token, right.token))
+    .slice(0, postingsToCoverEveryMatch)
+
+  const postingVisits = rarestTokens.reduce((sum, item) => sum + item.frequency, 0)
+  if (postingVisits >= contracts.length) return contracts
+
+  const candidateIds = new Set<string>()
+  for (const item of rarestTokens) {
+    for (const posting of index.postings.get(item.token) ?? []) {
+      candidateIds.add(posting.contractId)
+    }
+  }
+
+  return contracts.filter(contract => candidateIds.has(contract.id))
+}
+
 export function searchDocument(
   index: ContractSearchIndex,
   contractId: string,
