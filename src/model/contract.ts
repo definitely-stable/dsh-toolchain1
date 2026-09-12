@@ -437,6 +437,36 @@ function factOrSummaryWitness(
   return frozenEvidenceIds(evidenceIds)
 }
 
+function factOrSummaryWitnessFromDocument(
+  contract: ContractDefinition,
+  document: ContractSearchDocument,
+  normalizedQuery: string,
+  tokens: readonly string[],
+): readonly string[] | undefined {
+  const summary = document.normalizedSummary
+  const exactFact = document.facts.find(fact => fact.normalizedText.includes(normalizedQuery))
+  if (exactFact !== undefined) return frozenEvidenceIds(exactFact.evidenceIds)
+  if (summary.includes(normalizedQuery)) return contractExistenceWitness(contract)
+  if (tokens.length <= 1) return undefined
+
+  const evidenceIds: string[] = []
+  let summaryUsed = false
+  for (const token of tokens) {
+    const matchingFact = document.facts.find(fact => fact.normalizedText.includes(token))
+    if (matchingFact !== undefined) {
+      evidenceIds.push(...matchingFact.evidenceIds)
+      continue
+    }
+    if (summary.includes(token)) {
+      summaryUsed = true
+      continue
+    }
+    return undefined
+  }
+  if (summaryUsed) evidenceIds.push(...contractExistenceWitness(contract))
+  return frozenEvidenceIds(evidenceIds)
+}
+
 function isIntentFallbackQuery(query: string): boolean {
   const trimmed = query.trim()
   return /\s/u.test(trimmed) && intentQueryTokens(trimmed).length >= 2
@@ -566,12 +596,16 @@ function intentMatch(
   })
 }
 
-function strictLexicalMatch(contract: ContractDefinition, query: string): LexicalMatch | undefined {
+function strictLexicalMatch(
+  contract: ContractDefinition,
+  query: string,
+  document?: ContractSearchDocument,
+): LexicalMatch | undefined {
   const normalizedQuery = query.trim().toLocaleLowerCase('en-US')
   if (normalizedQuery === '') return undefined
 
-  const name = contract.name.toLocaleLowerCase('en-US')
-  const qualifiedName = contract.qualifiedName.toLocaleLowerCase('en-US')
+  const name = document?.normalizedName ?? contract.name.toLocaleLowerCase('en-US')
+  const qualifiedName = document?.normalizedQualifiedName ?? contract.qualifiedName.toLocaleLowerCase('en-US')
   const witness = contractExistenceWitness(contract)
   if (qualifiedName === normalizedQuery) return Object.freeze({ score: 600, evidenceIds: witness })
   if (name === normalizedQuery) return Object.freeze({ score: 550, evidenceIds: witness })
@@ -587,7 +621,9 @@ function strictLexicalMatch(contract: ContractDefinition, query: string): Lexica
     return Object.freeze({ score: 300, evidenceIds: witness })
   }
 
-  const evidenceIds = factOrSummaryWitness(contract, normalizedQuery, tokens)
+  const evidenceIds = document === undefined
+    ? factOrSummaryWitness(contract, normalizedQuery, tokens)
+    : factOrSummaryWitnessFromDocument(contract, document, normalizedQuery, tokens)
   return evidenceIds === undefined ? undefined : Object.freeze({ score: 200, evidenceIds })
 }
 
@@ -686,7 +722,18 @@ function rankContractSearch(
 
   const kindSet = kinds === undefined ? undefined : new Set(kinds)
   const contracts = index.contracts.filter(contract => kindSet === undefined || kindSet.has(contract.kind))
-  const strictMatches = rankedMatches(contracts, query, strictLexicalMatch, limit)
+  const strictMatches = rankedMatches(
+    contracts,
+    query,
+    (contract, strictQuery) => {
+      const document = derived?.documents.get(contract.id)
+      if (derived !== undefined && document === undefined) {
+        throw new Error(`ContractSearchIndex is missing contract ${contract.id}`)
+      }
+      return strictLexicalMatch(contract, strictQuery, document)
+    },
+    limit,
+  )
   if (strictMatches.length > 0) {
     return Object.freeze({ lane: 'strict' as const, matches: Object.freeze(strictMatches) })
   }
