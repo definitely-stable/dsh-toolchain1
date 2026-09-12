@@ -64,7 +64,6 @@ export async function measureSample({ caseName, phase, iteration, concurrency, o
   const cpu = process.cpuUsage(cpuBefore)
   const eventLoop = performance.eventLoopUtilization(eventLoopBefore)
   const memory = process.memoryUsage()
-  const resources = process.resourceUsage()
 
   const common = {
     schema: 'dsh-perf-sample-v1',
@@ -83,7 +82,6 @@ export async function measureSample({ caseName, phase, iteration, concurrency, o
       heapTotalBytes: memory.heapTotal,
       externalBytes: memory.external,
       arrayBuffersBytes: memory.arrayBuffers,
-      maxRssKiB: resources.maxRSS,
     }),
     eventLoop: Object.freeze({
       utilization: eventLoop.utilization,
