@@ -42,6 +42,19 @@ describe('architecture import policy', () => {
     ])
   })
 
+  it('allows only the explicitly reviewed semver dependency from semantic core', () => {
+    expect(checkSourceImportPolicy([
+      { path: 'src/model/version.ts', source: "import { satisfies } from 'semver'\nexport const accepted = satisfies('4.0.2', '^4.0.1')\n" },
+      { path: 'src/model/arbitrary.ts', source: "import 'left-pad'\n" },
+    ])).toEqual([
+      {
+        file: 'src/model/arbitrary.ts',
+        specifier: 'left-pad',
+        rule: 'semantic-external-dependency',
+      },
+    ])
+  })
+
   it('rejects unclassified production layers and therefore closes transitive runtime bridges', () => {
     const violations = checkSourceImportPolicy([
       { path: 'src/kernel/target.ts', source: "import { load } from '../shared/environment.js'\nexport { load }\n" },
@@ -146,7 +159,7 @@ describe('architecture import policy', () => {
       },
       {
         path: 'src/frontends/cli/index.ts',
-        source: "import { acquire } from '../../acquisition/dsh-filesystem.js'\nexport { acquire }\n",
+        source: "import { acquire } from '../../acquisition/dsh-filesystem.js'\nimport '../../frontends/mcp/index.js'\nexport { acquire }\n",
       },
     ]
 
