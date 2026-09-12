@@ -41,6 +41,16 @@ function verdict(analysis: PluginCompatibilityAnalysis): PluginCompatibilityAnal
   return analysis.verdict
 }
 
+function requiredPeer(range: string) {
+  return subject({
+    requirements: [{
+      packageName: '@deepseek-ai/cordis',
+      range,
+      relationship: 'host-peer-required',
+    }],
+  })
+}
+
 describe('Exact Target Plugin Check static compatibility reducer', () => {
   it('proves incompatibility when a required Host peer is absent from the exact ContractIndex', () => {
     const analysis = analyzePluginCompatibility(subject({
@@ -83,7 +93,7 @@ describe('Exact Target Plugin Check static compatibility reducer', () => {
     }))
   })
 
-  it('checks an optional Host peer when that package is actually installed', () => {
+  it('checks an optional Host peer with npm-compatible positive range proof', () => {
     const exact = analyzePluginCompatibility(subject({
       requirements: [{
         packageName: '@deepseek-ai/dsh-tools',
@@ -107,40 +117,90 @@ describe('Exact Target Plugin Check static compatibility reducer', () => {
       }],
     }), contractIndex({ '@deepseek-ai/dsh-tools': '0.1.2-alpha.5' }))
 
-    expect(verdict(range)).toBe('unproven')
+    expect(verdict(range)).toBe('compatible-in-scope')
     expect(range.requirements).toContainEqual(expect.objectContaining({
       packageName: '@deepseek-ai/dsh-tools',
-      status: 'unproven',
+      status: 'satisfied',
       targetVersion: '0.1.2-alpha.5',
     }))
-    expect(range.diagnostics).toContainEqual(expect.objectContaining({
+    expect(range.diagnostics).not.toContainEqual(expect.objectContaining({
       code: 'PLUGIN_DSH_VERSION_UNPROVEN',
-      severity: 'warning',
     }))
   })
 
-  it('proves an exact required Host version but refuses to guess unsupported semver ranges', () => {
-    const exact = analyzePluginCompatibility(subject({
-      requirements: [{
-        packageName: '@deepseek-ai/cordis',
-        range: '4.0.1',
-        relationship: 'host-peer-required',
-      }],
-    }), contractIndex({ '@deepseek-ai/cordis': '4.0.1' }))
-    expect(verdict(exact)).toBe('compatible-in-scope')
-
-    const range = analyzePluginCompatibility(subject({
-      requirements: [{
-        packageName: '@deepseek-ai/cordis',
-        range: '^4.0.1',
-        relationship: 'host-peer-required',
-      }],
-    }), contractIndex({ '@deepseek-ai/cordis': '4.0.1' }))
-    expect(verdict(range)).toBe('unproven')
-    expect(range.diagnostics).toContainEqual(expect.objectContaining({
-      code: 'PLUGIN_DSH_VERSION_UNPROVEN',
-      severity: 'warning',
+  it('proves stable caret, prerelease caret, and matching OR ranges using npm semver semantics', () => {
+    const stableCaret = analyzePluginCompatibility(
+      requiredPeer('^4.0.1'),
+      contractIndex({ '@deepseek-ai/cordis': '4.0.2' }),
+    )
+    expect(verdict(stableCaret)).toBe('compatible-in-scope')
+    expect(stableCaret.requirements[0]).toEqual(expect.objectContaining({
+      status: 'satisfied',
+      targetVersion: '4.0.2',
     }))
+
+    const prereleaseCaret = analyzePluginCompatibility(
+      requiredPeer('^0.1.5-rc.1'),
+      contractIndex({ '@deepseek-ai/cordis': '0.1.5-rc.2' }),
+    )
+    expect(verdict(prereleaseCaret)).toBe('compatible-in-scope')
+    expect(prereleaseCaret.requirements[0]).toEqual(expect.objectContaining({
+      status: 'satisfied',
+      targetVersion: '0.1.5-rc.2',
+    }))
+
+    const matchingOr = analyzePluginCompatibility(
+      requiredPeer('^0.1.2-alpha.5 || ^0.1.5-rc.1'),
+      contractIndex({ '@deepseek-ai/cordis': '0.1.5-rc.2' }),
+    )
+    expect(verdict(matchingOr)).toBe('compatible-in-scope')
+    expect(matchingOr.requirements[0]).toEqual(expect.objectContaining({
+      status: 'satisfied',
+      targetVersion: '0.1.5-rc.2',
+    }))
+  })
+
+  it('preserves exact string equality even when the version is not valid SemVer', () => {
+    const analysis = analyzePluginCompatibility(
+      requiredPeer('workspace-build'),
+      contractIndex({ '@deepseek-ai/cordis': 'workspace-build' }),
+    )
+
+    expect(verdict(analysis)).toBe('compatible-in-scope')
+    expect(analysis.requirements[0]).toEqual(expect.objectContaining({
+      status: 'satisfied',
+      targetVersion: 'workspace-build',
+    }))
+  })
+
+  it('keeps canonical non-matches, prerelease wildcard exclusion, and malformed relations unproven', () => {
+    const cases = [
+      { target: '4.0.2', range: '^4.1.0' },
+      { target: '0.1.5-rc.2', range: '*' },
+      { target: 'not-semver', range: '^4.0.1' },
+      { target: '4.0.2', range: 'definitely not a range' },
+    ]
+
+    for (const testCase of cases) {
+      expect(() => analyzePluginCompatibility(
+        requiredPeer(testCase.range),
+        contractIndex({ '@deepseek-ai/cordis': testCase.target }),
+      )).not.toThrow()
+
+      const analysis = analyzePluginCompatibility(
+        requiredPeer(testCase.range),
+        contractIndex({ '@deepseek-ai/cordis': testCase.target }),
+      )
+      expect(verdict(analysis)).toBe('unproven')
+      expect(analysis.requirements[0]).toEqual(expect.objectContaining({
+        status: 'unproven',
+        targetVersion: testCase.target,
+      }))
+      expect(analysis.diagnostics).toContainEqual(expect.objectContaining({
+        code: 'PLUGIN_DSH_VERSION_UNPROVEN',
+        severity: 'warning',
+      }))
+    }
   })
 
   it('keeps expected subject acquisition diagnostics in a successful unproven analysis', () => {
