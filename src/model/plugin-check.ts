@@ -199,41 +199,41 @@ export function analyzePluginCompatibility(
     }
 
     const evidenceIds = combinedEvidenceIds(subjectEvidenceIds, installed.evidenceIds)
-    const relation = installed.version === undefined
-      ? 'unproven'
-      : classifyVersionRelation(installed.version, requirement.range)
+    const targetVersion = installed.version
+    if (targetVersion !== undefined) {
+      const relation = classifyVersionRelation(targetVersion, requirement.range)
+      if (relation === 'satisfied') {
+        requirements.push(Object.freeze({
+          packageName: requirement.packageName,
+          range: requirement.range,
+          relationship: requirement.relationship,
+          status: 'satisfied' as const,
+          targetVersion,
+          evidenceIds,
+        }))
+        continue
+      }
 
-    if (relation === 'satisfied') {
-      requirements.push(Object.freeze({
-        packageName: requirement.packageName,
-        range: requirement.range,
-        relationship: requirement.relationship,
-        status: 'satisfied' as const,
-        targetVersion: installed.version,
-        evidenceIds,
-      }))
-      continue
-    }
-
-    if (relation === 'version-mismatch') {
-      provenIncompatible = true
-      requirements.push(Object.freeze({
-        packageName: requirement.packageName,
-        range: requirement.range,
-        relationship: requirement.relationship,
-        status: 'version-mismatch' as const,
-        targetVersion: installed.version,
-        evidenceIds,
-      }))
-      const peerKind = requirement.relationship === 'host-peer-optional'
-        ? 'optional Host peer'
-        : 'required Host peer'
-      diagnostics.push(pluginDiagnostic(
-        'PLUGIN_DSH_VERSION_MISMATCH',
-        'error',
-        `Installed ${peerKind} ${requirement.packageName}@${installed.version} does not satisfy declared npm range ${requirement.range}.`,
-      ))
-      continue
+      if (relation === 'version-mismatch') {
+        provenIncompatible = true
+        requirements.push(Object.freeze({
+          packageName: requirement.packageName,
+          range: requirement.range,
+          relationship: requirement.relationship,
+          status: 'version-mismatch' as const,
+          targetVersion,
+          evidenceIds,
+        }))
+        const peerKind = requirement.relationship === 'host-peer-optional'
+          ? 'optional Host peer'
+          : 'required Host peer'
+        diagnostics.push(pluginDiagnostic(
+          'PLUGIN_DSH_VERSION_MISMATCH',
+          'error',
+          `Installed ${peerKind} ${requirement.packageName}@${targetVersion} does not satisfy declared npm range ${requirement.range}.`,
+        ))
+        continue
+      }
     }
 
     unproven = true
@@ -242,7 +242,7 @@ export function analyzePluginCompatibility(
       range: requirement.range,
       relationship: requirement.relationship,
       status: 'unproven' as const,
-      ...(installed.version === undefined ? {} : { targetVersion: installed.version }),
+      ...(targetVersion === undefined ? {} : { targetVersion }),
       evidenceIds,
     }))
     const peerKind = requirement.relationship === 'host-peer-optional'
@@ -251,9 +251,9 @@ export function analyzePluginCompatibility(
     diagnostics.push(pluginDiagnostic(
       'PLUGIN_DSH_VERSION_UNPROVEN',
       'warning',
-      installed.version === undefined
+      targetVersion === undefined
         ? `The exact target does not expose one unambiguous version fact for ${peerKind} ${requirement.packageName}.`
-        : `Compatibility of ${peerKind} ${requirement.packageName} range ${requirement.range} with target version ${installed.version} cannot be concluded by the canonical npm SemVer adapter.`,
+        : `Compatibility of ${peerKind} ${requirement.packageName} range ${requirement.range} with target version ${targetVersion} cannot be concluded by the canonical npm SemVer adapter.`,
     ))
   }
 
