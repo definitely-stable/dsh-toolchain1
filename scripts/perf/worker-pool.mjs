@@ -79,7 +79,7 @@ export function createWorkerPool({ size, workerUrl }) {
 
     worker.on('error', error => rejectEverything(error))
     worker.on('exit', code => {
-      if (!closed && code !== 0) rejectEverything(new Error(`Performance worker exited unexpectedly with code ${code}`))
+      if (!closed) rejectEverything(new Error(`Performance worker exited unexpectedly with code ${code}`))
     })
   }
 
