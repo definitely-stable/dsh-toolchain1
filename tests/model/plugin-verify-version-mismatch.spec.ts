@@ -35,7 +35,7 @@ function mismatchRequirement(): PluginCheckResult['requirements'][number] {
     status: 'version-mismatch',
     targetVersion: '4.0.2',
     evidenceIds: [],
-  } as unknown as PluginCheckResult['requirements'][number]
+  }
 }
 
 function missingRequirement(): PluginCheckResult['requirements'][number] {
