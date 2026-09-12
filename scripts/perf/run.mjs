@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { measureSample, perfErrorDetails } from './measure.mjs'
 import { getPerfProfile, listPerfProfiles } from './suites.mjs'
 import { summarizeNumbers } from './statistics.mjs'
+import { createWorkerPool } from './worker-pool.mjs'
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url)
 const SUMMARY_SCHEMA = 'dsh-perf-v1'
@@ -98,7 +99,7 @@ function createSyntheticContractIndex(scale) {
   })
 }
 
-async function createDefaultCases(profile) {
+export async function createDefaultCases(profile) {
   const contractModuleUrl = new URL('../../lib/model/contract.js', import.meta.url).href
   const searchIndexModuleUrl = new URL('../../lib/model/contract-search-index.js', import.meta.url).href
   const compactModuleUrl = new URL('../../lib/model/contract-inspect-compact.js', import.meta.url).href
@@ -205,7 +206,16 @@ function boundedEnvironment(environmentOverrides = {}) {
   })
 }
 
-function concurrentOperation(perfCase, profile, concurrency) {
+export function createConcurrentOperation({ perfCase, profile, concurrency, workerPool }) {
+  if (workerPool !== undefined) {
+    const payloads = Array.from({ length: concurrency }, () => Object.freeze({
+      caseName: perfCase.name,
+      scale: profile.scale,
+      concurrency,
+    }))
+    return async () => workerPool.runMany(payloads)
+  }
+
   return async () => Promise.all(
     Array.from({ length: concurrency }, () => perfCase.run({ scale: profile.scale, concurrency })),
   )
@@ -333,69 +343,80 @@ async function persistEvidence(outputDir, environment, samples, profile, selecte
 export async function runPerfSuite({ profileName, outputDir, cases, environmentOverrides } = {}) {
   const profile = getPerfProfile(profileName ?? 'smoke')
   if (typeof outputDir !== 'string' || outputDir === '') throw new Error('Performance outputDir is required')
+  const useWorkerThreads = cases === undefined
   const selectedCases = cases ?? await createDefaultCases(profile)
   if (!Array.isArray(selectedCases) || selectedCases.length === 0) throw new Error('Performance suite requires at least one case')
 
   const environment = boundedEnvironment(environmentOverrides)
   const fingerprints = new Map()
   const samples = []
+  const workerPool = useWorkerThreads
+    ? createWorkerPool({
+        size: Math.max(...profile.concurrency),
+        workerUrl: new URL('./default-worker.mjs', import.meta.url),
+      })
+    : undefined
 
   const persistFailure = async error => {
     await persistEvidence(outputDir, environment, samples, profile, selectedCases)
     throw error
   }
 
-  for (const perfCase of selectedCases) {
-    if (typeof perfCase?.name !== 'string' || perfCase.name === '' || typeof perfCase.run !== 'function') {
-      throw new Error('Each performance case requires a name and run function')
-    }
-    for (const concurrency of profile.concurrency) {
-      const operation = concurrentOperation(perfCase, profile, concurrency)
-      const fingerprintKey = `${perfCase.name}@${concurrency}`
-      for (let warmup = 1; warmup <= profile.warmups; warmup += 1) {
-        const measured = await measureSample({
-          caseName: perfCase.name,
-          phase: 'warmup',
-          iteration: warmup,
-          concurrency,
-          operation,
-        })
-        if (measured.sample.outcome === 'error') {
-          samples.push(measured.sample)
-          await persistFailure(measured.error)
+  try {
+    for (const perfCase of selectedCases) {
+      if (typeof perfCase?.name !== 'string' || perfCase.name === '' || typeof perfCase.run !== 'function') {
+        throw new Error('Each performance case requires a name and run function')
+      }
+      for (const concurrency of profile.concurrency) {
+        const operation = createConcurrentOperation({ perfCase, profile, concurrency, workerPool })
+        const fingerprintKey = `${perfCase.name}@${concurrency}`
+        for (let warmup = 1; warmup <= profile.warmups; warmup += 1) {
+          const measured = await measureSample({
+            caseName: perfCase.name,
+            phase: 'warmup',
+            iteration: warmup,
+            concurrency,
+            operation,
+          })
+          if (measured.sample.outcome === 'error') {
+            samples.push(measured.sample)
+            await persistFailure(measured.error)
+          }
+          try {
+            assertStableFingerprint(fingerprints, fingerprintKey, measured.value)
+          } catch (error) {
+            samples.push(failedSampleFromMeasured(measured, error))
+            await persistFailure(error)
+          }
         }
-        try {
-          assertStableFingerprint(fingerprints, fingerprintKey, measured.value)
-        } catch (error) {
-          samples.push(failedSampleFromMeasured(measured, error))
-          await persistFailure(error)
+        for (let iteration = 1; iteration <= profile.iterations; iteration += 1) {
+          const measured = await measureSample({
+            caseName: perfCase.name,
+            phase: 'measure',
+            iteration,
+            concurrency,
+            operation,
+          })
+          if (measured.sample.outcome === 'error') {
+            samples.push(measured.sample)
+            await persistFailure(measured.error)
+          }
+          try {
+            const outputFingerprint = assertStableFingerprint(fingerprints, fingerprintKey, measured.value)
+            samples.push(Object.freeze({ ...measured.sample, outputFingerprint }))
+          } catch (error) {
+            samples.push(failedSampleFromMeasured(measured, error))
+            await persistFailure(error)
+          }
         }
       }
-      for (let iteration = 1; iteration <= profile.iterations; iteration += 1) {
-        const measured = await measureSample({
-          caseName: perfCase.name,
-          phase: 'measure',
-          iteration,
-          concurrency,
-          operation,
-        })
-        if (measured.sample.outcome === 'error') {
-          samples.push(measured.sample)
-          await persistFailure(measured.error)
-        }
-        try {
-          const outputFingerprint = assertStableFingerprint(fingerprints, fingerprintKey, measured.value)
-          samples.push(Object.freeze({ ...measured.sample, outputFingerprint }))
-        } catch (error) {
-          samples.push(failedSampleFromMeasured(measured, error))
-          await persistFailure(error)
-        }
-      }
     }
-  }
 
-  const summary = await persistEvidence(outputDir, environment, samples, profile, selectedCases)
-  return Object.freeze({ environment, samples: Object.freeze([...samples]), summary })
+    const summary = await persistEvidence(outputDir, environment, samples, profile, selectedCases)
+    return Object.freeze({ environment, samples: Object.freeze([...samples]), summary })
+  } finally {
+    if (workerPool !== undefined) await workerPool.close()
+  }
 }
 
 function parseArguments(args) {
