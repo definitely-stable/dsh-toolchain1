@@ -1,0 +1,68 @@
+name: M3.2 Full Corpus Temporary
+
+on:
+  push:
+    branches:
+      - validate/m3-version-mismatch-full
+    paths:
+      - .github/workflows/m3-version-mismatch-full-corpus-temporary.yml
+
+permissions:
+  contents: read
+
+jobs:
+  corpus:
+    name: real plugin corpus / full / node 24.19
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CORPUS_MODE: full
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        with:
+          install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24.19.0'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          package-manager-cache: false
+
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build transparent NodeNext artifacts
+        run: pnpm build
+
+      - name: Pack exact Toolchain distribution artifact
+        run: |
+          mkdir -p .artifacts
+          pnpm pack --out .artifacts/dsh-toolchain.tgz
+
+      - name: Run bounded real-plugin corpus
+        run: node scripts/real-plugin-corpus/run.mjs --mode "$CORPUS_MODE" --output-dir .artifacts/real-plugin-corpus --toolchain-tarball .artifacts/dsh-toolchain.tgz
+
+      - name: Publish corpus summary
+        if: always() && hashFiles('.artifacts/real-plugin-corpus/summary.md') != ''
+        run: cat .artifacts/real-plugin-corpus/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bounded corpus evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: m3-version-mismatch-full-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/real-plugin-corpus/environment.json
+            .artifacts/real-plugin-corpus/results.jsonl
+            .artifacts/real-plugin-corpus/summary.json
+            .artifacts/real-plugin-corpus/summary.md
+          if-no-files-found: error
+          retention-days: 7
