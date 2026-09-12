@@ -57,9 +57,15 @@ describe('ContractSearchIndex derived state', () => {
 
     const tools = derived.documents.get('package:tools')
     expect(tools).toBeDefined()
+    expect(tools).toMatchObject({
+      normalizedName: '@deepseek-ai/dsh-tools',
+      normalizedQualifiedName: 'package:@deepseek-ai/dsh-tools',
+      normalizedSummary: 'tool schema helpers and tool validation.',
+    })
     expect(tools?.identity.tokens).toContain('tools')
     expect(tools?.facts).toHaveLength(2)
     expect(tools?.facts[0]).toMatchObject({
+      normalizedText: 'declaration-export validateargs',
       index: 0,
       key: 'declaration-export',
       value: 'validateArgs',
@@ -67,6 +73,7 @@ describe('ContractSearchIndex derived state', () => {
     })
     expect(tools?.facts[0]?.tokens).toEqual(expect.arrayContaining(['validate', 'args']))
     expect(tools?.facts[1]).toMatchObject({
+      normalizedText: 'declaration-export toolschema',
       index: 1,
       key: 'declaration-export',
       value: 'ToolSchema',

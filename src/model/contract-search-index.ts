@@ -13,6 +13,7 @@ export interface ContractSearchFieldDocument {
 }
 
 export interface ContractSearchFactDocument extends ContractSearchFieldDocument {
+  readonly normalizedText: string
   readonly index: number
   readonly key: string
   readonly value: string
@@ -21,6 +22,9 @@ export interface ContractSearchFactDocument extends ContractSearchFieldDocument 
 
 export interface ContractSearchDocument {
   readonly contractId: string
+  readonly normalizedName: string
+  readonly normalizedQualifiedName: string
+  readonly normalizedSummary: string
   readonly identity: ContractSearchFieldDocument
   readonly summary: ContractSearchFieldDocument
   readonly kind: ContractSearchFieldDocument
@@ -130,6 +134,7 @@ function factDocument(
 ): ContractSearchFactDocument {
   const tokens = searchTokens(`${fact.key} ${fact.value}`)
   return Object.freeze({
+    normalizedText: `${fact.key} ${fact.value}`.toLocaleLowerCase('en-US'),
     index,
     key: fact.key,
     value: fact.value,
@@ -142,6 +147,9 @@ function factDocument(
 function contractDocument(contract: ContractDefinition): ContractSearchDocument {
   return Object.freeze({
     contractId: contract.id,
+    normalizedName: contract.name.toLocaleLowerCase('en-US'),
+    normalizedQualifiedName: contract.qualifiedName.toLocaleLowerCase('en-US'),
+    normalizedSummary: contract.summary?.toLocaleLowerCase('en-US') ?? '',
     identity: fieldDocument(`${contract.name} ${contract.qualifiedName}`),
     summary: fieldDocument(contract.summary ?? ''),
     kind: fieldDocument(contract.kind),
