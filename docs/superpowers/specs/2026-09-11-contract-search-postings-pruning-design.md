@@ -1,7 +1,7 @@
 # Contract Search Postings Pruning Design
 
 Date: 2026-09-11
-Status: optimization spike
+Status: completed spike; production decision refined by `docs/superpowers/plans/2026-09-12-adaptive-contract-search-pruning.md`
 Base: PR #209 head `047ee20f9dd0256bd25886ffc6d11d1650a8c570`
 
 ## Goal
@@ -30,33 +30,25 @@ Before changing `rankContractSearch`, measure candidate selectivity for:
 2. the synthetic performance corpus;
 3. positive natural-language and negative/ambiguous queries.
 
-Record candidate count, document count, candidate ratio, and required-match threshold. If candidate ratios are routinely near 1.0, do not ship pruning as a performance optimization; preserve the evidence and move to a postings-native sparse scoring spike instead.
+Record candidate count, document count, candidate ratio, and required-match threshold. If candidate ratios are routinely near 1.0, do not ship unconditional pruning as a performance optimization.
 
-## Safe implementation if the gate passes
+## Spike outcome
 
-Add an internal model helper in `contract-search-index.ts` that returns candidate contract IDs by counting distinct query-token postings and applying the exact required-match threshold.
+The exact candidate primitive is semantically correct and frozen R1 intent queries are highly selective, but unconditional production pruning failed the performance gate on the dense scale=4 stress workload. It was therefore reverted rather than accepted on favorable smoke data.
 
-In `rankContractSearch`:
-
-- leave strict/package lookup unchanged;
-- build or receive the same derived index as today;
-- derive the exact candidate ID set;
-- preserve original `index.contracts` order and filter it by candidate membership;
-- run the existing `intentMatch`, `scoreIntent`, relation gate, sort, minimum score, runner-up margin, limit, and evidence projection unchanged.
-
-Keeping `intentMatch` after pruning is intentional for the first production change: it acts as a semantic guard even though candidate membership should make the token threshold redundant.
+The accepted refinement is adaptive and remains exact: for `T` distinct query tokens and threshold `R`, every eligible contract must occur in at least one of the `T - R + 1` rarest postings. Production uses that safe superset only when the sum of those posting frequencies is cheaper than ranking the full filtered contract list; otherwise it returns the original list unchanged. See the 2026-09-12 adaptive implementation note for paired A/B evidence and final invariants.
 
 ## Proof requirements
 
 The optimization is acceptable only if all of the following hold:
 
-- helper candidate membership equals exhaustive token-threshold eligibility for deterministic fixtures;
+- candidate membership never excludes a contract capable of satisfying the unchanged token threshold;
+- dense fallback preserves the original full-list path;
 - cold/derived search parity remains exact;
 - frozen R1/R2 retrieval snapshots remain exact;
 - abstention and ambiguity tests remain exact;
 - full `pnpm check` and real-DSH verification stay green;
-- benchmark/stress show a material CPU/latency or throughput improvement on representative intent workloads;
-- strict search does not regress materially.
+- paired performance evidence shows a material selective-workload win without a material dense/strict regression.
 
 No retrieval-quality trade-off is permitted.
 
