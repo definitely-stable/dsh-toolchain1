@@ -8,6 +8,7 @@ import type {
 } from '../protocol/index.js'
 import {
   CONTRACT_SEARCH_RANKER_VERSION,
+  contractSearchCandidateIds,
   createContractSearchIndex,
   intentQueryTokens,
   type ContractSearchDocument,
@@ -702,8 +703,15 @@ function rankContractSearch(
   }
 
   const intentIndex = derived ?? createContractSearchIndex(index)
+  const queryTokens = intentQueryTokens(query)
+  const candidateIds = contractSearchCandidateIds(
+    intentIndex,
+    queryTokens,
+    requiredIntentMatches(queryTokens.length),
+  )
+  const intentContracts = contracts.filter(contract => candidateIds.has(contract.id))
   const matches = rankedMatches(
-    contracts,
+    intentContracts,
     query,
     (contract, intentQuery) => intentMatch(contract, intentQuery, intentIndex),
     Math.min(limit, 1),
