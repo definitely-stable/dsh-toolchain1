@@ -253,6 +253,8 @@ function summarizeCase(caseName, concurrency, samples) {
   const totalOperations = successful.reduce((sum, sample) => sum + sample.concurrency, 0)
   const userMicros = selected.reduce((sum, sample) => sum + sample.cpu.userMicros, 0)
   const systemMicros = selected.reduce((sum, sample) => sum + sample.cpu.systemMicros, 0)
+  const firstMemory = selected[0].memory
+  const lastMemory = selected[selected.length - 1].memory
   return Object.freeze({
     caseName,
     concurrency,
@@ -265,8 +267,14 @@ function summarizeCase(caseName, concurrency, samples) {
     throughputOpsPerSecond: successfulElapsedMs === 0 ? null : (totalOperations * 1000) / successfulElapsedMs,
     cpu: Object.freeze({ userMicros, systemMicros }),
     memory: Object.freeze({
+      firstRssBytes: firstMemory.rssBytes,
+      lastRssBytes: lastMemory.rssBytes,
       peakRssBytes: Math.max(...selected.map(sample => sample.memory.rssBytes)),
+      rssDeltaBytes: lastMemory.rssBytes - firstMemory.rssBytes,
+      firstHeapUsedBytes: firstMemory.heapUsedBytes,
+      lastHeapUsedBytes: lastMemory.heapUsedBytes,
       peakHeapUsedBytes: Math.max(...selected.map(sample => sample.memory.heapUsedBytes)),
+      heapUsedDeltaBytes: lastMemory.heapUsedBytes - firstMemory.heapUsedBytes,
     }),
     eventLoopUtilization: summarizeNumbers(selected.map(sample => sample.eventLoop.utilization)),
   })
@@ -298,12 +306,12 @@ function markdownSummary(summary) {
     `Profile: \`${summary.profile}\` · samples: **${summary.sampleCount}** · cases: **${summary.cases.length}**`,
     `Process max RSS: **${(summary.runMemory.peakMaxRssKiB / 1024).toFixed(2)} MiB**`,
     '',
-    '| Case | concurrency | outcome | errors | p50 ms | p95 ms | p99 ms | ops/s | peak RSS MiB |',
-    '| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
+    '| Case | concurrency | outcome | errors | p50 ms | p95 ms | p99 ms | ops/s | peak RSS MiB | RSS Δ MiB | heap Δ MiB |',
+    '| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
   ]
   for (const item of summary.cases) {
     const throughput = item.throughputOpsPerSecond === null ? 'n/a' : item.throughputOpsPerSecond.toFixed(2)
-    lines.push(`| ${item.caseName} | ${item.concurrency} | ${item.outcome} | ${item.errorSamples} | ${item.latencyMs.p50.toFixed(3)} | ${item.latencyMs.p95.toFixed(3)} | ${item.latencyMs.p99.toFixed(3)} | ${throughput} | ${(item.memory.peakRssBytes / (1024 * 1024)).toFixed(2)} |`)
+    lines.push(`| ${item.caseName} | ${item.concurrency} | ${item.outcome} | ${item.errorSamples} | ${item.latencyMs.p50.toFixed(3)} | ${item.latencyMs.p95.toFixed(3)} | ${item.latencyMs.p99.toFixed(3)} | ${throughput} | ${(item.memory.peakRssBytes / (1024 * 1024)).toFixed(2)} | ${(item.memory.rssDeltaBytes / (1024 * 1024)).toFixed(2)} | ${(item.memory.heapUsedDeltaBytes / (1024 * 1024)).toFixed(2)} |`)
   }
   return `${lines.join('\n')}\n`
 }
