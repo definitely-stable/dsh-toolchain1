@@ -177,12 +177,15 @@ function staticChecks(
       : { id: 'manifest', status: 'skipped', reason: 'static-manifest-unproven' })
 
   const hasMissingRequirement = result.requirements.some(requirement => requirement.status === 'missing')
+  const hasVersionMismatch = result.requirements.some(requirement => requirement.status === 'version-mismatch')
   const hasUnprovenRequirement = result.requirements.some(requirement => requirement.status === 'unproven')
   checks = replaceCheck(checks, hasMissingRequirement
     ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-missing' }
-    : hasUnprovenRequirement
-      ? { id: 'dependency', status: 'skipped', reason: 'static-host-requirement-unproven' }
-      : { id: 'dependency', status: 'passed' })
+    : hasVersionMismatch
+      ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-version-mismatch' }
+      : hasUnprovenRequirement
+        ? { id: 'dependency', status: 'skipped', reason: 'static-host-requirement-unproven' }
+        : { id: 'dependency', status: 'passed' })
 
   checks = replaceCheck(checks, result.verdict === 'incompatible'
     ? { id: 'contract', status: 'failed', reason: 'static-incompatible' }
