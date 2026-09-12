@@ -2,6 +2,7 @@
 
 Date: 2026-09-11
 Base: PR #209 / `feat/ci-performance-stress-harness`
+Status: completed with adaptive refinement on 2026-09-12
 
 ## Phase 1 — exact candidate primitive + selectivity evidence
 
@@ -10,37 +11,45 @@ Base: PR #209 / `feat/ci-performance-stress-harness`
 - Measure candidate selectivity on the frozen M2 retrieval corpus and on the PR #209 synthetic performance corpus.
 - Record document count, required token matches, candidate count, and ratio.
 
-Decision gate:
-- if representative intent queries materially prune the corpus, proceed to Phase 2;
-- if candidate ratios are routinely near 1.0, do not add a useless filter to production ranking; retain the exact primitive/evidence only if it has a justified follow-on use, otherwise revert it and move to a postings-native scoring spike.
+Outcome: corrected frozen R1 intent queries were highly selective (mean 1.54%, median 0.54%, max 4.89%), but the synthetic stress workload was deliberately dense.
 
 ## Phase 2 — bounded production integration
 
-Only if Phase 1 passes:
+The first implementation used unconditional exact candidate filtering after strict lookup missed. Correctness stayed exact, but dense full stress showed no representative win and regressed CPU/throughput. That wiring was reverted.
 
-- In `rankContractSearch`, obtain exact candidate IDs after strict lookup misses.
-- Filter the existing ordered `index.contracts` sequence by candidate ID.
-- Keep `intentMatch`, `scoreIntent`, relation gating, sorting, score threshold, runner-up margin, limit, and evidence projection unchanged.
-- Add black-box parity tests for frozen retrieval tasks, kind filters, ambiguous queries, no-result queries, and cold vs derived-index paths.
+The refined implementation uses an adaptive, semantics-preserving selector:
+
+- compute `T - R + 1` rarest query postings, where `T` is distinct query-token count and `R` is the unchanged intent threshold;
+- their union is a safe superset of every contract that can satisfy the threshold;
+- before materializing the union, compare the sum of selected posting frequencies with the filtered contract count;
+- if the posting scan cannot be cheaper, return the original contracts array unchanged;
+- otherwise filter the existing ordered contracts by the safe posting union;
+- keep `intentMatch`, IDF, coherence, ordering, abstention, limit and evidence projection unchanged.
 
 ## Phase 3 — performance proof
 
-- Run normal PR smoke performance validation.
-- Run full `benchmark` and `stress` profiles on the optimization SHA.
-- Compare against PR #209 baseline using the same runner class/profile:
-  - intent cold/warm p50/p95/p99;
-  - throughput;
-  - CPU user/system;
-  - peak RSS/heap;
-  - strict-search control.
-- Do not introduce a hard performance gate from one noisy hosted-run comparison.
+Evidence was deliberately split by workload density.
+
+The unconditional implementation failed full benchmark/stress acceptance on dense synthetic queries and was rejected.
+
+A same-runner paired A/B for the adaptive implementation used 736 contracts, four warmups and 20 alternating rounds:
+
+- selective candidate sets: 1 / 736;
+- selective mean latency: -23.35%;
+- selective user CPU: -22.99%;
+- dense queries: original 736-contract list returned unchanged;
+- dense mean latency: -0.54%;
+- dense user CPU: +0.36% (effectively flat).
 
 ## Phase 4 — acceptance
 
-Accept only if:
+Accept the adaptive implementation only if final PR CI confirms:
 
-- retrieval semantics are exactly unchanged;
-- all correctness/evaluation/real-DSH CI is green;
-- optimization produces a material representative improvement without a material strict-path regression.
+- retrieval semantics remain exact;
+- frozen R1/R2 and conservative-abstention tests remain green;
+- all Node/platform/real-DSH verification remains green;
+- PR performance smoke has no material control-path regression.
 
-Otherwise revert the production integration and preserve the benchmark/selectivity evidence as input to the next sparse-scoring design.
+Do not add another search optimization in this PR. Remaining warm-path cost should be profiled separately after this change is integrated.
+
+Detailed rationale and evidence: `docs/superpowers/plans/2026-09-12-adaptive-contract-search-pruning.md`.
