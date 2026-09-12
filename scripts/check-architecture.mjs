@@ -16,8 +16,10 @@ const forbiddenSemanticRuntimeGlobals = new Set(['process', 'Buffer', 'fetch'])
 
 // Semantic code is dependency-closed by default. Any third-party package belongs
 // here only after we prove it is runtime-neutral and add policy tests; semver is
-// the reviewed pure value evaluator required by the M3 plugin compatibility rule.
-const allowedSemanticExternalDependencies = new Set(['semver'])
+// the reviewed pure value evaluator required only by the M3 model-layer rule.
+const allowedSemanticExternalDependenciesByLayer = new Map([
+  ['model', new Set(['semver'])],
+])
 
 const allowedInternalDependencies = new Map([
   ['public', new Set(['public', 'product', 'protocol'])],
@@ -208,7 +210,7 @@ export function checkSourceImportPolicy(files) {
       if (
         semanticLayers.has(layer) &&
         isBareExternalSpecifier(specifier) &&
-        !allowedSemanticExternalDependencies.has(specifier)
+        !allowedSemanticExternalDependenciesByLayer.get(layer)?.has(specifier)
       ) {
         violations.push({ file, specifier, rule: 'semantic-external-dependency' })
         continue
