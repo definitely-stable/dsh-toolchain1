@@ -509,14 +509,34 @@ function factTokenMatch(
   document: ContractSearchDocument,
   token: string,
 ): { readonly evidenceIds: readonly string[]; readonly factIndexes: readonly number[] } | undefined {
-  const evidenceIds: string[] = []
-  const factIndexes: number[] = []
+  let firstFact: ContractSearchDocument['facts'][number] | undefined
+  let evidenceIds: string[] | undefined
+  let factIndexes: number[] | undefined
+
   for (const fact of document.facts) {
     if (!fact.uniqueTokens.has(token)) continue
+    if (firstFact === undefined) {
+      firstFact = fact
+      continue
+    }
+    if (evidenceIds === undefined || factIndexes === undefined) {
+      evidenceIds = [...firstFact.evidenceIds, ...fact.evidenceIds]
+      factIndexes = [firstFact.index, fact.index]
+      continue
+    }
     evidenceIds.push(...fact.evidenceIds)
     factIndexes.push(fact.index)
   }
-  if (factIndexes.length === 0) return undefined
+
+  if (firstFact === undefined) return undefined
+  if (evidenceIds === undefined || factIndexes === undefined) {
+    return Object.freeze({
+      evidenceIds: firstFact.evidenceIds.length <= 1
+        ? firstFact.evidenceIds
+        : frozenEvidenceIds(firstFact.evidenceIds),
+      factIndexes: Object.freeze([firstFact.index]),
+    })
+  }
   return Object.freeze({
     evidenceIds: frozenEvidenceIds(evidenceIds),
     factIndexes: Object.freeze(factIndexes),
