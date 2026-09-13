@@ -33,11 +33,11 @@ const contracts: ContractDefinition[] = [{
   name: 'RemoteSessionBroker',
   qualifiedName: '@deepseek-ai/dsh-broker.RemoteSessionBroker',
   availability: 'available',
-  summary: 'Coordinates bounded broker operations.',
+  summary: 'Coordinates broker operations.',
   facts: [
     {
       key: 'capability-profile',
-      value: 'RemoteSessionBroker',
+      value: 'bounded transport relay',
       evidenceIds: ['types:broker:a.d.ts'],
     },
   ],
@@ -57,7 +57,7 @@ async function fixture() {
 describe('Contract search fact-match fast path', () => {
   it('keeps singleton fact evidence isolated from returned search results', async () => {
     const { index, derived } = await fixture()
-    const query = 'please remote session broker'
+    const query = 'please bounded transport relay'
 
     const explanation = explainContractSearch(index, query, undefined, 5, derived)
     expect(explanation.lane).toBe('intent')
@@ -103,7 +103,7 @@ describe('Contract search fact-match fast path', () => {
 
     const result = searchContractIndex(
       index,
-      'please remote session broker',
+      'please bounded transport relay',
       undefined,
       5,
       manuallySuppliedDerived,
