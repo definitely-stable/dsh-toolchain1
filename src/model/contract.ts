@@ -509,11 +509,17 @@ function factTokenMatch(
   document: ContractSearchDocument,
   token: string,
 ): { readonly evidenceIds: readonly string[]; readonly factIndexes: readonly number[] } | undefined {
-  const facts = document.facts.filter(fact => fact.uniqueTokens.has(token))
-  if (facts.length === 0) return undefined
+  const evidenceIds: string[] = []
+  const factIndexes: number[] = []
+  for (const fact of document.facts) {
+    if (!fact.uniqueTokens.has(token)) continue
+    evidenceIds.push(...fact.evidenceIds)
+    factIndexes.push(fact.index)
+  }
+  if (factIndexes.length === 0) return undefined
   return Object.freeze({
-    evidenceIds: frozenEvidenceIds(facts.flatMap(fact => fact.evidenceIds)),
-    factIndexes: Object.freeze(facts.map(fact => fact.index)),
+    evidenceIds: frozenEvidenceIds(evidenceIds),
+    factIndexes: Object.freeze(factIndexes),
   })
 }
 
