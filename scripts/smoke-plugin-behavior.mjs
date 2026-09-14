@@ -15,6 +15,8 @@ export const PLUGIN_BEHAVIOR_SMOKE_PROFILE = 'web'
 export const PLUGIN_BEHAVIOR_SMOKE_TOOL = 'dsh_toolchain_behavior_smoke_tool'
 
 const CANDIDATE_PACKAGE = 'dsh-toolchain-behavior-smoke-candidate'
+const DIAGNOSTIC_PACKAGE = 'dsh-toolchain-behavior-smoke-diagnostic'
+const DIAGNOSTIC_MARKER = 'DSH_TOOLCHAIN_BEHAVIOR_DIAGNOSTIC_V1:'
 const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/u
 const ARTIFACT_FINGERPRINT = /^dsh-plugin-artifact-v1:[0-9a-f]{64}$/u
 
@@ -86,6 +88,91 @@ async function createBehaviorCandidate(root, env) {
   return realpath(packed)
 }
 
+async function probeDirectDshBehavior(root, runner, candidate, env) {
+  const diagnosticHome = join(root, 'diagnostic-home')
+  const probe = join(root, 'diagnostic-probe')
+  const diagnosticEnv = { ...env, DSH_HOME: diagnosticHome }
+  await mkdir(probe, { recursive: true })
+
+  const probeSource = [
+    "export const inject = ['tools', 'agentLoop']",
+    '',
+    'export async function apply(ctx) {',
+    "  const appExit = ctx.get('appExit')",
+    `  const name = ${JSON.stringify(PLUGIN_BEHAVIOR_SMOKE_TOOL)}`,
+    "  const agent = ctx.agentLoop.create('dsh-toolchain-behavior-diagnostic-agent')",
+    '  const visible = ctx.tools.schemas(agent).some(schema => schema.name === name)',
+    '  let presented = false',
+    '  try {',
+    "    agent.ctx.tools.presentAs('native')",
+    '    presented = true',
+    '  } catch {}',
+    '  let result',
+    '  if (presented) {',
+    '    try {',
+    '      result = await ctx.tools.execute({',
+    "        callId: 'dsh-toolchain-behavior-diagnostic-call',",
+    '        name,',
+    '        arguments: { value: 7 },',
+    '        agent,',
+    '        signal: AbortSignal.timeout(10000),',
+    '      })',
+    '    } catch {}',
+    '  }',
+    '  const evidence = {',
+    '    visible,',
+    '    presented,',
+    "    outcome: result === undefined ? 'threw' : result.isError ? 'error' : 'success',",
+    '    errorCode: result?.isError === true ? result.error?.info?.code ?? null : null,',
+    '    value: result?.isError === false ? result.value : null,',
+    '  }',
+    `  process.stdout.write(${JSON.stringify(DIAGNOSTIC_MARKER)} + JSON.stringify(evidence) + '\\n')`,
+    '  appExit(0)',
+    '}',
+    '',
+  ].join('\n')
+
+  await Promise.all([
+    writeFile(join(probe, 'package.json'), `${JSON.stringify({
+      name: DIAGNOSTIC_PACKAGE,
+      version: '0.0.0',
+      private: true,
+      type: 'module',
+      exports: './probe.mjs',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    }, undefined, 2)}\n`, { flag: 'wx' }),
+    writeFile(
+      join(probe, 'cordis.patch.yml'),
+      `- insert:\n    - id: ${DIAGNOSTIC_PACKAGE}\n      name: '${DIAGNOSTIC_PACKAGE}'\n`,
+      { flag: 'wx' },
+    ),
+    writeFile(join(probe, 'probe.mjs'), probeSource, { flag: 'wx' }),
+  ])
+
+  run('pnpm', ['exec', 'dsh', '--profile', PLUGIN_BEHAVIOR_SMOKE_PROFILE, '--dump-config'], {
+    cwd: runner,
+    env: diagnosticEnv,
+    capture: true,
+    timeout: 180_000,
+  })
+  run('pnpm', [
+    'exec', 'dsh', 'plugin', '--profile', PLUGIN_BEHAVIOR_SMOKE_PROFILE,
+    'add', '--ignore-scripts', candidate,
+  ], { cwd: runner, env: diagnosticEnv, capture: true, timeout: 180_000 })
+  run('pnpm', [
+    'exec', 'dsh', 'plugin', '--profile', PLUGIN_BEHAVIOR_SMOKE_PROFILE,
+    'add', '--ignore-scripts', probe,
+  ], { cwd: runner, env: diagnosticEnv, capture: true, timeout: 180_000 })
+  const stdout = run('pnpm', [
+    'exec', 'dsh', '--profile', PLUGIN_BEHAVIOR_SMOKE_PROFILE, '--no-open', '--port', '0',
+  ], { cwd: runner, env: diagnosticEnv, capture: true, timeout: 180_000 })
+  const line = stdout.split(/\r?\n/u).find(candidateLine => candidateLine.startsWith(DIAGNOSTIC_MARKER))
+  assert.ok(line, 'Plugin Behavior diagnostic: exact direct DSH evidence marker missing')
+  const evidence = JSON.parse(line.slice(DIAGNOSTIC_MARKER.length))
+  process.stdout.write(`Plugin Behavior direct DSH diagnostic: ${JSON.stringify(evidence)}\n`)
+  return evidence
+}
+
 function parseTarget(stdout) {
   let response
   try {
@@ -136,6 +223,7 @@ export async function smokePluginBehavior(toolchainTarball) {
       env,
       timeout: 480_000,
     })
+    await probeDirectDshBehavior(root, runner, candidate, env)
     run('pnpm', ['exec', 'dsh', '--profile', PLUGIN_BEHAVIOR_SMOKE_PROFILE, '--dump-config'], {
       cwd: runner,
       env,
