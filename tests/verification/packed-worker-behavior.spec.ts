@@ -5,19 +5,17 @@ import path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { Diagnostic, TargetSnapshot, VerificationReport } from '../../src/protocol/index.js'
+import type {
+  Diagnostic,
+  PluginBehaviorAssertion,
+  TargetSnapshot,
+  VerificationReport,
+} from '../../src/protocol/index.js'
 import { runPackedPluginVerification } from '../../src/verification/packed-worker.js'
 import type { VerificationProcessOutcome, VerificationProcessRequest } from '../../src/verification/process.js'
 
 const roots: string[] = []
 type Check = VerificationReport['checks'][number]
-
-interface BehaviorAssertion {
-  readonly kind: 'agent-tool-result'
-  readonly name: string
-  readonly arguments: unknown
-  readonly expectedValue: unknown
-}
 
 interface ExecutionView {
   readonly checks: readonly Check[]
@@ -43,7 +41,7 @@ function bootMarker(profile: string): string {
   return `DSH_TOOLCHAIN_VERIFY_BOOT_PROBE_V1:${sha256(`profile:${profile}`)}`
 }
 
-function behaviorMarkers(profile: string, assertions: readonly BehaviorAssertion[]) {
+function behaviorMarkers(profile: string, assertions: readonly PluginBehaviorAssertion[]) {
   const digest = sha256(`profile:${profile}\nbehavior:${JSON.stringify(assertions)}`)
   const prefix = `DSH_TOOLCHAIN_VERIFY_BEHAVIOR_PROBE_V1:${digest}`
   return { passedMarker: `${prefix}:PASS`, failedMarker: `${prefix}:FAIL` }
@@ -90,7 +88,11 @@ function successfulOutcomes(stdout: string): readonly VerificationProcessOutcome
   ]
 }
 
-async function run(root: string, assertions: readonly BehaviorAssertion[], stdout: string): Promise<ExecutionView> {
+async function run(
+  root: string,
+  assertions: readonly PluginBehaviorAssertion[],
+  stdout: string,
+): Promise<ExecutionView> {
   const bytes = Buffer.from('behavior-candidate')
   const artifact = path.join(root, 'candidate.tgz')
   await writeFile(artifact, bytes)
@@ -120,7 +122,7 @@ function check(execution: ExecutionView, id: Check['id']): Check | undefined {
 }
 
 describe('packed worker behavior assertions', () => {
-  const assertions: readonly BehaviorAssertion[] = [{
+  const assertions: readonly PluginBehaviorAssertion[] = [{
     kind: 'agent-tool-result',
     name: 'candidate_tool',
     arguments: { value: 1 },
