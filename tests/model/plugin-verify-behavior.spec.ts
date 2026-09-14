@@ -93,4 +93,42 @@ describe('plugin.verify behavior reduction', () => {
       domain: 'verification',
     }))
   })
+
+  it('does not invent behavior uncertainty when no behavior assertion was requested and boot failed', () => {
+    const bootDiagnostic = {
+      code: 'VERIFY_BOOT_FAILED',
+      severity: 'error' as const,
+      domain: 'verification',
+      summary: 'Verification boot failed.',
+    }
+    const runtimeChecks = checks({
+      id: 'behavior',
+      status: 'skipped',
+      reason: 'prerequisite-boot-failed',
+    }).map(check => check.id === 'boot'
+      ? { id: 'boot' as const, status: 'failed' as const, reason: 'verify-boot-failed' }
+      : check)
+
+    const report = reducePluginVerification({
+      artifactFingerprint: ARTIFACT,
+      initialTargetFingerprint: TARGET,
+      finalTargetFingerprint: TARGET,
+      staticResult: staticResult(),
+      staticDiagnostics: [],
+      execution: {
+        artifactFingerprint: ARTIFACT,
+        targetFingerprint: TARGET,
+        executionPolicy: 'safe',
+        checks: runtimeChecks,
+        diagnostics: [bootDiagnostic],
+        cleanup: 'succeeded',
+        terminal: 'failed',
+      },
+    })
+
+    expect(report.status).toBe('failed')
+    expect(report.diagnostics).not.toContainEqual(expect.objectContaining({
+      code: 'VERIFY_BEHAVIOR_UNPROVEN',
+    }))
+  })
 })
