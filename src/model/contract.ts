@@ -11,6 +11,7 @@ import {
   contractSearchCandidatesForRanking,
   createContractSearchIndex,
   intentQueryTokens,
+  requiredIntentMatches,
   type ContractSearchDocument,
   type ContractSearchIndex,
 } from './contract-search-index.js'
@@ -467,14 +468,11 @@ function factOrSummaryWitnessFromDocument(
   return frozenEvidenceIds(evidenceIds)
 }
 
-function isIntentFallbackQuery(query: string): boolean {
+function intentFallbackQueryTokens(query: string): readonly string[] | undefined {
   const trimmed = query.trim()
-  return /\s/u.test(trimmed) && intentQueryTokens(trimmed).length >= 2
-}
-
-function requiredIntentMatches(tokenCount: number): number {
-  if (tokenCount <= 1) return tokenCount
-  return Math.min(3, Math.max(2, Math.ceil(tokenCount * 0.4)))
+  if (!/\s/u.test(trimmed)) return undefined
+  const queryTokens = intentQueryTokens(trimmed)
+  return queryTokens.length >= 2 ? queryTokens : undefined
 }
 
 const INTENT_SCORE_SCALE = 100
@@ -564,10 +562,10 @@ function intentTokenMatch(
 
 function intentMatch(
   contract: ContractDefinition,
-  query: string,
+  queryTokens: readonly string[],
+  requiredMatches: number,
   derived: ContractSearchIndex,
 ): LexicalMatch | undefined {
-  const queryTokens = intentQueryTokens(query)
   if (queryTokens.length === 0) return undefined
 
   const document = derived.documents.get(contract.id)
@@ -587,7 +585,7 @@ function intentMatch(
     evidenceIds.push(...match.evidenceIds)
   }
 
-  if (matched < requiredIntentMatches(queryTokens.length)) return undefined
+  if (matched < requiredMatches) return undefined
   const coverageBonus = Math.round((matched / queryTokens.length) * 50)
   const coherenceBonus = sameFactCoherenceBonus(document, queryTokens)
   return Object.freeze({
@@ -737,7 +735,8 @@ function rankContractSearch(
   if (strictMatches.length > 0) {
     return Object.freeze({ lane: 'strict' as const, matches: Object.freeze(strictMatches) })
   }
-  if (!isIntentFallbackQuery(query)) {
+  const queryTokens = intentFallbackQueryTokens(query)
+  if (queryTokens === undefined) {
     return Object.freeze({ lane: 'none' as const, matches: Object.freeze([]) })
   }
 
@@ -750,17 +749,17 @@ function rankContractSearch(
   }
 
   const intentIndex = derived ?? createContractSearchIndex(index)
-  const queryTokens = intentQueryTokens(query)
+  const requiredMatches = requiredIntentMatches(queryTokens.length)
   const intentContracts = contractSearchCandidatesForRanking(
     intentIndex,
     contracts,
     queryTokens,
-    requiredIntentMatches(queryTokens.length),
+    requiredMatches,
   )
   const matches = rankedMatches(
     intentContracts,
     query,
-    (contract, intentQuery) => intentMatch(contract, intentQuery, intentIndex),
+    contract => intentMatch(contract, queryTokens, requiredMatches, intentIndex),
     Math.min(limit, 1),
   )
   return Object.freeze({

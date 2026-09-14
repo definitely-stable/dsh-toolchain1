@@ -120,6 +120,11 @@ export function intentQueryTokens(query: string): readonly string[] {
   return Object.freeze(searchTokens(query).filter(token => !INTENT_STOP_WORDS.has(token)))
 }
 
+export function requiredIntentMatches(tokenCount: number): number {
+  if (tokenCount <= 1) return tokenCount
+  return Math.min(3, Math.max(2, Math.ceil(tokenCount * 0.4)))
+}
+
 function fieldDocument(value: string): ContractSearchFieldDocument {
   const tokens = searchTokens(value)
   return Object.freeze({

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   contractSearchCandidateIds,
   createContractSearchIndex,
+  requiredIntentMatches,
   searchTokens,
 } from '../../src/model/contract-search-index.js'
 import type { ContractDefinition } from '../../src/protocol/index.js'
@@ -84,4 +85,19 @@ describe('Contract Search postings candidates', () => {
     expect(() => contractSearchCandidateIds(derived, ['session'], 0)).toThrow(/requiredMatches/)
     expect(() => contractSearchCandidateIds(derived, ['session'], 2)).not.toThrow()
   })
+
+  it.each([
+    [0, 0],
+    [1, 1],
+    [2, 2],
+    [3, 2],
+    [4, 2],
+    [5, 2],
+    [6, 3],
+    [7, 3],
+    [20, 3],
+  ])('uses the canonical required-match threshold for %i query tokens', (tokenCount, expected) => {
+    expect(requiredIntentMatches(tokenCount)).toBe(expected)
+  })
+
 })
