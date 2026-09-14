@@ -17,6 +17,7 @@ export type VerificationDiagnosticCode =
   | 'VERIFY_COMPOSE_FAILED'
   | 'VERIFY_BOOT_FAILED'
   | 'VERIFY_VISIBILITY_FAILED'
+  | 'VERIFY_BEHAVIOR_FAILED'
   | 'VERIFY_CLEANUP_FAILED'
 
 export function verificationDiagnostic(
