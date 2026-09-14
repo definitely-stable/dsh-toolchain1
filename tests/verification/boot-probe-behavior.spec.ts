@@ -69,7 +69,7 @@ describe('verification behavior probe', () => {
     expect(source).toContain(JSON.stringify(`${probe.behavior?.failedMarker}\n`))
   })
 
-  it('uses one Agent epoch when Agent Tool visibility and behavior are requested together', async () => {
+  it('uses one Agent epoch and switches only behavior dispatch to native presentation after visibility', async () => {
     const root = await fixtureRoot()
     const visibility = [{ kind: 'agent-tool', name: 'candidate_tool' }]
     const behavior: readonly BehaviorAssertion[] = [{
@@ -86,7 +86,13 @@ describe('verification behavior probe', () => {
     expect(source.match(/tools\.schemas\(agent\)/gu)).toHaveLength(1)
     expect(source.match(/tools\.execute\(/gu)).toHaveLength(1)
     expect(source).toContain('let behaviorPassed = agent !== undefined && tools !== undefined && visibilityPassed')
-    expect(source.indexOf('let behaviorPassed =')).toBeGreaterThan(source.indexOf('process.stdout.write(visibilityPassed'))
+    expect(source).toContain("agent.ctx.tools.presentAs('native')")
+    const visibilityEvidenceIndex = source.indexOf('process.stdout.write(visibilityPassed')
+    const nativePresentationIndex = source.indexOf("agent.ctx.tools.presentAs('native')")
+    const behaviorExecutionIndex = source.indexOf('await tools.execute(')
+    expect(nativePresentationIndex).toBeGreaterThan(visibilityEvidenceIndex)
+    expect(behaviorExecutionIndex).toBeGreaterThan(nativePresentationIndex)
+    expect(source.indexOf('let behaviorPassed =')).toBeGreaterThan(visibilityEvidenceIndex)
   })
 
   it('gates behavior execution on requested visibility success in the same Agent epoch', async () => {
