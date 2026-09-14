@@ -151,7 +151,7 @@ export type PluginCheckRequest = {
 
 export type PluginPackageRelationship = "host-peer-required" | "host-peer-optional" | "artifact-dependency"
 
-export type PluginRequirementStatus = "satisfied" | "not-required-from-host" | "missing" | "unproven"
+export type PluginRequirementStatus = "satisfied" | "not-required-from-host" | "missing" | "version-mismatch" | "unproven"
 
 export type PluginRequirementAnalysis = {
   readonly "packageName": string

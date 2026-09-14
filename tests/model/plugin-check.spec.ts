@@ -173,10 +173,58 @@ describe('Exact Target Plugin Check static compatibility reducer', () => {
     }))
   })
 
-  it('keeps canonical non-matches, prerelease wildcard exclusion, and malformed relations unproven', () => {
+  it('proves canonical stable, prerelease, and wildcard non-matches as version mismatch', () => {
     const cases = [
-      { target: '4.0.2', range: '^4.1.0' },
+      { target: '4.0.2', range: '^5.0.0' },
+      { target: '0.1.5-rc.2', range: '0.1.5-rc.1' },
+      { target: '0.1.5-rc.2', range: '^0.1.2-alpha.5 || 0.1.5-rc.1' },
       { target: '0.1.5-rc.2', range: '*' },
+    ]
+
+    for (const testCase of cases) {
+      const analysis = analyzePluginCompatibility(
+        requiredPeer(testCase.range),
+        contractIndex({ '@deepseek-ai/cordis': testCase.target }),
+      )
+
+      expect(verdict(analysis)).toBe('incompatible')
+      expect(analysis.requirements[0]).toEqual(expect.objectContaining({
+        status: 'version-mismatch',
+        targetVersion: testCase.target,
+      }))
+      expect(analysis.diagnostics).toContainEqual(expect.objectContaining({
+        code: 'PLUGIN_DSH_VERSION_MISMATCH',
+        severity: 'error',
+        domain: 'plugin',
+      }))
+      expect(analysis.diagnostics).not.toContainEqual(expect.objectContaining({
+        code: 'PLUGIN_DSH_VERSION_UNPROVEN',
+      }))
+    }
+  })
+
+  it('treats an installed optional Host peer with a canonical non-match as incompatible', () => {
+    const analysis = analyzePluginCompatibility(subject({
+      requirements: [{
+        packageName: '@deepseek-ai/dsh-tools',
+        range: '^0.2.0',
+        relationship: 'host-peer-optional',
+      }],
+    }), contractIndex({ '@deepseek-ai/dsh-tools': '0.1.5-rc.2' }))
+
+    expect(verdict(analysis)).toBe('incompatible')
+    expect(analysis.requirements[0]).toEqual(expect.objectContaining({
+      status: 'version-mismatch',
+      targetVersion: '0.1.5-rc.2',
+    }))
+    expect(analysis.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'PLUGIN_DSH_VERSION_MISMATCH',
+      severity: 'error',
+    }))
+  })
+
+  it('keeps malformed target versions and ranges unproven without throwing', () => {
+    const cases = [
       { target: 'not-semver', range: '^4.0.1' },
       { target: '4.0.2', range: 'definitely not a range' },
     ]
@@ -199,6 +247,9 @@ describe('Exact Target Plugin Check static compatibility reducer', () => {
       expect(analysis.diagnostics).toContainEqual(expect.objectContaining({
         code: 'PLUGIN_DSH_VERSION_UNPROVEN',
         severity: 'warning',
+      }))
+      expect(analysis.diagnostics).not.toContainEqual(expect.objectContaining({
+        code: 'PLUGIN_DSH_VERSION_MISMATCH',
       }))
     }
   })

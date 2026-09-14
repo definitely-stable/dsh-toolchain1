@@ -317,7 +317,7 @@
       "enum": ["host-peer-required", "host-peer-optional", "artifact-dependency"]
     },
     "pluginRequirementStatus": {
-      "enum": ["satisfied", "not-required-from-host", "missing", "unproven"]
+      "enum": ["satisfied", "not-required-from-host", "missing", "version-mismatch", "unproven"]
     },
     "pluginRequirementAnalysis": {
       "type": "object",
