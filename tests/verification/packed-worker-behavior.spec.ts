@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type {
   Diagnostic,
   PluginBehaviorAssertion,
+  PluginVisibilityAssertion,
   TargetSnapshot,
   VerificationReport,
 } from '../../src/protocol/index.js'
@@ -39,6 +40,12 @@ function sha256(value: string | Buffer): string {
 
 function bootMarker(profile: string): string {
   return `DSH_TOOLCHAIN_VERIFY_BOOT_PROBE_V1:${sha256(`profile:${profile}`)}`
+}
+
+function visibilityMarkers(profile: string, assertions: readonly PluginVisibilityAssertion[]) {
+  const digest = sha256(`profile:${profile}\nvisibility:${JSON.stringify(assertions)}`)
+  const prefix = `DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2:${digest}`
+  return { passedMarker: `${prefix}:PASS`, failedMarker: `${prefix}:FAIL` }
 }
 
 function behaviorMarkers(profile: string, assertions: readonly PluginBehaviorAssertion[]) {
@@ -92,6 +99,7 @@ async function run(
   root: string,
   assertions: readonly PluginBehaviorAssertion[],
   stdout: string,
+  visibilityAssertions: readonly PluginVisibilityAssertion[] = [],
 ): Promise<ExecutionView> {
   const bytes = Buffer.from('behavior-candidate')
   const artifact = path.join(root, 'candidate.tgz')
@@ -102,6 +110,7 @@ async function run(
     artifact: { path: artifact, expectedContentHash: sha256(bytes) },
     target: target(),
     executionPolicy: 'safe' as const,
+    ...(visibilityAssertions.length === 0 ? {} : { visibilityAssertions }),
     behaviorAssertions: assertions,
   }
   return await runPackedPluginVerification(input, {
@@ -166,5 +175,34 @@ describe('packed worker behavior assertions', () => {
       status: 'skipped',
       reason: 'behavior-assertions-not-executed',
     })
+  })
+
+  it('keeps behavior blocked by a failed requested visibility check even if a behavior PASS marker is present', async () => {
+    const root = await fixtureRoot()
+    const visibilityAssertions: readonly PluginVisibilityAssertion[] = [{
+      kind: 'agent-tool',
+      name: 'missing_candidate_tool',
+    }]
+    const visibility = visibilityMarkers('headless', visibilityAssertions)
+    const behavior = behaviorMarkers('headless', assertions)
+    const execution = await run(
+      root,
+      assertions,
+      `${bootMarker('headless')}\n${visibility.failedMarker}\n${behavior.passedMarker}\n`,
+      visibilityAssertions,
+    )
+
+    expect(check(execution, 'visibility')).toEqual({
+      id: 'visibility',
+      status: 'failed',
+      reason: 'verify-visibility-failed',
+    })
+    expect(check(execution, 'behavior')).toEqual({
+      id: 'behavior',
+      status: 'skipped',
+      reason: 'prerequisite-visibility-failed',
+    })
+    expect(execution.diagnostics).toContainEqual(expect.objectContaining({ code: 'VERIFY_VISIBILITY_FAILED' }))
+    expect(execution.diagnostics).not.toContainEqual(expect.objectContaining({ code: 'VERIFY_BEHAVIOR_FAILED' }))
   })
 })

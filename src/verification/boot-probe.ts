@@ -85,8 +85,12 @@ function agentSetupSource(profile: string): string {
   return `  let tools\n  let agent\n  try {\n    const agentLoop = rootCtx.get('agentLoop', false)\n    tools = rootCtx.get('tools', false)\n    if (agentLoop !== undefined && tools !== undefined) {\n      agent = agentLoop.create(${agentId})\n    }\n  } catch {\n    tools = undefined\n    agent = undefined\n  }\n`
 }
 
-function behaviorSource(behavior: VerificationBehaviorProbe): string {
-  return `  let behaviorPassed = agent !== undefined && tools !== undefined\n  if (behaviorPassed) {\n    for (let index = 0; index < behaviorAssertions.length; index += 1) {\n      const assertion = behaviorAssertions[index]\n      try {\n        const result = await tools.execute({\n          callId: \`dsh-toolchain-verify-behavior-\${index}\`,\n          name: assertion.name,\n          arguments: assertion.arguments,\n          agent,\n          signal: AbortSignal.timeout(10000),\n        })\n        if (result.isError || !isDeepStrictEqual(result.value, assertion.expectedValue)) {\n          behaviorPassed = false\n          break\n        }\n      } catch {\n        behaviorPassed = false\n        break\n      }\n    }\n  }\n  process.stdout.write(behaviorPassed ? ${JSON.stringify(`${behavior.passedMarker}\n`)} : ${JSON.stringify(`${behavior.failedMarker}\n`)})\n`
+function behaviorSource(
+  behavior: VerificationBehaviorProbe,
+  requiresVisibilityPass: boolean,
+): string {
+  const visibilityGate = requiresVisibilityPass ? ' && visibilityPassed' : ''
+  return `  let behaviorPassed = agent !== undefined && tools !== undefined${visibilityGate}\n  if (behaviorPassed) {\n    for (let index = 0; index < behaviorAssertions.length; index += 1) {\n      const assertion = behaviorAssertions[index]\n      try {\n        const result = await tools.execute({\n          callId: \`dsh-toolchain-verify-behavior-\${index}\`,\n          name: assertion.name,\n          arguments: assertion.arguments,\n          agent,\n          signal: AbortSignal.timeout(10000),\n        })\n        if (result.isError || !isDeepStrictEqual(result.value, assertion.expectedValue)) {\n          behaviorPassed = false\n          break\n        }\n      } catch {\n        behaviorPassed = false\n        break\n      }\n    }\n  }\n  process.stdout.write(behaviorPassed ? ${JSON.stringify(`${behavior.passedMarker}\n`)} : ${JSON.stringify(`${behavior.failedMarker}\n`)})\n`
 }
 
 /**
@@ -132,7 +136,9 @@ export async function createVerificationBootProbe(
   const behaviorAssertionsDeclaration = behavior === undefined
     ? ''
     : `  const behaviorAssertions = ${behaviorAssertionsSource}\n`
-  const behaviorExecution = behavior === undefined ? '' : behaviorSource(behavior)
+  const behaviorExecution = behavior === undefined
+    ? ''
+    : behaviorSource(behavior, visibility !== undefined)
   const applyKeyword = behavior === undefined ? 'function' : 'async function'
   const source = `${imports}${inject}export ${applyKeyword} apply(rootCtx) {\n  const appExit = rootCtx.get('appExit')\n  if (typeof appExit !== 'function') throw new Error('DSH verification boot probe requires launcher-owned ctx.appExit')\n  process.stdout.write(${JSON.stringify(`${marker}\n`)})\n${agentSetup}${visibilitySource}${behaviorAssertionsDeclaration}${behaviorExecution}  appExit(0)\n}\n`
 

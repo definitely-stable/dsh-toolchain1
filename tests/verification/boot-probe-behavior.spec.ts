@@ -85,6 +85,26 @@ describe('verification behavior probe', () => {
     expect(source.match(/agentLoop\.create\(/gu)).toHaveLength(1)
     expect(source.match(/tools\.schemas\(agent\)/gu)).toHaveLength(1)
     expect(source.match(/tools\.execute\(/gu)).toHaveLength(1)
+    expect(source).toContain('let behaviorPassed = agent !== undefined && tools !== undefined && visibilityPassed')
+    expect(source.indexOf('let behaviorPassed =')).toBeGreaterThan(source.indexOf('process.stdout.write(visibilityPassed'))
+  })
+
+  it('gates behavior execution on requested visibility success in the same Agent epoch', async () => {
+    const root = await fixtureRoot()
+    const visibility = [{ kind: 'agent-tool', name: 'missing_candidate_tool' }]
+    const behavior: readonly BehaviorAssertion[] = [{
+      kind: 'agent-tool-result',
+      name: 'candidate_tool',
+      arguments: { value: 1 },
+      expectedValue: { ok: true },
+    }]
+
+    const probe = await createProbe(root, 'headless', visibility, behavior)
+    const source = await readFile(path.join(probe.packagePath, 'probe.mjs'), 'utf8')
+
+    expect(source).toContain('let behaviorPassed = agent !== undefined && tools !== undefined && visibilityPassed')
+    expect(source).toContain('if (behaviorPassed) {')
+    expect(source.indexOf('if (behaviorPassed) {')).toBeGreaterThan(source.indexOf('if (!visibleTools.has(assertion.name)) visibilityPassed = false'))
   })
 
   it('does not embed requested Tool names or JSON values in public marker identities', async () => {
