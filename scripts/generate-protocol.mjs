@@ -142,7 +142,10 @@ function typeExpression(node, path) {
       })
 
       if (node.additionalProperties !== false) {
-        members.push('  readonly [key: string]: unknown')
+        const additionalType = node.additionalProperties === true || node.additionalProperties === undefined
+          ? 'unknown'
+          : typeExpression(node.additionalProperties, `${path}/additionalProperties`)
+        members.push(`  readonly [key: string]: ${additionalType}`)
       }
 
       return members.length === 0 ? 'Record<string, unknown>' : `{\n${members.join('\n')}\n}`

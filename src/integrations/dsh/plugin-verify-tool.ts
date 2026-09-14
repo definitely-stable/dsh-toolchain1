@@ -39,6 +39,22 @@ export const PLUGIN_VERIFY_PARAMETER_SCHEMA: Record<string, unknown> = Object.fr
         required: ['kind', 'name'],
       },
     },
+    behaviorAssertions: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 8,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          kind: { enum: ['agent-tool-result'] },
+          name: { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' },
+          arguments: {},
+          expectedValue: {},
+        },
+        required: ['kind', 'name', 'arguments', 'expectedValue'],
+      },
+    },
   },
   required: ['target', 'subject', 'executionPolicy'],
 })
@@ -52,7 +68,7 @@ export function createPluginVerifyToolDefinition(
 ): DshToolDefinition {
   return {
     name: PLUGIN_VERIFY_TOOL_NAME,
-    description: 'Verify one packed plugin against an exact installed DSH target. This executes candidate code in an isolated temporary DSH environment under the safe policy and can prove explicitly requested Host Service visibility or Agent Tool callable-schema visibility without mutating the active profile.',
+    description: 'Verify one packed plugin against an exact installed DSH target. This executes candidate code in an isolated temporary DSH environment under the safe policy and can prove explicitly requested Host Service visibility, Agent Tool callable-schema visibility, or exact Agent Tool structured behavior results without mutating the active profile.',
     parameters: PLUGIN_VERIFY_PARAMETER_SCHEMA,
     output: {
       schema: {

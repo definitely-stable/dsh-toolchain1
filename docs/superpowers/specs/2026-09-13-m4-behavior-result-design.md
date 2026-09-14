@@ -68,7 +68,7 @@ DSH_TOOLCHAIN_VERIFY_BEHAVIOR_PROBE_V1:<sha256>:FAIL
 
 The generated probe becomes async only when behavior assertions are present. It injects `tools` and `agentLoop`, creates exactly one Agent for all Agent Tool visibility/behavior work, and executes assertions sequentially. Sequential execution avoids introducing concurrency semantics into a compatibility proof.
 
-Each call uses a Toolchain-owned `AbortSignal.timeout(10_000)`, deterministic opaque call id derived from assertion index, the shared Agent, requested name and exact JSON arguments. Success comparison uses structured deep equality; object key insertion order is irrelevant.
+Each call uses a Toolchain-owned `AbortSignal.timeout(10_000)`, deterministic opaque call id derived from assertion index, the shared Agent, requested name and exact JSON arguments. Success comparison uses structured deep equality over lossless JSON; object key insertion order is irrelevant, array order is significant, and the Protocol parser normalizes direct `-0` to JSON-equivalent `0`.
 
 The probe must not log Tool names, arguments, expected values, returned values or failures. Public evidence is only the content-addressed marker and the stable verification diagnostic.
 
@@ -77,6 +77,8 @@ The probe must not log Tool names, arguments, expected values, returned values o
 `executionPolicy='safe'` continues to mean disposable Toolchain-owned DSH home/process isolation and bounded execution. It is not a malicious-code sandbox. Explicit Tool execution can exercise Tool-defined side effects inside the disposable runtime and any external capabilities the candidate/runtime itself can reach.
 
 This slice therefore does not add implicit behavior discovery, arbitrary JavaScript expressions, Host service reflection, shell commands, filesystem/network assertion DSLs, Client/page automation, or generic scripting.
+
+The deterministic PASS/FAIL markers are verifier control-flow/evidence synchronization tokens, not authentication against adversarial candidate code executing in the same process. The current `safe` boundary therefore makes no tamper-proof receipt claim; adversarial-process attestation would require a different isolation/trust boundary and is outside this slice.
 
 ## Reducer
 

@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import type {
   Diagnostic,
+  PluginBehaviorAssertion,
   PluginVisibilityAssertion,
   TargetSnapshot,
   VerificationReport,
@@ -67,6 +68,7 @@ export interface PackedPluginVerificationInput {
   readonly target: TargetSnapshot
   readonly executionPolicy: 'safe'
   readonly visibilityAssertions?: readonly PluginVisibilityAssertion[]
+  readonly behaviorAssertions?: readonly PluginBehaviorAssertion[]
 }
 
 export interface PackedPluginVerificationExecution {
@@ -411,6 +413,7 @@ export async function runPackedPluginVerification(
           root,
           input.target.profile.name,
           input.visibilityAssertions ?? [],
+          input.behaviorAssertions ?? [],
         )
       } catch {
         const diagnostic = verificationDiagnostic(
@@ -520,6 +523,32 @@ export async function runPackedPluginVerification(
           checks = failStage(checks, 'visibility', diagnostic)
         } else {
           checks = skipVerificationStage(checks, 'visibility', 'visibility-assertions-not-executed')
+        }
+      }
+
+      if ((input.behaviorAssertions?.length ?? 0) > 0) {
+        const visibilityRequested = (input.visibilityAssertions?.length ?? 0) > 0
+        const visibilityCheck = checks.find(check => check.id === 'visibility')
+        if (visibilityRequested && visibilityCheck?.status !== 'passed') {
+          if (visibilityCheck?.status !== 'failed') {
+            checks = skipVerificationStage(checks, 'behavior', 'behavior-assertions-not-executed')
+          }
+        } else {
+          const behavior = bootProbe.behavior
+          const passed = behavior !== undefined && hasExactMarker(bootOutcome.stdout, behavior.passedMarker)
+          const failed = behavior !== undefined && hasExactMarker(bootOutcome.stdout, behavior.failedMarker)
+          if (passed && !failed) {
+            checks = passVerificationStage(checks, 'behavior')
+          } else if (failed && !passed) {
+            const diagnostic = verificationDiagnostic(
+              'VERIFY_BEHAVIOR_FAILED',
+              'Requested Agent Tool behavior did not match its expected structured result.',
+            )
+            diagnostics.push(diagnostic)
+            checks = failStage(checks, 'behavior', diagnostic)
+          } else {
+            checks = skipVerificationStage(checks, 'behavior', 'behavior-assertions-not-executed')
+          }
         }
       }
       terminal = 'completed'

@@ -2,14 +2,23 @@ import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import type { PluginVisibilityAssertion } from '../protocol/index.js'
+import type {
+  PluginBehaviorAssertion,
+  PluginVisibilityAssertion,
+} from '../protocol/index.js'
 
 const BOOT_PROBE_PACKAGE_NAME = '@dsh-toolchain/verification-boot-probe'
 const BOOT_PROBE_ID = 'dsh-toolchain-verification-boot-probe'
 const BOOT_PROBE_MARKER_PREFIX = 'DSH_TOOLCHAIN_VERIFY_BOOT_PROBE_V1:'
 const VISIBILITY_PROBE_MARKER_PREFIX = 'DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2:'
+const BEHAVIOR_PROBE_MARKER_PREFIX = 'DSH_TOOLCHAIN_VERIFY_BEHAVIOR_PROBE_V1:'
 
 export interface VerificationVisibilityProbe {
+  readonly passedMarker: string
+  readonly failedMarker: string
+}
+
+export interface VerificationBehaviorProbe {
   readonly passedMarker: string
   readonly failedMarker: string
 }
@@ -18,6 +27,7 @@ export interface VerificationBootProbe {
   readonly packagePath: string
   readonly marker: string
   readonly visibility?: VerificationVisibilityProbe
+  readonly behavior?: VerificationBehaviorProbe
 }
 
 function profileMarker(profile: string): string {
@@ -28,46 +38,67 @@ function profileMarker(profile: string): string {
   return `${BOOT_PROBE_MARKER_PREFIX}${digest}`
 }
 
+function resultMarkers(
+  prefix: string,
+  material: string,
+): VerificationVisibilityProbe {
+  const digest = createHash('sha256').update(material, 'utf8').digest('hex')
+  const markerPrefix = `${prefix}${digest}`
+  return Object.freeze({
+    passedMarker: `${markerPrefix}:PASS`,
+    failedMarker: `${markerPrefix}:FAIL`,
+  })
+}
+
 function visibilityMarkers(
   profile: string,
   assertions: readonly PluginVisibilityAssertion[],
 ): VerificationVisibilityProbe | undefined {
   if (assertions.length === 0) return undefined
-  const digest = createHash('sha256')
-    .update(`profile:${profile}\nvisibility:${JSON.stringify(assertions)}`, 'utf8')
-    .digest('hex')
-  const prefix = `${VISIBILITY_PROBE_MARKER_PREFIX}${digest}`
-  return Object.freeze({
-    passedMarker: `${prefix}:PASS`,
-    failedMarker: `${prefix}:FAIL`,
-  })
+  return resultMarkers(
+    VISIBILITY_PROBE_MARKER_PREFIX,
+    `profile:${profile}\nvisibility:${JSON.stringify(assertions)}`,
+  )
+}
+
+function behaviorMarkers(
+  profile: string,
+  assertions: readonly PluginBehaviorAssertion[],
+): VerificationBehaviorProbe | undefined {
+  if (assertions.length === 0) return undefined
+  return resultMarkers(
+    BEHAVIOR_PROBE_MARKER_PREFIX,
+    `profile:${profile}\nbehavior:${JSON.stringify(assertions)}`,
+  )
 }
 
 function hostVisibilitySource(): string {
-  return `  for (const assertion of assertions) {\n    if (assertion.kind !== 'host-service') continue\n    try {\n      if (rootCtx.get(assertion.name, false) === undefined) {\n        visibilityPassed = false\n      }\n    } catch {\n      visibilityPassed = false\n    }\n  }\n`
+  return `  for (const assertion of visibilityAssertions) {\n    if (assertion.kind !== 'host-service') continue\n    try {\n      if (rootCtx.get(assertion.name, false) === undefined) visibilityPassed = false\n    } catch {\n      visibilityPassed = false\n    }\n  }\n`
+}
+
+function agentVisibilitySource(): string {
+  return `  const toolAssertions = visibilityAssertions.filter(assertion => assertion.kind === 'agent-tool')\n  if (toolAssertions.length > 0) {\n    if (agent === undefined || tools === undefined) {\n      visibilityPassed = false\n    } else {\n      try {\n        const visibleTools = new Set(tools.schemas(agent).map(schema => schema.name))\n        for (const assertion of toolAssertions) {\n          if (!visibleTools.has(assertion.name)) visibilityPassed = false\n        }\n      } catch {\n        visibilityPassed = false\n      }\n    }\n  }\n`
+}
+
+function agentSetupSource(profile: string): string {
+  const agentId = JSON.stringify(`dsh-toolchain-verify-agent-${profile}`)
+  return `  let tools\n  let agent\n  try {\n    const agentLoop = rootCtx.get('agentLoop', false)\n    tools = rootCtx.get('tools', false)\n    if (agentLoop !== undefined && tools !== undefined) {\n      agent = agentLoop.create(${agentId})\n    }\n  } catch {\n    tools = undefined\n    agent = undefined\n  }\n`
+}
+
+function behaviorSource(behavior: VerificationBehaviorProbe): string {
+  return `  let behaviorPassed = agent !== undefined && tools !== undefined\n  if (behaviorPassed) {\n    for (let index = 0; index < behaviorAssertions.length; index += 1) {\n      const assertion = behaviorAssertions[index]\n      try {\n        const result = await tools.execute({\n          callId: \`dsh-toolchain-verify-behavior-\${index}\`,\n          name: assertion.name,\n          arguments: assertion.arguments,\n          agent,\n          signal: AbortSignal.timeout(10000),\n        })\n        if (result.isError || !isDeepStrictEqual(result.value, assertion.expectedValue)) {\n          behaviorPassed = false\n          break\n        }\n      } catch {\n        behaviorPassed = false\n        break\n      }\n    }\n  }\n  process.stdout.write(behaviorPassed ? ${JSON.stringify(`${behavior.passedMarker}\n`)} : ${JSON.stringify(`${behavior.failedMarker}\n`)})\n`
 }
 
 /**
- * Agent Tool visibility uses the synchronous agentLoop seam rather than
- * agents.create: current DSH trains register no agent factory in verification
- * boots ("no agent factory registered"), while agentLoop.create returns a
- * registered Agent whose capability catalog is the same authority backing
- * upstream Tool/listTools. The created Agent lives only in the disposable
- * boot process; this seam exposes no exact-handle disposal, so worker process
- * teardown owns Agent lifetime, matching the M2.2 live DSH smoke precedent.
- * The inject export (not a rootCtx.get lookup) is required because agent
- * services are unavailable in the probe root scope; the loader gates probe
- * application until the declared services resolve.
+ * Creates Toolchain-owned instrumentation inside the disposable DSH process.
+ * Markers are deterministic coordination evidence, not authentication against
+ * adversarial candidate code executing inside the same process boundary.
  */
-function agentToolVisibilitySource(profile: string): string {
-  const agentId = JSON.stringify(`dsh-toolchain-verify-agent-${profile}`)
-  return `  const toolAssertions = assertions.filter(assertion => assertion.kind === 'agent-tool')\n  try {\n    const agentLoop = rootCtx.get('agentLoop', false)\n    const tools = rootCtx.get('tools', false)\n    if (agentLoop === undefined || tools === undefined) {\n      visibilityPassed = false\n    } else {\n      const agent = agentLoop.create(${agentId})\n      const visibleTools = new Set(tools.schemas(agent).map(schema => schema.name))\n      for (const assertion of toolAssertions) {\n        if (!visibleTools.has(assertion.name)) visibilityPassed = false\n      }\n    }\n  } catch {\n    visibilityPassed = false\n  }\n`
-}
-
 export async function createVerificationBootProbe(
   root: string,
   profile: string,
   visibilityAssertions: readonly PluginVisibilityAssertion[] = [],
+  behaviorAssertions: readonly PluginBehaviorAssertion[] = [],
 ): Promise<VerificationBootProbe> {
   if (root.trim().length === 0) {
     throw new Error('Verification boot probe root must be non-empty.')
@@ -76,7 +107,9 @@ export async function createVerificationBootProbe(
   const packagePath = path.join(root, 'boot-probe')
   const marker = profileMarker(profile)
   const visibility = visibilityMarkers(profile, visibilityAssertions)
+  const behavior = behaviorMarkers(profile, behaviorAssertions)
   const hasAgentToolAssertions = visibilityAssertions.some(assertion => assertion.kind === 'agent-tool')
+  const needsAgent = hasAgentToolAssertions || behavior !== undefined
   await mkdir(packagePath, { recursive: false })
 
   const manifest = {
@@ -88,12 +121,20 @@ export async function createVerificationBootProbe(
     dsh: { bundle: { patch: './cordis.patch.yml' } },
   }
   const patch = `- insert:\n    - id: ${BOOT_PROBE_ID}\n      name: '${BOOT_PROBE_PACKAGE_NAME}'\n`
-  const assertions = JSON.stringify(visibilityAssertions)
+  const visibilityAssertionsSource = JSON.stringify(visibilityAssertions)
+  const behaviorAssertionsSource = JSON.stringify(behaviorAssertions)
+  const imports = behavior === undefined ? '' : "import { isDeepStrictEqual } from 'node:util'\n\n"
+  const inject = needsAgent ? "export const inject = ['tools', 'agentLoop']\n\n" : ''
+  const agentSetup = needsAgent ? agentSetupSource(profile) : ''
   const visibilitySource = visibility === undefined
     ? ''
-    : `  const assertions = ${assertions}\n  let visibilityPassed = true\n${hostVisibilitySource()}${hasAgentToolAssertions ? agentToolVisibilitySource(profile) : ''}  process.stdout.write(visibilityPassed ? ${JSON.stringify(`${visibility.passedMarker}\n`)} : ${JSON.stringify(`${visibility.failedMarker}\n`)})\n`
-  const inject = hasAgentToolAssertions ? "export const inject = ['tools', 'agentLoop']\n\n" : ''
-  const source = `${inject}export function apply(rootCtx) {\n  const appExit = rootCtx.get('appExit')\n  if (typeof appExit !== 'function') throw new Error('DSH verification boot probe requires launcher-owned ctx.appExit')\n  process.stdout.write(${JSON.stringify(`${marker}\n`)})\n${visibilitySource}  appExit(0)\n}\n`
+    : `  const visibilityAssertions = ${visibilityAssertionsSource}\n  let visibilityPassed = true\n${hostVisibilitySource()}${hasAgentToolAssertions ? agentVisibilitySource() : ''}  process.stdout.write(visibilityPassed ? ${JSON.stringify(`${visibility.passedMarker}\n`)} : ${JSON.stringify(`${visibility.failedMarker}\n`)})\n`
+  const behaviorAssertionsDeclaration = behavior === undefined
+    ? ''
+    : `  const behaviorAssertions = ${behaviorAssertionsSource}\n`
+  const behaviorExecution = behavior === undefined ? '' : behaviorSource(behavior)
+  const applyKeyword = behavior === undefined ? 'function' : 'async function'
+  const source = `${imports}${inject}export ${applyKeyword} apply(rootCtx) {\n  const appExit = rootCtx.get('appExit')\n  if (typeof appExit !== 'function') throw new Error('DSH verification boot probe requires launcher-owned ctx.appExit')\n  process.stdout.write(${JSON.stringify(`${marker}\n`)})\n${agentSetup}${visibilitySource}${behaviorAssertionsDeclaration}${behaviorExecution}  appExit(0)\n}\n`
 
   await Promise.all([
     writeFile(path.join(packagePath, 'package.json'), `${JSON.stringify(manifest, undefined, 2)}\n`, { flag: 'wx' }),
@@ -105,5 +146,6 @@ export async function createVerificationBootProbe(
     packagePath,
     marker,
     ...(visibility === undefined ? {} : { visibility }),
+    ...(behavior === undefined ? {} : { behavior }),
   })
 }

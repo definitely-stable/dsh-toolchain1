@@ -329,11 +329,23 @@ export type PluginVisibilityAssertion = {
   readonly "name": string
 }
 
+export type JsonValue = null | boolean | number | string | Array<JsonValue> | {
+  readonly [key: string]: JsonValue
+}
+
+export type PluginBehaviorAssertion = {
+  readonly "kind": "agent-tool-result"
+  readonly "name": string
+  readonly "arguments": JsonValue
+  readonly "expectedValue": JsonValue
+}
+
 export type PluginVerifyRequest = {
   readonly "target": TargetResolveRequest
   readonly "subject": PluginPackedSubjectRequest
   readonly "executionPolicy": "safe"
   readonly "visibilityAssertions"?: [PluginVisibilityAssertion, ...Array<PluginVisibilityAssertion>]
+  readonly "behaviorAssertions"?: [PluginBehaviorAssertion, ...Array<PluginBehaviorAssertion>]
 }
 
 export type PluginVerifySuccessResponse = {

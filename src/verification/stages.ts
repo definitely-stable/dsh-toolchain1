@@ -3,7 +3,7 @@ import type { VerificationReport } from '../protocol/index.js'
 type VerificationCheck = VerificationReport['checks'][number]
 type VerificationStageId = VerificationCheck['id']
 type VerificationStageStatus = VerificationCheck['status']
-type RuntimeVerificationStageId = 'package' | 'install' | 'compose' | 'boot' | 'visibility'
+type RuntimeVerificationStageId = 'package' | 'install' | 'compose' | 'boot' | 'visibility' | 'behavior'
 
 const STAGE_IDS = Object.freeze([
   'structure',
@@ -25,6 +25,7 @@ const RUNTIME_PASSABLE = new Set<VerificationStageId>([
   'compose',
   'boot',
   'visibility',
+  'behavior',
 ])
 
 const PREREQUISITE: Partial<Record<RuntimeVerificationStageId, RuntimeVerificationStageId>> = Object.freeze({
@@ -32,14 +33,16 @@ const PREREQUISITE: Partial<Record<RuntimeVerificationStageId, RuntimeVerificati
   compose: 'install',
   boot: 'compose',
   visibility: 'boot',
+  behavior: 'boot',
 })
 
 const DOWNSTREAM = Object.freeze({
-  package: Object.freeze(['install', 'compose', 'boot', 'visibility'] as const),
-  install: Object.freeze(['compose', 'boot', 'visibility'] as const),
-  compose: Object.freeze(['boot', 'visibility'] as const),
-  boot: Object.freeze(['visibility'] as const),
-  visibility: Object.freeze([] as const),
+  package: Object.freeze(['install', 'compose', 'boot', 'visibility', 'behavior'] as const),
+  install: Object.freeze(['compose', 'boot', 'visibility', 'behavior'] as const),
+  compose: Object.freeze(['boot', 'visibility', 'behavior'] as const),
+  boot: Object.freeze(['visibility', 'behavior'] as const),
+  visibility: Object.freeze(['behavior'] as const),
+  behavior: Object.freeze([] as const),
 }) satisfies Readonly<Record<RuntimeVerificationStageId, readonly VerificationStageId[]>>
 
 function freezeChecks(checks: readonly VerificationCheck[]): readonly VerificationCheck[] {
@@ -52,7 +55,7 @@ function initialReason(id: VerificationStageId): string {
   }
   if (id === 'build') return 'not-requested-in-m4.1'
   if (id === 'visibility') return 'no-visibility-assertions'
-  if (id === 'behavior') return 'not-supported-in-m4.1'
+  if (id === 'behavior') return 'no-behavior-assertions'
   return 'not-executed'
 }
 

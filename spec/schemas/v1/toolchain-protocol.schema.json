@@ -632,6 +632,27 @@
         "name": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}
       }
     },
+    "jsonValue": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "boolean"},
+        {"type": "number"},
+        {"type": "string"},
+        {"type": "array", "items": {"$ref": "#/$defs/jsonValue"}},
+        {"type": "object", "additionalProperties": {"$ref": "#/$defs/jsonValue"}}
+      ]
+    },
+    "pluginBehaviorAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "arguments", "expectedValue"],
+      "properties": {
+        "kind": {"const": "agent-tool-result"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"},
+        "arguments": {"$ref": "#/$defs/jsonValue"},
+        "expectedValue": {"$ref": "#/$defs/jsonValue"}
+      }
+    },
     "pluginVerifyRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -646,6 +667,13 @@
           "maxItems": 32,
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/pluginVisibilityAssertion"}
+        },
+        "behaviorAssertions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/pluginBehaviorAssertion"}
         }
       }
     },
