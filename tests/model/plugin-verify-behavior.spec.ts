@@ -94,7 +94,7 @@ describe('plugin.verify behavior reduction', () => {
     }))
   })
 
-  it('does not invent behavior uncertainty when no behavior assertion was requested and boot failed', () => {
+  it('does not invent optional assertion uncertainty when no visibility or behavior assertion was requested and boot failed', () => {
     const bootDiagnostic = {
       code: 'VERIFY_BOOT_FAILED',
       severity: 'error' as const,
@@ -127,6 +127,9 @@ describe('plugin.verify behavior reduction', () => {
     })
 
     expect(report.status).toBe('failed')
+    expect(report.diagnostics).not.toContainEqual(expect.objectContaining({
+      code: 'VERIFY_VISIBILITY_UNPROVEN',
+    }))
     expect(report.diagnostics).not.toContainEqual(expect.objectContaining({
       code: 'VERIFY_BEHAVIOR_UNPROVEN',
     }))

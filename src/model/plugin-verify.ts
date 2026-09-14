@@ -252,7 +252,7 @@ function visibilityFailed(checks: readonly VerificationCheck[]): boolean {
 
 function visibilityIncomplete(checks: readonly VerificationCheck[]): boolean {
   const visibility = visibilityCheck(checks)
-  return visibility.status === 'skipped' && visibility.reason !== 'no-visibility-assertions'
+  return visibility.status === 'skipped' && visibility.reason === 'visibility-assertions-not-executed'
 }
 
 function behaviorCheck(checks: readonly VerificationCheck[]): VerificationCheck {
@@ -273,7 +273,7 @@ function behaviorFailed(checks: readonly VerificationCheck[]): boolean {
 
 function behaviorIncomplete(checks: readonly VerificationCheck[]): boolean {
   const behavior = behaviorCheck(checks)
-  return behavior.status === 'skipped' && behavior.reason !== 'no-behavior-assertions'
+  return behavior.status === 'skipped' && behavior.reason === 'behavior-assertions-not-executed'
 }
 
 export function reducePluginVerification(
