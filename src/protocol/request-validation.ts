@@ -165,8 +165,9 @@ function canonicalJsonValue(value: JsonValue): string {
     if (Array.isArray(item)) return item.map(normalize)
     if (item !== null && typeof item === 'object') {
       const normalized: Record<string, JsonValue> = {}
-      for (const key of Object.keys(item).toSorted()) {
-        normalized[key] = normalize(item[key])
+      const entries = Object.entries(item).toSorted(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      for (const [key, entryValue] of entries) {
+        normalized[key] = normalize(entryValue)
       }
       return normalized
     }
