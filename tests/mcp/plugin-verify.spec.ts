@@ -7,6 +7,7 @@ import {
 import type { ApplicationKernel } from '../../src/kernel/index.js'
 
 const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
+const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
 const artifactFingerprint = `dsh-plugin-artifact-v1:${'9'.repeat(64)}`
 
 function kernel(): ApplicationKernel {
@@ -22,6 +23,7 @@ function kernel(): ApplicationKernel {
         status: 'stale' as const,
         artifactFingerprint,
         targetFingerprint,
+        contractIndexFingerprint,
         executionPolicy: 'safe' as const,
         checks: [],
         diagnostics: [{
@@ -78,7 +80,7 @@ describe('plugin.verify MCP projection', () => {
       protocolVersion: '1',
       requestId: 'plugin-verify-mcp',
       status: 'ok',
-      data: { status: 'stale', artifactFingerprint },
+      data: { status: 'stale', artifactFingerprint, contractIndexFingerprint },
     })
     expect(JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : 'null'))
       .toEqual(result.structuredContent)
