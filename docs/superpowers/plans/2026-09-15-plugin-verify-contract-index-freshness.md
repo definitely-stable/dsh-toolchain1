@@ -4,7 +4,7 @@
 
 **Goal:** Bind every public `plugin.verify` receipt to the exact Contract Index used by its static compatibility result and make same-target Contract Index drift reduce to `stale`.
 
-**Architecture:** Keep Protocol v1. Extend `VerificationReport` with the initial `contractIndexFingerprint`, make kernel verification rebuild the canonical target-bound Contract Index after runtime execution, and let the shared reducer compare initial/final Contract Index identities alongside target/lifecycle freshness. No frontend owns freshness logic.
+**Architecture:** Keep Protocol v1. Extend `VerificationReport` with the initial `contractIndexFingerprint`, make kernel verification rebuild the canonical target-bound Contract Index after runtime execution, and let the shared reducer compare initial/final Contract Index identities alongside target/lifecycle freshness. Freshness diagnostics are hierarchical: target drift owns target changes, lifecycle drift owns same-target lifecycle changes, and Contract Index drift is independently reported only when target and lifecycle remain equal. No frontend owns freshness logic.
 
 **Tech Stack:** TypeScript 6, Vitest, JSON Schema Draft 2020-12, generated Protocol v1 TypeScript, existing Application Kernel and M4 verification reducer.
 
@@ -17,6 +17,7 @@
 - ADR-0008 independent Target/Contract Index identity axes remain authoritative.
 - `VerificationReport.contractIndexFingerprint` is required and records the initial index used for static verification.
 - Same target/lifecycle plus changed final Contract Index yields `status: 'stale'` with `VERIFY_CONTRACT_INDEX_STALE`.
+- Target or lifecycle drift remains `stale` without a redundant `VERIFY_CONTRACT_INDEX_STALE` diagnostic.
 - Cancellation retains precedence over freshness drift.
 - No frontend-owned freshness comparison.
 - No persistent Contract Index cache, M5/Web work, assertion-vocabulary expansion, sandbox changes, dependency changes, or broad kernel refactor.
@@ -56,9 +57,19 @@ when only the final Contract Index fingerprint differs.
 
 Add one case where execution is cancelled and the Contract Index differs; expect `cancelled`, proving cancellation precedence.
 
+Add precedence regressions proving:
+
+```text
+target drift + target-bound index drift => VERIFY_TARGET_STALE only
+same target + lifecycle drift + index drift => VERIFY_LIFECYCLE_STALE only
+same target + same lifecycle + index drift => VERIFY_CONTRACT_INDEX_STALE
+```
+
 - [ ] **Step 2: Run the focused reducer tests and verify RED**
 
 Run the repository's existing focused Vitest invocation for the reducer spec. Expected failure: missing reduction input fields and/or missing `contractIndexFingerprint`/stale diagnostic behavior. The failure must be caused by the absent feature, not fixture/schema breakage.
+
+For the precedence regression, the pre-fix reducer is expected to emit a redundant `VERIFY_CONTRACT_INDEX_STALE` alongside target/lifecycle stale diagnostics; that focused failure proves the diagnostic-attribution defect before the production condition is tightened.
 
 - [ ] **Step 3: Implement minimal reducer behavior**
 
@@ -75,11 +86,12 @@ export interface PluginVerificationReductionInput {
 }
 ```
 
-Compute:
+Compute target and lifecycle freshness first, then compute independently attributable Contract Index drift:
 
 ```ts
-const contractIndexStale =
-  input.finalContractIndexFingerprint !== input.initialContractIndexFingerprint
+const contractIndexStale = !targetStale
+  && !lifecycleStale
+  && input.finalContractIndexFingerprint !== input.initialContractIndexFingerprint
 ```
 
 When true, append:
@@ -109,7 +121,7 @@ without changing the existing ordering after the freshness branch.
 
 - [ ] **Step 4: Run focused reducer tests and verify GREEN**
 
-Expected: new tests pass and prior target/lifecycle/artifact reducer cases remain green.
+Expected: new tests pass; target/lifecycle drift does not gain a redundant Contract Index diagnostic; prior target/lifecycle/artifact reducer cases remain green.
 
 - [ ] **Step 5: Commit**
 
@@ -362,7 +374,7 @@ git commit -m "test(verify): cover contract index freshness receipt"
 
 - [ ] **Step 1: Review the final diff against the design spec**
 
-Confirm there is no target-fingerprint expansion, no cache, no frontend-owned freshness logic, no M5/assertion/sandbox scope creep, and no unrelated refactor.
+Confirm there is no target-fingerprint expansion, no cache, no frontend-owned freshness logic, no M5/assertion/sandbox scope creep, and no unrelated refactor. Confirm freshness diagnostics are not redundantly attributed when an earlier target/lifecycle epoch already explains the stale receipt.
 
 - [ ] **Step 2: Verify exact-head checks**
 
@@ -373,7 +385,9 @@ Record the exact PR head SHA and exact workflow runs. Required result: all repos
 State explicitly that the regression proves:
 
 ```text
-same target fingerprint + changed Contract Index fingerprint => stale
+same target fingerprint + same lifecycle fingerprint + changed Contract Index fingerprint => stale / VERIFY_CONTRACT_INDEX_STALE
+target drift => stale / VERIFY_TARGET_STALE without redundant Contract Index stale diagnostic
+same target + lifecycle drift => stale / VERIFY_LIFECYCLE_STALE without redundant Contract Index stale diagnostic
 ```
 
 and that the receipt exposes the initial Contract Index identity used for static compatibility.
