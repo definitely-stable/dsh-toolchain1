@@ -5,12 +5,13 @@ import type { PluginCheckResult, VerificationReport } from '../../src/protocol/i
 
 const ARTIFACT = `dsh-plugin-artifact-v1:${'a'.repeat(64)}`
 const TARGET = `dsh-target-v2:${'b'.repeat(64)}`
+const CONTRACT_INDEX = `dsh-contract-index-v1:${'d'.repeat(64)}`
 
 type Check = VerificationReport['checks'][number]
 
 function staticResult(): PluginCheckResult {
   return {
-    contractIndexFingerprint: `dsh-contract-index-v1:${'d'.repeat(64)}`,
+    contractIndexFingerprint: CONTRACT_INDEX,
     subjectFingerprint: `dsh-plugin-subject-v1:${'e'.repeat(64)}`,
     subjectCompleteness: 'complete',
     ruleset: 'plugin-static-alpha-v1',
@@ -43,6 +44,8 @@ function reduce(behavior: Check, diagnostics: VerificationReport['diagnostics'] 
     artifactFingerprint: ARTIFACT,
     initialTargetFingerprint: TARGET,
     finalTargetFingerprint: TARGET,
+    initialContractIndexFingerprint: CONTRACT_INDEX,
+    finalContractIndexFingerprint: CONTRACT_INDEX,
     staticResult: staticResult(),
     staticDiagnostics: [],
     execution: {
@@ -113,6 +116,8 @@ describe('plugin.verify behavior reduction', () => {
       artifactFingerprint: ARTIFACT,
       initialTargetFingerprint: TARGET,
       finalTargetFingerprint: TARGET,
+      initialContractIndexFingerprint: CONTRACT_INDEX,
+      finalContractIndexFingerprint: CONTRACT_INDEX,
       staticResult: staticResult(),
       staticDiagnostics: [],
       execution: {
