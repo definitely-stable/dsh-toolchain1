@@ -95,7 +95,7 @@ describe('verification boot probe', () => {
     expect(source).not.toContain("rootCtx.get('tools'")
   })
 
-  it('proves Agent Tool assertions through one synchronous agentLoop capability epoch', async () => {
+  it('awaits one disposable Agent for Agent Tool assertions in the exact DSH capability epoch', async () => {
     const root = await fixtureRoot()
     const assertions = [
       { kind: 'agent-tool' as const, name: 'candidate_tool' },
@@ -107,18 +107,19 @@ describe('verification boot probe', () => {
 
     expect(probe.visibility?.passedMarker).toMatch(/^DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2:[0-9a-f]{64}:PASS$/u)
     expect(probe.visibility?.failedMarker).toMatch(/^DSH_TOOLCHAIN_VERIFY_VISIBILITY_PROBE_V2:[0-9a-f]{64}:FAIL$/u)
-    expect(source).toContain('export function apply(rootCtx)')
-    expect(source).not.toContain('export async function apply(rootCtx)')
+    expect(source).toContain('export async function apply(rootCtx)')
+    expect(source).not.toContain('export function apply(rootCtx)')
     expect(source).toContain("export const inject = ['tools', 'agentLoop']")
     expect(source).not.toContain('randomUUID')
     expect(source).not.toContain('node:crypto')
     expect(source).not.toContain('agents.create(')
     expect(source).not.toContain('handle.dispose()')
     expect(source.match(/agentLoop\.create\(/gu)).toHaveLength(1)
+    expect(source).toContain('agent = await agentLoop.create(')
     expect(source.match(/tools\.schemas\(agent\)/gu)).toHaveLength(1)
     expect(source).toContain(JSON.stringify('dsh-toolchain-verify-agent-headless'))
 
-    const epoch = source.indexOf('agentLoop.create(')
+    const epoch = source.indexOf('agent = await agentLoop.create(')
     const passMarkerWrite = source.indexOf(JSON.stringify(`${probe.visibility?.passedMarker}\n`))
     const failedMarkerWrite = source.indexOf(JSON.stringify(`${probe.visibility?.failedMarker}\n`))
     expect(epoch).toBeGreaterThanOrEqual(0)
