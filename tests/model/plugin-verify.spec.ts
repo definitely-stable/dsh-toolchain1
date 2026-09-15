@@ -13,12 +13,14 @@ import type {
 const ARTIFACT = `dsh-plugin-artifact-v1:${'a'.repeat(64)}`
 const TARGET = `dsh-target-v2:${'b'.repeat(64)}`
 const DRIFTED_TARGET = `dsh-target-v2:${'c'.repeat(64)}`
+const CONTRACT_INDEX = `dsh-contract-index-v1:${'d'.repeat(64)}`
+const DRIFTED_CONTRACT_INDEX = `dsh-contract-index-v1:${'1'.repeat(64)}`
 const LIFECYCLE = `dsh-profile-lifecycle-v1:${'f'.repeat(64)}`
 const DRIFTED_LIFECYCLE = `dsh-profile-lifecycle-v1:${'0'.repeat(64)}`
 
 function staticResult(overrides: Partial<PluginCheckResult> = {}): PluginCheckResult {
   return {
-    contractIndexFingerprint: `dsh-contract-index-v1:${'d'.repeat(64)}`,
+    contractIndexFingerprint: CONTRACT_INDEX,
     subjectFingerprint: `dsh-plugin-subject-v1:${'e'.repeat(64)}`,
     subjectCompleteness: 'complete',
     ruleset: 'plugin-static-alpha-v1',
@@ -55,6 +57,8 @@ function input(overrides: Partial<PluginVerificationReductionInput> = {}): Plugi
     artifactFingerprint: ARTIFACT,
     initialTargetFingerprint: TARGET,
     finalTargetFingerprint: TARGET,
+    initialContractIndexFingerprint: CONTRACT_INDEX,
+    finalContractIndexFingerprint: CONTRACT_INDEX,
     staticResult: staticResult(),
     staticDiagnostics: [],
     execution: {
@@ -83,6 +87,7 @@ describe('M4.2 public verification reducer', () => {
     expect(report.status).toBe('verified')
     expect(report.artifactFingerprint).toBe(ARTIFACT)
     expect(report.targetFingerprint).toBe(TARGET)
+    expect(report.contractIndexFingerprint).toBe(CONTRACT_INDEX)
     expect(report.executionPolicy).toBe('safe')
     expect(report.cleanup).toBe('succeeded')
     expect(report.checks.map(item => item.id)).toEqual([
@@ -261,6 +266,21 @@ describe('M4.2 public verification reducer', () => {
     }))
   })
 
+  it('returns stale when the Contract Index changes while target-v2 and lifecycle remain unchanged', () => {
+    const report = reducePluginVerification(input({
+      finalContractIndexFingerprint: DRIFTED_CONTRACT_INDEX,
+    }))
+
+    expect(report.status).toBe('stale')
+    expect(report.targetFingerprint).toBe(TARGET)
+    expect(report.contractIndexFingerprint).toBe(CONTRACT_INDEX)
+    expect(report.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'VERIFY_CONTRACT_INDEX_STALE',
+      severity: 'error',
+      domain: 'verification',
+    }))
+  })
+
   it('returns stale when profile lifecycle changes while target-v2 remains unchanged', () => {
     const base = input()
     const report = reducePluginVerification({
@@ -307,6 +327,30 @@ describe('M4.2 public verification reducer', () => {
   it('preserves cancelled as stronger than post-run target drift', () => {
     const report = reducePluginVerification(input({
       finalTargetFingerprint: DRIFTED_TARGET,
+      execution: {
+        artifactFingerprint: ARTIFACT,
+        targetFingerprint: TARGET,
+        executionPolicy: 'safe',
+        checks: runtimeChecks({
+          boot: { id: 'boot', status: 'failed', reason: 'verify-cancelled' },
+        }),
+        diagnostics: [{
+          code: 'VERIFY_CANCELLED',
+          severity: 'warning',
+          domain: 'verification',
+          summary: 'cancelled',
+        }],
+        cleanup: 'succeeded',
+        terminal: 'cancelled',
+      },
+    }))
+
+    expect(report.status).toBe('cancelled')
+  })
+
+  it('preserves cancelled as stronger than post-run Contract Index drift', () => {
+    const report = reducePluginVerification(input({
+      finalContractIndexFingerprint: DRIFTED_CONTRACT_INDEX,
       execution: {
         artifactFingerprint: ARTIFACT,
         targetFingerprint: TARGET,
