@@ -17,6 +17,7 @@ function response(): PluginVerifyResponse {
       status: 'verified',
       artifactFingerprint: `dsh-plugin-artifact-v1:${'9'.repeat(64)}`,
       targetFingerprint,
+      contractIndexFingerprint: `dsh-contract-index-v1:${'b'.repeat(64)}`,
       executionPolicy: 'safe',
       checks: [],
       diagnostics: [],
