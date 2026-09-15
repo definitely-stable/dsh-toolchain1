@@ -61,12 +61,14 @@ describe('verification behavior probe', () => {
     expect(source).toContain('export async function apply(rootCtx)')
     expect(source).toContain("export const inject = ['tools', 'agentLoop']")
     expect(source.match(/agentLoop\.create\(/gu)).toHaveLength(1)
+    expect(source).toContain('agent = await agentLoop.create(')
     expect(source).toContain('await tools.execute(')
     expect(source).toContain('agent,')
     expect(source).toContain('AbortSignal.timeout(10000)')
     expect(source).toContain('isDeepStrictEqual(result.value, assertion.expectedValue)')
     expect(source).toContain(JSON.stringify(`${probe.behavior?.passedMarker}\n`))
     expect(source).toContain(JSON.stringify(`${probe.behavior?.failedMarker}\n`))
+    expect(source.indexOf('await tools.execute(')).toBeGreaterThan(source.indexOf('agent = await agentLoop.create('))
   })
 
   it('uses one Agent epoch and switches only behavior dispatch to native presentation after visibility', async () => {
