@@ -82,7 +82,7 @@ function agentVisibilitySource(): string {
 
 function agentSetupSource(profile: string): string {
   const agentId = JSON.stringify(`dsh-toolchain-verify-agent-${profile}`)
-  return `  let tools\n  let agent\n  try {\n    const agentLoop = rootCtx.get('agentLoop', false)\n    tools = rootCtx.get('tools', false)\n    if (agentLoop !== undefined && tools !== undefined) {\n      agent = agentLoop.create(${agentId})\n    }\n  } catch {\n    tools = undefined\n    agent = undefined\n  }\n`
+  return `  let tools\n  let agent\n  try {\n    const agentLoop = rootCtx.get('agentLoop', false)\n    tools = rootCtx.get('tools', false)\n    if (agentLoop !== undefined && tools !== undefined) {\n      agent = await agentLoop.create(${agentId})\n    }\n  } catch {\n    tools = undefined\n    agent = undefined\n  }\n`
 }
 
 function behaviorSource(
@@ -139,7 +139,7 @@ export async function createVerificationBootProbe(
   const behaviorExecution = behavior === undefined
     ? ''
     : behaviorSource(behavior, visibility !== undefined)
-  const applyKeyword = behavior === undefined ? 'function' : 'async function'
+  const applyKeyword = needsAgent ? 'async function' : 'function'
   const source = `${imports}${inject}export ${applyKeyword} apply(rootCtx) {\n  const appExit = rootCtx.get('appExit')\n  if (typeof appExit !== 'function') throw new Error('DSH verification boot probe requires launcher-owned ctx.appExit')\n  process.stdout.write(${JSON.stringify(`${marker}\n`)})\n${agentSetup}${visibilitySource}${behaviorAssertionsDeclaration}${behaviorExecution}  appExit(0)\n}\n`
 
   await Promise.all([
