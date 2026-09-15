@@ -22,6 +22,7 @@ function report(status: VerificationReport['status']): VerificationReport {
     status,
     artifactFingerprint: `dsh-plugin-artifact-v1:${'b'.repeat(64)}`,
     targetFingerprint: `dsh-target-v2:${'a'.repeat(64)}`,
+    contractIndexFingerprint: `dsh-contract-index-v1:${'c'.repeat(64)}`,
     executionPolicy: 'safe',
     checks: [
       { id: 'structure', status: 'passed' },

@@ -8,6 +8,7 @@ import type { PluginCheckResult, VerificationReport } from '../../src/protocol/i
 
 const ARTIFACT = `dsh-plugin-artifact-v1:${'a'.repeat(64)}`
 const TARGET = `dsh-target-v2:${'b'.repeat(64)}`
+const CONTRACT_INDEX = `dsh-contract-index-v1:${'c'.repeat(64)}`
 
 type Check = VerificationReport['checks'][number]
 
@@ -53,8 +54,10 @@ function input(requirements: PluginCheckResult['requirements']): PluginVerificat
     artifactFingerprint: ARTIFACT,
     initialTargetFingerprint: TARGET,
     finalTargetFingerprint: TARGET,
+    initialContractIndexFingerprint: CONTRACT_INDEX,
+    finalContractIndexFingerprint: CONTRACT_INDEX,
     staticResult: {
-      contractIndexFingerprint: `dsh-contract-index-v1:${'c'.repeat(64)}`,
+      contractIndexFingerprint: CONTRACT_INDEX,
       subjectFingerprint: `dsh-plugin-subject-v1:${'d'.repeat(64)}`,
       subjectCompleteness: 'complete',
       ruleset: 'plugin-static-alpha-v1',

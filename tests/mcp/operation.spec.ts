@@ -7,6 +7,7 @@ import {
 import type { ApplicationKernel } from '../../src/kernel/index.js'
 
 const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
+const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
 const artifactFingerprint = `dsh-plugin-artifact-v1:${'9'.repeat(64)}`
 
 function kernel(): ApplicationKernel {
@@ -22,6 +23,7 @@ function kernel(): ApplicationKernel {
         status: signal?.aborted ? 'cancelled' as const : 'verified' as const,
         artifactFingerprint,
         targetFingerprint,
+        contractIndexFingerprint,
         executionPolicy: 'safe' as const,
         checks: [],
         diagnostics: [],
@@ -112,7 +114,7 @@ describe('MCP verification operation lifecycle', () => {
             protocolVersion: '1',
             requestId: 'mcp-1',
             status: 'ok',
-            data: { status: 'verified', artifactFingerprint },
+            data: { status: 'verified', artifactFingerprint, contractIndexFingerprint },
           },
         },
       },
@@ -132,6 +134,7 @@ describe('MCP verification operation lifecycle', () => {
           status: signal?.aborted ? 'cancelled' as const : 'verified' as const,
           artifactFingerprint,
           targetFingerprint,
+          contractIndexFingerprint,
           executionPolicy: 'safe' as const,
           checks: [],
           diagnostics: [],

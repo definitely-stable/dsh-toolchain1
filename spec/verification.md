@@ -20,6 +20,7 @@ A packed-artifact fingerprint MUST NOT depend on path, mtime, user name, or othe
 The report records:
 - candidate artifact fingerprint;
 - starting target snapshot fingerprint;
+- starting Contract Index fingerprint used by static compatibility reduction;
 - starting profile lifecycle fingerprint when the target is lifecycle-aware;
 - execution policy;
 - checks requested and checks executed;
@@ -142,13 +143,13 @@ M4.1 verifies Toolchain-owned configuration/path isolation by using a unique tem
 
 ## Freshness
 
-The verifier captures the starting target snapshot. `dsh-target-v2` remains the startup-composition identity. On lifecycle-aware DSH trains the snapshot additionally carries `dsh-profile-lifecycle-v1:<sha256>` for the effective `dsh.profile.patchReload` policy. Before producing `verified`, Toolchain MUST determine whether either bound epoch changed during the operation.
+The verifier captures the starting target snapshot and the target-bound Contract Index used for static compatibility analysis. `dsh-target-v2` remains the startup-composition identity, while `dsh-contract-index-v1` independently identifies the exact contract evidence and normalized semantics consumed by the static reducer. On lifecycle-aware DSH trains the snapshot additionally carries `dsh-profile-lifecycle-v1:<sha256>` for the effective `dsh.profile.patchReload` policy. Before producing `verified`, Toolchain MUST determine whether any bound target, lifecycle, or Contract Index epoch changed during the operation.
 
 The worker MUST echo the initial lifecycle fingerprint whenever the supplied snapshot carries one. A missing or different worker lifecycle binding on a lifecycle-aware target fails closed with `VERIFY_LIFECYCLE_BINDING_MISMATCH`; it MUST NOT be treated as an old-train omission.
 
-After execution, the application kernel re-resolves the target. If the final `dsh-target-v2` differs, final status is `stale` with `VERIFY_TARGET_STALE`. If the target-v2 remains equal but the lifecycle fingerprint is added, removed, or changed, final status is also `stale`, with `VERIFY_LIFECYCLE_STALE`. This prevents a runtime receipt obtained under one reload policy from being claimed for another lifecycle epoch while preserving the static target namespace.
+After execution, the application kernel MUST reacquire/rebuild the current target-bound Contract Index through the same canonical acquisition path used before execution. That rebuild also yields the final target snapshot. If the final `dsh-target-v2` differs, final status is `stale` with `VERIFY_TARGET_STALE`. If the target-v2 remains equal but the lifecycle fingerprint is added, removed, or changed, final status is also `stale`, with `VERIFY_LIFECYCLE_STALE`. If target and lifecycle remain equal but the final Contract Index fingerprint differs from the initial index used by `plugin.check`, final status is `stale` with `VERIFY_CONTRACT_INDEX_STALE`. This preserves ADR-0008's independent target/index identity axes and prevents a receipt from claiming current static compatibility after same-version contract-evidence drift.
 
-M4.1 binds worker observations to the immutable starting target fingerprint and, when present, the starting lifecycle fingerprint, but does not independently re-read the caller's active target after execution. Final target/lifecycle re-resolution and `verified` / `stale` reduction belong to the application orchestration layer introduced with the public `plugin.verify` slice (M4.2). Therefore an M4.1 worker `terminal: completed` result is execution evidence, not a public `verified` claim.
+M4.1 binds worker observations to the immutable starting target fingerprint and, when present, the starting lifecycle fingerprint, but does not independently re-read the caller's active target or Contract Index after execution. Final target/lifecycle/Contract Index revalidation and `verified` / `stale` reduction belong to the application orchestration layer introduced with the public `plugin.verify` slice (M4.2). Therefore an M4.1 worker `terminal: completed` result is execution evidence, not a public `verified` claim.
 
 Live DSH Host enrichment follows the same epoch rule: on lifecycle-aware targets it may join a resolved snapshot only when both the immutable startup target fingerprint and startup lifecycle fingerprint match. Old trains that legitimately have no lifecycle metadata retain their historical target-v2-only binding.
 
@@ -156,10 +157,10 @@ Live DSH Host enrichment follows the same epoch rule: on lifecycle-aware targets
 
 Baseline verification report statuses:
 
-- `verified` — all required requested checks passed against a fresh target and lifecycle epoch when present;
+- `verified` — all required requested checks passed against a fresh target, Contract Index, and lifecycle epoch when present;
 - `failed` — one or more required checks or identity bindings failed;
 - `partial` — some requested checks could not be executed and the caller's policy does not allow a verified claim;
-- `stale` — target or lifecycle state invalidated the evidence;
+- `stale` — target, lifecycle, or Contract Index state invalidated the evidence;
 - `cancelled` — operation was cancelled before a terminal verification conclusion.
 
 Infrastructure failure is represented by diagnostics and `failed`/`partial` according to whether semantic checks could be concluded.
@@ -176,6 +177,6 @@ Cleanup failure MUST be reported. A cleanup error MUST NOT rewrite a prior verif
 
 ## Evidence receipt
 
-A verification report is intended to be portable evidence, not a guarantee for all machines/versions. It MUST name the candidate and target fingerprints and the exact checks executed. When the starting target is lifecycle-aware, it MUST also name the starting lifecycle fingerprint so the receipt is bound to the exact post-boot reload policy it observed.
+A verification report is intended to be portable evidence, not a guarantee for all machines/versions. It MUST name the candidate artifact fingerprint, the starting target fingerprint, and the starting Contract Index fingerprint used by static compatibility analysis, together with the exact checks executed. When the starting target is lifecycle-aware, it MUST also name the starting lifecycle fingerprint so the receipt is bound to the exact post-boot reload policy it observed.
 
 Future CI badges/compatibility databases MUST derive claims from receipts rather than from package version alone.

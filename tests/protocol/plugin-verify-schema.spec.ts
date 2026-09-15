@@ -54,6 +54,41 @@ describe('plugin.verify canonical Protocol contract', () => {
     })).toBe(false)
   })
 
+  it('requires the Contract Index identity used by every semantic verification report', async () => {
+    const { response } = await schemaAndValidators()
+    const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
+    const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
+    const report = {
+      status: 'verified',
+      artifactFingerprint: `dsh-plugin-artifact-v1:${'9'.repeat(64)}`,
+      targetFingerprint,
+      contractIndexFingerprint,
+      executionPolicy: 'safe',
+      checks: [],
+      diagnostics: [],
+      cleanup: 'succeeded',
+    }
+
+    expect(response({
+      protocolVersion: '1',
+      requestId: 'verify-current',
+      snapshotFingerprint: targetFingerprint,
+      status: 'ok',
+      data: report,
+      diagnostics: [],
+    })).toBe(true)
+
+    const { contractIndexFingerprint: _omitted, ...withoutContractIndex } = report
+    expect(response({
+      protocolVersion: '1',
+      requestId: 'verify-missing-contract-index',
+      snapshotFingerprint: targetFingerprint,
+      status: 'ok',
+      data: withoutContractIndex,
+      diagnostics: [],
+    })).toBe(false)
+  })
+
   it('keeps target drift as semantic VerificationReport stale inside status ok', async () => {
     const { response } = await schemaAndValidators()
     const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
@@ -67,6 +102,7 @@ describe('plugin.verify canonical Protocol contract', () => {
         status: 'stale',
         artifactFingerprint: `dsh-plugin-artifact-v1:${'9'.repeat(64)}`,
         targetFingerprint,
+        contractIndexFingerprint: `dsh-contract-index-v1:${'b'.repeat(64)}`,
         executionPolicy: 'safe',
         checks: [],
         diagnostics: [{
@@ -115,5 +151,6 @@ describe('plugin.verify canonical Protocol contract', () => {
     expect(generated).toContain('export type PluginVerifySuccessResponse =')
     expect(generated).toContain('export type PluginVerifyFailureResponse =')
     expect(generated).toContain('export type PluginVerifyResponse =')
+    expect(generated).toContain('readonly "contractIndexFingerprint": string')
   })
 })

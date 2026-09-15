@@ -203,6 +203,7 @@ export type VerificationReport = {
   readonly "status": "verified" | "failed" | "partial" | "stale" | "cancelled"
   readonly "artifactFingerprint": string
   readonly "targetFingerprint": string
+  readonly "contractIndexFingerprint": string
   readonly "lifecycleFingerprint"?: string
   readonly "executionPolicy": "safe" | "trusted"
   readonly "checks": Array<{

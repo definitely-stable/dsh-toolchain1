@@ -7,6 +7,7 @@
     "status": "verified",
     "artifactFingerprint": "sha256:fedcba9876543210",
     "targetFingerprint": "sha256:0123456789abcdef",
+    "contractIndexFingerprint": "dsh-contract-index-v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "executionPolicy": "safe",
     "checks": [
       {"id": "package", "status": "passed"},

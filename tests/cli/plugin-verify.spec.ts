@@ -5,6 +5,7 @@ import type { ApplicationKernel, PluginVerifyOutcome } from '../../src/kernel/in
 import type { PluginVerifyResponse, VerificationReport } from '../../src/protocol/index.js'
 
 const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
+const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
 const artifactFingerprint = `dsh-plugin-artifact-v1:${'9'.repeat(64)}`
 
 function io() {
@@ -24,6 +25,7 @@ function outcome(status: VerificationReport['status']): PluginVerifyOutcome {
       status,
       artifactFingerprint,
       targetFingerprint,
+      contractIndexFingerprint,
       executionPolicy: 'safe',
       checks: [],
       diagnostics: [],
@@ -77,7 +79,7 @@ describe('plugin.verify CLI projection', () => {
     const response = JSON.parse(streams.stdout()) as PluginVerifyResponse
     expect(response).toMatchObject({
       status: 'ok',
-      data: { status: 'verified', artifactFingerprint },
+      data: { status: 'verified', artifactFingerprint, contractIndexFingerprint },
     })
   })
 
