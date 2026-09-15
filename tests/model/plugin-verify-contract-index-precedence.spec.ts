@@ -11,6 +11,8 @@ const TARGET = `dsh-target-v2:${'b'.repeat(64)}`
 const DRIFTED_TARGET = `dsh-target-v2:${'c'.repeat(64)}`
 const CONTRACT_INDEX = `dsh-contract-index-v1:${'d'.repeat(64)}`
 const DRIFTED_CONTRACT_INDEX = `dsh-contract-index-v1:${'e'.repeat(64)}`
+const LIFECYCLE = `dsh-profile-lifecycle-v1:${'1'.repeat(64)}`
+const DRIFTED_LIFECYCLE = `dsh-profile-lifecycle-v1:${'2'.repeat(64)}`
 
 type Check = VerificationReport['checks'][number]
 
@@ -72,6 +74,27 @@ describe('plugin.verify freshness diagnostic precedence', () => {
     expect(report.status).toBe('stale')
     expect(report.diagnostics).toContainEqual(expect.objectContaining({
       code: 'VERIFY_TARGET_STALE',
+    }))
+    expect(report.diagnostics).not.toContainEqual(expect.objectContaining({
+      code: 'VERIFY_CONTRACT_INDEX_STALE',
+    }))
+  })
+
+  it('reports lifecycle drift without attributing the same stale receipt to Contract Index drift', () => {
+    const report = reducePluginVerification({
+      ...input(),
+      finalTargetFingerprint: TARGET,
+      initialLifecycleFingerprint: LIFECYCLE,
+      finalLifecycleFingerprint: DRIFTED_LIFECYCLE,
+      execution: {
+        ...input().execution,
+        lifecycleFingerprint: LIFECYCLE,
+      },
+    })
+
+    expect(report.status).toBe('stale')
+    expect(report.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'VERIFY_LIFECYCLE_STALE',
     }))
     expect(report.diagnostics).not.toContainEqual(expect.objectContaining({
       code: 'VERIFY_CONTRACT_INDEX_STALE',
