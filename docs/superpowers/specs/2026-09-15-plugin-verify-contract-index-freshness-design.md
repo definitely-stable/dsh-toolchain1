@@ -15,15 +15,15 @@ Keep Toolchain Protocol at version `1` and strengthen the existing `plugin.verif
 
 `VerificationReport` gains a required `contractIndexFingerprint` field. It is the exact fingerprint of the initial Contract Index used to produce the static `PluginCheckResult` folded into the receipt.
 
-`plugin.verify` reuses the existing canonical `buildContractIndex(request.target)` path after runtime execution. The final Contract Index fingerprint is compared with the initial fingerprint independently of target and lifecycle fingerprints.
+`plugin.verify` reuses the existing canonical `buildContractIndex(request.target)` path after runtime execution. The final Contract Index fingerprint is compared with the initial fingerprint in addition to target and lifecycle freshness.
 
-If the fingerprints differ, reduction emits `VERIFY_CONTRACT_INDEX_STALE` and the public verification status is `stale`. The receipt continues to carry the initial Contract Index identity because that is the evidence epoch against which static compatibility was actually evaluated.
+When target and lifecycle remain unchanged but the Contract Index fingerprints differ, reduction emits `VERIFY_CONTRACT_INDEX_STALE` and the public verification status is `stale`. The receipt continues to carry the initial Contract Index identity because that is the evidence epoch against which static compatibility was actually evaluated.
 
 ## Status precedence
 
 Cancellation retains highest precedence.
 
-Freshness drift is evaluated next. Any target drift, profile lifecycle drift, or Contract Index drift makes the receipt `stale` unless execution was cancelled. These freshness conditions describe whether the completed observation can be claimed for the current epoch and therefore take precedence over ordinary verification failure/partial outcomes.
+Freshness drift is evaluated next. Any target drift, profile lifecycle drift, or independently attributable Contract Index drift makes the receipt `stale` unless execution was cancelled. Diagnostic attribution is hierarchical: target drift is reported as `VERIFY_TARGET_STALE`; when target remains equal but lifecycle drifts, `VERIFY_LIFECYCLE_STALE` is authoritative; `VERIFY_CONTRACT_INDEX_STALE` is reserved for Contract Index drift while both target and lifecycle remain equal. This avoids relabelling the Contract Index change implied by a changed target fingerprint as a second independent cause.
 
 Existing artifact identity mismatch, worker target/lifecycle binding mismatch, runtime/static failures, visibility/behavior failures, incomplete required checks, and cleanup/static-unproven handling otherwise keep their current ordering.
 
@@ -33,7 +33,7 @@ Existing artifact identity mismatch, worker target/lifecycle binding mismatch, r
 2. Acquire the plugin subject and produce the static `PluginCheckResult` from that exact index.
 3. Bind the exact packed artifact and execute runtime verification against the initial target snapshot.
 4. Rebuild the current target-bound Contract Index using the same canonical acquisition path.
-5. Compare final target, lifecycle, and Contract Index identities against the initial epoch.
+5. Compare final target, lifecycle, and Contract Index identities against the initial epoch with target/lifecycle freshness owning diagnostic precedence.
 6. Reduce one canonical `VerificationReport` containing the initial artifact, target, lifecycle, and Contract Index identities.
 
 The final index contents are not exposed in the receipt and no new cache is introduced.
@@ -67,9 +67,10 @@ with domain `verification`, severity `error`, and wording that the target-bound 
 
 `reducePluginVerification()`:
 
-- computes `contractIndexStale` from those fields;
-- emits `VERIFY_CONTRACT_INDEX_STALE` when they differ;
-- treats it alongside target/lifecycle drift for `status: 'stale'`;
+- computes target and lifecycle freshness first;
+- computes `contractIndexStale` only when target and lifecycle remain fresh and the Contract Index fingerprints differ;
+- emits `VERIFY_CONTRACT_INDEX_STALE` for that independently attributable Contract Index drift;
+- treats target, lifecycle, and Contract Index freshness as `status: 'stale'` conditions after cancellation precedence;
 - returns `contractIndexFingerprint: initialContractIndexFingerprint` in the report.
 
 `createApplicationKernel().verifyPlugin()` must not call plain `resolveTarget()` for final freshness. It calls `buildContractIndex(request.target)` so final target and Contract Index are acquired as one canonical current evidence epoch, then passes both final identities to the reducer.
@@ -94,7 +95,7 @@ Tests must prove at minimum:
 2. equal initial/final Contract Index identities preserve existing status semantics;
 3. same target + same lifecycle + changed Contract Index reduces to `stale` and emits `VERIFY_CONTRACT_INDEX_STALE`;
 4. cancellation still wins over Contract Index drift;
-5. target/lifecycle stale behavior remains unchanged;
+5. target/lifecycle stale behavior remains unchanged and does not gain a redundant Contract Index stale diagnostic;
 6. kernel orchestration performs a second Contract Index acquisition after runtime verification and detects same-target evidence drift;
 7. protocol schema/generated types/conformance require the new field;
 8. public CLI/native/MCP projection tests remain transport-neutral and no frontend-owned comparison is added.
