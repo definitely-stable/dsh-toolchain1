@@ -728,11 +728,13 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Veri
           ? {}
           : { behaviorAssertions: request.behaviorAssertions }),
       }, signal)
-      const { snapshot: finalSnapshot } = await resolveTarget(request.target)
+      const { snapshot: finalSnapshot, index: finalIndex } = await buildContractIndex(request.target)
       const data = reducePluginVerification({
         artifactFingerprint: artifact.fingerprint,
         initialTargetFingerprint: snapshot.fingerprint,
         finalTargetFingerprint: finalSnapshot.fingerprint,
+        initialContractIndexFingerprint: index.fingerprint,
+        finalContractIndexFingerprint: finalIndex.fingerprint,
         ...(snapshot.profileLifecycle === undefined
           ? {}
           : { initialLifecycleFingerprint: snapshot.profileLifecycle.fingerprint }),
