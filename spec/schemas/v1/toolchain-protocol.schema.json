@@ -408,11 +408,15 @@
     "verificationReport": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "artifactFingerprint", "targetFingerprint", "executionPolicy", "checks", "diagnostics", "cleanup"],
+      "required": ["status", "artifactFingerprint", "targetFingerprint", "contractIndexFingerprint", "executionPolicy", "checks", "diagnostics", "cleanup"],
       "properties": {
         "status": {"enum": ["verified", "failed", "partial", "stale", "cancelled"]},
         "artifactFingerprint": {"type": "string", "minLength": 16},
         "targetFingerprint": {"type": "string", "minLength": 16},
+        "contractIndexFingerprint": {
+          "type": "string",
+          "pattern": "^dsh-contract-index-v1:[0-9a-f]{64}$"
+        },
         "lifecycleFingerprint": {
           "type": "string",
           "pattern": "^dsh-profile-lifecycle-v1:[0-9a-f]{64}$"
