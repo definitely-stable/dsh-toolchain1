@@ -100,7 +100,7 @@ async function probeDirectDshBehavior(root, runner, candidate, env) {
     'export async function apply(ctx) {',
     "  const appExit = ctx.get('appExit')",
     `  const name = ${JSON.stringify(PLUGIN_BEHAVIOR_SMOKE_TOOL)}`,
-    "  const agent = ctx.agentLoop.create('dsh-toolchain-behavior-diagnostic-agent')",
+    "  const agent = await ctx.agentLoop.create('dsh-toolchain-behavior-diagnostic-agent')",
     '  const visible = ctx.tools.schemas(agent).some(schema => schema.name === name)',
     '  let presented = false',
     '  try {',
