@@ -120,6 +120,8 @@ export interface PluginVerificationReductionInput {
   readonly artifactFingerprint: string
   readonly initialTargetFingerprint: string
   readonly finalTargetFingerprint: string
+  readonly initialContractIndexFingerprint: string
+  readonly finalContractIndexFingerprint: string
   readonly initialLifecycleFingerprint?: string
   readonly finalLifecycleFingerprint?: string
   readonly staticResult: PluginCheckResult
@@ -334,6 +336,15 @@ export function reducePluginVerification(
     ))
   }
 
+  const contractIndexStale = input.finalContractIndexFingerprint !== input.initialContractIndexFingerprint
+  if (contractIndexStale) {
+    reducerDiagnostics.push(diagnostic(
+      'VERIFY_CONTRACT_INDEX_STALE',
+      'error',
+      'The target-bound Contract Index changed after verification execution and the result cannot be claimed for the current contract-evidence epoch.',
+    ))
+  }
+
   const staticUnproven = input.staticResult.verdict === 'unproven'
     || input.staticResult.subjectCompleteness === 'partial'
     || input.staticResult.requirements.some(requirement => requirement.status === 'unproven')
@@ -365,7 +376,7 @@ export function reducePluginVerification(
 
   const status: VerificationReport['status'] = input.execution.terminal === 'cancelled'
     ? 'cancelled'
-    : targetStale || lifecycleStale
+    : targetStale || lifecycleStale || contractIndexStale
       ? 'stale'
       : artifactIdentityMismatch
         || workerTargetMismatch
@@ -388,6 +399,7 @@ export function reducePluginVerification(
     status,
     artifactFingerprint: input.artifactFingerprint,
     targetFingerprint: input.initialTargetFingerprint,
+    contractIndexFingerprint: input.initialContractIndexFingerprint,
     ...(input.initialLifecycleFingerprint === undefined
       ? {}
       : { lifecycleFingerprint: input.initialLifecycleFingerprint }),
