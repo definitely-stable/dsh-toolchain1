@@ -336,7 +336,9 @@ export function reducePluginVerification(
     ))
   }
 
-  const contractIndexStale = input.finalContractIndexFingerprint !== input.initialContractIndexFingerprint
+  const contractIndexStale = !targetStale
+    && !lifecycleStale
+    && input.finalContractIndexFingerprint !== input.initialContractIndexFingerprint
   if (contractIndexStale) {
     reducerDiagnostics.push(diagnostic(
       'VERIFY_CONTRACT_INDEX_STALE',
