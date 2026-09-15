@@ -206,7 +206,7 @@ Exit criteria:
 
 ## M4 — Isolated Verification Alpha
 
-**Status:** **in progress**. M4.1 and M4.2 establish isolated packed-artifact execution plus the public target-fresh verification receipt. M4.3.1 adds the first explicit live visibility assertion. M4.3.2 adds Agent-scoped Tool visibility against one verifier-owned Agent epoch. Remaining M4 scope is broader visibility/behavior coverage and a transport-neutral long-operation lifecycle when real needs justify it.
+**Status:** implemented and merged. M4.1/M4.2 establish isolated packed-artifact execution and the target-fresh public verification receipt; M4.3.1/M4.3.2 prove bounded Host Service and Agent Tool visibility; M4.3.3 proves one explicit structured Agent Tool result vocabulary; M4.4 provides the transport-neutral long-operation lifecycle. Client/page visibility remains a future extension because the current supported DSH runtime does not provide a sufficiently authoritative deterministic page identity/lifetime seam; it is not required to claim the bounded M4 alpha complete.
 
 **Goal:** prove whether the artifact users install composes and works in a real DSH target, producing portable evidence rather than a generic pass badge.
 
@@ -264,49 +264,70 @@ Implemented scope:
 - CLI exposes repeatable `--visibility-service`, native DSH publishes the canonical Host Service assertion shape, and MCP projects the canonical Protocol schema;
 - exact packed-candidate acceptance on published `@deepseek-ai/dsh@0.1.1-rc.2` proves a candidate-provided Host Service is visible through the public installed CLI path while the active profile remains unchanged.
 
-Deliberately deferred after M4.3.1:
-- Client/page visibility until deterministic page identity/lifetime exists;
-- deterministic behavior fixture vocabulary;
-- build-stage execution policy;
-- a transport-neutral `Operation` lifecycle for progress/cancel when long-running UX requirements justify the added contract;
-- later DSH-train runtime claims until Issue #33 resolves lifecycle/target-identity governance.
-
 ### M4.3.2 — Agent-scoped Tool visibility assertion
 
 **Status:** implemented by Issue #201 / PR #202; acceptance is bound to exact-head Protocol/parser/reducer/worker/frontend tests plus the public real-DSH Agent Tool visibility smoke.
 
 Implemented scope:
 - second supported assertion is exactly `{ kind: 'agent-tool', name }`, sharing the bounded count/name length and `(kind, name)` duplicate rules with `host-service`; the same name under different kinds remains valid;
-- one verifier-owned Agent epoch per verification boot when Agent Tool assertions exist: `agentLoop.create` with a deterministic verifier-owned id, one `tools.schemas(agent)` materialization for the batch (the `agents.create` handle seam has no registered factory on current DSH trains); the created Agent lives only in the disposable boot process, so worker teardown owns its lifetime;
+- one verifier-owned Agent epoch per verification boot when Agent Tool assertions exist: `await agentLoop.create(...)` with a deterministic verifier-owned id, followed by one `tools.schemas(agent)` materialization for the visibility batch; the resolved Agent lives only in the disposable boot process, so worker teardown owns its lifetime;
 - Host Service-only requests create no Agent; mixed batches evaluate both kinds in one boot epoch and one Agent epoch;
 - missing/unprovable Agent Tool visibility fails `visibility` with the shared stable `VERIFY_VISIBILITY_FAILED` and blocks `verified`; no new report status or diagnostic code;
 - CLI exposes repeatable `--visibility-tool` (service assertions project before tool assertions), native DSH publishes both closed kinds, and MCP projects the canonical Protocol schema;
 - exact packed-candidate acceptance on published `@deepseek-ai/dsh@0.1.2-rc.1` proves one present Agent Tool (`verified`), one mixed Host Service + Agent Tool batch (`verified`), and one intentionally missing Agent Tool (`failed` with `VERIFY_VISIBILITY_FAILED`) through the public installed CLI path while the active profile remains unchanged; Agent-capability runs resolve the agent-capable web profile because the minimal headless composition registers no agent loop.
 
-M4 capabilities across the full milestone:
-- artifact fingerprint and package preview/pack;
-- temporary DSH home;
-- install, composition, actual boot and runtime probe;
-- Host Service capability visibility assertions;
-- Agent-scoped Tool visibility assertions against one verifier-owned Agent epoch;
-- future Client visibility assertions where authoritative runtime seams exist;
-- explicitly declared deterministic behavior checks;
-- transport-neutral `Operation` evolved from real worker needs;
-- `VerificationReport` / receipt bound to artifact + TargetSnapshot;
+### M4.3.3 — Explicit Agent Tool behavior result assertion
+
+**Status:** implemented and merged via Issue #220 / PR #221; acceptance is bound to exact-head Protocol/parser/reducer/worker/frontend tests, Performance Validation, Real Plugin Corpus and a packed exact-DSH `0.1.5-rc.2` behavior smoke.
+
+Implemented scope:
+- optional closed `behaviorAssertions` with exactly `{ kind: 'agent-tool-result', name, arguments, expectedValue }`, bounded to eight sequential assertions;
+- request validation accepts only lossless JSON values, rejects unsupported/non-finite/cyclic values, and canonicalizes direct `-0` to `0`;
+- behavior executes only after required boot and requested visibility evidence, using the same resolved verifier-owned disposable Agent epoch as Agent Tool visibility;
+- requested visibility is observed in the original target presentation state before a verifier-owned scoped `agent.ctx.tools.presentAs('native')` override makes direct named-tool dispatch legal for the behavior call;
+- exact DSH `ToolRuntime.execute(...).value` is the runtime authority; each call has a fixed 10 second timeout and structural deep equality where object key order is irrelevant and array order remains significant;
+- all requested assertions passing yields `behavior: passed`; explicit mismatch/runtime error yields stable `VERIFY_BEHAVIOR_FAILED`; requested behavior that is not unambiguously executed yields `VERIFY_BEHAVIOR_UNPROVEN` and cannot produce `verified`;
+- no behavior assertions preserve `behavior: skipped / no-behavior-assertions` and remain non-blocking;
+- deterministic probe markers are synchronization/evidence tokens, not authentication against adversarial candidate code in the same process;
+- no generic JavaScript/shell/network/browser assertion language or malicious-code sandbox claim is introduced;
+- exact `@deepseek-ai/dsh@0.1.5-rc.2` acceptance proves `visible=true`, `presented=true`, `outcome=success` and structured value `{ "ready": true, "value": 7 }` through the packed Toolchain path in one disposable Agent epoch.
+
+### M4.4 — Transport-neutral plugin.verify operation lifecycle
+
+**Status:** implemented and merged via Issue #207 / PR #208.
+
+Implemented scope:
+- synchronous `plugin.verify` remains the canonical direct operation while `plugin.verify.start`, `operation.get` and `operation.cancel` project the same application-owned verification semantics for long-running clients;
+- one bounded in-memory operation registry owns opaque ids, lifecycle snapshots, controllers and terminal responses; frontends do not implement independent status reducers;
+- cancellation is cooperative through the existing verification/worker `AbortSignal` path and cannot rewrite an already-terminal result;
+- concurrent operations keep isolated ids/controllers/results and completed retention is bounded;
+- progress is evidence-backed rather than fabricated as percentages;
+- native DSH and MCP persistent-host projections reuse the same lifecycle contract, while CLI keeps its synchronous behavior;
+- exact-head acceptance covered Node 22/24/26, Windows/macOS, packed/public real-DSH verification and persistent Host lifecycle with the active profile unchanged across the operation.
+
+M4 capabilities across the completed alpha milestone:
+- exact artifact fingerprint plus packed package integrity evidence;
+- disposable DSH home and candidate installation with lifecycle scripts disabled;
+- composition, actual boot and runtime probe;
+- bounded Host Service and Agent-scoped Tool visibility assertions;
+- explicit deterministic Agent Tool structured-result behavior assertions;
+- transport-neutral long-operation start/get/cancel semantics derived from the real verification worker;
+- `VerificationReport` / receipt bound to artifact + TargetSnapshot with final target freshness;
 - explicit executed-runtime evidence checked against runtime-sensitive target semantics;
-- allowlisted environment, timeouts, process-tree cleanup and bounded output;
-- cleanup/crash/cancel handling.
+- allowlisted environment, timeouts, process-tree cleanup, bounded output and fail-closed crash/cancel handling.
 
 M4 exit criteria:
 - [x] active profile is untouched under the current `safe` isolation policy for the public acceptance path;
 - [x] first explicit Host Service visibility contract is projected through Protocol/kernel/CLI/native DSH/MCP and proven in real DSH;
 - [x] Agent-scoped Tool visibility contract is projected through Protocol/kernel/CLI/native DSH/MCP and proven in real DSH without caller-Agent reuse;
-- [x] source-valid/package-broken and boot/visibility-broken fixture coverage is complete across the intended public M4 surface;
+- [x] deterministic Agent Tool structured-result behavior is opt-in, fail-closed and proven through exact DSH `ToolRuntime.execute`;
+- [x] transport-neutral `plugin.verify` operation lifecycle is implemented from real worker requirements without frontend-owned reducers or fake progress;
+- [x] source-valid/package-broken and boot/visibility/behavior-broken fixture coverage is complete across the intended public M4 surface;
 - [x] stale target cannot yield `verified` in the shared reducer/kernel path;
 - [x] worker crash/failure remains fail-closed and cleanup is independently attempted;
-- [x] an unexecuted stage is never reported as passed;
-- [ ] Client visibility, behavior contracts and any required Operation lifecycle are implemented before claiming the full M4 milestone complete;
-- [ ] community lifecycle runners, if adopted, are integrated only behind Toolchain-owned evidence semantics.
+- [x] an unexecuted requested stage is never reported as passed.
+
+Client/page visibility is deliberately deferred beyond the bounded M4 alpha until DSH exposes an authoritative deterministic page identity/lifetime seam. Community lifecycle runners are likewise optional future integrations and, if adopted, must remain behind Toolchain-owned evidence semantics; neither is an M4 completion prerequisite.
 
 ## CI adoption gate
 
