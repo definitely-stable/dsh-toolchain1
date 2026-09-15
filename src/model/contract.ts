@@ -543,6 +543,37 @@ function factTokenMatch(
   })
 }
 
+function appendIntentSearchTokenEvidence(
+  token: string,
+  contract: ContractDefinition,
+  document: ContractSearchDocument,
+  evidenceIds: string[],
+): number | undefined {
+  const firstEvidenceId = contract.evidenceIds[0]
+  if (document.identity.uniqueTokens.has(token)) {
+    if (firstEvidenceId !== undefined) evidenceIds.push(firstEvidenceId)
+    return 4
+  }
+
+  let factMatched = false
+  for (const fact of document.facts) {
+    if (!fact.uniqueTokens.has(token)) continue
+    evidenceIds.push(...fact.evidenceIds)
+    factMatched = true
+  }
+  if (factMatched) return 3
+
+  if (document.summary.uniqueTokens.has(token)) {
+    if (firstEvidenceId !== undefined) evidenceIds.push(firstEvidenceId)
+    return 2
+  }
+  if (document.kind.uniqueTokens.has(token)) {
+    if (firstEvidenceId !== undefined) evidenceIds.push(firstEvidenceId)
+    return 0.5
+  }
+  return undefined
+}
+
 function intentTokenMatch(
   token: string,
   contract: ContractDefinition,
@@ -604,11 +635,10 @@ function intentMatch(
   let weightedScore = 0
 
   for (const token of queryTokens) {
-    const match = intentTokenMatch(token, contract, document)
-    if (match === undefined) continue
+    const fieldWeight = appendIntentSearchTokenEvidence(token, contract, document, evidenceIds)
+    if (fieldWeight === undefined) continue
     matched += 1
-    weightedScore += match.fieldWeight * inverseDocumentFrequency(derived, token)
-    evidenceIds.push(...match.evidenceIds)
+    weightedScore += fieldWeight * inverseDocumentFrequency(derived, token)
   }
 
   if (matched < requiredMatches) return undefined
