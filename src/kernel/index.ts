@@ -724,6 +724,9 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Veri
         ...(request.visibilityAssertions === undefined
           ? {}
           : { visibilityAssertions: request.visibilityAssertions }),
+        ...(request.behaviorAssertions === undefined
+          ? {}
+          : { behaviorAssertions: request.behaviorAssertions }),
       }, signal)
       const { snapshot: finalSnapshot } = await resolveTarget(request.target)
       const data = reducePluginVerification({

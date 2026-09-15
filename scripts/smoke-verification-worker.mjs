@@ -216,8 +216,8 @@ export async function smokeVerificationWorker(candidateTarball) {
     )
     assert.deepEqual(
       checkFor(execution, 'behavior'),
-      { id: 'behavior', status: 'skipped', reason: 'not-supported-in-m4.1' },
-      'verification worker smoke: behavior must remain explicitly unsupported',
+      { id: 'behavior', status: 'skipped', reason: 'no-behavior-assertions' },
+      'verification worker smoke: behavior must remain non-blocking when no behavior assertion is requested',
     )
 
     process.stdout.write(

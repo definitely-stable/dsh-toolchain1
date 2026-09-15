@@ -1,6 +1,7 @@
 import type { AcquiredPluginSubject } from './plugin.js'
 import type {
   Diagnostic,
+  PluginBehaviorAssertion,
   PluginCheckResult,
   PluginVisibilityAssertion,
   TargetSnapshot,
@@ -52,6 +53,7 @@ export interface PluginVerificationExecutionInput {
   readonly target: TargetSnapshot
   readonly executionPolicy: 'safe'
   readonly visibilityAssertions?: readonly PluginVisibilityAssertion[]
+  readonly behaviorAssertions?: readonly PluginBehaviorAssertion[]
 }
 
 export interface PluginVerificationExecutionPort {
@@ -250,7 +252,28 @@ function visibilityFailed(checks: readonly VerificationCheck[]): boolean {
 
 function visibilityIncomplete(checks: readonly VerificationCheck[]): boolean {
   const visibility = visibilityCheck(checks)
-  return visibility.status === 'skipped' && visibility.reason !== 'no-visibility-assertions'
+  return visibility.status === 'skipped' && visibility.reason === 'visibility-assertions-not-executed'
+}
+
+function behaviorCheck(checks: readonly VerificationCheck[]): VerificationCheck {
+  const behavior = checks.find(check => check.id === 'behavior')
+  if (behavior === undefined) {
+    return Object.freeze({
+      id: 'behavior',
+      status: 'skipped',
+      reason: 'worker-check-missing',
+    })
+  }
+  return behavior
+}
+
+function behaviorFailed(checks: readonly VerificationCheck[]): boolean {
+  return behaviorCheck(checks).status === 'failed'
+}
+
+function behaviorIncomplete(checks: readonly VerificationCheck[]): boolean {
+  const behavior = behaviorCheck(checks)
+  return behavior.status === 'skipped' && behavior.reason === 'behavior-assertions-not-executed'
 }
 
 export function reducePluginVerification(
@@ -331,6 +354,15 @@ export function reducePluginVerification(
     ))
   }
 
+  const behaviorUnproven = behaviorIncomplete(checks)
+  if (behaviorUnproven) {
+    reducerDiagnostics.push(diagnostic(
+      'VERIFY_BEHAVIOR_UNPROVEN',
+      'warning',
+      'A requested Agent Tool behavior assertion was not executed to a proven pass or fail outcome.',
+    ))
+  }
+
   const status: VerificationReport['status'] = input.execution.terminal === 'cancelled'
     ? 'cancelled'
     : targetStale || lifecycleStale
@@ -342,11 +374,13 @@ export function reducePluginVerification(
         || input.staticResult.verdict === 'incompatible'
         || requiredCheckFailed(checks)
         || visibilityFailed(checks)
+        || behaviorFailed(checks)
         ? 'failed'
         : input.execution.cleanup !== 'succeeded'
           || staticUnproven
           || requiredCheckIncomplete(checks)
           || visibilityUnproven
+          || behaviorUnproven
           ? 'partial'
           : 'verified'
 

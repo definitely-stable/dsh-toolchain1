@@ -114,6 +114,22 @@ Agent Tool assertions require an agent-capable target composition: the minimal h
 
 Client/page visibility remains deferred until Toolchain can bind observations to a deterministic page identity/lifetime. Behavior assertions are also outside M4.3.2. Verification MUST NOT reuse a caller Agent and MUST NOT retain the owned Agent or session beyond the visibility probe.
 
+## M4.3.3 Explicit Agent Tool behavior assertion
+
+M4.3.3 adds one closed opt-in behavior vocabulary to the same isolated boot epoch:
+
+```json
+{ "kind": "agent-tool-result", "name": "<tool-name>", "arguments": {}, "expectedValue": {} }
+```
+
+Behavior is never inferred. No assertions preserves `behavior: skipped / no-behavior-assertions`. When requested, Toolchain creates one verifier-owned Agent for the request's Agent Tool visibility/behavior work and executes assertions sequentially through the exact DSH `ToolRuntime.execute({ callId, name, arguments, agent, signal })` seam. Each call uses a Toolchain-owned 10-second `AbortSignal.timeout`; all assertions share the existing bounded boot process and no new retry loop or generic scripting surface is introduced.
+
+A successful assertion requires `result.isError === false` and structural equality between the canonical lossless-JSON `result.value` and `expectedValue`. Object key insertion order is irrelevant, array order is significant, and request validation rejects non-finite numbers, bigint, functions, symbols, cycles, or any other direct JavaScript value that cannot cross canonical JSON transport. Tool errors, timeout/cancellation, missing/invisible Tools, invalid arguments, thrown execution, or unequal values produce `VERIFY_BEHAVIOR_FAILED`. Requested behavior without an unambiguous PASS/FAIL marker is unproven and prevents `verified`.
+
+If visibility assertions were also requested, behavior executes only after visibility passes; Host Service-only visibility still creates no Agent unless behavior itself requires one. Behavior and Agent Tool visibility share exactly one Agent epoch.
+
+The behavior marker is a deterministic control-flow/evidence synchronization token bound to the profile and ordered assertion set. It is **not authentication against adversarial candidate code executing inside the same DSH process**. Policy `safe` remains disposable Toolchain-owned home/process isolation, not a malicious-code sandbox; receipts MUST NOT be described as tamper-proof against code running inside that trust boundary.
+
 ## Isolation
 
 Default verification uses policy `safe` and MUST NOT intentionally mutate the user's active DSH profile.

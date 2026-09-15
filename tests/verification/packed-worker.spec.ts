@@ -200,7 +200,7 @@ describe('packed plugin verification worker', () => {
     expect(check(execution, 'compose')).toEqual({ id: 'compose', status: 'passed' })
     expect(check(execution, 'boot')).toEqual({ id: 'boot', status: 'passed' })
     expect(check(execution, 'visibility')).toEqual({ id: 'visibility', status: 'skipped', reason: 'no-visibility-assertions' })
-    expect(check(execution, 'behavior')).toEqual({ id: 'behavior', status: 'skipped', reason: 'not-supported-in-m4.1' })
+    expect(check(execution, 'behavior')).toEqual({ id: 'behavior', status: 'skipped', reason: 'no-behavior-assertions' })
 
     expect(runner.calls).toHaveLength(5)
     const [installDsh, installCandidate, compose, installProbe, boot] = runner.calls

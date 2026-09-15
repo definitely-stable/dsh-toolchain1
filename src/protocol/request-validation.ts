@@ -2,7 +2,9 @@ import type {
   ContractInspectRequest,
   ContractKind,
   ContractSearchRequest,
+  JsonValue,
   OperationRequest,
+  PluginBehaviorAssertion,
   PluginCheckRequest,
   PluginSubjectRequest,
   PluginVerifyRequest,
@@ -41,14 +43,23 @@ const pluginVerifyKeys = new Set<keyof PluginVerifyRequest>([
   'subject',
   'executionPolicy',
   'visibilityAssertions',
+  'behaviorAssertions',
 ])
 const operationKeys = new Set<keyof OperationRequest>(['id'])
 const pluginSubjectKeys = new Set<keyof PluginSubjectRequest>(['kind', 'path'])
 const pluginSubjectKinds = new Set<PluginSubjectRequest['kind']>(['directory', 'packed'])
 const pluginVisibilityAssertionKeys = new Set<keyof PluginVisibilityAssertion>(['kind', 'name'])
+const pluginBehaviorAssertionKeys = new Set<keyof PluginBehaviorAssertion>([
+  'kind',
+  'name',
+  'arguments',
+  'expectedValue',
+])
 const profilePattern = /^(?!\.{1,2}$)(?!node_modules$)[^/\\]+$/u
 const MAX_VISIBILITY_ASSERTIONS = 32
 const MAX_VISIBILITY_ASSERTION_NAME_LENGTH = 256
+const MAX_BEHAVIOR_ASSERTIONS = 8
+const MAX_BEHAVIOR_ASSERTION_NAME_LENGTH = 256
 const MAX_OPERATION_ID_LENGTH = 128
 
 function invalid(message: string): never {
@@ -120,6 +131,96 @@ function parsePluginVisibilityAssertions(
   }
 
   return assertions as [PluginVisibilityAssertion, ...PluginVisibilityAssertion[]]
+}
+
+function parseJsonValue(value: unknown, message: string, active: Set<object> = new Set()): JsonValue {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) invalid(message)
+    return Object.is(value, -0) ? 0 : value
+  }
+
+  if (typeof value !== 'object' || value === null) invalid(message)
+  if (active.has(value)) invalid(message)
+  active.add(value)
+  try {
+    if (Array.isArray(value)) {
+      return value.map(item => parseJsonValue(item, message, active))
+    }
+
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) invalid(message)
+    const parsed: Record<string, JsonValue> = {}
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      parsed[key] = parseJsonValue(item, message, active)
+    }
+    return parsed
+  } finally {
+    active.delete(value)
+  }
+}
+
+function canonicalJsonValue(value: JsonValue): string {
+  function normalize(item: JsonValue): JsonValue {
+    if (Array.isArray(item)) return item.map(normalize)
+    if (item !== null && typeof item === 'object') {
+      const normalized: Record<string, JsonValue> = {}
+      const entries = Object.entries(item).toSorted(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      for (const [key, entryValue] of entries) {
+        normalized[key] = normalize(entryValue)
+      }
+      return normalized
+    }
+    if (typeof item === 'number' && Object.is(item, -0)) return 0
+    return item
+  }
+  return JSON.stringify(normalize(value))
+}
+
+function parsePluginBehaviorAssertions(
+  value: unknown,
+  message: string,
+): PluginVerifyRequest['behaviorAssertions'] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_BEHAVIOR_ASSERTIONS) {
+    invalid(message)
+  }
+
+  const assertions: PluginBehaviorAssertion[] = []
+  const seen = new Set<string>()
+  for (const assertion of value) {
+    if (!isRecord(assertion)) invalid(message)
+    if (
+      Object.keys(assertion).some(
+        key => !pluginBehaviorAssertionKeys.has(key as keyof PluginBehaviorAssertion),
+      )
+    ) invalid(message)
+    if (
+      assertion.kind !== 'agent-tool-result'
+      || typeof assertion.name !== 'string'
+      || assertion.name.trim().length === 0
+      || assertion.name.length > MAX_BEHAVIOR_ASSERTION_NAME_LENGTH
+    ) invalid(message)
+
+    const parsedArguments = parseJsonValue(assertion.arguments, message)
+    const parsedExpectedValue = parseJsonValue(assertion.expectedValue, message)
+    const identity = [
+      assertion.kind,
+      assertion.name,
+      canonicalJsonValue(parsedArguments),
+      canonicalJsonValue(parsedExpectedValue),
+    ].join('\u0000')
+    if (seen.has(identity)) invalid(message)
+    seen.add(identity)
+    assertions.push({
+      kind: 'agent-tool-result',
+      name: assertion.name,
+      arguments: parsedArguments,
+      expectedValue: parsedExpectedValue,
+    })
+  }
+
+  return assertions as [PluginBehaviorAssertion, ...PluginBehaviorAssertion[]]
 }
 
 export function parseTargetResolveRequest(value: unknown): TargetResolveRequest {
@@ -206,9 +307,10 @@ export function parsePluginVerifyRequest(value: unknown): PluginVerifyRequest {
   if (!isRecord(value)) invalid(message)
   if (Object.keys(value).some(key => !pluginVerifyKeys.has(key as keyof PluginVerifyRequest))) invalid(message)
 
-  const { target, subject, executionPolicy, visibilityAssertions } = value
+  const { target, subject, executionPolicy, visibilityAssertions, behaviorAssertions } = value
   const parsedTarget = parseTargetResolveRequestWithMessage(target, message)
   const parsedVisibilityAssertions = parsePluginVisibilityAssertions(visibilityAssertions, message)
+  const parsedBehaviorAssertions = parsePluginBehaviorAssertions(behaviorAssertions, message)
   if (!isRecord(subject)) invalid(message)
   if (Object.keys(subject).some(key => !pluginSubjectKeys.has(key as keyof PluginSubjectRequest))) invalid(message)
   if (subject.kind !== 'packed' || !nonEmptyString(subject.path) || executionPolicy !== 'safe') invalid(message)
@@ -222,6 +324,9 @@ export function parsePluginVerifyRequest(value: unknown): PluginVerifyRequest {
     executionPolicy: 'safe',
     ...(parsedVisibilityAssertions === undefined ? {} : {
       visibilityAssertions: parsedVisibilityAssertions,
+    }),
+    ...(parsedBehaviorAssertions === undefined ? {} : {
+      behaviorAssertions: parsedBehaviorAssertions,
     }),
   }
 }

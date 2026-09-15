@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { assertTreeUnchanged, snapshotTree } from './smoke-plugin-check.mjs'
+import { smokePluginBehavior } from './smoke-plugin-behavior.mjs'
 
 export const PLUGIN_VERIFY_SMOKE_DSH_VERSION = '0.1.2-rc.1'
 export const PLUGIN_VERIFY_SMOKE_PROFILE = 'headless'
@@ -319,6 +320,8 @@ export async function smokePluginVerify(toolchainTarball) {
 
     const missingResponse = parseFailedVisibilityResponse(missingExecution.stdout)
     assertArtifactBinding(missingResponse, 'missing Agent Tool visibility', toolsCandidateHash)
+
+    await smokePluginBehavior(packedToolchain)
 
     process.stdout.write(
       `Plugin Verify smoke: DSH ${PLUGIN_VERIFY_SMOKE_DSH_VERSION} public CLI verified exact packed candidate, lifecycle epoch, live Host Service visibility, present Agent Tool visibility, and missing Agent Tool failure in disposable worker\n`,
