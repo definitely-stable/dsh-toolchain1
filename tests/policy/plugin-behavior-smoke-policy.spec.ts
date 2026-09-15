@@ -29,6 +29,7 @@ describe('M4.3.3 real-DSH Agent Tool behavior smoke policy', () => {
     expect(source).toContain("kind: 'agent-tool-result'")
     expect(source).toContain('arguments: { value: 7 }')
     expect(source).toContain('expectedValue: { ready: true, value: 7 }')
+    expect(source).toContain("const agent = await ctx.agentLoop.create('dsh-toolchain-behavior-diagnostic-agent')")
     expect(source).toContain("['package', 'install', 'compose', 'boot', 'visibility', 'behavior']")
     expect(source).toContain("cleanup, 'succeeded'")
     expect(source).toContain('assertTreeUnchanged')
