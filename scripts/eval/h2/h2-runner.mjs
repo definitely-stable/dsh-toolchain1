@@ -6,12 +6,14 @@ import { pathToFileURL } from 'node:url'
 import { H2_POLICY } from './h2-config.mjs'
 import { assertBcParity, buildArmComposition, pluginAddArgs } from './h2-composition.mjs'
 import {
+  assertModelOptionAdvertised,
   classifyTerminal,
   createAcpControlPlane,
   createBudgetGuard,
   createProcessAcpTransport,
+  modelConfigOptionValue,
 } from './h2-dsh.mjs'
-import { createDshGraderIo, writeTelemetryOverlay } from './h2-dsh-env.mjs'
+import { createDshGraderIo, telemetryOverlayEntry, writeObservationProfilePatch } from './h2-dsh-env.mjs'
 import { runGrader } from './h2-grader.mjs'
 import {
   assertModelIdentityMatches,
@@ -19,6 +21,7 @@ import {
   buildObservationReceipt,
   parseSessionLog,
 } from './h2-telemetry.mjs'
+import { routePatchEntries, seedRouteCredentials, sessionAffinityValue } from './h2-route.mjs'
 import { applyCleanupPolicy, directoryDigestFrom, materializeWorkspace, observationLayout, prepareObservationDir } from './h2-workspace.mjs'
 
 export const H2_ACP_PROFILE = 'acp'
@@ -149,9 +152,23 @@ export async function runObservation({
   const layout = observationLayout({ artifactRoot, runId, taskId: task.taskId, arm })
   await prepareObservationDir(layout)
   const composition = buildArmComposition({ arm, toolchainTarball })
-  // The authoritative telemetry plane must be readable before anything is
-  // spent: without it the frozen completion budget cannot be enforced.
-  writeTelemetryOverlay({ homeDir: layout.dshHome, profile: composition.profile })
+  // The environment every observation runs in is written before the profile's
+  // first boot: the telemetry plane must be readable before anything is spent
+  // (without it the frozen completion budget cannot be enforced), and the
+  // frozen route must be resolvable or the agent cannot make a single call.
+  // Both are identical in both arms, so neither touches the causal boundary.
+  writeObservationProfilePatch({
+    homeDir: layout.dshHome,
+    profile: composition.profile,
+    entries: [
+      telemetryOverlayEntry({ homeDir: layout.dshHome }),
+      ...routePatchEntries({ model: H2_POLICY.model, sessionAffinity: sessionAffinityValue({ runId, taskId: task.taskId, arm }) }),
+    ],
+  })
+  // The observation home must be able to resolve the route's credential on its
+  // own: it inherits the operator environment but not the operator home.
+  seedRouteCredentials({ dshHome: layout.dshHome })
+  const modelOption = modelConfigOptionValue(H2_POLICY.model)
   const guard = createBudgetGuard({ policy: H2_POLICY.resource, now })
   const startedAt = now()
   let transport
@@ -212,7 +229,11 @@ export async function runObservation({
     if (authMethods.length > 0) await control.authenticate(authMethods[0].id)
     const session = await control.newSession({ cwd: layout.workspaceDir })
     sessionId = session.sessionId
-    await control.setConfigOption({ sessionId, configId: 'model', value: H2_POLICY.model.model })
+    // The pinned route must be offered by the target itself before any token is
+    // spent; a missing option means this deployment cannot run the frozen model
+    // at all, not that the default will do.
+    assertModelOptionAdvertised({ configOptions: session.configOptions, value: modelOption })
+    await control.setConfigOption({ sessionId, configId: 'model', value: modelOption })
     await control.setConfigOption({ sessionId, configId: 'reasoning_effort', value: H2_POLICY.model.reasoningEffort })
 
     const promptText = await readFile(task.promptPath, 'utf8')

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { H2_POLICY, H2_STRATA, assertH2PolicyIntegrity } from '../../scripts/eval/h2/h2-config.mjs'
+import { H2_POLICY, H2_REASONING_EFFORTS, H2_STRATA, assertH2PolicyIntegrity } from '../../scripts/eval/h2/h2-config.mjs'
 
 describe('H2 frozen policy', () => {
   it('freezes the approved observation budget: 18 tasks, 2 arms, 36 scoring, 2 technical, max 38', () => {
@@ -25,13 +25,26 @@ describe('H2 frozen policy', () => {
     expect(H2_STRATA.length * H2_POLICY.tasksPerStratum).toBe(H2_POLICY.taskCount)
   })
 
-  it('freezes the DeepSeek V4.1 Flash model identity for both arms', () => {
+  it('freezes the DeepSeek V4.1 Flash route for both arms', () => {
+    // Amended before any outcome existed: the frozen route is the one this
+    // deployment can actually run, and it is a controlled constant rather than
+    // part of the C-minus-B difference.
     expect(H2_POLICY.model).toEqual({
-      provider: 'deepseek-official',
-      model: 'deepseek-flash',
-      modelDisplayName: 'DeepSeek-V41-Flash',
+      provider: 'opencode-go',
+      model: 'deepseek-v4.1-flash',
+      modelDisplayName: 'DeepSeek V4.1 Flash',
       reasoningEffort: 'high',
+      credentialRef: 'OPENCODE_GO_API_KEY',
+      sessionAffinityHeader: 'x-opencode-session',
     })
+  })
+
+  it('refuses a frozen route whose credential reference could carry a literal secret', () => {
+    expect(() => assertH2PolicyIntegrity()).not.toThrow()
+    // The reference is a store key, not a key: an identifier is all that may
+    // ever reach the policy, so a pasted secret cannot hide here.
+    expect(/^[A-Za-z_][A-Za-z0-9_]*$/.test(H2_POLICY.model.credentialRef)).toBe(true)
+    expect(H2_REASONING_EFFORTS).toContain(H2_POLICY.model.reasoningEffort)
   })
 
   it('freezes the resource policy: one attempt, zero retries, bounded completions and wall time', () => {

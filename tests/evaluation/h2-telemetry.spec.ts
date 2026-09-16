@@ -14,16 +14,20 @@ const record = (type: string, data: unknown, seq: number) => ({ type, seq, time:
 const SESSION_LOG = [
   HEADER,
   record('turn/start', { turn: 1 }, 1),
-  record('request/header', { config: { provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'high', maxTokens: 256_000 } }, 2),
+  // The frozen train nests the request identity under `header.config`. Reading
+  // it from `data.config` instead yields no identity at all, which the harness
+  // reports as model identity drift — blaming the model for a harness bug — so
+  // the nesting is part of the fixture on purpose.
+  record('request/header', { header: { config: { provider: 'opencode-go', model: 'deepseek-v4.1-flash', reasoningEffort: 'high', maxTokens: 256_000 } } }, 2),
   record('assistant/message', {
-    message: { id: 'm1', role: 'assistant', content: [{ type: 'text', text: 'SUPER_SECRET_MODEL_PROSE' }], source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-flash' } },
+    message: { id: 'm1', role: 'assistant', content: [{ type: 'text', text: 'SUPER_SECRET_MODEL_PROSE' }], source: { kind: 'model', provider: 'opencode-go', model: 'deepseek-v4.1-flash' } },
     usage: { inputTokens: 1000, outputTokens: 50, cacheReadTokens: 800, cacheWriteTokens: 10, reasoningTokens: 20 },
   }, 3),
   record('tool/call', { turn: 1, step: 1, callId: 'c1', name: 'read_file', arguments: '{"path":"SECRET_PATH_/etc/passwd"}' }, 4),
   record('tool/call', { turn: 1, step: 2, callId: 'c2', name: 'toolchain_contract_search', arguments: '{"query":"SK-SECRET-TOKEN"}' }, 5),
-  record('request/header', { config: { provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'high', maxTokens: 256_000 } }, 6),
+  record('request/header', { header: { config: { provider: 'opencode-go', model: 'deepseek-v4.1-flash', reasoningEffort: 'high', maxTokens: 256_000 } } }, 6),
   record('assistant/message', {
-    message: { id: 'm2', role: 'assistant', content: [{ type: 'text', text: 'more secret prose' }], source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-flash' } },
+    message: { id: 'm2', role: 'assistant', content: [{ type: 'text', text: 'more secret prose' }], source: { kind: 'model', provider: 'opencode-go', model: 'deepseek-v4.1-flash' } },
     usage: { inputTokens: 2000, outputTokens: 30 },
   }, 7),
   record('turn/end', { turn: 1, reason: { kind: 'completed' } }, 8),
@@ -49,8 +53,17 @@ describe('H2 session telemetry', () => {
     expect(metrics.tools.ordinaryToolCalls).toBe(1)
     expect(metrics.tools.toolchainToolCalls).toBe(1)
     expect(metrics.tools.perTool).toEqual({ read_file: 1, toolchain_contract_search: 1 })
-    expect(metrics.modelIdentities.request).toEqual([{ provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'high' }])
-    expect(metrics.modelIdentities.responseModels).toEqual(['deepseek-flash'])
+    expect(metrics.modelIdentities.request).toEqual([{ provider: 'opencode-go', model: 'deepseek-v4.1-flash', reasoningEffort: 'high' }])
+    expect(metrics.modelIdentities.responseModels).toEqual(['deepseek-v4.1-flash'])
+  })
+
+  it('reads no request identity from a record that only nests config at the top level', () => {
+    // Regression guard for the exact defect this fixture exposed: the identity
+    // lives under `header.config`, so the old `data.config` path silently
+    // collected nothing and every real observation was reported as identity
+    // drift. The wrong nesting must stay invisible rather than be tolerated.
+    const log = `${JSON.stringify(record('request/header', { config: { provider: 'opencode-go', model: 'deepseek-v4.1-flash', reasoningEffort: 'high' } }, 1))}\n`
+    expect(parseSessionLog(log).metrics.modelIdentities.request).toEqual([])
   })
 
   it('classifies toolchain tools by the frozen prefix', () => {

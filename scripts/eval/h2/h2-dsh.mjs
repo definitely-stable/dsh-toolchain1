@@ -1,7 +1,7 @@
 import { spawn as spawnProcess, spawnSync } from 'node:child_process'
 import { isAbsolute } from 'node:path'
 
-import { H2_POLICY } from './h2-config.mjs'
+import { H2_POLICY, H2_REASONING_EFFORTS } from './h2-config.mjs'
 
 export const ACP_PROTOCOL_VERSION = 1
 
@@ -39,7 +39,7 @@ export const ACP_CLIENT_CAPABILITIES = Object.freeze({
  */
 export const H2_PERMISSION_POLICY = 'reject'
 
-const REASONING_EFFORTS = Object.freeze(['off', 'low', 'high', 'max'])
+const REASONING_EFFORTS = H2_REASONING_EFFORTS
 
 export class AcpError extends Error {
   /** @param {string} message @param {{code?: number, method?: string}} [options] */
@@ -62,6 +62,44 @@ export function validateConfigOption({ configId, value }) {
 }
 
 /**
+ * The ACP `model` option is a select whose value is the JSON pair
+ * `["<provider>","<model>"]`, not a bare model id: sending the bare id is
+ * rejected by the target with `unknown model option`, and the target never
+ * falls back to the default model, so mistaking the shape fails every
+ * observation at its first request.
+ *
+ * @param {{provider: string, model: string}} model
+ */
+export function modelConfigOptionValue({ provider, model }) {
+  for (const [label, value] of [['provider', provider], ['model', model]]) {
+    if (typeof value !== 'string' || value.length === 0) throw new Error(`ACP model option requires a non-empty ${label}`)
+  }
+  return JSON.stringify([provider, model])
+}
+
+/**
+ * Proves the pinned route is actually offered by the target session before any
+ * model token is spent. The option list is the target's own catalog, so a
+ * missing pair means the frozen route cannot run here at all — a loud stop
+ * instead of a run that silently executes on a different model.
+ *
+ * @param {{configOptions: any[], value: string}} input
+ */
+export function assertModelOptionAdvertised({ configOptions, value }) {
+  if (!Array.isArray(configOptions)) throw new Error('ACP session did not advertise any config options')
+  const option = configOptions.find(candidate => candidate?.id === 'model')
+  if (option === undefined) throw new Error('ACP session does not advertise a model config option')
+  const values = []
+  for (const group of option.options ?? []) {
+    for (const entry of group?.options ?? []) values.push(entry?.value)
+  }
+  if (!values.includes(value)) {
+    throw new Error(`the target does not offer the frozen model option ${value}; it offers ${values.join(', ')}`)
+  }
+  return true
+}
+
+/**
  * Frozen auto-answer policy for `session/request_permission`. `allow` prefers
  * an always-allow option so a long task cannot stall on repeated prompts;
  * both arms use the same policy, so the difference between them stays zero.
@@ -79,7 +117,9 @@ export function choosePermissionOption(options, policy = H2_PERMISSION_POLICY) {
  * protocol flow is unit-testable against an in-memory agent and the same
  * code drives the real NDJSON stdio server in a dry-run.
  *
- * @param {{transport: {send: (frame: any) => void, onFrame: (handler: (frame: any) => void) => void}, permissionPolicy?: string, onPermissionDecision?: (decision: {requestedKinds: any[], selectedKind: string|null}) => void}} input
+ * @param {{transport: {send: (frame: any) => void, onFrame: (handler: (frame: any) => void) => void,
+ *   onExit?: (handler: (result: {code: number | null, signal: string | null, error: any}) => void) => void},
+ *   permissionPolicy?: string, onPermissionDecision?: (decision: {requestedKinds: any[], selectedKind: string|null}) => void}} input
  */
 export function createAcpControlPlane({ transport, permissionPolicy = H2_PERMISSION_POLICY, onPermissionDecision }) {
   if (transport === null || typeof transport !== 'object') throw new Error('ACP control plane requires a transport')
@@ -107,8 +147,23 @@ export function createAcpControlPlane({ transport, permissionPolicy = H2_PERMISS
     transport.send({ jsonrpc: '2.0', id, error: { code, message } })
   }
 
-  transport.onFrame(frame => {
-    if (frame === null || typeof frame !== 'object') return
+  // A transport that dies before answering would otherwise leave the caller
+  // awaiting a promise that cannot settle, which turns a launcher that cannot
+  // even start into an indefinite hang instead of a loud failure.
+  if (typeof transport.onExit === 'function') {
+    transport.onExit(({ code, signal, error }) => {
+      if (pending.size === 0) return
+      const detail = error === null || error === undefined
+        ? `code=${String(code)} signal=${String(signal)}`
+        : String(error.message ?? error)
+      for (const [id, entry] of [...pending]) {
+        pending.delete(id)
+        entry.reject(new AcpError(`ACP process exited before "${entry.method}" was answered (${detail})`, { method: entry.method }))
+      }
+    })
+  }
+
+  transport.onFrame(frame => {    if (frame === null || typeof frame !== 'object') return
     const hasMethod = typeof frame.method === 'string'
     const hasId = frame.id !== undefined && frame.id !== null
 
@@ -269,19 +324,47 @@ export function classifyTerminal({ stopReason, budgetReason }) {
 }
 
 /**
+ * Quotes an argument for a `cmd.exe` command line. `spawn({shell: true})`
+ * concatenates arguments without escaping them, so an argument that contains
+ * whitespace or a quote must be quoted here or the launcher would silently
+ * receive a different argv than the harness recorded.
+ */
+function quoteForShell(arg) {
+  return /[\s"^&|<>]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg
+}
+
+/**
  * Real NDJSON stdio transport for `dsh --profile acp`. The `acp` profile
  * reserves stdout for ACP frames; stderr is captured to a bounded tail for
  * diagnostics only.
+ *
+ * Windows resolves the launcher to a `.cmd` shim (`pnpm.cmd`), and Node refuses
+ * to spawn a batch file without a shell, so the default is to go through the
+ * platform shell there. `pnpm` writes its own echo of the command it runs to
+ * stderr, never to stdout, so the protocol channel stays pure.
+ *
+ * @param {{command: string, args: readonly string[], env: Record<string, string | undefined>, cwd: string,
+ *   spawnImpl?: (command: string, args: string[], options: any) => any, stderrLimitBytes?: number,
+ *   shell?: boolean}} input
  */
-export function createProcessAcpTransport({ command, args, env, cwd, spawnImpl = spawnProcess, stderrLimitBytes = 64 * 1024 }) {
-  const child = /** @type {any} */ (spawnImpl(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }))
+export function createProcessAcpTransport({
+  command, args, env, cwd, spawnImpl = spawnProcess, stderrLimitBytes = 64 * 1024,
+  shell = process.platform === 'win32',
+}) {
+  const argv = shell ? args.map(quoteForShell) : args
+  const child = /** @type {any} */ (spawnImpl(command, argv, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell }))
   if (child.error) throw child.error
   const handlers = []
+  const exitHandlers = []
   const state = { stdout: '', stderr: '', exited: false, exitCode: null, exitSignal: null, spawnError: null }
   let resolveExit
   const exitPromise = new Promise(resolve => {
     resolveExit = resolve
   })
+
+  function settleExit(result) {
+    for (const handler of exitHandlers) handler(result)
+  }
 
   child.stdout.setEncoding('utf8')
   child.stdout.on('data', chunk => {
@@ -311,12 +394,14 @@ export function createProcessAcpTransport({ command, args, env, cwd, spawnImpl =
   child.on('error', error => {
     state.spawnError = error
     state.exited = true
+    settleExit({ code: null, signal: null, error })
     resolveExit({ code: null, signal: null, error })
   })
   child.on('exit', (code, signal) => {
     state.exited = true
     state.exitCode = code
     state.exitSignal = signal
+    settleExit({ code, signal, error: null })
     resolveExit({ code, signal, error: null })
   })
 
@@ -327,6 +412,9 @@ export function createProcessAcpTransport({ command, args, env, cwd, spawnImpl =
     },
     onFrame(handler) {
       handlers.push(handler)
+    },
+    onExit(handler) {
+      exitHandlers.push(handler)
     },
     exitPromise,
     state,

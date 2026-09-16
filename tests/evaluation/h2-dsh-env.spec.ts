@@ -13,8 +13,9 @@ import {
   dumpComposition,
   installPluginDirs,
   runBootProbe,
+  telemetryOverlayEntry,
+  writeObservationProfilePatch,
   writeProbePackage,
-  writeTelemetryOverlay,
 } from '../../scripts/eval/h2/h2-dsh-env.mjs'
 import { findSessionLog } from '../../scripts/eval/h2/h2-runner.mjs'
 
@@ -171,22 +172,37 @@ describe('H2 target identity', () => {
 describe('H2 telemetry overlay and session-log discovery', () => {
   it('keeps the required root alongside the compression setting', () => {
     const home = tempDir()
-    const file = writeTelemetryOverlay({ homeDir: home, profile: 'acp' })
-    const patch = JSON.parse(readFileSync(file, 'utf8'))
-    expect(Array.isArray(patch)).toBe(true)
-    expect(patch).toHaveLength(1)
-    expect(patch[0].id).toBe('session-persistence-jsonl')
+    const entry = telemetryOverlayEntry({ homeDir: home })
+    expect(entry.id).toBe('session-persistence-jsonl')
     // A patch entry replaces the whole config object, and `root` has no default:
     // dropping it would leave session persistence writing nowhere, so no log
     // would ever appear and the budget could not be enforced.
-    expect(patch[0].config.root).toBe(join(home, 'sessions'))
-    expect(patch[0].config.compression).toBe('none')
+    expect(entry.config.root).toBe(join(home, 'sessions'))
+    expect(entry.config.compression).toBe('none')
+  })
+
+  it('writes the whole observation patch layer before the profile first boots', () => {
+    const home = tempDir()
+    const file = writeObservationProfilePatch({
+      homeDir: home,
+      profile: 'acp',
+      entries: [telemetryOverlayEntry({ homeDir: home }), { id: 'llm-pi-ai', config: { providers: {} } }],
+    })
+    expect(file).toBe(join(home, 'profiles', 'acp', 'cordis.patch.yml'))
+    const patch = JSON.parse(readFileSync(file, 'utf8'))
+    expect(Array.isArray(patch)).toBe(true)
+    expect(patch.map((entry: { id: string }) => entry.id)).toEqual(['session-persistence-jsonl', 'llm-pi-ai'])
   })
 
   it('refuses to overwrite an existing profile patch layer', () => {
     const home = tempDir()
-    writeTelemetryOverlay({ homeDir: home, profile: 'acp' })
-    expect(() => writeTelemetryOverlay({ homeDir: home, profile: 'acp' })).toThrow(/overwrite/)
+    const entries = [telemetryOverlayEntry({ homeDir: home })]
+    writeObservationProfilePatch({ homeDir: home, profile: 'acp', entries })
+    expect(() => writeObservationProfilePatch({ homeDir: home, profile: 'acp', entries })).toThrow(/overwrite/)
+  })
+
+  it('refuses to write an empty observation patch', () => {
+    expect(() => writeObservationProfilePatch({ homeDir: tempDir(), profile: 'acp', entries: [] })).toThrow(/at least one entry/)
   })
 
   it('finds the raw log of this exact session and ignores a compressed sibling', async () => {

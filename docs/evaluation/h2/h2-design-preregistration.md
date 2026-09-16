@@ -130,8 +130,8 @@ DeepSeek Harness agent:
 H2 controller (scripts/eval/h2)
     → real DSH launcher: pnpm --dir <harness checkout> dsh --profile acp
     → real DSH Agent/session runtime (Agent Client Protocol v1 over NDJSON stdio)
-    → official DeepSeek provider adapter (@deepseek-ai/dsh-llm-deepseek)
-    → model deepseek-flash (DeepSeek V4.1 Flash)
+    → the frozen provider route (section 6)
+    → model deepseek-v4.1-flash (DeepSeek V4.1 Flash)
 ```
 
 The ACP stdio surface was chosen over the alternatives because it is DSH's documented
@@ -148,14 +148,18 @@ No browser UI is used anywhere in H2.
 ## 6. Model identity (frozen)
 
 ```text
-provider          = deepseek-official
-model             = deepseek-flash          (DeepSeek-V41-Flash)
-reasoningEffort   = high                    (the adapter's default, pinned explicitly)
+provider          = opencode-go             (OpenCode Zen relay)
+model             = deepseek-v4.1-flash     (DeepSeek V4.1 Flash)
+reasoningEffort   = high                    (pinned explicitly)
+credentialRef     = OPENCODE_GO_API_KEY     (a reference, never a key)
+session header    = x-opencode-session      (one opaque value per observation)
 ```
 
 Both arms use exactly this configuration, pinned per session through
-`session/set_config_option`. Telemetry records the requested provider/model/effort and the
-response model observed in the session log, per completion. The official adapter exposes no
+`session/set_config_option`. That option is a select whose value is the JSON pair
+`["<provider>","<model>"]`, and the controller refuses to start an observation unless the target
+itself advertises that exact pair. Telemetry records the requested provider/model/effort and the
+response model observed in the session log, per completion. The route exposes no
 `systemFingerprint`/`revision` field, so those receipt fields are explicit `null` rather than
 invented values.
 
@@ -163,6 +167,58 @@ invented values.
 frozen policy, or drifts mid-run, the run **STOPs** immediately with `MODEL_IDENTITY_DRIFT` and
 spends no further budget; the observations already collected are retained but never analysed as
 confirmatory evidence.
+
+### 6.1 Amendment before any outcome (2026-09-16)
+
+This route replaced the originally preregistered `deepseek-official` / `deepseek-flash` **before any
+observation of any kind existed**, under the standing rule that a preregistration may be amended
+while the record is still empty and never afterwards. The amendment was forced by evidence, not
+preference:
+
+- this machine holds **no** credential for the official adapter — neither in the environment nor in
+  the operator credential document (`refs` contains `OPENCODE_GO_API_KEY` and `OPENCODE_API_KEY`
+  only) — so the originally frozen route could not have produced a single observation, and no
+  amount of harness correctness would have changed that;
+- the environment's own DSH session runs DeepSeek V4.1 Flash through `opencode-go`, so the amended
+  route is the same model the operator actually uses, not a substitute for it.
+
+What the amendment does **not** touch is the comparison. The route is a controlled constant: the
+same provider, model, effort, credential reference, and per-observation header value are written
+into both arms' observation homes, so the causal boundary stays exactly "Arm C = Arm B + the
+Toolchain bundle" (section 2).
+
+Two consequences are recorded rather than hidden. First, the numeric results of this benchmark are
+conditional on the OpenCode Zen relay's serving of `deepseek-v4.1-flash`, which is not the official
+DeepSeek endpoint; the frozen receipt binds the exact route so no later reader has to guess what was
+measured. Second, the relay rejects a request that carries no `x-opencode-session` routing header
+with `400 MissingSessionID`. The operator's own DSH supplies that header through a third-party
+plugin; for the benchmark it is written as **route configuration** in each observation home
+instead, with one opaque value per observation, so no two observations share a relay backend and
+neither arm can warm the other's prompt cache.
+
+### 6.2 Where the route is written, and why it must be written at all
+
+A fresh observation home starts from the shipped `acp` profile, which registers exactly one
+provider route and contains no credential. The harness therefore writes, before the profile's first
+boot, a profile patch layer (`profiles/acp/cordis.patch.yml` — DSH's documented per-profile
+customization seam, applied after every bundle layer) carrying:
+
+1. the session-persistence overlay that disables log compression, without which the frozen
+   completion budget cannot be read from the append-only session log and is therefore
+   unenforceable;
+2. the `llm-pi-ai` row naming the frozen provider, its credential reference, and its routing
+   header;
+3. the `agent-default-model` row pinning provider, model, and effort.
+
+The observation home is also given the operator's credential **document** (copied, never parsed and
+never printed by the controller), because DSH resolves a credential reference from the inherited
+environment first and from `$DSH_HOME/.credentials.yaml` second — and a fresh home inherits the
+environment but not the operator home. The home is disposable: the scratch cleanup removes it after
+the observation.
+
+Both the patch entries and the credential material are identical in both arms, so neither is part
+of the C-minus-B difference. The composition-parity probe composes both arms with this same patch,
+so the empirical parity proof describes the composition that actually runs.
 
 ## 7. Exact DSH target
 
@@ -498,6 +554,43 @@ schedule, statistics, model identity, resource policy, outcome rule) is untouche
    `finalize` cannot assemble one report from two runs.
 6. **Composition rows were matched by substring.** A row `subject-extra` could satisfy an expected
    row `subject`. Rows are now matched structurally as exact id/name pairs.
+7. **The model-backed path had never actually been executed, and could not have run.** A first real
+   attempt to drive one ACP observation on this machine exposed four independent defects, every one
+   of them on the path that only a *paid* observation exercises — which is why 600 green unit tests
+   and a green CI did not see them:
+   - **The launcher could not be spawned on Windows.** `spawn('pnpm', …)` fails with `ENOENT`
+     because `pnpm` is a `.cmd` shim there, and `spawn('pnpm.cmd', …)` fails with `EINVAL` because
+     Node refuses to spawn a batch file without a shell. The transport now goes through the
+     platform shell on Windows and quotes arguments itself, since `shell: true` concatenates them
+     unescaped.
+   - **A launcher that died left the controller waiting forever.** The transport's `send` could
+     write into a process that had already exited, and nothing rejected the pending JSON-RPC
+     request, so a spawn failure presented as an indefinite hang instead of an error. The control
+     plane now rejects every pending request when the transport exits.
+   - **The model was pinned in the wrong shape.** The ACP `model` option is a select whose value is
+     the JSON pair `["<provider>","<model>"]`; the controller sent the bare model id and the target
+     answered `unknown model option`, with no fallback to its default model. The controller now
+     derives that value from the frozen policy and refuses to spend anything unless the target
+     advertises the exact pair.
+   - **The observation home had no route and no credential.** A fresh home boots the shipped `acp`
+     profile, which registers one provider route and reads no credential; a `settings.yaml` section
+     does not register routes there (verified twice, against a control case). The route is now
+     written into the profile patch layer and the credential document is copied into the home — see
+     sections 6.1 and 6.2.
+8. **Request identity was read from the wrong field, so every real observation would have been
+   reported as model-identity drift.** In the frozen train the log record is
+   `request/header { header: { config: { provider, model, reasoningEffort } } }`, and the parser read
+   `data.config`. It therefore collected no request identity at all, and `assertModelIdentityMatches`
+   — correctly failing closed on an empty identity set — would have labelled the first paid
+   observation `MODEL_IDENTITY_DRIFT`, blaming the model for a harness bug and stopping the run.
+   Verified against a real session log on this machine and fixed, with a regression test that keeps
+   the old wrong nesting invisible rather than tolerated.
+9. **The readiness gate asserted a variable name instead of a capability.** `h2:validate` reported
+   `ready: false` whenever `DEEPSEEK_API_KEY` was absent — a hard-coded deployment assumption about
+   one provider route, which said nothing about whether the frozen route could actually run. It now
+   reports the frozen route and *which authority* can resolve its credential reference
+   (environment or operator credential document), and the model-backed commands resolve the same
+   way instead of requiring one specific variable.
 
 **Corpus re-authoring (before the commitment was published).** Dataset admission rejected two of
 the original 18 tasks, and its own record was right: their reference solutions declared

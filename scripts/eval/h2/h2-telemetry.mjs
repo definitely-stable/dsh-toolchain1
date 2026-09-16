@@ -55,7 +55,12 @@ export function parseSessionLog(text) {
         terminalReason = data.reason?.kind ?? terminalReason
         break
       case 'request/header': {
-        const config = data.config
+        // The identity of a request lives under `data.header.config` in the
+        // frozen train's log (`session.v3.jsonl`), not under `data.config`. The
+        // distinction is not cosmetic: reading the wrong path yields no request
+        // identity at all, and every observation is then reported as model
+        // identity drift — blaming the model for a harness bug.
+        const config = data.header?.config
         if (config !== undefined && config !== null) {
           requestIdentities.push({
             provider: config.provider,

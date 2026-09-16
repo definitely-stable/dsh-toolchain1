@@ -9,6 +9,13 @@
 
 export const H2_POLICY_SCHEMA = 'dsh-toolchain-h2-policy-v1'
 
+/**
+ * Reasoning levels the frozen route may pin. Owned here rather than by the
+ * control plane so the policy and the ACP config-option surface cannot drift
+ * apart silently: the control plane validates against this list.
+ */
+export const H2_REASONING_EFFORTS = Object.freeze(['off', 'low', 'high', 'max'])
+
 /** The six frozen task strata, exactly three tasks each. */
 export const H2_STRATA = Object.freeze([
   'exact-target-api',
@@ -30,15 +37,41 @@ export const H2_POLICY = Object.freeze({
 
   /**
    * Exact model identity for every observation of both arms.
-   * provider `deepseek-official` + model `deepseek-flash` is DeepSeek V4.1
-   * Flash in the official DSH adapter (`@deepseek-ai/dsh-llm-deepseek`),
-   * whose default reasoning effort is `high`. Pinned explicitly anyway.
+   *
+   * AMENDED BEFORE ANY OUTCOME EXISTS. The route below is the one this
+   * deployment can actually run: `opencode-go` (the OpenCode Zen relay)
+   * serving DeepSeek V4.1 Flash — the same model the operator's own DSH
+   * session runs on, through the only credential this machine holds. The
+   * original preregistration named the official adapter
+   * (`deepseek-official` / `deepseek-flash`), for which no credential exists
+   * here at all, so that route could not have produced a single observation;
+   * see docs/evaluation/h2/h2-design-preregistration.md section 11.
+   *
+   * The arm contrast is untouched by the amendment: the route is a controlled
+   * constant, pinned identically in both arms, and is never part of the
+   * Arm-C-minus-Arm-B difference.
    */
   model: Object.freeze({
-    provider: 'deepseek-official',
-    model: 'deepseek-flash',
-    modelDisplayName: 'DeepSeek-V41-Flash',
+    provider: 'opencode-go',
+    model: 'deepseek-v4.1-flash',
+    modelDisplayName: 'DeepSeek V4.1 Flash',
     reasoningEffort: 'high',
+    /**
+     * Credential reference the route resolves per request. It is an
+     * environment-variable name by DSH's own credential contract, resolved
+     * from the inherited environment first and from the observation home's
+     * credential document second.
+     */
+    credentialRef: 'OPENCODE_GO_API_KEY',
+    /**
+     * The relay rejects a model request that carries no routing header with
+     * `400 MissingSessionID`, and the value only has to be opaque and stable
+     * per conversation. The operator's own DSH supplies it through a plugin;
+     * the benchmark pins it as route configuration instead, with one value per
+     * observation, so no two observations can share a relay backend and no
+     * arm can warm the other's prompt cache.
+     */
+    sessionAffinityHeader: 'x-opencode-session',
   }),
 
   /**
@@ -111,4 +144,17 @@ export function assertH2PolicyIntegrity() {
     throw new Error('H2 provider-completion limit must stay within the approved 6-8 range')
   }
   if (wallTimeLimitMs !== 180_000) throw new Error('H2 wall-time limit is frozen at 180s')
+  const { provider, model, reasoningEffort, credentialRef, sessionAffinityHeader } = H2_POLICY.model
+  for (const [label, value] of [['provider', provider], ['model', model], ['reasoningEffort', reasoningEffort]]) {
+    if (typeof value !== 'string' || value.length === 0) throw new Error(`H2 frozen route ${label} must be a non-empty string`)
+  }
+  if (!H2_REASONING_EFFORTS.includes(reasoningEffort)) throw new Error(`H2 frozen reasoning effort must be one of ${H2_REASONING_EFFORTS.join(', ')}`)
+  // A credential reference is a credential-store key, not a secret: it must be
+  // a bare identifier so it can never smuggle a literal key into the policy.
+  if (typeof credentialRef !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(credentialRef)) {
+    throw new Error('H2 frozen credentialRef must be a bare credential-reference identifier')
+  }
+  if (typeof sessionAffinityHeader !== 'string' || !/^x-[a-z0-9-]+$/.test(sessionAffinityHeader)) {
+    throw new Error('H2 frozen session-affinity header must be a lowercase x- header name')
+  }
 }

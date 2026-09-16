@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { assertDumpParity, bootArgs, dumpConfigArgs, extractCompositionFacts, pluginAddArgs } from './h2-composition.mjs'
+import { H2_POLICY } from './h2-config.mjs'
+import { routePatchEntries, sessionAffinityValue } from './h2-route.mjs'
 import { canonicalJson, directoryDigest, sha256Canonical } from './h2-util.mjs'
 
 export const H2_GRADER_COMPOSE_PROFILE = 'h2-grader'
@@ -12,7 +14,7 @@ export const H2_GRADER_PROBE_PACKAGE = 'h2-grader-probe'
 export const H2_SESSION_PERSISTENCE_ROW = 'session-persistence-jsonl'
 
 /**
- * Writes the H2 telemetry overlay into a fresh observation home.
+ * The session-persistence overlay entry for one observation home.
  *
  * The frozen completion budget and every token metric are read from the
  * append-only session log, but the target train compresses that log
@@ -25,25 +27,42 @@ export const H2_SESSION_PERSISTENCE_ROW = 'session-persistence-jsonl'
  * removes, and renames no plugin, bundle, or row, and it is written identically
  * into both arms' homes, so Arm C stays exactly Arm B plus the Toolchain.
  *
- * @param {{homeDir: string, profile: string}} input
+ * @param {{homeDir: string}} input
  */
-export function writeTelemetryOverlay({ homeDir, profile }) {
-  const dir = join(homeDir, 'profiles', profile)
-  const file = join(dir, 'cordis.patch.yml')
-  if (existsSync(file)) throw new Error(`H2 telemetry overlay would overwrite an existing profile patch: ${file}`)
-  mkdirSync(dir, { recursive: true })
+export function telemetryOverlayEntry({ homeDir }) {
   // A patch entry REPLACES the targeted config object, it does not merge into
   // it, and this row's `root` is required with no default: the overlay must
   // therefore re-supply `root` or session persistence would write nowhere.
   // `dshHomePath('sessions')` resolves to exactly this path.
-  const patch = [{
+  return {
     id: H2_SESSION_PERSISTENCE_ROW,
     config: {
       root: join(homeDir, 'sessions'),
       compression: 'none',
     },
-  }]
-  writeFileSync(file, `${JSON.stringify(patch, null, 2)}\n`, 'utf8')
+  }
+}
+
+/**
+ * Writes the observation home's profile patch layer — the environment every
+ * observation runs in, identical in both arms.
+ *
+ * The patch is written before the profile's first boot, so the launcher
+ * initializes the profile around it instead of overwriting it; an existing
+ * patch is refused rather than replaced, because silently replacing it would
+ * run the observation in a composition nobody recorded.
+ *
+ * @param {{homeDir: string, profile: string, entries: readonly any[]}} input
+ */
+export function writeObservationProfilePatch({ homeDir, profile, entries }) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    throw new Error('H2 observation profile patch must carry at least one entry')
+  }
+  const dir = join(homeDir, 'profiles', profile)
+  const file = join(dir, 'cordis.patch.yml')
+  if (existsSync(file)) throw new Error(`H2 observation profile patch would overwrite an existing profile patch: ${file}`)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(file, `${JSON.stringify(entries, null, 2)}\n`, 'utf8')
   return file
 }
 
@@ -236,7 +255,21 @@ export function apply(ctx) {
  */
 export function runCompositionParityProbe({ runtime, baseDir, profile, toolchainTarball, env = {} }) {
   const cwd = runtime.dshRoot ?? process.cwd()
-  const armHome = arm => join(baseDir, arm)
+  // Each arm home carries the same observation profile patch the real
+  // observation homes carry, so the parity dump describes the composition that
+  // actually runs rather than a profile nobody boots.
+  const armHome = arm => {
+    const home = join(baseDir, arm)
+    writeObservationProfilePatch({
+      homeDir: home,
+      profile,
+      entries: [
+        telemetryOverlayEntry({ homeDir: home }),
+        ...routePatchEntries({ model: H2_POLICY.model, sessionAffinity: sessionAffinityValue({ runId: 'composition-parity', taskId: 'dump', arm }) }),
+      ],
+    })
+    return home
+  }
   const dumpB = dumpComposition({ runtime, homeDir: armHome('arm-b'), cwd, profile, dirs: [], env })
   const dumpC = dumpComposition({ runtime, homeDir: armHome('arm-c'), cwd, profile, dirs: [toolchainTarball], env })
   const { addedRows } = assertDumpParity({ dumpB, dumpC })

@@ -29,6 +29,7 @@ import {
   buildPreregistrationReceipt,
 } from './h2-receipts.mjs'
 import { buildH2Report } from './h2-report.mjs'
+import { credentialSources } from './h2-route.mjs'
 import { assertRunCompositionParity, runObservation } from './h2-runner.mjs'
 import { assertScheduleMatchesPolicy, buildH2Schedule } from './h2-schedule.mjs'
 import { exactOneSidedMcNemarP } from './h2-statistics.mjs'
@@ -306,7 +307,20 @@ function environmentChecks() {
   if (version !== expectedVersion) {
     throw new Error(`H2 DSH target drift: runtime reports ${version}, frozen train is ${DEFAULT_DSH_TRAIN}`)
   }
-  checks.deepseekApiKey = process.env.DEEPSEEK_API_KEY !== undefined && process.env.DEEPSEEK_API_KEY.length > 0 ? 'present' : 'missing'
+  // The credential is named by the frozen route and resolved by DSH inside each
+  // observation home; the controller only reports which authorities can supply
+  // it. Asserting one specific variable name would tie the benchmark to one
+  // deployment's shell instead of to the route it actually pins.
+  const credentials = credentialSources()
+  checks.route = {
+    provider: H2_POLICY.model.provider,
+    model: H2_POLICY.model.model,
+    reasoningEffort: H2_POLICY.model.reasoningEffort,
+    credentialRef: credentials.ref,
+    credentialEnvironment: credentials.environment,
+    credentialDocument: credentials.document,
+    sessionAffinityHeader: H2_POLICY.model.sessionAffinityHeader,
+  }
   checks.node = process.version
   return checks
 }
@@ -341,7 +355,7 @@ async function commandValidate(args) {
     summary.admission = { generatedAt: admission.generatedAt, stability: admission.stability, taskCount: admission.checkedTaskIds.length }
     summary.environment = environmentChecks()
     summary.candidate = { gitHead: gitHead(), packedArtifactPath: join(ARTIFACT_ROOT, 'dsh-toolchain-candidate.tgz') }
-    summary.ready = summary.environment.deepseekApiKey === 'present'
+    summary.ready = credentialSources().resolvable
   }
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`)
   return summary
@@ -467,8 +481,11 @@ async function commandDryRun(args) {
       targetFingerprint: target.targetFingerprint,
     },
   })
-  if (process.env.DEEPSEEK_API_KEY === undefined || process.env.DEEPSEEK_API_KEY.length === 0) {
-    throw new Error('H2 dry run requires DEEPSEEK_API_KEY in the operator environment')
+  if (!credentialSources().resolvable) {
+    throw new Error(
+      `H2 dry run cannot resolve the frozen route credential ${H2_POLICY.model.credentialRef}: it is neither exported in this environment `
+      + 'nor stored in the operator credential document. Store it through DSH, or export it, before spending an observation.',
+    )
   }
   assertRunCompositionParity({ toolchainTarball: candidatePack.path })
   const runId = `technical-dry-run-${shortSha(candidatePack.sha256)}`
@@ -497,7 +514,6 @@ async function commandDryRun(args) {
       toolchainTarball: candidatePack.path,
       runId,
       artifactRoot: ARTIFACT_ROOT,
-      environment: { DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY },
       cleanup: 'scratch',
     })
     observations.push({
@@ -581,7 +597,6 @@ async function commandRun(args) {
       toolchainTarball: candidatePack.path,
       runId,
       artifactRoot: ARTIFACT_ROOT,
-      environment: { DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY },
       cleanup: 'scratch',
     })
     receipts.push(receipt)
