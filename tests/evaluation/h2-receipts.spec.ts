@@ -39,6 +39,20 @@ describe('H2 preregistration receipt', () => {
     expect(sealReceipt({ ...receipt, receiptSha256: undefined }).receiptSha256).toBe(receipt.receiptSha256)
   })
 
+  it('accepts a real git object id and rejects a digest-shaped non-commit', () => {
+    // The repository's object format decides the length of a commit id; this
+    // checkout is SHA-1. Validating it as a 64-char sha256 rejected every real
+    // commit, so `h2 freeze` could not seal a receipt at all, and the fixtures
+    // hid it by inventing a 64-char commit id.
+    const gitSha1 = 'b749723000000000000000000000000000000000'
+    const receipt = buildPreregistrationReceipt({ ...ARGS, candidate: { ...ARGS.candidate, gitCommitSha: gitSha1 } })
+    expect(receipt.candidate.gitCommitSha).toBe(gitSha1)
+    expect(buildPreregistrationReceipt({ ...ARGS, candidate: { ...ARGS.candidate, gitCommitSha: hex(7) } }).candidate.gitCommitSha).toBe(hex(7))
+    for (const bad of ['b749723', 'B749723000000000000000000000000000000000', 'b74972300000000000000000000000000000000z']) {
+      expect(() => buildPreregistrationReceipt({ ...ARGS, candidate: { ...ARGS.candidate, gitCommitSha: bad } })).toThrow(/git object id/)
+    }
+  })
+
   it('detects a tampered receipt and any drift from the frozen policy', () => {
     const receipt = buildPreregistrationReceipt(ARGS)
     const tampered = { ...receipt, dataset: { ...receipt.dataset, commitmentSha256: hex(99) }, receiptSha256: receipt.receiptSha256 }

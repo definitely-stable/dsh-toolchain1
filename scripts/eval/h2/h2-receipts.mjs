@@ -17,7 +17,7 @@ export function buildPreregistrationReceipt({
 }) {
   assertH2PolicyIntegrity()
   assertCommitmentRecord(dataset)
-  requireHex64(candidate.gitCommitSha, 'candidate.gitCommitSha')
+  requireGitObjectId(candidate.gitCommitSha, 'candidate.gitCommitSha')
   requireHex64(candidate.packedArtifactSha256, 'candidate.packedArtifactSha256')
   if (typeof candidate.packageName !== 'string' || candidate.packageName.length === 0) throw new Error('candidate.packageName is required')
   if (typeof target.dshTrain !== 'string' || target.dshTrain.length === 0) throw new Error('target.dshTrain is required')
@@ -166,6 +166,19 @@ export function assertDryRunReceipt({ receipt, expected }) {
 
 function requireHex64(value, label) {
   if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) throw new Error(`${label} must be a 64-char lowercase sha256 hex string`)
+  return value
+}
+
+/**
+ * A git object id is not a sha256: the repository's object format decides its
+ * length, and this checkout uses SHA-1. Validating a commit id as a 64-char
+ * digest rejected every real commit, so `h2 freeze` could not seal a receipt at
+ * all — a failure the unit fixtures hid by inventing a 64-char commit id.
+ */
+function requireGitObjectId(value, label) {
+  if (typeof value !== 'string' || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value)) {
+    throw new Error(`${label} must be a 40- or 64-char lowercase hex git object id`)
+  }
   return value
 }
 

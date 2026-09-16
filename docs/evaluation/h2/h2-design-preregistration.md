@@ -591,6 +591,13 @@ schedule, statistics, model identity, resource policy, outcome rule) is untouche
    reports the frozen route and *which authority* can resolve its credential reference
    (environment or operator credential document), and the model-backed commands resolve the same
    way instead of requiring one specific variable.
+10. **`h2:freeze` could not seal a receipt at all.** The candidate's git commit id was validated as
+    a 64-char sha256 digest, but a git object id's length is the repository's object format and this
+    checkout is SHA-1, so every real commit id was rejected with "must be a 64-char lowercase sha256
+    hex string". The unit fixtures hid it by inventing a 64-char commit id, and the freeze step —
+    never executed before this session — was the only caller. Commit ids are now validated as git
+    object ids (40 or 64 hex), with a regression test that uses a real SHA-1 commit id and rejects
+    a digest-shaped non-commit.
 
 **Corpus re-authoring (before the commitment was published).** Dataset admission rejected two of
 the original 18 tasks, and its own record was right: their reference solutions declared
