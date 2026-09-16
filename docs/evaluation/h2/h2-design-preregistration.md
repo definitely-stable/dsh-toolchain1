@@ -104,10 +104,44 @@ Dry #1 = Arm B
 Dry #2 = Arm C
 ```
 
-They exercise the whole path — controller → fresh `DSH_HOME` → real DSH `acp` profile → official
-DeepSeek provider → DeepSeek V4.1 Flash → Agent tools → workspace modification → independent
+They exercise the whole path — controller → fresh `DSH_HOME` → real DSH `acp` profile → the frozen
+provider route → DeepSeek V4.1 Flash → Agent tools → workspace modification → independent
 grader (static + build + real DSH compose/boot) → telemetry → cleanup — and they prove the
 production Toolchain is actually reachable in Arm C.
+
+The dry run gates scoring, and it has already earned that role once: see section 4.1.
+
+### 4.1 Dry-run result (2026-09-16) — the gate passed and caught a calibration defect
+
+The technical dry run executed, and both observations passed every gate it owns:
+
+```text
+Arm B  status ok  RESOURCE_EXHAUSTED  wall 38.5 s  12 tool calls   0 Toolchain calls  grader pass
+Arm C  status ok  RESOURCE_EXHAUSTED  wall 44.6 s  12 tool calls   4 Toolchain calls  grader pass
+telemetry resolved: both   identity drift: none (opencode-go / deepseek-v4.1-flash, effort high)
+B/C composition parity: empirically verified — Arm B 86 rows, Arm C 87 rows, added row `dsh-toolchain`
+```
+
+The route, the credential, the session log, the model identity, the ACP pinning, and the causal
+boundary are therefore proven on real, paid observations rather than asserted.
+
+**The same run also proved the frozen completion budget is unusable, and that is why scoring has not
+started.** Both arms were stopped by the budget guard at **7 provider completions**, one past the
+frozen limit of 6, and were therefore recorded `budgetExhausted: true` / `success: false` *even
+though their graders passed*. A separate bounded measurement of the same public calibration task,
+run without any completion cap, finished naturally (`stopReason: end_turn`) after **16 provider
+completions**, 28 tool calls, and 107 s of wall time.
+
+The consequence is arithmetic: with the frozen limit, every observation of every arm is truncated
+mid-work, so `success` is `false` on both sides of every pair and the confirmatory comparison
+collapses to 0 vs 0 → `INCONCLUSIVE` **by construction**, after 36 paid observations. The frozen
+6–8 range in section 11 is calibrated for nothing this corpus actually contains.
+
+Raising the limit is a resource-policy amendment with a real cost implication (a limit of 24 is
+roughly 1.5× the measured natural length and about 4× the token spend of the frozen 6), so it is an
+operator decision, not a harness detail: **the limit and its approved range must be re-derived and
+the preregistration re-frozen before `h2:run` spends anything.** The wall-clock bound of 180 s needs
+no change — the unbounded run used 107 s and both dry-run arms used under 45 s.
 
 Both receipts are permanently:
 
@@ -383,6 +417,15 @@ graded, terminal reason is `RESOURCE_EXHAUSTED`, and task success is **0**. The 
 was provisionally fixed at 6 before the dry runs (inside the approved 6–8 range); if a dry run
 shows it is unusable it may be re-frozen **before** scoring, and the preregistration receipt
 records the frozen value. It is never raised after scoring outcomes exist.
+
+**The dry run showed exactly that, so the frozen value of 6 is not usable and has not been
+scored against.** Both dry-run arms were truncated at 7 completions, and the same public
+calibration task, measured without a completion cap, finished naturally after 16 completions
+(section 4.1). Scoring under the value of 6 would produce 36 paid observations whose recorded
+success is `false` on both sides of every pair. The operating range of the integrity gate must
+therefore be raised along with the value; the gate currently refuses anything outside 6–8, which
+is itself part of the amendment. Until that amendment and a re-freeze happen, `h2:run` must not
+start.
 
 ## 12. Schedule (frozen)
 

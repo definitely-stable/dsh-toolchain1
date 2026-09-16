@@ -1,0 +1,155 @@
+{
+  "schema": "dsh-toolchain-h2-preregistration-v1",
+  "generatedAt": "2026-09-16T17:51:50.243Z",
+  "candidate": {
+    "gitCommitSha": "7b2d498a5c7b907f08addd4b940a34f64a062918",
+    "packedArtifactSha256": "560711bbb5076582cb5e2db145b3bb0d9bf7059502bf72d18706d9559ac6c1fe",
+    "packageName": "dsh-toolchain",
+    "packageVersion": "0.0.0",
+    "protocolVersion": "1"
+  },
+  "target": {
+    "dshTrain": "@deepseek-ai/dsh@0.1.5-rc.2",
+    "dshRootVersion": "0.1.5-rc.2",
+    "targetFingerprint": "a204e2b6c3f3aaed4d28085c62a96afa70cce891a93310910d2596d1c179b09c",
+    "profile": "acp"
+  },
+  "dataset": {
+    "commitmentSha256": "214cc886461a5beccdc84a8984c51ec64a994281cc10fb0608430bafc225cfe3",
+    "taskCount": 18,
+    "strata": [
+      "agent-tool",
+      "compatibility-debug",
+      "cordis-service",
+      "exact-target-api",
+      "plugin-composition",
+      "runtime-verification"
+    ],
+    "calibrationSha256": "93b451f5e5d3b05155e12164a321f7d6842e7f9ce13cd9741b3e04d6d5ea24a7",
+    "tasks": [
+      [
+        "h2-agent-tool-01",
+        "agent-tool",
+        "0c507bf46c770eb1baa46b3d222290b78ad2f670b4fa83d22f499218666388df"
+      ],
+      [
+        "h2-agent-tool-02",
+        "agent-tool",
+        "66cd0b4625efeaa924bd02ce6004f21fa9dd75a2d674d3413d645d8c3e05abd3"
+      ],
+      [
+        "h2-agent-tool-03",
+        "agent-tool",
+        "3a9cf7267c0b270dad4bc78df98371659053a68fa5748815cbbd8be816b0423a"
+      ],
+      [
+        "h2-compatibility-debug-01",
+        "compatibility-debug",
+        "698fb384aab1c1eb1959dfbd2a49ec6668b8eb95ecb1d40f3ec8fcccfdfab6d1"
+      ],
+      [
+        "h2-compatibility-debug-02",
+        "compatibility-debug",
+        "6058b56cb2c40f0ab5d4a1683f9d32667fa11efbdc2a792054676aef9a946aaa"
+      ],
+      [
+        "h2-compatibility-debug-03",
+        "compatibility-debug",
+        "19db810284a60e0757ad4a9da5b55566a66f0bf4855a95ee8bc3d346e1746b6c"
+      ],
+      [
+        "h2-cordis-service-01",
+        "cordis-service",
+        "15162def1077c8db7a65ccfe01929be30d0b0b03563287f33ce77d497f632c5b"
+      ],
+      [
+        "h2-cordis-service-02",
+        "cordis-service",
+        "da1a01fa106abb273fabd36fc83d7678b65a3344fb8745ab846a36aebd0229dd"
+      ],
+      [
+        "h2-cordis-service-03",
+        "cordis-service",
+        "145880664a3ce2cc6086ce57c779dc44a37c4355a9d2751707862c651d16df51"
+      ],
+      [
+        "h2-exact-target-api-01",
+        "exact-target-api",
+        "3ac21f70849394b9e21b306604430b1c0604cbb9ba17a1c75a6344ff396417a8"
+      ],
+      [
+        "h2-exact-target-api-02",
+        "exact-target-api",
+        "72fe63418aba274d3453d64ede84cc8630194fb264f4385d319dc4b3a5ece43e"
+      ],
+      [
+        "h2-exact-target-api-03",
+        "exact-target-api",
+        "1b60a795a4dc0d54a5b95f59c476c4086e10c36387d614ac4c0c9b7a2bacad0b"
+      ],
+      [
+        "h2-plugin-composition-01",
+        "plugin-composition",
+        "650990c3faea033a885ebf0f4821f2a3d9da6980aa52d0c4e6e38eb28d790df4"
+      ],
+      [
+        "h2-plugin-composition-02",
+        "plugin-composition",
+        "e36e98d95785d5bb70713dfd0134d03b36d14972f997a1d07f165a949d9606dc"
+      ],
+      [
+        "h2-plugin-composition-03",
+        "plugin-composition",
+        "524bc80b31aafe3322d208028aa48d57de5e5c6ec177b7e9f751d56f025dcb5a"
+      ],
+      [
+        "h2-runtime-verification-01",
+        "runtime-verification",
+        "06822291afc125a099cafcec2ecff0a456be88e8d3d81b3199c6e661c1b5fd26"
+      ],
+      [
+        "h2-runtime-verification-02",
+        "runtime-verification",
+        "d3eb6d80cc9a49ea5f79b4916e46b1836015faf8420736bdec4f3961947a4f30"
+      ],
+      [
+        "h2-runtime-verification-03",
+        "runtime-verification",
+        "31af28670e1f5702a6fe6a13da498dc2552570da2ada32ec0de9a59f05cb4ee7"
+      ]
+    ]
+  },
+  "schedule": {
+    "seed": "h2-product-benchmark-v1-schedule",
+    "hash": "1364adfb162cbb03913e09510154fc85ea765180567442eb3c4b5935564f0856"
+  },
+  "model": {
+    "provider": "opencode-go",
+    "model": "deepseek-v4.1-flash",
+    "modelDisplayName": "DeepSeek V4.1 Flash",
+    "reasoningEffort": "high",
+    "credentialRef": "OPENCODE_GO_API_KEY",
+    "sessionAffinityHeader": "x-opencode-session"
+  },
+  "resource": {
+    "attemptsPerObservation": 1,
+    "qualityRetries": 0,
+    "infrastructureRetries": 0,
+    "providerCompletionsLimit": 6,
+    "wallTimeLimitMs": 180000
+  },
+  "statistics": {
+    "test": "exact-paired-mcnemar-one-sided",
+    "alpha": 0.05,
+    "minimumDiscordantWins": 2,
+    "minimumDelta": 0.1111111111111111
+  },
+  "policyHash": "c922174fea6572f6fe0f63dcccb68c3fe43d625631b93e44d984a4f542978388",
+  "source": {
+    "repository": "definitely-stable/dsh-toolchain1",
+    "commit": "7b2d498a5c7b907f08addd4b940a34f64a062918",
+    "nodeVersion": "v24.19.0",
+    "controllerEntry": "scripts/eval/h2/h2-cli.mjs"
+  },
+  "receiptSha256": "0ed27b312a41445cacec9f52a7a533aee8677eac6b4a3942cccd4a3537bd9e0a"
+}
