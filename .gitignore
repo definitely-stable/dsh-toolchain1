@@ -12,6 +12,11 @@ tmp/
 *.log
 *.tgz
 
+# Evaluation artifacts, disposable DSH homes, and the private H2 dataset.
+# The hidden H2 corpus and graders must never enter Git; only their SHA-256
+# commitment is published under docs/evaluation/h2/.
+.artifacts/
+
 # Local environment and credentials
 .env
 .env.*
