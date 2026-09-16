@@ -1,4 +1,4 @@
-import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -22,7 +22,7 @@ import {
   parseSessionLog,
 } from './h2-telemetry.mjs'
 import { routePatchEntries, seedRouteCredentials, sessionAffinityValue } from './h2-route.mjs'
-import { applyCleanupPolicy, directoryDigestFrom, materializeWorkspace, observationLayout, prepareObservationDir } from './h2-workspace.mjs'
+import { applyCleanupPolicy, assertObservationRunRemoved, directoryDigestFrom, materializeWorkspace, observationLayout, observationRunRoot, prepareObservationDir } from './h2-workspace.mjs'
 
 export const H2_ACP_PROFILE = 'acp'
 
@@ -147,8 +147,9 @@ async function awaitPromptWithinWallClock({ promptPromise, limitMs, onExpiry, gr
 export async function runObservation({
   arm, task, runtime, toolchainTarball, runId,
   artifactRoot, environment = {}, graderIoFactory = createDshGraderIo, now = () => Date.now(), pollMs = 250,
-  cleanup = 'scratch',
+  retention = 'live',
 }) {
+  if (retention !== 'live' && retention !== 'deferred') throw new Error(`unknown H2 retention policy: ${retention}`)
   const layout = observationLayout({ artifactRoot, runId, taskId: task.taskId, arm })
   await prepareObservationDir(layout)
   const composition = buildArmComposition({ arm, toolchainTarball })
@@ -387,13 +388,24 @@ export async function runObservation({
     },
   })
   assertReceiptSanitized(receipt)
-  await writeFile(join(layout.receiptsDir, 'observation.json'), `${JSON.stringify({
-    ...receipt,
-    ...(infrastructureError === null ? {} : { infrastructureFailure: 'INFRASTRUCTURE_FAILURE' }),
-  }, null, 2)}\n`, 'utf8')
 
-  if (cleanup !== 'none') {
-    await applyCleanupPolicy(layout, /** @type {any} */ (cleanup))
+  // Deferred retention. The agent process is already terminated here, so
+  // writing the receipt is not itself a leak — but *keeping* it is: the next
+  // observation's agent can read every path it can name, and a sibling receipt
+  // carries this observation's outcome label and schedule position while a
+  // survivor workspace carries a working solution to the same task. The whole
+  // run directory goes, not just this observation's subtree, because even empty
+  // task/arm directories disclose which cells have already run; the caller
+  // flushes the retained evidence only when the run reaches a terminal state.
+  if (retention === 'deferred') {
+    await rm(observationRunRoot({ artifactRoot, runId }), { recursive: true, force: true })
+    await assertObservationRunRemoved({ artifactRoot, runId })
+  } else {
+    await writeFile(join(layout.receiptsDir, 'observation.json'), `${JSON.stringify({
+      ...receipt,
+      ...(infrastructureError === null ? {} : { infrastructureFailure: 'INFRASTRUCTURE_FAILURE' }),
+    }, null, 2)}\n`, 'utf8')
+    await applyCleanupPolicy(layout, 'scratch')
   }
 
   return Object.freeze({ receipt, layout, infrastructureError })

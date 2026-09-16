@@ -386,15 +386,27 @@ and the following are preconditions of a scored observation:
   `workspace-write` rather than inherited from the operator shell. Denying costs a task nothing
   (in-workspace work needs no permission) and is identical in both arms.
 
-**Recorded blocker.** Scoring is currently refused by `assertObservationIsolation()`. With
-`cleanup: 'scratch'` the first arm's graded workspace and its receipt survive on disk, one
-directory above the second arm's working directory, and `ledger.json` is written incrementally
-with per-observation success flags; the schedule is recomputable from public data, so those
-readable bytes couple the paired arms and the McNemar test would consume that coupling. Removing
-the leak requires deferred retention (capture in memory, delete the live tree at the end of each
-observation, flush retained evidence only when the run reaches a terminal state). The two
-technical dry runs are unaffected: they use the public calibration task, and no hidden material
-exists for them to leak. Until that work lands, `h2:run` exits before spending anything.
+**Deferred retention (implemented).** The leak the design audit found is closed, and the fix is
+structural rather than procedural:
+
+- **Capture in memory.** An observation's receipt never enters the controller's durable state
+  before the run ends; the run's ledger lives in memory for the same reason.
+- **Delete the live tree at the end of every observation.** `retention: 'deferred'` removes the
+  run's whole artifact directory — not merely the finished observation's subtree, because empty
+  `task/arm` directories still disclose which cells have already run — and then *verifies* it is
+  gone. A survivor throws and stops the run instead of quietly coupling the arms. This is what
+  removes the readable graded workspace, which is the material leak: it contains a working
+  solution to the same task the next observation is asked to solve.
+- **Flush only at a terminal state.** `ledger.json`, the per-observation receipts, and the report
+  are written once the scoring loop has stopped, for any reason including a stop.
+
+The cost is explicit and accepted: a run that dies before its terminal state retains nothing,
+because any durable intermediate would be exactly the readable artifact the design forbids. The
+alternative — writing each receipt as it is produced — is the `ledger.json`-with-success-flags
+leak that made the paired arms non-independent in the first place.
+
+`h2:run` additionally refuses to start when its own run directory already exists, so a run cannot
+begin on top of a previous one's readable bytes.
 
 ## 11. Resource policy (frozen)
 
@@ -403,8 +415,8 @@ attempts per observation        = 1
 quality retries                 = 0
 infrastructure retries          = 0
 reasoningEffort                 = high
-provider completions per run    ≤ 6
-wall clock per observation      ≤ 180 s
+provider completions per run    ≤ 24   (amended before scoring: was 6)
+wall clock per observation      ≤ 600 s (amended before scoring: was 180 s)
 ```
 
 `providerCompletions` is counted from the authoritative append-only session log
@@ -418,14 +430,25 @@ was provisionally fixed at 6 before the dry runs (inside the approved 6–8 rang
 shows it is unusable it may be re-frozen **before** scoring, and the preregistration receipt
 records the frozen value. It is never raised after scoring outcomes exist.
 
-**The dry run showed exactly that, so the frozen value of 6 is not usable and has not been
-scored against.** Both dry-run arms were truncated at 7 completions, and the same public
-calibration task, measured without a completion cap, finished naturally after 16 completions
-(section 4.1). Scoring under the value of 6 would produce 36 paid observations whose recorded
-success is `false` on both sides of every pair. The operating range of the integrity gate must
-therefore be raised along with the value; the gate currently refuses anything outside 6–8, which
-is itself part of the amendment. Until that amendment and a re-freeze happen, `h2:run` must not
-start.
+**The dry run showed exactly that, so the frozen value of 6 was replaced before scoring.** Both
+dry-run arms were truncated at 7 completions, and the same public calibration task, measured
+without a completion cap, finished naturally after 16 completions (section 4.1). Scoring under the
+value of 6 would have produced 36 paid observations whose recorded success is `false` on both sides
+of every pair.
+
+The amended values are derived from that measurement rather than chosen for convenience:
+
+```text
+measured natural length of a real task   16 completions, 107 s
+frozen completion limit                  24  = 1.5x the measurement
+frozen wall clock                        600 s = 5.6x the measurement
+integrity gate range                     16-48 (>= the measurement, <= 3x it)
+```
+
+The gate's range carries the same reasoning as the value: a limit below the measured task length
+truncates every observation, and a limit above three times it lets a single runaway observation own
+the run's wall time. `H2_MEASURED_TASK_COMPLETIONS` is the named anchor both the gate and the tests
+read, so a future amendment has to restate the measurement rather than move a bare number.
 
 ## 12. Schedule (frozen)
 
@@ -641,6 +664,17 @@ schedule, statistics, model identity, resource policy, outcome rule) is untouche
     never executed before this session — was the only caller. Commit ids are now validated as git
     object ids (40 or 64 hex), with a regression test that uses a real SHA-1 commit id and rejects
     a digest-shaped non-commit.
+11. **The observation isolation model leaked the pair mate's solution.** With `cleanup: 'scratch'`
+    the finished observation's graded workspace and its receipt stayed on disk one directory above
+    the next observation's working directory, and `ledger.json` was rewritten after every
+    observation with that observation's success flag. DSH fences writes but not reads, so the second
+    arm of every pair could read a working solution to the very task it was asked to solve, and the
+    schedule is recomputable from public data, so the paired arms were not independent and the
+    McNemar test would have consumed that coupling as if it were a treatment effect. Section 10 now
+    describes the implemented deferred retention: receipts captured in controller memory, the run's
+    artifact directory deleted and verified gone at the end of every observation, and evidence
+    flushed only once the run reaches a terminal state. The dry run and the scoring run share the
+    same retention policy, so the gate exercises the path that is actually scored.
 
 **Corpus re-authoring (before the commitment was published).** Dataset admission rejected two of
 the original 18 tasks, and its own record was right: their reference solutions declared
@@ -661,8 +695,11 @@ full validation rejects a calibration grader that shares any task-specific fragm
 grader. Fixture task ids moved to a reserved 90-series ordinal so they can never collide with a
 hidden id.
 
-**Open work before scoring** is listed in section 10: deferred retention, then the remaining
-hardening (opaque observation paths, authoring material moved out of the scoring artifact root, the
-isolation policy bound into the preregistration receipt). Nothing in this list changes the
-confirmatory contract; the dry run must be (re)run after the harness settles, and `h2:run` refuses
-to start until the isolation blocker is cleared.
+**Scoring preconditions, as executed.** Deferred retention landed (section 10) and the corpus and
+the authoring tree were moved out of the checkout before the scored run: the private dataset to
+`D:\h2-private\h2-dataset-v1` via `H2_DATASET_DIR`, and the corpus generator with it, because a
+generator that can reconstruct every hidden task and its reference solution is an answer key in the
+same sense the corpus is. Only the SHA-256 commitment under `docs/evaluation/h2/` and the sealed
+receipts stay published, and neither carries hidden content. The dry run was re-run after the
+harness settled, as required — its receipt is bound to the candidate commit, so a harness change
+invalidates it by construction.

@@ -1,4 +1,5 @@
 import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, relative, resolve, sep } from 'node:path'
 
@@ -20,10 +21,9 @@ export const H2_ARTIFACT_ROOT = '.artifacts/h2'
 
 /** @returns {H2ObservationLayout} */
 export function observationLayout({ artifactRoot = H2_ARTIFACT_ROOT, runId, taskId, arm }) {
-  assertIdentifier(runId, 'runId')
   assertIdentifier(taskId, 'taskId')
   if (arm !== 'B' && arm !== 'C') throw new Error('H2 observation arm must be B or C')
-  const root = resolve(artifactRoot, runId, taskId, arm)
+  const root = join(observationRunRoot({ artifactRoot, runId }), taskId, arm)
   return Object.freeze({
     root,
     dshHome: join(root, 'dsh-home'),
@@ -31,6 +31,16 @@ export function observationLayout({ artifactRoot = H2_ARTIFACT_ROOT, runId, task
     scratchDir: join(root, 'scratch'),
     receiptsDir: join(root, 'receipts'),
   })
+}
+
+/**
+ * The run directory that holds every observation of one run.
+ *
+ * @param {{artifactRoot?: string, runId: string}} input
+ */
+export function observationRunRoot({ artifactRoot = H2_ARTIFACT_ROOT, runId }) {
+  assertIdentifier(runId, 'runId')
+  return resolve(artifactRoot, runId)
 }
 
 /**
@@ -133,6 +143,32 @@ export async function applyCleanupPolicy(layout, mode = 'scratch') {
   }
   if (mode === 'none') return mode
   throw new Error(`unknown H2 cleanup mode: ${mode}`)
+}
+
+/**
+ * Proves that nothing of a run's observations is left on disk.
+ *
+ * Deferred retention rests on the absence of reachable bytes, not on a
+ * boundary: the target train fences writes but not reads, so a workspace that
+ * outlives its observation — and it contains a working solution to the very
+ * task — or a receipt that outlives it (outcome label, schedule position) is
+ * readable by the next agent under test and would couple the paired arms the
+ * McNemar test consumes. Empty run directories are removed too, because their
+ * task/arm names still disclose which observations have already run. The
+ * deletion is verified rather than assumed, and a surviving tree stops the run
+ * instead of quietly poisoning it.
+ *
+ * @param {{artifactRoot?: string, runId: string}} input
+ */
+export async function assertObservationRunRemoved({ artifactRoot, runId }) {
+  const root = observationRunRoot({ artifactRoot, runId })
+  if (existsSync(root)) {
+    throw new Error(
+      `H2 isolation violated: the run directory survived an observation at ${root}. `
+      + 'A retained sibling workspace or receipt is readable by the next agent under test, so the paired arms would not be independent.',
+    )
+  }
+  return true
 }
 
 /** Re-exported content digest so callers do not import two H2 modules for one job. */

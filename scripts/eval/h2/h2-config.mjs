@@ -26,6 +26,20 @@ export const H2_STRATA = Object.freeze([
   'runtime-verification',
 ])
 
+/**
+ * Provider completions the public calibration task consumed when nothing
+ * truncated it: measured 2026-09-16, unbounded, ending naturally on `end_turn`
+ * after 28 tool calls and 107 s of wall time.
+ *
+ * It anchors the budget instead of leaving it to taste. A limit below the real
+ * length of a task truncates every observation, which makes task success `false`
+ * on *both* sides of every pair — so the confirmatory contrast collapses to
+ * 0 vs 0 by construction, after the full budget has been spent. The dry run
+ * proved that outcome is not hypothetical: at the provisional limit of 6, both
+ * arms were cut off at 7 completions.
+ */
+export const H2_MEASURED_TASK_COMPLETIONS = 16
+
 export const H2_POLICY = Object.freeze({
   schema: H2_POLICY_SCHEMA,
   taskCount: 18,
@@ -77,13 +91,20 @@ export const H2_POLICY = Object.freeze({
   /**
    * Frozen resource policy. Resource exhaustion is a product outcome
    * (RESOURCE_EXHAUSTED, task success 0), never an infrastructure failure.
+   *
+   * Amended before any scoring outcome exists: the completion limit was 6 and
+   * the wall clock 180 s, both calibrated against nothing this corpus contains.
+   * The limit is now 1.5x the measured natural length of a real task (24 over a
+   * measured 16) and the wall clock is 600 s, which is 5.6x the 107 s that task
+   * actually used. Both changes exist for the same reason: a budget that
+   * truncates the agent turns a capability difference into a budget artefact.
    */
   resource: Object.freeze({
     attemptsPerObservation: 1,
     qualityRetries: 0,
     infrastructureRetries: 0,
-    providerCompletionsLimit: 6,
-    wallTimeLimitMs: 180_000,
+    providerCompletionsLimit: 24,
+    wallTimeLimitMs: 600_000,
   }),
 
   /**
@@ -140,10 +161,15 @@ export function assertH2PolicyIntegrity() {
   if (attemptsPerObservation !== 1 || qualityRetries !== 0 || infrastructureRetries !== 0) {
     throw new Error('H2 retry policy is frozen: one attempt, zero quality retries, zero infrastructure retries')
   }
-  if (!Number.isSafeInteger(providerCompletionsLimit) || providerCompletionsLimit < 6 || providerCompletionsLimit > 8) {
-    throw new Error('H2 provider-completion limit must stay within the approved 6-8 range')
+  if (!Number.isSafeInteger(providerCompletionsLimit)
+    || providerCompletionsLimit < H2_MEASURED_TASK_COMPLETIONS
+    || providerCompletionsLimit > H2_MEASURED_TASK_COMPLETIONS * 3) {
+    throw new Error(
+      `H2 provider-completion limit must stay within ${H2_MEASURED_TASK_COMPLETIONS}-${H2_MEASURED_TASK_COMPLETIONS * 3}: `
+      + 'below the measured task length it truncates every observation, above three times it a single observation can run away with the run',
+    )
   }
-  if (wallTimeLimitMs !== 180_000) throw new Error('H2 wall-time limit is frozen at 180s')
+  if (wallTimeLimitMs !== 600_000) throw new Error('H2 wall-time limit is frozen at 600s')
   const { provider, model, reasoningEffort, credentialRef, sessionAffinityHeader } = H2_POLICY.model
   for (const [label, value] of [['provider', provider], ['model', model], ['reasoningEffort', reasoningEffort]]) {
     if (typeof value !== 'string' || value.length === 0) throw new Error(`H2 frozen route ${label} must be a non-empty string`)

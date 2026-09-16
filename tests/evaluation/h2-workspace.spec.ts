@@ -7,9 +7,11 @@ import { directoryDigest } from '../../scripts/eval/h2/h2-util.mjs'
 import {
   assertArtifactRootInsideRepo,
   assertIsolatedDshHome,
+  assertObservationRunRemoved,
   cleanupObservation,
   materializeWorkspace,
   observationLayout,
+  observationRunRoot,
   prepareObservationDir,
 } from '../../scripts/eval/h2/h2-workspace.mjs'
 
@@ -62,6 +64,19 @@ describe('H2 observation layout', () => {
     await writeFile(join(layout.receiptsDir, 'receipt.json'), '{}', 'utf8')
     await cleanupObservation(layout)
     await expect(readFile(join(layout.receiptsDir, 'receipt.json'), 'utf8')).rejects.toThrow()
+  })
+
+  it('proves a run directory is gone and refuses to certify a survivor', async () => {
+    const runRoot = observationRunRoot({ artifactRoot: tmpRoot, runId: 'run-3' })
+    expect(runRoot).toBe(resolve(tmpRoot, 'run-3'))
+    await expect(assertObservationRunRemoved({ artifactRoot: tmpRoot, runId: 'run-3' })).resolves.toBe(true)
+    // A retained sibling — workspace or receipt — is readable by the next agent
+    // under test, so a survivor must stop the run rather than pass unnoticed.
+    const layout = observationLayout({ artifactRoot: tmpRoot, runId: 'run-3', taskId: 'h2-x-03', arm: 'B' })
+    await prepareObservationDir(layout)
+    await expect(assertObservationRunRemoved({ artifactRoot: tmpRoot, runId: 'run-3' })).rejects.toThrow(/isolation violated/)
+    await rm(runRoot, { recursive: true, force: true })
+    await expect(assertObservationRunRemoved({ artifactRoot: tmpRoot, runId: 'run-3' })).resolves.toBe(true)
   })
 })
 

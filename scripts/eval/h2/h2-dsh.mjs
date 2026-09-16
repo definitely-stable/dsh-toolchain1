@@ -351,7 +351,7 @@ export function createProcessAcpTransport({
   command, args, env, cwd, spawnImpl = spawnProcess, stderrLimitBytes = 64 * 1024,
   shell = process.platform === 'win32',
 }) {
-  const argv = shell ? args.map(quoteForShell) : args
+  const argv = /** @type {string[]} */ (shell ? args.map(quoteForShell) : [...args])
   const child = /** @type {any} */ (spawnImpl(command, argv, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell }))
   if (child.error) throw child.error
   const handlers = []

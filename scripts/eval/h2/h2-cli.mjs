@@ -130,20 +130,42 @@ function ancestorsOf(dir) {
 }
 
 /**
- * Scoring runs a hidden task in the same repository that holds the run
- * artifacts, and DSH confines writes but not reads, so a retained sibling
- * observation is readable by the next agent. Until the deferred-retention
- * redesign lands, scoring must not start: this stop-the-line is deliberately
- * loud so no paid budget can be spent under an isolation model that the design
- * audit proved leaks the peer arm's workspace and the incremental ledger.
+ * Flushes retained evidence once a run has reached a terminal state.
+ *
+ * Deferred retention keeps every receipt in controller memory and deletes each
+ * observation's live tree as soon as that observation ends, so no readable
+ * sibling artifact exists while an agent is running. The cost is explicit and
+ * accepted: a run that dies before this point retains nothing, because any
+ * durable intermediate would be exactly the readable leak the design forbids.
+ *
+ * @param {{runDir: string, ledger: any, observations: readonly {taskId: string, arm: string, receipt: any}[]}} input
  */
-function assertObservationIsolation() {
-  throw new Error(
-    'H2 scoring is blocked: observation isolation is not yet sound. A retained sibling arm (workspace + receipt) and the incremental ledger.json '
-    + 'are readable by the next agent because DSH does not confine reads, so the paired arms are not independent. '
-    + 'The dry run (public calibration task, no hidden material) is unaffected. Implement deferred retention before scoring: see '
-    + 'docs/evaluation/h2/h2-design-preregistration.md section 10.',
-  )
+async function flushRunEvidence({ runDir, ledger, observations }) {
+  await mkdir(runDir, { recursive: true })
+  await writeJson(join(runDir, 'ledger.json'), ledger)
+  for (const observation of observations) {
+    const dir = join(runDir, observation.taskId, observation.arm, 'receipts')
+    await mkdir(dir, { recursive: true })
+    await writeJson(join(dir, 'observation.json'), observation.receipt)
+  }
+  return runDir
+}
+
+/**
+ * Isolation preconditions of a scored observation that are properties of the
+ * environment rather than of the code path (the corpus reach is checked by
+ * `assertCorpusOutsideAgentReach`, and per-observation tree removal is verified
+ * by the observation itself). Kept separate so the scoring command reads as
+ * "check the preconditions, then spend".
+ */
+function assertScoringPreconditions({ runDir }) {
+  if (existsSync(runDir)) {
+    throw new Error(
+      `H2 refuses to start a scoring run whose artifact directory already exists: ${runDir}. `
+      + 'A run directory present before the run began would be readable by every observation in it.',
+    )
+  }
+  return true
 }
 
 function readJsonFile(file) {
@@ -506,6 +528,7 @@ async function commandDryRun(args) {
   const task = loadCalibrationTask()
   const taskForRun = { ...task, contentHashes: { workspaceSha256: await directoryDigest(task.workspaceDir) } }
   const observations = []
+  const retained = []
   for (const arm of H2_POLICY.arms) {
     const { receipt } = await runObservation({
       arm,
@@ -514,8 +537,9 @@ async function commandDryRun(args) {
       toolchainTarball: candidatePack.path,
       runId,
       artifactRoot: ARTIFACT_ROOT,
-      cleanup: 'scratch',
+      retention: 'deferred',
     })
+    retained.push({ taskId: taskForRun.taskId, arm, receipt })
     observations.push({
       arm,
       scoring: false,
@@ -541,6 +565,11 @@ async function commandDryRun(args) {
     generatedAt: new Date().toISOString(),
   })
   await writeJson(receiptPath, receipt)
+  await flushRunEvidence({
+    runDir: join(ARTIFACT_ROOT, runId),
+    ledger: { runId, technical: true, scoring: false, entries: retained.map(entry => ({ taskId: entry.taskId, arm: entry.arm })) },
+    observations: retained,
+  })
   assertDryRunReceipt({
     receipt,
     expected: { datasetSha256: preregistration.dataset.commitmentSha256, gitCommitSha, targetFingerprint: target.targetFingerprint },
@@ -554,7 +583,6 @@ async function commandRun(args) {
   if (args.values['confirm-scoring'] !== true) {
     throw new Error('h2:run spends real model tokens; pass --confirm-scoring to authorize the 36 preregistered observations')
   }
-  assertObservationIsolation()
   const datasetDir = assertCorpusOutsideAgentReach({ datasetDir: args.values.dataset ?? DEFAULT_DATASET_DIR })
   const record = loadCommitmentRecord()
   const corpus = await assertCorpusMatchesRecord({ record, datasetDir })
@@ -584,10 +612,10 @@ async function commandRun(args) {
   // so `finalize` could assemble one report out of two different runs.
   const runId = `scoring-${shortSha(candidatePack.sha256)}-${gitCommitSha.slice(0, 8)}-${Date.now().toString(36)}`
   const runDir = join(ARTIFACT_ROOT, runId)
-  await mkdir(runDir, { recursive: true })
+  assertScoringPreconditions({ runDir })
   const byId = new Map(corpus.tasks.map(task => [task.taskId, task]))
   const ledger = { runId, startedAt: new Date().toISOString(), entries: [], stopped: false, stopReason: null }
-  const receipts = []
+  const retained = []
   for (const entry of schedule.entries) {
     const task = byId.get(entry.taskId)
     const { receipt } = await runObservation({
@@ -597,9 +625,9 @@ async function commandRun(args) {
       toolchainTarball: candidatePack.path,
       runId,
       artifactRoot: ARTIFACT_ROOT,
-      cleanup: 'scratch',
+      retention: 'deferred',
     })
-    receipts.push(receipt)
+    retained.push({ taskId: entry.taskId, arm: entry.arm, receipt })
     ledger.entries.push({
       ordinal: entry.ordinal,
       taskId: entry.taskId,
@@ -609,7 +637,7 @@ async function commandRun(args) {
       identityDrift: receipt.identityDrift,
       budgetExhausted: receipt.budgetExhausted,
     })
-    await writeJson(join(runDir, 'ledger.json'), ledger)
+    process.stdout.write(`${entry.ordinal}/${schedule.entries.length} ${entry.taskId} arm ${entry.arm}: ${receipt.terminalReason}${receipt.success ? ' SUCCESS' : ''}\n`)
     // Infrastructure first: a failure to read the telemetry plane must never be
     // reported as a model-identity stop.
     if (receipt.terminalReason === 'INFRASTRUCTURE_FAILURE' || receipt.terminalReason === 'CANCELLED') {
@@ -623,8 +651,10 @@ async function commandRun(args) {
       break
     }
   }
-  await writeJson(join(runDir, 'ledger.json'), ledger)
-  const report = buildH2Report({ runId, receipts, generatedAt: new Date().toISOString() })
+  // The run has reached a terminal state, so the retained evidence may now
+  // become durable.
+  await flushRunEvidence({ runDir, ledger, observations: retained })
+  const report = buildH2Report({ runId, receipts: retained.map(observation => observation.receipt), generatedAt: new Date().toISOString() })
   await writeJson(join(runDir, 'report.json'), report)
   process.stdout.write(`${JSON.stringify({
     command: 'h2:run',

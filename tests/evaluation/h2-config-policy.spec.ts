@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { H2_POLICY, H2_REASONING_EFFORTS, H2_STRATA, assertH2PolicyIntegrity } from '../../scripts/eval/h2/h2-config.mjs'
+import { H2_MEASURED_TASK_COMPLETIONS, H2_POLICY, H2_REASONING_EFFORTS, H2_STRATA, assertH2PolicyIntegrity } from '../../scripts/eval/h2/h2-config.mjs'
 
 describe('H2 frozen policy', () => {
   it('freezes the approved observation budget: 18 tasks, 2 arms, 36 scoring, 2 technical, max 38', () => {
@@ -47,13 +47,18 @@ describe('H2 frozen policy', () => {
     expect(H2_REASONING_EFFORTS).toContain(H2_POLICY.model.reasoningEffort)
   })
 
-  it('freezes the resource policy: one attempt, zero retries, bounded completions and wall time', () => {
+  it('freezes the resource policy: one attempt, zero retries, a calibrated completion budget and wall time', () => {
     expect(H2_POLICY.resource.attemptsPerObservation).toBe(1)
     expect(H2_POLICY.resource.qualityRetries).toBe(0)
     expect(H2_POLICY.resource.infrastructureRetries).toBe(0)
-    expect(H2_POLICY.resource.providerCompletionsLimit).toBeGreaterThanOrEqual(6)
-    expect(H2_POLICY.resource.providerCompletionsLimit).toBeLessThanOrEqual(8)
-    expect(H2_POLICY.resource.wallTimeLimitMs).toBe(180_000)
+    // Amended before any scoring outcome: the provisional limit of 6 truncated
+    // both dry-run arms at 7 completions while the same public task needed 16
+    // when nothing capped it, so a limit that low would make every observation
+    // budget-exhausted on both sides of every pair.
+    expect(H2_MEASURED_TASK_COMPLETIONS).toBe(16)
+    expect(H2_POLICY.resource.providerCompletionsLimit).toBeGreaterThanOrEqual(H2_MEASURED_TASK_COMPLETIONS)
+    expect(H2_POLICY.resource.providerCompletionsLimit).toBeLessThanOrEqual(H2_MEASURED_TASK_COMPLETIONS * 3)
+    expect(H2_POLICY.resource.wallTimeLimitMs).toBe(600_000)
   })
 
   it('freezes the confirmatory decision rule: exact paired McNemar, one-sided alpha 0.05, MCID 2/18', () => {
