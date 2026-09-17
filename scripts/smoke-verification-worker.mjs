@@ -15,6 +15,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/safety/disposable-environment.mjs'
+
 const DSH_VERSION = '0.1.1-rc.2'
 const PROFILE = 'web'
 const TARGET_FINGERPRINT = /^dsh-target-v2:[0-9a-f]{64}$/u
@@ -130,12 +132,8 @@ export async function smokeVerificationWorker(candidateTarball) {
     await writeFile(join(baselineRunner, 'package.json'), '{"private":true}\n')
     await writeFile(sentinelFile, 'active-profile-sentinel-v1\n', { flag: 'wx' })
 
-    const baselineEnv = {
-      ...process.env,
-      CI: 'true',
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
-      DSH_HOME: baselineHome,
-    }
+    const baselineCoordinates = ensureDisposableCoordinates(createDisposableCoordinates({ root: baselineHome }))
+    const baselineEnv = buildDisposableEnvironment({ coordinates: baselineCoordinates })
     run('pnpm', ['add', '--save-exact', '--ignore-scripts', `@deepseek-ai/dsh@${DSH_VERSION}`], {
       cwd: baselineRunner,
       env: baselineEnv,
@@ -151,7 +149,7 @@ export async function smokeVerificationWorker(candidateTarball) {
     const dshPackageRoot = await realpath(join(baselineRunner, 'node_modules', '@deepseek-ai', 'dsh'))
     const targetRequest = {
       profile: PROFILE,
-      dshHome: baselineHome,
+      dshHome: baselineCoordinates.dshHome,
       dshPackageRoot,
     }
     const targetAcquisition = createDshFilesystemTargetAcquisition({

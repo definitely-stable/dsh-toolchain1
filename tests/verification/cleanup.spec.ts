@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { runPackedPluginVerification } from '../../src/verification/packed-worker.js'
+import { defaultCleanupTemporaryRoot, runPackedPluginVerification } from '../../src/verification/packed-worker.js'
 import type { VerificationProcessRequest } from '../../src/verification/process.js'
 import type { TargetSnapshot } from '../../src/protocol/index.js'
 
@@ -189,5 +189,24 @@ describe('packed verification cleanup lifecycle', () => {
     expect(execution.checks.find(item => item.id === 'install')).toMatchObject({
       status: 'skipped',
     })
+  })
+})
+
+describe('disposable verification root removal', () => {
+  it('removes a directory the worker created inside the system temp directory', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-toolchain-verify-guard-'))
+    await writeFile(path.join(root, 'payload.txt'), 'x')
+
+    await defaultCleanupTemporaryRoot(root)
+
+    await expect(stat(root)).rejects.toThrow()
+  })
+
+  it('refuses the system temp directory, the user home, and paths outside the temp directory', async () => {
+    const home = process.env.USERPROFILE ?? process.env.HOME ?? path.join(tmpdir(), 'home')
+    const protectedTargets = [tmpdir(), home, path.resolve('/')]
+    for (const candidate of protectedTargets) {
+      await expect(defaultCleanupTemporaryRoot(candidate)).rejects.toThrow(/refusing to delete/)
+    }
   })
 })

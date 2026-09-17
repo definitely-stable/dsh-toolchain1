@@ -8,6 +8,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/safety/disposable-environment.mjs'
+
 import { captureOrdinaryWorkspaceFromAcquiredEvidence } from './m2-ordinary-acquired-evidence.mjs'
 
 const DSH_PACKAGE = '@deepseek-ai/dsh'
@@ -111,6 +113,11 @@ async function loadProductionModules() {
 }
 
 async function acquireHome(modules, dshPackageRoot, dshHome) {
+  // This environment is consumed *in process* by the read-only target/contract
+  // acquisition adapters, which resolve a home and read declarations; it is never
+  // handed to a spawned process, so it deliberately keeps the caller's PATH and
+  // toolchain variables. Every spawned DSH or package-manager process in this
+  // file goes through the disposable coordinate builder instead.
   const env = {
     ...process.env,
     CI: 'true',
@@ -197,14 +204,10 @@ async function createFixture() {
   const modules = await loadProductionModules()
   const root = await mkdtemp(join(tmpdir(), 'dsh-toolchain-m2-fixture-'))
   const runner = join(root, 'runner')
-  const firstHome = join(root, 'home-a')
-  const secondHome = join(root, 'home-b')
-  const installEnv = {
-    ...process.env,
-    CI: 'true',
-    COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
-    DSH_HOME: firstHome,
-  }
+  const coordinates = ensureDisposableCoordinates(createDisposableCoordinates({ root }))
+  const firstHome = coordinates.dshHome
+  const secondHome = join(coordinates.root, 'home-b')
+  const installEnv = buildDisposableEnvironment({ coordinates })
 
   try {
     await mkdir(runner, { recursive: true })

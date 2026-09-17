@@ -58,6 +58,12 @@ jobs:
       - name: Inspect packed tarball against its manifest
         run: node scripts/check-pack.mjs .artifacts/dsh-toolchain.tgz
 
+      # H2 confirmatory benchmark: deterministic validation only. This step
+      # never calls a model, never touches the hidden corpus, and never runs a
+      # scoring observation; paid H2 runs are manual and local by design.
+      - name: Validate H2 benchmark commitment, policy, schedule, and statistics
+        run: node scripts/eval/h2/h2-cli.mjs validate --public-only
+
       - name: Smoke built stable public API and CLI
         run: |
           node lib/frontends/cli/bin.js --version

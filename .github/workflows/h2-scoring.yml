@@ -1,0 +1,165 @@
+name: H2 Scoring
+
+# H2 is the confirmatory product benchmark: 36 paid observations of a real DSH
+# agent on a hidden developer-task corpus, plus two non-scoring technical dry-run
+# observations. It runs only when an operator dispatches it from `main`, because
+# the dispatched commit is the frozen candidate, and never on a push or a pull
+# request.
+#
+# The job owns the whole benchmark sequence — validate, preflight, freeze, dry
+# run, scoring, finalize — in one runner, because the frozen retention policy
+# keeps no durable intermediate evidence: a job that dies before its terminal
+# state has produced nothing, and splitting the sequence across jobs would
+# require persisting exactly the readable artifacts the design forbids.
+#
+# Deterministic validation (commitment, policy, schedule, statistics) stays in
+# `ci.yml`; this workflow is the only place a model is called.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_budget_minutes:
+        description: Internal deadline for scheduling observations (the job ceiling is 350)
+        required: true
+        default: '270'
+        type: choice
+        options:
+          - '120'
+          - '180'
+          - '240'
+          - '270'
+          - '300'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h2-scoring-main
+  cancel-in-progress: false
+
+jobs:
+  scoring:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      H2_VENUE: ci
+      H2_DSH_MODE: package
+      H2_DSH_TRAIN: '@deepseek-ai/dsh@0.1.5-rc.2'
+      H2_AUTHOR_CHECK_FILE: ${{ github.workspace }}/docs/evaluation/h2/h2-author-check-v1.json
+    steps:
+      - name: Require main ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo '::error::H2 scoring is allowed only from refs/heads/main'
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
+        with:
+          install: false
+
+      - name: Set up Node 24.19
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.19.0'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Materialize the private corpus
+        shell: bash
+        env:
+          H2_DATASET_SECRET: ${{ secrets.H2_DATASET_GZIP_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "${H2_DATASET_SECRET:-}" ]]; then
+            echo '::error::Missing required secret H2_DATASET_GZIP_BASE64'
+            exit 1
+          fi
+          # The corpus lives in a random directory: DSH fences writes but not
+          # reads, so an unguessable path plus an environment with no H2_*
+          # variable is what keeps the answer key out of the agent's reach. The
+          # corpus commitment is verified by the benchmark itself, which fails
+          # closed on any mismatch.
+          corpus_root="$(mktemp -d "$RUNNER_TEMP/h2-corpus-XXXXXX")"
+          printf '%s' "$H2_DATASET_SECRET" | base64 --decode | tar -xzf - -C "$corpus_root"
+          {
+            echo "H2_CORPUS_ROOT=$corpus_root"
+            echo "H2_CI_TEMP_ROOT=$RUNNER_TEMP"
+            echo "H2_DATASET_DIR=$corpus_root/h2-dataset-v1"
+          } >> "$GITHUB_ENV"
+
+      - name: Prepare the frozen DSH target
+        shell: bash
+        run: |
+          set -euo pipefail
+          runner="$RUNNER_TEMP/h2-dsh-runner"
+          mkdir -p "$runner"
+          printf '{"private":true}\n' > "$runner/package.json"
+          pnpm --dir "$runner" add --save-exact --ignore-scripts "@deepseek-ai/dsh@0.1.5-rc.2"
+          echo "H2_DSH_ROOT=$runner" >> "$GITHUB_ENV"
+
+      - name: Validate the frozen benchmark
+        env:
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: pnpm h2:validate
+
+      - name: Preflight (guard self-test, corpus commitment, credential)
+        env:
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: pnpm h2:preflight
+
+      - name: Seal the preregistration for this commit
+        run: pnpm h2:freeze --force
+
+      - name: Technical dry run (2 non-scoring observations)
+        env:
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: pnpm h2:dry-run
+
+      - name: Scoring run
+        env:
+          OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        run: pnpm h2:run --confirm-scoring --run-budget-minutes "${{ inputs.run_budget_minutes }}"
+
+      - name: Finalize the product report
+        if: always()
+        run: pnpm h2:finalize --out docs/evaluation/h2/h2-report-v1.json
+
+      - name: Upload sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: h2-scoring-evidence
+          # Transient, sanitized evidence only: receipts, the product report, the
+          # deletion journal, and the preflight protection report. No candidate
+          # artifact, no DSH home, and no retention beyond the CI storage policy.
+          retention-days: 1
+          path: |
+            .artifacts/h2/**/technical-dry-run.json
+            .artifacts/h2/scoring-*/ledger.json
+            .artifacts/h2/scoring-*/deletion-journal.json
+            .artifacts/h2/scoring-*/report.json
+            .artifacts/h2/scoring-*/**/receipts/observation.json
+            .artifacts/h2/preflight/protection-report.json
+
+      - name: Remove the private corpus
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${H2_CORPUS_ROOT:-}" && -d "${H2_CORPUS_ROOT}" ]]; then
+            rm -rf -- "$H2_CORPUS_ROOT"
+          fi

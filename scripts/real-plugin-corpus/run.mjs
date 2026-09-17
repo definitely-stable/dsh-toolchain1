@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from '../eval/safety/disposable-environment.mjs'
 import {
   REAL_PLUGIN_CORPUS_DSH_VERSION,
   selectRealPluginCorpus,
@@ -306,7 +307,6 @@ async function main() {
   const packedToolchain = await realpath(resolve(options.toolchainTarball))
   const root = await mkdtemp(join(tmpdir(), 'dsh-toolchain-real-corpus-'))
   const runner = join(root, 'runner')
-  const home = join(root, 'dsh-home')
   const downloads = join(root, 'corpus-artifacts')
   const records = []
   const environment = Object.freeze({
@@ -329,12 +329,12 @@ async function main() {
       runtimeExecution: entry.runtimeExecution,
     })),
   })
-  const env = {
-    ...process.env,
-    CI: 'true',
-    COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
-    DSH_HOME: home,
-  }
+  const coordinates = ensureDisposableCoordinates(createDisposableCoordinates({ root }))
+  const home = coordinates.dshHome
+  // The corpus lane installs and boots real DSH plugins, so it runs with
+  // disposable home, temp, and package-manager coordinates instead of the
+  // caller's: a plugin under test must not be able to name real user state.
+  const env = buildDisposableEnvironment({ coordinates })
 
   await initializeCorpusEvidence(outputDir, environment)
 

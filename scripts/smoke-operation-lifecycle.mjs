@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/safety/disposable-environment.mjs'
+
 export const OPERATION_SMOKE_DSH_VERSION = '0.1.2-rc.1'
 export const OPERATION_SMOKE_PROFILE = 'web'
 
@@ -293,13 +295,8 @@ export async function smokeOperationLifecycle(toolchainTarball) {
   const packedToolchain = await realpath(resolve(toolchainTarball))
   const root = await mkdtemp(join(tmpdir(), 'dsh-toolchain-operation-smoke-'))
   const runner = join(root, 'runner')
-  const home = join(root, 'dsh-home')
-  const env = {
-    ...process.env,
-    CI: 'true',
-    COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
-    DSH_HOME: home,
-  }
+  const coordinates = ensureDisposableCoordinates(createDisposableCoordinates({ root }))
+  const env = buildDisposableEnvironment({ coordinates })
 
   try {
     await mkdir(runner, { recursive: true })

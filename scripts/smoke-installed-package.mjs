@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/safety/disposable-environment.mjs'
+
 const CORDIS_VERSION = '4.0.1'
 
 function run(command, args, options = {}) {
@@ -31,11 +33,10 @@ export async function smokeInstalledPackage(tarballPath) {
   const tarball = resolve(tarballPath)
   const root = await mkdtemp(join(tmpdir(), 'dsh-toolchain-consumer-'))
   const project = join(root, 'consumer')
-  const env = {
-    ...process.env,
-    CI: 'true',
-    COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
-  }
+  // The consumer install is a spawned package manager, so it gets disposable
+  // home, temp, and store coordinates rather than the caller's.
+  const coordinates = ensureDisposableCoordinates(createDisposableCoordinates({ root }))
+  const env = buildDisposableEnvironment({ coordinates })
 
   try {
     await mkdir(project, { recursive: true })

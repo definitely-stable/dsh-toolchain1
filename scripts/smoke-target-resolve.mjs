@@ -17,6 +17,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/safety/disposable-environment.mjs'
+
 export const TARGET_SMOKE_DSH_VERSIONS = Object.freeze([
   '0.1.2-rc.1',
   '0.1.1-rc.2',
@@ -142,14 +144,10 @@ function parseTargetResponse(stdout, version) {
 async function smokeTrain(version) {
   const root = await mkdtemp(join(tmpdir(), `dsh-toolchain-target-${version}-`))
   const runner = join(root, 'runner')
-  const firstHome = join(root, 'home-a')
-  const secondHome = join(root, 'home-b')
-  const env = {
-    ...process.env,
-    CI: 'true',
-    COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
-    DSH_HOME: firstHome,
-  }
+  const coordinates = ensureDisposableCoordinates(createDisposableCoordinates({ root }))
+  const firstHome = coordinates.dshHome
+  const secondHome = join(coordinates.root, 'home-b')
+  const env = buildDisposableEnvironment({ coordinates })
 
   try {
     await mkdir(runner, { recursive: true })

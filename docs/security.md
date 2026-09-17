@@ -43,6 +43,8 @@ A future `sandboxed` policy may be introduced only after Toolchain has a real OS
 
 Verification workers build an allowlisted base environment sufficient for the selected DSH/package-manager target. M4.1 inherits only bootstrap path/system coordinates required to start the package manager and DSH, then forces Toolchain-owned temporary `HOME`, `USERPROFILE`, `DSH_HOME`, `TMPDIR`, `TMP`, and `TEMP` values together with non-interactive CI settings.
 
+Evaluation harnesses that drive a real DSH follow the same rule (`scripts/eval/safety/disposable-environment.mjs`): home, user profile, temp, `DSH_HOME`, and the pnpm/npm/corepack caches are created inside the disposable observation, and the child environment is built from an allowlist rather than inherited. A test asserts that every script in the repository which spawns DSH uses that builder. The one deliberate exception is the evaluation route's credential reference, which is forwarded explicitly as route configuration because a CI runner has no operator credential document; nothing else is inherited.
+
 Credentials are not silently inherited. Credential-dependent checks report a structured skip/input requirement unless a later selected policy explicitly supplies the credential.
 
 Environment allowlisting is credential/configuration isolation, not confinement. Candidate code can still discover or access resources made available through other operating-system mechanisms.
@@ -66,6 +68,26 @@ A failure in one independently checkable plugin component SHOULD preserve diagno
 Worker crashes MUST be converted into an infrastructure diagnostic and MUST NOT crash the active DSH Host.
 
 Cleanup is attempted after success, failure, cancellation and process/worker failure. Cleanup failure is retained independently and cannot rewrite an earlier verification failure into success.
+
+## Deletion policy
+
+Removing a directory tree is treated as the highest-risk routine operation, because a wrong path is unrecoverable and the operating system does not put it back. Two rules apply, and both are enforced by tests rather than by review:
+
+- **The worker** refuses to delete anything that is not strictly inside the OS temp directory, and refuses that directory, the user home, and a configured `DSH_HOME` outright (`defaultCleanupTemporaryRoot`).
+- **The evaluation harness** deletes only trees it created and marked (`scripts/eval/safety/owned-tree.mjs`): a removal requires the ownership marker, a matching in-process token, an unchanged real path, strict containment in the declared workspace root, and a target that neither is nor contains a protected root. The operator's DSH home, the temp directory, and package-manager coordinates are protected subtrees, and an unowned directory is never deleted — a leftover is a loud operator error instead. Every removal is journalled per run.
+
+`tests/policy/real-dsh-isolation.spec.ts` enforces the repository-wide part of this: a script that spawns DSH must build the child environment from the disposable builder, a recursive removal must target a directory the script created itself (or be a documented frozen exception), and no evaluation path may boot a profile on a fixed port.
+
+## Incident record: 2026-09-16 DSH home loss
+
+A paid H2 technical dry run executed on the operator's machine; afterwards the operator's `~/.dsh` tree (profiles, sessions, plugin state) was gone and had to be rebuilt. The agent transcript lived inside the deleted tree, so the forensic record could not prove which single action deleted it, and this is stated as an open attribution rather than a closed bug.
+
+What the audit did establish, and what changed as a result:
+
+- the harness deleted directories computed from paths, including one caller-supplied directory with no containment check — replaced by the ownership guard above;
+- only `DSH_HOME` was redirected, so every spawned process inherited the operator's `HOME`, `USERPROFILE`, `TEMP`, and package-manager caches — replaced by the disposable environment builder above;
+- paid evaluation now runs on ephemeral GitHub runners rather than the operator's machine, so the blast radius of any remaining defect is a virtual machine;
+- `h2:preflight` proves the deletion guard refuses the operator's real DSH home and temp directory, and its report is a precondition of every paid command.
 
 ## Evidence and disclosure
 

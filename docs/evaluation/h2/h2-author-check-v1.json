@@ -1,0 +1,300 @@
+{
+  "schema": "dsh-toolchain-h2-author-check-v1",
+  "generatedAt": "2026-09-16T03:43:13.409Z",
+  "stability": 1,
+  "datasetSha256": "214cc886461a5beccdc84a8984c51ec64a994281cc10fb0608430bafc225cfe3",
+  "checkedTaskIds": [
+    "h2-agent-tool-01",
+    "h2-agent-tool-02",
+    "h2-agent-tool-03",
+    "h2-compatibility-debug-01",
+    "h2-compatibility-debug-02",
+    "h2-compatibility-debug-03",
+    "h2-cordis-service-01",
+    "h2-cordis-service-02",
+    "h2-cordis-service-03",
+    "h2-exact-target-api-01",
+    "h2-exact-target-api-02",
+    "h2-exact-target-api-03",
+    "h2-plugin-composition-01",
+    "h2-plugin-composition-02",
+    "h2-plugin-composition-03",
+    "h2-runtime-verification-01",
+    "h2-runtime-verification-02",
+    "h2-runtime-verification-03"
+  ],
+  "coversCorpus": true,
+  "allAdmissible": true,
+  "results": [
+    {
+      "taskId": "h2-agent-tool-01",
+      "stratum": "agent-tool",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "3f86eedd5dcdc767207fa139bb4f6fd63ca7412abd0cf8bfc86a0b10185892e7"
+    },
+    {
+      "taskId": "h2-agent-tool-02",
+      "stratum": "agent-tool",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "e1d0cfc7febc044048b738893b2e302363dffeb4eaa63717a98a79d0550b332d"
+    },
+    {
+      "taskId": "h2-agent-tool-03",
+      "stratum": "agent-tool",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "68d536e8115120e15b19f7a03fde41ad72fedf99666754d7104694c2f5026d23"
+    },
+    {
+      "taskId": "h2-compatibility-debug-01",
+      "stratum": "compatibility-debug",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "c5b5f6f0487f20fd201e7d0e96b3f921330a9b1fc96d77447b6d160dbf1b4e4a"
+    },
+    {
+      "taskId": "h2-compatibility-debug-02",
+      "stratum": "compatibility-debug",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "f6dd32da305e338622421b3746596a5d190c2f7eb4659cdf154aa784104d3dec"
+    },
+    {
+      "taskId": "h2-compatibility-debug-03",
+      "stratum": "compatibility-debug",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "36a1d5a7efa702b5879372bf8d80d670a7576758c502e49e54158ba90c713ba6"
+    },
+    {
+      "taskId": "h2-cordis-service-01",
+      "stratum": "cordis-service",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "7748d5b28b2bf86252f6d746e708bda2b00876cb95cbf57ff6721966776bc591"
+    },
+    {
+      "taskId": "h2-cordis-service-02",
+      "stratum": "cordis-service",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "a42cf8445dbf3f0bd25987ced552a69bacbd2b032b1d525cf207de4de8a50cfc"
+    },
+    {
+      "taskId": "h2-cordis-service-03",
+      "stratum": "cordis-service",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "3d4490c217d5b790c5570f7097dabf7a3f72a4797b881ef2aabfb758c27c1cd1"
+    },
+    {
+      "taskId": "h2-exact-target-api-01",
+      "stratum": "exact-target-api",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "1fe319511caf00345a3f7d7fa138343d935d881357efe3d32055bdfbde4d7fd3"
+    },
+    {
+      "taskId": "h2-exact-target-api-02",
+      "stratum": "exact-target-api",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "8b87e20e971384ade32fc42147f4ae856c869e2f342420fe6f7d48cc4261c473"
+    },
+    {
+      "taskId": "h2-exact-target-api-03",
+      "stratum": "exact-target-api",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "0e8ee7311dd241babe32948eb2b9d11fba02b822b6ecc9b0e05463431c3327c5"
+    },
+    {
+      "taskId": "h2-plugin-composition-01",
+      "stratum": "plugin-composition",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "c89a484b5b14d67275f12af9be57a6a67a94c5ce6a63a6a2c3993bf5c525b896"
+    },
+    {
+      "taskId": "h2-plugin-composition-02",
+      "stratum": "plugin-composition",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "6b26ecfaa38ee9d5976016cf443ff08aeaf7144c183b5381db2aea1e13bcb1c4"
+    },
+    {
+      "taskId": "h2-plugin-composition-03",
+      "stratum": "plugin-composition",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "9ca631169b53d780415d00967c2ed705195d5a789663613d8707fc2b8dd4a897"
+    },
+    {
+      "taskId": "h2-runtime-verification-01",
+      "stratum": "runtime-verification",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "48ca09a19a3e579a5bef615a089ff09300508f4230fe47e1ea8746c9785c1330"
+    },
+    {
+      "taskId": "h2-runtime-verification-02",
+      "stratum": "runtime-verification",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "541e1946a695efc389604e085b1f77c10267cff2c8aa142de0b2894d092f3bc1"
+    },
+    {
+      "taskId": "h2-runtime-verification-03",
+      "stratum": "runtime-verification",
+      "admissible": true,
+      "stable": true,
+      "rounds": [
+        {
+          "initial": "fail",
+          "reference": "pass"
+        }
+      ],
+      "initial": "fail",
+      "reference": "pass",
+      "initialDigest": "485c875a72c2075f39a050884474f315f75d71334c57c5bc65881850bfe5973d"
+    }
+  ]
+}
