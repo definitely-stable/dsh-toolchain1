@@ -151,7 +151,13 @@ function assertCorpusOutsideAgentReach({ datasetDir }) {
     if (corpus !== tempRoot && !corpus.startsWith(`${tempRoot}${sep}`)) {
       throw new Error(`H2 CI runs require the private corpus under the runner temp root (${tempRoot}), got ${corpus}.`)
     }
-    if (!/[-_][A-Za-z0-9]{6,}$/.test(corpus)) {
+    // The random `mkdtemp` segment is what makes the path unguessable, and it is
+    // a segment of the path rather than its last one: the job extracts the
+    // archive into `<mkdtemp>/h2-dataset-v1`. Any other segment would have to be
+    // random too, so a single matching segment is the proof required here.
+    const relativeToTemp = corpus.slice(tempRoot.length + 1)
+    const guessable = relativeToTemp.split(sep).filter(segment => segment.length > 0)
+    if (!guessable.some(segment => /[-_][A-Za-z0-9]{6,}$/.test(segment))) {
       throw new Error(
         `H2 CI runs require the private corpus in a random mkdtemp directory, got ${corpus}. `
         + 'A predictable corpus path is a path the agent under test can guess.',
