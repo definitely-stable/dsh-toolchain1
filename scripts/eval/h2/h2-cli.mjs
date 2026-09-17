@@ -727,7 +727,7 @@ async function commandDryRun(args) {
   const observations = []
   const retained = []
   for (const arm of H2_POLICY.arms) {
-    const { receipt } = await runObservation({
+    const { receipt, observedIdentities, infrastructureError, usage, stopReason } = await runObservation({
       arm,
       task: taskForRun,
       runtime: runtime(),
@@ -751,16 +751,58 @@ async function commandDryRun(args) {
       // Carried explicitly rather than derived: a missing telemetry plane is an
       // infrastructure failure of the harness, never a model-identity finding.
       telemetryResolved: receipt.telemetry?.resolved === true,
+      // The exact identity set the session log reported, so a drift finding names
+      // what was observed instead of only that something differed.
+      observedIdentities: observedIdentities ?? null,
+      providerCompletions: usage?.providerCompletions ?? null,
+      stopReason: stopReason ?? null,
+      infrastructure: infrastructureError === null || infrastructureError === undefined
+        ? null
+        : String(infrastructureError.message ?? infrastructureError).slice(0, 600),
     })
+    process.stdout.write(
+      `H2 dry run arm ${arm}: ${receipt.terminalReason}${receipt.identityDrift ? ' IDENTITY_DRIFT' : ''}`
+      + ` wall ${receipt.timing.wallTimeMs} ms, tools ${receipt.tools.totalToolCalls}, grader ${receipt.grader.status},`
+      + ` completions ${usage?.providerCompletions ?? 0}, telemetry ${receipt.telemetry?.resolved === true ? 'resolved' : 'unresolved'},`
+      + ` observed ${JSON.stringify(observedIdentities ?? null)}`
+      + `${infrastructureError ? `, infrastructure: ${String(infrastructureError.message ?? infrastructureError).slice(0, 300)}` : ''}\n`,
+    )
   }
-  const receipt = buildDryRunReceipt({
-    commitmentSha256: preregistration.dataset.commitmentSha256,
+  /**
+   * Writes the dry run's own evidence. The technical dry run is the first paid
+   * step and its gates are exactly what can fail; deferred retention keeps the
+   * observations in memory until a terminal state, so without this a paid failure
+   * would leave nothing to diagnose. These observations are non-scoring, so their
+   * sanitized summaries are written before the gate error is rethrown.
+   */
+  const writeDiagnostic = gate => writeJson(join(ARTIFACT_ROOT, runId, 'technical-dry-run-diagnostic.json'), {
+    schema: 'dsh-toolchain-h2-technical-dry-run-diagnostic-v1',
+    generatedAt: new Date().toISOString(),
+    runId,
     candidate: { gitCommitSha, packedArtifactSha256: candidatePack.sha256 },
     target: { targetFingerprint: target.targetFingerprint, dshTrain: target.dshTrain },
+    frozenModel: H2_POLICY.model,
     compositionParity,
+    gate,
     observations,
-    generatedAt: new Date().toISOString(),
   })
+  if (observations.some(observation => observation.status !== 'ok')) {
+    await writeDiagnostic('observation-not-ok')
+  }
+  let receipt
+  try {
+    receipt = buildDryRunReceipt({
+      commitmentSha256: preregistration.dataset.commitmentSha256,
+      candidate: { gitCommitSha, packedArtifactSha256: candidatePack.sha256 },
+      target: { targetFingerprint: target.targetFingerprint, dshTrain: target.dshTrain },
+      compositionParity,
+      observations,
+      generatedAt: new Date().toISOString(),
+    })
+  } catch (error) {
+    await writeDiagnostic(String(error instanceof Error ? error.message : error))
+    throw error
+  }
   await writeJson(receiptPath, receipt)
   await flushRunEvidence({
     runDir: join(ARTIFACT_ROOT, runId),
@@ -826,54 +868,60 @@ async function commandRun(args) {
     : Number(args.values['run-budget-minutes']) * 60_000
   if (!Number.isSafeInteger(runBudgetMs) || runBudgetMs <= 0) throw new Error('--run-budget-minutes must be a positive integer')
   const runDeadline = Date.now() + runBudgetMs
-  for (const entry of schedule.entries) {
-    if (Date.now() >= runDeadline) {
-      ledger.stopped = true
-      ledger.stopReason = 'RUN_BUDGET_EXHAUSTED'
-      process.stdout.write(`H2 scoring stopped before observation ${entry.ordinal}/${schedule.entries.length}: run budget of ${runBudgetMs / 60_000} minutes is spent\n`)
-      break
+  // The loop is wrapped so that an unexpected throw still flushes what the run
+  // has already produced. Deferred retention keeps observations in memory until a
+  // terminal state, and losing them to an exception would discard paid evidence.
+  try {
+    for (const entry of schedule.entries) {
+      if (Date.now() >= runDeadline) {
+        ledger.stopped = true
+        ledger.stopReason = 'RUN_BUDGET_EXHAUSTED'
+        process.stdout.write(`H2 scoring stopped before observation ${entry.ordinal}/${schedule.entries.length}: run budget of ${runBudgetMs / 60_000} minutes is spent\n`)
+        break
+      }
+      const task = byId.get(entry.taskId)
+      const { receipt, journal } = await runObservation({
+        arm: entry.arm,
+        task,
+        runtime: runtime(),
+        toolchainTarball: candidatePack.path,
+        runId,
+        artifactRoot: ARTIFACT_ROOT,
+        retention: 'deferred',
+      })
+      for (const record of journal ?? []) deletions.push(record)
+      retained.push({ taskId: entry.taskId, arm: entry.arm, receipt })
+      ledger.entries.push({
+        ordinal: entry.ordinal,
+        taskId: entry.taskId,
+        arm: entry.arm,
+        terminalReason: receipt.terminalReason,
+        success: receipt.success,
+        identityDrift: receipt.identityDrift,
+        budgetExhausted: receipt.budgetExhausted,
+      })
+      process.stdout.write(`${entry.ordinal}/${schedule.entries.length} ${entry.taskId} arm ${entry.arm}: ${receipt.terminalReason}${receipt.success ? ' SUCCESS' : ''}\n`)
+      // Infrastructure first: a failure to read the telemetry plane must never be
+      // reported as a model-identity stop.
+      if (receipt.terminalReason === 'INFRASTRUCTURE_FAILURE' || receipt.terminalReason === 'CANCELLED') {
+        ledger.stopped = true
+        ledger.stopReason = `INFRASTRUCTURE_FAILURE:${entry.taskId}:${entry.arm}`
+        break
+      }
+      if (receipt.identityDrift === true) {
+        ledger.stopped = true
+        ledger.stopReason = 'MODEL_IDENTITY_DRIFT'
+        break
+      }
     }
-    const task = byId.get(entry.taskId)
-    const { receipt, journal } = await runObservation({
-      arm: entry.arm,
-      task,
-      runtime: runtime(),
-      toolchainTarball: candidatePack.path,
-      runId,
-      artifactRoot: ARTIFACT_ROOT,
-      retention: 'deferred',
-    })
-    for (const record of journal ?? []) deletions.push(record)
-    retained.push({ taskId: entry.taskId, arm: entry.arm, receipt })
-    ledger.entries.push({
-      ordinal: entry.ordinal,
-      taskId: entry.taskId,
-      arm: entry.arm,
-      terminalReason: receipt.terminalReason,
-      success: receipt.success,
-      identityDrift: receipt.identityDrift,
-      budgetExhausted: receipt.budgetExhausted,
-    })
-    process.stdout.write(`${entry.ordinal}/${schedule.entries.length} ${entry.taskId} arm ${entry.arm}: ${receipt.terminalReason}${receipt.success ? ' SUCCESS' : ''}\n`)
-    // Infrastructure first: a failure to read the telemetry plane must never be
-    // reported as a model-identity stop.
-    if (receipt.terminalReason === 'INFRASTRUCTURE_FAILURE' || receipt.terminalReason === 'CANCELLED') {
-      ledger.stopped = true
-      ledger.stopReason = `INFRASTRUCTURE_FAILURE:${entry.taskId}:${entry.arm}`
-      break
-    }
-    if (receipt.identityDrift === true) {
-      ledger.stopped = true
-      ledger.stopReason = 'MODEL_IDENTITY_DRIFT'
-      break
-    }
+  } finally {
+    // The run has reached a terminal state, so the retained evidence may now
+    // become durable — including when the loop left through an exception.
+    await flushRunEvidence({ runDir, ledger, observations: retained })
+    // The deletion journal is part of the run's evidence: it records every tree the
+    // benchmark removed, so an operator can read after the fact what a run touched.
+    await writeJson(join(runDir, 'deletion-journal.json'), { schema: 'dsh-toolchain-h2-deletion-journal-v1', runId, entries: deletions })
   }
-  // The run has reached a terminal state, so the retained evidence may now
-  // become durable.
-  await flushRunEvidence({ runDir, ledger, observations: retained })
-  // The deletion journal is part of the run's evidence: it records every tree the
-  // benchmark removed, so an operator can read after the fact what a run touched.
-  await writeJson(join(runDir, 'deletion-journal.json'), { schema: 'dsh-toolchain-h2-deletion-journal-v1', runId, entries: deletions })
   const report = buildH2Report({ runId, receipts: retained.map(observation => observation.receipt), generatedAt: new Date().toISOString() })
   await writeJson(join(runDir, 'report.json'), report)
   process.stdout.write(`${JSON.stringify({

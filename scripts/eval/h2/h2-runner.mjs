@@ -301,10 +301,23 @@ export async function runObservation({
     if (sessionId !== null) {
       const logPath = await findSessionLog({ dshHome: layout.dshHome, sessionId, pollMs: 1, timeoutMs: 15_000 })
       metrics = parseSessionLog(await readFile(logPath, 'utf8')).metrics
-      try {
-        assertModelIdentityMatches({ frozen: H2_POLICY.model, observed: metrics.modelIdentities })
-      } catch {
-        identityDrift = true
+      const identity = metrics.modelIdentities
+      const recordedIdentity = (identity?.request?.length ?? 0) > 0 && (identity?.responseModels?.length ?? 0) > 0
+      if (!recordedIdentity && metrics.usage.providerCompletions === 0) {
+        // The session log was read and it records no model interaction at all:
+        // the observation never reached the model, so there is no identity to
+        // compare. Reporting that as identity drift would blame the model for an
+        // infrastructure failure — an authentication, route, or launcher problem
+        // — and hide the cause behind a verdict about the wrong component.
+        infrastructureError = infrastructureError ?? new Error(
+          'the session log recorded no model interaction: the observation never reached the model, so its identity cannot be compared',
+        )
+      } else {
+        try {
+          assertModelIdentityMatches({ frozen: H2_POLICY.model, observed: identity })
+        } catch {
+          identityDrift = true
+        }
       }
     }
   } catch (error) {
@@ -398,7 +411,19 @@ export async function runObservation({
     await applyCleanupPolicy({ owned: observation, mode: 'scratch' })
   }
 
-  return Object.freeze({ receipt, layout, infrastructureError, journal: journal.entries() })
+  // The observed identity set travels with the result, outside the sanitized
+  // receipt: a drift verdict must be able to name what the session log actually
+  // reported, which is the difference between a diagnosable paid failure and a
+  // paid failure with no evidence.
+  return Object.freeze({
+    receipt,
+    layout,
+    infrastructureError,
+    journal: journal.entries(),
+    observedIdentities: metrics.modelIdentities ?? null,
+    usage: metrics.usage,
+    stopReason,
+  })
 }
 
 /**
