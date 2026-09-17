@@ -105,8 +105,13 @@ export function createDshRuntime({ mode = 'checkout', dshRoot, train = null, tim
     // coordinates, so nothing of the operator's environment is inherited here.
     // That is what keeps a DSH subprocess from ever naming the real home.
     if (env === undefined || env === null) throw new Error('a DSH subprocess requires an explicit disposable environment')
+    // `package` mode runs `pnpm exec dsh`, which resolves the launcher from the
+    // working directory's package graph — so a call that does not name a cwd must
+    // still run in the runtime root. A runner installs the train into its own
+    // directory, and probing the version from the repository root there fails
+    // with a bare "dsh --version exited 1".
     const result = spawnImpl(command, [...prefix, ...args], {
-      cwd,
+      cwd: cwd ?? dshRoot ?? process.cwd(),
       env,
       encoding: 'utf8',
       timeout,

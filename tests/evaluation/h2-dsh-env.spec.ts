@@ -37,10 +37,10 @@ afterEach(() => {
 })
 
 function fakeSpawn(responses: Array<{ status?: number; stdout?: string; stderr?: string }>) {
-  const calls: Array<{ command: string; args: string[]; env: Record<string, string> }> = []
+  const calls: Array<{ command: string; args: string[]; env: Record<string, string>; cwd?: string | undefined }> = []
   let index = 0
-  const spawn = (command: string, args: string[], options: { env: Record<string, string> }) => {
-    calls.push({ command, args, env: options.env })
+  const spawn = (command: string, args: string[], options: { env: Record<string, string>; cwd?: string }) => {
+    calls.push({ command, args, env: options.env, cwd: options.cwd })
     const response = responses[Math.min(index, responses.length - 1)] ?? {}
     index += 1
     return { status: response.status ?? 0, stdout: response.stdout ?? '', stderr: response.stderr ?? '', error: undefined }
@@ -62,6 +62,17 @@ describe('H2 DSH runtime handle', () => {
     const runtime = createDshRuntime({ mode: 'package', spawnImpl: spawn })
     runtime.version({ PATH: 'C:/tools' })
     expect(calls[0]!.args).toEqual(['exec', 'dsh', '--version'])
+  })
+
+  it('probes the version inside the runtime root, where package mode resolves its launcher', () => {
+    // `pnpm exec dsh` resolves the launcher from the working directory's package
+    // graph. A CI runner installs the train into its own directory, so a probe
+    // that inherited the repository root there failed with "dsh --version exited 1"
+    // before any paid step ran.
+    const { spawn, calls } = fakeSpawn([{ stdout: '0.1.5-rc.2\n' }])
+    const runtime = createDshRuntime({ mode: 'package', dshRoot: '/runner/h2-dsh-runner', spawnImpl: spawn })
+    expect(runtime.version({ PATH: '/usr/bin' })).toBe('0.1.5-rc.2')
+    expect(calls[0]!.cwd).toBe('/runner/h2-dsh-runner')
   })
 
   it('requires a checkout root in checkout mode and rejects unknown modes', () => {

@@ -135,7 +135,10 @@ jobs:
         run: pnpm h2:run --confirm-scoring --run-budget-minutes "${{ inputs.run_budget_minutes }}"
 
       - name: Finalize the product report
-        if: always()
+        # Only a run that reached a terminal state has a ledger to reduce. A job
+        # that failed before scoring has no report at all, and failing here too
+        # would put a second, misleading red step on top of the real cause.
+        if: always() && hashFiles('.artifacts/h2/scoring-*/ledger.json') != ''
         run: pnpm h2:finalize --out docs/evaluation/h2/h2-report-v1.json
 
       - name: Upload sanitized evidence
