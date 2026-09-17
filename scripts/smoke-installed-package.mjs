@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
-import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/lib/disposable-environment.mjs'
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/safety/disposable-environment.mjs'
 
 const CORDIS_VERSION = '4.0.1'
 

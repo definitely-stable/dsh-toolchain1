@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/lib/disposable-environment.mjs'
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/safety/disposable-environment.mjs'
 
 import { captureOrdinaryWorkspaceFromAcquiredEvidence } from './m2-ordinary-acquired-evidence.mjs'
 

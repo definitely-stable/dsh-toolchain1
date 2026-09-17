@@ -13,7 +13,7 @@ import {
   removeOwnedTree,
   resetOwnedChild,
   resolveProtectedRoots,
-} from '../../scripts/eval/lib/owned-tree.mjs'
+} from '../../scripts/eval/safety/owned-tree.mjs'
 
 /**
  * The artifact root must live inside the repository, exactly as the H2 harness

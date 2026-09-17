@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
-import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/lib/disposable-environment.mjs'
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/safety/disposable-environment.mjs'
 
 export const DSH_SMOKE_VERSION = '0.1.1-rc.2'
 export const DSH_BOOT_PROBE_PROFILE = 'toolchain-smoke'

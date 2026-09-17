@@ -26,7 +26,7 @@ const RECURSIVE_REMOVAL_ALLOWLIST = new Map([
   // The build cleaner owns the repository's own build output, not a benchmark tree.
   ['clean.mjs', 'removes the repository build output it exists to clean'],
   // The guard itself must call rm; it is the module that enforces ownership.
-  ['eval/lib/owned-tree.mjs', 'the ownership guard is the only legitimate recursive remover'],
+  ['eval/safety/owned-tree.mjs', 'the ownership guard is the only legitimate recursive remover'],
   // A dependency-injected service: the caller passes a disposable mkdtemp root.
   ['eval/m2-development-executor.mjs', 'injected runtime remover; callers pass their own disposable root'],
   // Frozen historical evidence: these runners are never re-executed, and their

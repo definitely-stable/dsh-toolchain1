@@ -18,7 +18,7 @@ import {
   writeProbePackage,
 } from '../../scripts/eval/h2/h2-dsh-env.mjs'
 import { findSessionLog } from '../../scripts/eval/h2/h2-runner.mjs'
-import { createDisposableCoordinates, ensureDisposableCoordinates } from '../../scripts/eval/lib/disposable-environment.mjs'
+import { createDisposableCoordinates, ensureDisposableCoordinates } from '../../scripts/eval/safety/disposable-environment.mjs'
 
 const roots: string[] = []
 function tempDir(): string {

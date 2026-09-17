@@ -3,8 +3,8 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { buildDisposableEnvironment } from '../lib/disposable-environment.mjs'
-import { createDeletionJournal, removeOwnedTree } from '../lib/owned-tree.mjs'
+import { buildDisposableEnvironment } from '../safety/disposable-environment.mjs'
+import { createDeletionJournal, removeOwnedTree } from '../safety/owned-tree.mjs'
 import { H2_POLICY } from './h2-config.mjs'
 import { assertBcParity, buildArmComposition, pluginAddArgs } from './h2-composition.mjs'
 import {

@@ -3,8 +3,8 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, relative, resolve, sep } from 'node:path'
 
-import { createDisposableCoordinates, ensureDisposableCoordinates } from '../lib/disposable-environment.mjs'
-import { OWNED_TREE_MARKER, createOwnedTree, removeOwnedChild, removeOwnedTree, resetOwnedChild } from '../lib/owned-tree.mjs'
+import { createDisposableCoordinates, ensureDisposableCoordinates } from '../safety/disposable-environment.mjs'
+import { OWNED_TREE_MARKER, createOwnedTree, removeOwnedChild, removeOwnedTree, resetOwnedChild } from '../safety/owned-tree.mjs'
 import { directoryDigest } from './h2-util.mjs'
 
 export const H2_ARTIFACT_ROOT = '.artifacts/h2'

@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/lib/disposable-environment.mjs'
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/safety/disposable-environment.mjs'
 
 export const TARGET_SMOKE_DSH_VERSIONS = Object.freeze([
   '0.1.2-rc.1',

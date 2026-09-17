@@ -733,7 +733,7 @@ possible, and it was real:
   pnpm — inherited the operator's `HOME`, `USERPROFILE`, `TEMP`, and package-manager caches, so a
   bug or a destructive command anywhere in that tree had real user state in reach.
 
-**Deletion is now ownership, not arithmetic** (`scripts/eval/lib/owned-tree.mjs`):
+**Deletion is now ownership, not arithmetic** (`scripts/eval/safety/owned-tree.mjs`):
 
 - a tree is deletable only if this benchmark created it and wrote an ownership marker inside it;
 - removal requires that marker, a matching in-process token, an unchanged real path, strict
@@ -747,7 +747,7 @@ possible, and it was real:
   error instead;
 - every removal is recorded in the run's deletion journal.
 
-**Every spawned process gets a disposable environment** (`scripts/eval/lib/disposable-environment.mjs`):
+**Every spawned process gets a disposable environment** (`scripts/eval/safety/disposable-environment.mjs`):
 home, user profile, temp, `DSH_HOME`, and the pnpm/npm/corepack caches all live inside the
 observation, and the child environment is built from an allowlist instead of inheriting the caller's.
 This mirrors the product's own verification worker. The frozen route's credential is the one

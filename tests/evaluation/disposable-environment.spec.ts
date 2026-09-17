@@ -8,7 +8,7 @@ import {
   createDisposableCoordinates,
   ensureDisposableCoordinates,
   ephemeralBootArgs,
-} from '../../scripts/eval/lib/disposable-environment.mjs'
+} from '../../scripts/eval/safety/disposable-environment.mjs'
 
 const TEST_ROOT = resolve('.artifacts/disposable-environment-tests')
 

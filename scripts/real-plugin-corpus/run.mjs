@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 
-import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from '../eval/lib/disposable-environment.mjs'
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from '../eval/safety/disposable-environment.mjs'
 import {
   REAL_PLUGIN_CORPUS_DSH_VERSION,
   selectRealPluginCorpus,

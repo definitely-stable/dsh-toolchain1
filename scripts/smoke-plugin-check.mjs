@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/lib/disposable-environment.mjs'
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/safety/disposable-environment.mjs'
 
 export const PLUGIN_CHECK_SMOKE_DSH_VERSION = '0.1.1-rc.2'
 export const PLUGIN_CHECK_SMOKE_PROFILE = 'headless'
