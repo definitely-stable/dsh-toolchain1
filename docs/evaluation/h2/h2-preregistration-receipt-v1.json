@@ -1,8 +1,8 @@
 {
   "schema": "dsh-toolchain-h2-preregistration-v1",
-  "generatedAt": "2026-09-16T17:51:50.243Z",
+  "generatedAt": "2026-09-16T18:15:46.268Z",
   "candidate": {
-    "gitCommitSha": "7b2d498a5c7b907f08addd4b940a34f64a062918",
+    "gitCommitSha": "2d13692378c26f6025bf18fa56864f2e37f7916b",
     "packedArtifactSha256": "560711bbb5076582cb5e2db145b3bb0d9bf7059502bf72d18706d9559ac6c1fe",
     "packageName": "dsh-toolchain",
     "packageVersion": "0.0.0",
@@ -135,8 +135,8 @@
     "attemptsPerObservation": 1,
     "qualityRetries": 0,
     "infrastructureRetries": 0,
-    "providerCompletionsLimit": 6,
-    "wallTimeLimitMs": 180000
+    "providerCompletionsLimit": 24,
+    "wallTimeLimitMs": 600000
   },
   "statistics": {
     "test": "exact-paired-mcnemar-one-sided",
@@ -144,12 +144,12 @@
     "minimumDiscordantWins": 2,
     "minimumDelta": 0.1111111111111111
   },
-  "policyHash": "c922174fea6572f6fe0f63dcccb68c3fe43d625631b93e44d984a4f542978388",
+  "policyHash": "14157b1a454c9f0939cf1392cfbc088a58126341b03147c3788826cf37b08b54",
   "source": {
     "repository": "definitely-stable/dsh-toolchain1",
-    "commit": "7b2d498a5c7b907f08addd4b940a34f64a062918",
+    "commit": "2d13692378c26f6025bf18fa56864f2e37f7916b",
     "nodeVersion": "v24.19.0",
     "controllerEntry": "scripts/eval/h2/h2-cli.mjs"
   },
-  "receiptSha256": "0ed27b312a41445cacec9f52a7a533aee8677eac6b4a3942cccd4a3537bd9e0a"
+  "receiptSha256": "f9f992cfac2f875772a19cebe7c3bc3ba26ac2f204d116b916cec7cb29b06a17"
 }
