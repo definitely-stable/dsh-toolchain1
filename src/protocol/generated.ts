@@ -151,7 +151,7 @@ export type PluginCheckRequest = {
 
 export type PluginPackageRelationship = "host-peer-required" | "host-peer-optional" | "artifact-dependency"
 
-export type PluginRequirementStatus = "satisfied" | "not-required-from-host" | "missing" | "unproven"
+export type PluginRequirementStatus = "satisfied" | "not-required-from-host" | "missing" | "version-mismatch" | "unproven"
 
 export type PluginRequirementAnalysis = {
   readonly "packageName": string
@@ -176,9 +176,21 @@ export type PluginCheckResult = {
 
 export type Operation = {
   readonly "id": string
+  readonly "kind": "plugin.verify"
   readonly "state": "queued" | "running" | "input-required" | "succeeded" | "failed" | "cancelled"
+  readonly "cancellationRequested": boolean
   readonly "progress"?: number
   readonly "message"?: string
+  readonly "result"?: PluginVerifyResponse
+  readonly "diagnostics": Array<Diagnostic>
+}
+
+export type OperationRequest = {
+  readonly "id": string
+}
+
+export type OperationResult = {
+  readonly "operation": Operation
 }
 
 export type ValidationReport = {
@@ -191,6 +203,7 @@ export type VerificationReport = {
   readonly "status": "verified" | "failed" | "partial" | "stale" | "cancelled"
   readonly "artifactFingerprint": string
   readonly "targetFingerprint": string
+  readonly "contractIndexFingerprint": string
   readonly "lifecycleFingerprint"?: string
   readonly "executionPolicy": "safe" | "trusted"
   readonly "checks": Array<{
@@ -317,11 +330,23 @@ export type PluginVisibilityAssertion = {
   readonly "name": string
 }
 
+export type JsonValue = null | boolean | number | string | Array<JsonValue> | {
+  readonly [key: string]: JsonValue
+}
+
+export type PluginBehaviorAssertion = {
+  readonly "kind": "agent-tool-result"
+  readonly "name": string
+  readonly "arguments": JsonValue
+  readonly "expectedValue": JsonValue
+}
+
 export type PluginVerifyRequest = {
   readonly "target": TargetResolveRequest
   readonly "subject": PluginPackedSubjectRequest
   readonly "executionPolicy": "safe"
   readonly "visibilityAssertions"?: [PluginVisibilityAssertion, ...Array<PluginVisibilityAssertion>]
+  readonly "behaviorAssertions"?: [PluginBehaviorAssertion, ...Array<PluginBehaviorAssertion>]
 }
 
 export type PluginVerifySuccessResponse = {
@@ -341,5 +366,56 @@ export type PluginVerifyFailureResponse = {
 }
 
 export type PluginVerifyResponse = PluginVerifySuccessResponse | PluginVerifyFailureResponse
+
+export type PluginVerifyStartSuccessResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "ok"
+  readonly "data": OperationResult
+  readonly "diagnostics": Array<Diagnostic>
+}
+
+export type PluginVerifyStartFailureResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "failed"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type PluginVerifyStartResponse = PluginVerifyStartSuccessResponse | PluginVerifyStartFailureResponse
+
+export type OperationGetSuccessResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "ok"
+  readonly "data": OperationResult
+  readonly "diagnostics": Array<Diagnostic>
+}
+
+export type OperationGetFailureResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "failed"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type OperationGetResponse = OperationGetSuccessResponse | OperationGetFailureResponse
+
+export type OperationCancelSuccessResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "ok"
+  readonly "data": OperationResult
+  readonly "diagnostics": Array<Diagnostic>
+}
+
+export type OperationCancelFailureResponse = {
+  readonly "protocolVersion": "1"
+  readonly "requestId": string
+  readonly "status": "failed"
+  readonly "diagnostics": [Diagnostic, ...Array<Diagnostic>]
+}
+
+export type OperationCancelResponse = OperationCancelSuccessResponse | OperationCancelFailureResponse
 
 export type ToolchainProtocolResponse = ResponseEnvelope

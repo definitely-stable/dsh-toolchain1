@@ -1,0 +1,15 @@
+{
+  "protocolVersion": "1",
+  "requestId": "request-start-1",
+  "status": "ok",
+  "data": {
+    "operation": {
+      "id": "operation-1",
+      "kind": "plugin.verify",
+      "state": "running",
+      "cancellationRequested": false,
+      "diagnostics": []
+    }
+  },
+  "diagnostics": []
+}

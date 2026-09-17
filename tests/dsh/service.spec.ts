@@ -4,9 +4,45 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 
 import ToolchainService from '../../src/integrations/dsh/index.js'
+import type { VerificationOperationManager } from '../../src/kernel/operation.js'
+import type {
+  OperationCancelResponse,
+  OperationGetResponse,
+  OperationRequest,
+  PluginVerifyRequest,
+  PluginVerifyStartResponse,
+} from '../../src/protocol/index.js'
 
 const dshHome = fileURLToPath(new URL('../fixtures/targets/valid/dsh-home/', import.meta.url))
 const dshPackageRoot = fileURLToPath(new URL('../fixtures/targets/valid/dsh-package/', import.meta.url))
+
+interface OperationCapableToolchain {
+  startPluginVerification(
+    request: PluginVerifyRequest,
+    requestId?: string,
+  ): Promise<PluginVerifyStartResponse>
+  getOperation(
+    request: OperationRequest,
+    requestId?: string,
+  ): Promise<OperationGetResponse>
+  cancelOperation(
+    request: OperationRequest,
+    requestId?: string,
+  ): Promise<OperationCancelResponse>
+}
+
+async function terminalOperation(
+  toolchain: OperationCapableToolchain,
+  id: string,
+): Promise<OperationGetResponse> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const response = await toolchain.getOperation({ id }, `dsh-operation-get-${attempt}`)
+    if (response.status !== 'ok') return response
+    if (['succeeded', 'failed', 'cancelled'].includes(response.data.operation.state)) return response
+    await new Promise(resolve => setTimeout(resolve, 0))
+  }
+  throw new Error('verification operation did not reach a terminal state')
+}
 
 describe('ToolchainService lifecycle', () => {
   it('mounts ctx.toolchain from the shared kernel and removes it on dispose', async () => {
@@ -118,5 +154,109 @@ describe('ToolchainService lifecycle', () => {
     })
 
     await fiber.dispose()
+  })
+
+  it('owns one persistent verification operation manager across start, get, and cancel calls', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(ToolchainService)
+    const toolchain = ctx.toolchain as unknown as OperationCapableToolchain
+    const request: PluginVerifyRequest = {
+      target: {
+        profile: 'missing',
+        dshHome,
+        dshPackageRoot,
+      },
+      subject: { kind: 'packed', path: '/candidate/not-reached.tgz' },
+      executionPolicy: 'safe',
+    }
+
+    const started = await toolchain.startPluginVerification(request, 'dsh-operation-start')
+    expect(started).toMatchObject({
+      protocolVersion: '1',
+      requestId: 'dsh-operation-start',
+      status: 'ok',
+      data: {
+        operation: {
+          kind: 'plugin.verify',
+          state: 'queued',
+          cancellationRequested: false,
+          diagnostics: [],
+        },
+      },
+      diagnostics: [],
+    })
+    if (started.status !== 'ok') throw new Error('operation start unexpectedly failed')
+    const operationId = started.data.operation.id
+
+    const terminal = await terminalOperation(toolchain, operationId)
+    expect(terminal.status).toBe('ok')
+    if (terminal.status !== 'ok') throw new Error('operation lookup unexpectedly failed')
+    expect(terminal.data.operation).toMatchObject({
+      id: operationId,
+      state: 'failed',
+      cancellationRequested: false,
+      result: {
+        protocolVersion: '1',
+        requestId: 'dsh-operation-start',
+        status: 'failed',
+        diagnostics: [{ code: 'TARGET_PROFILE_NOT_FOUND', domain: 'target' }],
+      },
+    })
+
+    const lateCancel = await toolchain.cancelOperation(
+      { id: operationId },
+      'dsh-operation-cancel',
+    )
+    expect(lateCancel.status).toBe('ok')
+    if (lateCancel.status !== 'ok') throw new Error('operation cancel unexpectedly failed')
+    expect(lateCancel.requestId).toBe('dsh-operation-cancel')
+    expect(lateCancel.data.operation).toEqual(terminal.data.operation)
+
+    const missing = await toolchain.getOperation(
+      { id: 'operation-that-does-not-exist' },
+      'dsh-operation-missing',
+    )
+    expect(missing).toEqual({
+      protocolVersion: '1',
+      requestId: 'dsh-operation-missing',
+      status: 'failed',
+      diagnostics: [{
+        code: 'OPERATION_NOT_FOUND',
+        severity: 'error',
+        domain: 'operation',
+        summary: 'OPERATION_NOT_FOUND: Operation is unknown or no longer retained by this Toolchain host.',
+      }],
+    })
+
+    await fiber.dispose()
+  })
+
+  it('closes the host-owned operation manager when the Toolchain service unloads', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(ToolchainService)
+    const operations = (ctx.toolchain as unknown as {
+      readonly operations: VerificationOperationManager
+    }).operations
+
+    await fiber.dispose()
+
+    const request: PluginVerifyRequest = {
+      target: {
+        profile: 'missing',
+        dshHome,
+        dshPackageRoot,
+      },
+      subject: { kind: 'packed', path: '/candidate/not-reached.tgz' },
+      executionPolicy: 'safe',
+    }
+    let error: unknown
+    try {
+      const started = operations.start(request, 'after-service-dispose')
+      operations.cancel(started.id)
+    } catch (cause) {
+      error = cause
+    }
+
+    expect(error).toMatchObject({ code: 'OPERATION_EXECUTION_FAILED' })
   })
 })

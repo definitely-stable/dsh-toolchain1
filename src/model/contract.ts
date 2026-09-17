@@ -8,8 +8,10 @@ import type {
 } from '../protocol/index.js'
 import {
   CONTRACT_SEARCH_RANKER_VERSION,
+  contractSearchCandidatesForRanking,
   createContractSearchIndex,
   intentQueryTokens,
+  requiredIntentMatches,
   type ContractSearchDocument,
   type ContractSearchIndex,
 } from './contract-search-index.js'
@@ -436,14 +438,41 @@ function factOrSummaryWitness(
   return frozenEvidenceIds(evidenceIds)
 }
 
-function isIntentFallbackQuery(query: string): boolean {
-  const trimmed = query.trim()
-  return /\s/u.test(trimmed) && intentQueryTokens(trimmed).length >= 2
+function factOrSummaryWitnessFromDocument(
+  contract: ContractDefinition,
+  document: ContractSearchDocument,
+  normalizedQuery: string,
+  tokens: readonly string[],
+): readonly string[] | undefined {
+  const summary = document.normalizedSummary
+  const exactFact = document.facts.find(fact => fact.normalizedText.includes(normalizedQuery))
+  if (exactFact !== undefined) return frozenEvidenceIds(exactFact.evidenceIds)
+  if (summary.includes(normalizedQuery)) return contractExistenceWitness(contract)
+  if (tokens.length <= 1) return undefined
+
+  const evidenceIds: string[] = []
+  let summaryUsed = false
+  for (const token of tokens) {
+    const matchingFact = document.facts.find(fact => fact.normalizedText.includes(token))
+    if (matchingFact !== undefined) {
+      evidenceIds.push(...matchingFact.evidenceIds)
+      continue
+    }
+    if (summary.includes(token)) {
+      summaryUsed = true
+      continue
+    }
+    return undefined
+  }
+  if (summaryUsed) evidenceIds.push(...contractExistenceWitness(contract))
+  return frozenEvidenceIds(evidenceIds)
 }
 
-function requiredIntentMatches(tokenCount: number): number {
-  if (tokenCount <= 1) return tokenCount
-  return Math.min(3, Math.max(2, Math.ceil(tokenCount * 0.4)))
+function intentFallbackQueryTokens(query: string): readonly string[] | undefined {
+  const trimmed = query.trim()
+  if (!/\s/u.test(trimmed)) return undefined
+  const queryTokens = intentQueryTokens(trimmed)
+  return queryTokens.length >= 2 ? queryTokens : undefined
 }
 
 const INTENT_SCORE_SCALE = 100
@@ -480,12 +509,69 @@ function factTokenMatch(
   document: ContractSearchDocument,
   token: string,
 ): { readonly evidenceIds: readonly string[]; readonly factIndexes: readonly number[] } | undefined {
-  const facts = document.facts.filter(fact => fact.uniqueTokens.has(token))
-  if (facts.length === 0) return undefined
+  let firstFact: ContractSearchDocument['facts'][number] | undefined
+  let evidenceIds: string[] | undefined
+  let factIndexes: number[] | undefined
+
+  for (const fact of document.facts) {
+    if (!fact.uniqueTokens.has(token)) continue
+    if (firstFact === undefined) {
+      firstFact = fact
+      continue
+    }
+    if (evidenceIds === undefined || factIndexes === undefined) {
+      evidenceIds = [...firstFact.evidenceIds, ...fact.evidenceIds]
+      factIndexes = [firstFact.index, fact.index]
+      continue
+    }
+    evidenceIds.push(...fact.evidenceIds)
+    factIndexes.push(fact.index)
+  }
+
+  if (firstFact === undefined) return undefined
+  if (evidenceIds === undefined || factIndexes === undefined) {
+    return Object.freeze({
+      evidenceIds: firstFact.evidenceIds.length <= 1
+        ? firstFact.evidenceIds
+        : frozenEvidenceIds(firstFact.evidenceIds),
+      factIndexes: Object.freeze([firstFact.index]),
+    })
+  }
   return Object.freeze({
-    evidenceIds: frozenEvidenceIds(facts.flatMap(fact => fact.evidenceIds)),
-    factIndexes: Object.freeze(facts.map(fact => fact.index)),
+    evidenceIds: frozenEvidenceIds(evidenceIds),
+    factIndexes: Object.freeze(factIndexes),
   })
+}
+
+function appendIntentSearchTokenEvidence(
+  token: string,
+  contract: ContractDefinition,
+  document: ContractSearchDocument,
+  evidenceIds: string[],
+): number | undefined {
+  const firstEvidenceId = contract.evidenceIds[0]
+  if (document.identity.uniqueTokens.has(token)) {
+    if (firstEvidenceId !== undefined) evidenceIds.push(firstEvidenceId)
+    return 4
+  }
+
+  let factMatched = false
+  for (const fact of document.facts) {
+    if (!fact.uniqueTokens.has(token)) continue
+    evidenceIds.push(...fact.evidenceIds)
+    factMatched = true
+  }
+  if (factMatched) return 3
+
+  if (document.summary.uniqueTokens.has(token)) {
+    if (firstEvidenceId !== undefined) evidenceIds.push(firstEvidenceId)
+    return 2
+  }
+  if (document.kind.uniqueTokens.has(token)) {
+    if (firstEvidenceId !== undefined) evidenceIds.push(firstEvidenceId)
+    return 0.5
+  }
+  return undefined
 }
 
 function intentTokenMatch(
@@ -533,10 +619,10 @@ function intentTokenMatch(
 
 function intentMatch(
   contract: ContractDefinition,
-  query: string,
+  queryTokens: readonly string[],
+  requiredMatches: number,
   derived: ContractSearchIndex,
 ): LexicalMatch | undefined {
-  const queryTokens = intentQueryTokens(query)
   if (queryTokens.length === 0) return undefined
 
   const document = derived.documents.get(contract.id)
@@ -549,14 +635,13 @@ function intentMatch(
   let weightedScore = 0
 
   for (const token of queryTokens) {
-    const match = intentTokenMatch(token, contract, document)
-    if (match === undefined) continue
+    const fieldWeight = appendIntentSearchTokenEvidence(token, contract, document, evidenceIds)
+    if (fieldWeight === undefined) continue
     matched += 1
-    weightedScore += match.fieldWeight * inverseDocumentFrequency(derived, token)
-    evidenceIds.push(...match.evidenceIds)
+    weightedScore += fieldWeight * inverseDocumentFrequency(derived, token)
   }
 
-  if (matched < requiredIntentMatches(queryTokens.length)) return undefined
+  if (matched < requiredMatches) return undefined
   const coverageBonus = Math.round((matched / queryTokens.length) * 50)
   const coherenceBonus = sameFactCoherenceBonus(document, queryTokens)
   return Object.freeze({
@@ -565,12 +650,16 @@ function intentMatch(
   })
 }
 
-function strictLexicalMatch(contract: ContractDefinition, query: string): LexicalMatch | undefined {
+function strictLexicalMatch(
+  contract: ContractDefinition,
+  query: string,
+  document?: ContractSearchDocument,
+): LexicalMatch | undefined {
   const normalizedQuery = query.trim().toLocaleLowerCase('en-US')
   if (normalizedQuery === '') return undefined
 
-  const name = contract.name.toLocaleLowerCase('en-US')
-  const qualifiedName = contract.qualifiedName.toLocaleLowerCase('en-US')
+  const name = document?.normalizedName ?? contract.name.toLocaleLowerCase('en-US')
+  const qualifiedName = document?.normalizedQualifiedName ?? contract.qualifiedName.toLocaleLowerCase('en-US')
   const witness = contractExistenceWitness(contract)
   if (qualifiedName === normalizedQuery) return Object.freeze({ score: 600, evidenceIds: witness })
   if (name === normalizedQuery) return Object.freeze({ score: 550, evidenceIds: witness })
@@ -586,7 +675,9 @@ function strictLexicalMatch(contract: ContractDefinition, query: string): Lexica
     return Object.freeze({ score: 300, evidenceIds: witness })
   }
 
-  const evidenceIds = factOrSummaryWitness(contract, normalizedQuery, tokens)
+  const evidenceIds = document === undefined
+    ? factOrSummaryWitness(contract, normalizedQuery, tokens)
+    : factOrSummaryWitnessFromDocument(contract, document, normalizedQuery, tokens)
   return evidenceIds === undefined ? undefined : Object.freeze({ score: 200, evidenceIds })
 }
 
@@ -685,11 +776,23 @@ function rankContractSearch(
 
   const kindSet = kinds === undefined ? undefined : new Set(kinds)
   const contracts = index.contracts.filter(contract => kindSet === undefined || kindSet.has(contract.kind))
-  const strictMatches = rankedMatches(contracts, query, strictLexicalMatch, limit)
+  const strictMatches = rankedMatches(
+    contracts,
+    query,
+    (contract, strictQuery) => {
+      const document = derived?.documents.get(contract.id)
+      if (derived !== undefined && document === undefined) {
+        throw new Error(`ContractSearchIndex is missing contract ${contract.id}`)
+      }
+      return strictLexicalMatch(contract, strictQuery, document)
+    },
+    limit,
+  )
   if (strictMatches.length > 0) {
     return Object.freeze({ lane: 'strict' as const, matches: Object.freeze(strictMatches) })
   }
-  if (!isIntentFallbackQuery(query)) {
+  const queryTokens = intentFallbackQueryTokens(query)
+  if (queryTokens === undefined) {
     return Object.freeze({ lane: 'none' as const, matches: Object.freeze([]) })
   }
 
@@ -702,10 +805,17 @@ function rankContractSearch(
   }
 
   const intentIndex = derived ?? createContractSearchIndex(index)
-  const matches = rankedMatches(
+  const requiredMatches = requiredIntentMatches(queryTokens.length)
+  const intentContracts = contractSearchCandidatesForRanking(
+    intentIndex,
     contracts,
+    queryTokens,
+    requiredMatches,
+  )
+  const matches = rankedMatches(
+    intentContracts,
     query,
-    (contract, intentQuery) => intentMatch(contract, intentQuery, intentIndex),
+    contract => intentMatch(contract, queryTokens, requiredMatches, intentIndex),
     Math.min(limit, 1),
   )
   return Object.freeze({

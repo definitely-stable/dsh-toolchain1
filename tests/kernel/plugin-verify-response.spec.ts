@@ -14,6 +14,7 @@ import type {
 } from '../../src/protocol/index.js'
 
 const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
+const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
 const artifactFingerprint = `dsh-plugin-artifact-v1:${'9'.repeat(64)}`
 
 const request: PluginVerifyRequest = {
@@ -27,6 +28,7 @@ function report(status: VerificationReport['status']): VerificationReport {
     status,
     artifactFingerprint,
     targetFingerprint,
+    contractIndexFingerprint,
     executionPolicy: 'safe',
     checks: [],
     diagnostics: status === 'stale'
@@ -101,6 +103,7 @@ describe('plugin.verify Protocol response projection', () => {
           status,
           artifactFingerprint,
           targetFingerprint,
+          contractIndexFingerprint,
         },
         diagnostics: [],
       })

@@ -48,9 +48,9 @@ DSH Host / DSH Client / MCP / CLI
        semantic Toolchain model
 ```
 
-The kernel never imports DSH runtime APIs. The semantic core (`product`, `kernel`, `model`, and `protocol`) is runtime-neutral and MUST NOT depend on Node built-in modules or transport/runtime packages. Bare third-party imports from semantic layers are deny-by-default; a future pure dependency is an explicit architecture-policy decision with an allowlist entry and negative tests. Direct high-signal runtime globals such as `process`, `Buffer`, and `fetch` are also excluded from semantic code so environment, binary/runtime, and network access enter through declared boundaries. Node/DSH/process/filesystem/network concerns belong at acquisition, verification, integration, and frontend boundaries.
+The kernel never imports DSH runtime APIs. The semantic core (`product`, `kernel`, `model`, and `protocol`) is runtime-neutral and MUST NOT depend on Node built-in modules or transport/runtime packages. Bare third-party imports from semantic layers are deny-by-default; a future pure dependency is an explicit architecture-policy decision with an allowlist entry and negative tests. Direct high-signal runtime globals such as `process`, `Buffer`, and `fetch` are also excluded from semantic code so environment, binary/runtime, and network access enter through declared boundaries. Node/DSH/process/filesystem/network concerns belong at acquisition, verification, integration, frontend, or deliberately declared internal runtime-utility boundaries.
 
-The source tree uses a closed-world layer model: every production file under `src/` MUST belong to a declared architecture layer. Creating an unclassified `src/shared`, `src/util`, or similar escape hatch is an architecture violation until its intended role and dependency edges are explicitly added. Production JavaScript source under `src/` is forbidden in the current TypeScript codebase; repository-only `.mjs` policy/build scripts live outside that product boundary.
+The source tree uses a closed-world layer model: every production file under `src/` MUST belong to a declared architecture layer. Creating an unclassified `src/shared`, `src/util`, or similar escape hatch is an architecture violation until its intended role and dependency edges are explicitly added. The internal `runtime` layer is the narrow exception for reusable Node-capable primitives that have more than one runtime-boundary consumer; it may depend only on itself, and only explicitly permitted runtime-facing layers may depend on it. In the current matrix, acquisition and verification may consume `runtime`, while the semantic core cannot. Production JavaScript source under `src/` is forbidden in the current TypeScript codebase; repository-only `.mjs` policy/build scripts live outside that product boundary.
 
 This is an application of the same capability boundary DSH uses for Cordis Services: consumers depend on a capability, not a concrete provider.
 
@@ -113,10 +113,11 @@ Owns transport-neutral use cases:
 - `contract.inspect`
 - `plugin.check`
 - `plugin.verify`
+- `plugin.verify.start`
 - `operation.get`
 - `operation.cancel`
 
-`plugin.check` is the public static compatibility boundary. It acquires the exact target/Contract Index and plugin subject, runs the internal normalization/analysis/validation passes, and returns evidence-backed `compatible-in-scope`, `incompatible`, or `unproven` without executing candidate code. `plugin.verify` is the separate public runtime-verification boundary owned by M4: M4.1 supplies the isolated packed-artifact worker, M4.2 composes static evidence + worker evidence + final target re-resolution into the kernel-owned `VerificationReport`, M4.3.1 adds optional live Host Service visibility assertions, and M4.3.2 adds Agent-scoped Tool visibility assertions proven against one verifier-owned Agent epoch in the same disposable boot. For lifecycle-aware DSH trains the same reducer binds the initial worker observation and final re-resolution to the profile lifecycle fingerprint in addition to target-v2. Broader Client/behavior assertions and the transport-neutral long-operation lifecycle remain later M4 scope.
+`plugin.check` is the public static compatibility boundary. It acquires the exact target/Contract Index and plugin subject, runs the internal normalization/analysis/validation passes, and returns evidence-backed `compatible-in-scope`, `incompatible`, or `unproven` without executing candidate code. `plugin.verify` is the separate public runtime-verification boundary owned by M4: M4.1 supplies the isolated packed-artifact worker; M4.2 composes static evidence + worker evidence + final target re-resolution into the kernel-owned `VerificationReport`; M4.3.1 adds optional live Host Service visibility assertions; M4.3.2 adds Agent-scoped Tool visibility assertions proven against one resolved verifier-owned Agent epoch in the same disposable boot; and M4.3.3 adds explicit opt-in structured Agent Tool result assertions through the exact DSH `ToolRuntime.execute(...).value` seam, reusing that Agent epoch after requested visibility has been evaluated. M4.4 projects the same verification semantics through `plugin.verify.start` plus `operation.get` / `operation.cancel` for long-running clients while preserving synchronous `plugin.verify`. For lifecycle-aware DSH trains the same verification reducer binds the initial worker observation and final re-resolution to the profile lifecycle fingerprint in addition to target-v2. Client/page visibility remains deliberately deferred beyond the bounded M4 alpha until DSH exposes an authoritative deterministic page identity/lifetime seam; it is not an M4 completion prerequisite.
 
 The kernel defines no MCP, CLI, Typert, HTTP, Cordis, React, Node-runtime, or filesystem/process concepts.
 
@@ -140,7 +141,7 @@ Performs the execution boundary: build/package checks when requested, actual pac
 
 Candidate-plugin execution occurs out of the user's active DSH process and uses a temporary DSH home by default. See `spec/verification.md` and `docs/security.md`.
 
-M4.1 establishes the first concrete worker slice for caller-supplied packed `.tgz` artifacts under `safe` policy. Runtime-capable implementation stays inside the declared `verification` layer; authoritative static packed-subject acquisition stays in `acquisition`, while execution-time inspection of the exact artifact bytes belongs to `verification`; the semantic kernel receives no Node/process/filesystem types.
+M4.1 establishes the first concrete worker slice for caller-supplied packed `.tgz` artifacts under `safe` policy. Authoritative static packed-subject acquisition stays in `acquisition`; execution-time inspection of the exact artifact bytes stays in `verification`; both consume one bounded archive-index primitive from the closed internal `runtime` utility layer so TAR/PAX/GNU-long-name semantics cannot drift. The semantic kernel has no dependency edge to that runtime layer and receives no Node/process/filesystem types.
 
 The M4.1 execution path is:
 
@@ -149,8 +150,11 @@ authoritative packed acquisition
         ↓ exact contentHash handoff
 worker re-hash / exact-byte artifact identity
         ↓
+shared bounded archive index
+        ↓
 bounded exact-tarball package-integrity check
         ↓ missing unambiguous root entrypoint => failed receipt, no install
+        ↓ inspector fault => failed receipt, no install
         ↓ otherwise
 disposable runner + DSH_HOME + HOME + TMP
         ↓
@@ -167,9 +171,9 @@ normal profile launch -> exact marker + exit 0
 stage observations + cleanup outcome
 ```
 
-Exact artifact identity is established before semantic package-integrity failure is possible, so a source-valid but package-broken artifact still produces a receipt bound to its exact `dsh-plugin-artifact-v1` fingerprint. The bounded integrity check only resolves an unambiguous explicit root `main` or simple root `exports` file; conditional exports, extension/directory inference and transitive module loading are deliberately left to the applicable runtime stages rather than guessed statically.
+Exact artifact identity is established before semantic package-integrity failure is possible, so a source-valid but package-broken artifact still produces a receipt bound to its exact `dsh-plugin-artifact-v1` fingerprint. The bounded integrity check only resolves an unambiguous explicit root `main` or simple root `exports` file; conditional exports, URL-suffixed targets, extension/directory inference and transitive module loading are deliberately left to the applicable runtime stages rather than guessed statically. Internal archive/manifest inspection faults are not equivalent to unsupported Node resolution: they fail the package stage closed with `VERIFY_PACKAGE_INSPECTION_FAILED` and skip downstream runtime stages.
 
-The worker binds observations to the supplied immutable starting target fingerprint and echoes the supplied lifecycle fingerprint when the target is lifecycle-aware. It does not re-resolve the caller's active target after execution and therefore cannot independently emit the final public `verified` / `stale` conclusion. M4.2 implements final target/lifecycle freshness reduction in application-kernel orchestration, and M4.3.1/M4.3.2 reuse the same worker/runtime path for requested Host Service and Agent Tool visibility assertions.
+The worker binds observations to the supplied immutable starting target fingerprint and echoes the supplied lifecycle fingerprint when the target is lifecycle-aware. It does not re-resolve the caller's active target after execution and therefore cannot independently emit the final public `verified` / `stale` conclusion. M4.2 implements final target/lifecycle freshness reduction in application-kernel orchestration; M4.3.1/M4.3.2 reuse the same worker/runtime path for requested Host Service and Agent Tool visibility assertions; and M4.3.3 reuses the same disposable boot plus resolved verifier-owned Agent epoch for explicit structured Agent Tool behavior assertions. M4.4 does not add a second verifier: it wraps the same kernel verification path in the bounded application-owned operation lifecycle.
 
 The disposable DSH home is configuration/credential isolation, not a malicious-code sandbox. Candidate runtime code still has whatever filesystem/network capabilities the operating system grants to the verifier process.
 
@@ -218,7 +222,7 @@ queued -> running -> { succeeded | failed | cancelled }
                     \-> input-required (only for operations that declare it)
 ```
 
-A caller receives an `OperationRef` and can query/cancel it. Synchronous adapters MAY wait and return the final result when the execution completes within their policy.
+For verification, `plugin.verify.start` creates one bounded application-owned operation over the same kernel semantics as synchronous `plugin.verify`. The caller receives an opaque operation id/snapshot; `operation.get` retrieves the latest immutable snapshot and terminal verification response when available, while `operation.cancel` cooperatively requests cancellation through the existing verification `AbortSignal` path. Cancellation does not retroactively rewrite an already-terminal result, and the bounded registry does not fabricate percentage progress. Synchronous adapters MAY wait and return the final result when their policy allows, but the semantic verification result remains the same operation result.
 
 Operations capture the starting target snapshot. A target or lifecycle change that invalidates verification evidence is represented explicitly, not hidden.
 
@@ -235,7 +239,7 @@ They remain internal until there is a concrete external consumer and compatibili
 
 Architecture policy is executable and closed-world rather than a blacklist of a few dangerous imports.
 
-Every production module under `src/` is classified into one of the declared layers: public facade, product/protocol/model/kernel semantic core, acquisition, verification, DSH integration, CLI, MCP, or Web/client. An unknown production path fails CI. Relative imports are resolved to actual source targets and checked against an explicit source-layer → target-layer matrix. Because semantic layers have no permitted edge to runtime-capable layers, an indirect path such as `kernel -> shared -> node:fs` cannot become valid merely by adding an intermediate folder.
+Every production module under `src/` is classified into one of the declared layers: public facade, product/protocol/model/kernel semantic core, closed internal runtime utilities, acquisition, verification, DSH integration, CLI, MCP, or Web/client. An unknown production path fails CI. Relative imports are resolved to actual source targets and checked against an explicit source-layer → target-layer matrix. The `runtime` layer may contain Node-capable primitives but may depend only on itself; acquisition and verification may consume it, while semantic layers have no permitted edge to it or any other runtime-capable layer. Thus an indirect path such as `kernel -> runtime -> node:fs` remains invalid, and an unclassified `shared` folder cannot become a runtime bridge.
 
 The gate additionally:
 

@@ -36,7 +36,7 @@ describe('M4.1 verification stage ledger', () => {
     ])
     expect(checks[5]?.reason).toBe('not-executed')
     expect(checks[9]?.reason).toBe('no-visibility-assertions')
-    expect(checks[10]?.reason).toBe('not-supported-in-m4.1')
+    expect(checks[10]?.reason).toBe('no-behavior-assertions')
   })
 
   it('allows an explicit stage to pass without changing unrelated stages', () => {
@@ -78,7 +78,7 @@ describe('M4.1 verification stage ledger', () => {
     expect(checks.find(check => check.id === 'behavior')).toEqual({
       id: 'behavior',
       status: 'skipped',
-      reason: 'not-supported-in-m4.1',
+      reason: 'prerequisite-install-failed',
     })
   })
 
@@ -116,9 +116,22 @@ describe('M4.1 verification stage ledger', () => {
     expect(() => passVerificationStage(createM41StageLedger(), 'boot')).toThrow(/prerequisite|compose/i)
   })
 
-  it('never permits static M4.1 stages or behavior to be marked passed by runtime helpers', () => {
-    for (const id of ['structure', 'manifest', 'dependency', 'contract', 'build', 'behavior'] as const) {
+  it('never permits static M4.1 stages to be marked passed by runtime helpers', () => {
+    for (const id of ['structure', 'manifest', 'dependency', 'contract', 'build'] as const) {
       expect(() => passVerificationStage(createM41StageLedger(), id)).toThrow(/m4\.1|runtime|stage/i)
     }
+  })
+
+  it('allows behavior after boot without requiring an optional visibility assertion', () => {
+    let checks = createM41StageLedger()
+    for (const id of ['package', 'install', 'compose', 'boot'] as const) checks = passVerificationStage(checks, id)
+    checks = passVerificationStage(checks, 'behavior')
+
+    expect(checks.find(check => check.id === 'visibility')).toEqual({
+      id: 'visibility',
+      status: 'skipped',
+      reason: 'no-visibility-assertions',
+    })
+    expect(checks.find(check => check.id === 'behavior')).toEqual({ id: 'behavior', status: 'passed' })
   })
 })

@@ -14,10 +14,12 @@ const productionTypeScriptExtensions = new Set(['.ts', '.tsx', '.mts', '.cts'])
 const semanticLayers = new Set(['product', 'protocol', 'model', 'kernel'])
 const forbiddenSemanticRuntimeGlobals = new Set(['process', 'Buffer', 'fetch'])
 
-// Semantic code is dependency-closed by default. A future third-party package
-// belongs here only after we prove it is runtime-neutral and add policy tests;
-// otherwise a seemingly harmless import can reintroduce MCP/Node/host coupling.
-const allowedSemanticExternalDependencies = new Set()
+// Semantic code is dependency-closed by default. Any third-party package belongs
+// here only after we prove it is runtime-neutral and add policy tests; semver is
+// the reviewed pure value evaluator required only by the M3 model-layer rule.
+const allowedSemanticExternalDependenciesByLayer = new Map([
+  ['model', new Set(['semver'])],
+])
 
 const allowedInternalDependencies = new Map([
   ['public', new Set(['public', 'product', 'protocol'])],
@@ -25,8 +27,9 @@ const allowedInternalDependencies = new Map([
   ['protocol', new Set(['protocol'])],
   ['model', new Set(['model', 'product', 'protocol'])],
   ['kernel', new Set(['kernel', 'model', 'product', 'protocol'])],
-  ['acquisition', new Set(['acquisition', 'model', 'product', 'protocol'])],
-  ['verification', new Set(['verification', 'model', 'product', 'protocol'])],
+  ['runtime', new Set(['runtime'])],
+  ['acquisition', new Set(['acquisition', 'runtime', 'model', 'product', 'protocol'])],
+  ['verification', new Set(['verification', 'runtime', 'model', 'product', 'protocol'])],
   ['dsh', new Set(['dsh', 'acquisition', 'verification', 'kernel', 'model', 'product', 'protocol'])],
   ['cli', new Set(['cli', 'mcp', 'acquisition', 'verification', 'kernel', 'model', 'product', 'protocol'])],
   ['mcp', new Set(['mcp', 'acquisition', 'verification', 'kernel', 'model', 'product', 'protocol'])],
@@ -47,6 +50,7 @@ function classifySourceLayer(file) {
   if (file.startsWith('src/protocol/')) return 'protocol'
   if (file.startsWith('src/model/')) return 'model'
   if (file.startsWith('src/kernel/')) return 'kernel'
+  if (file.startsWith('src/runtime/')) return 'runtime'
   if (file.startsWith('src/acquisition/')) return 'acquisition'
   if (file.startsWith('src/verification/')) return 'verification'
   if (file.startsWith('src/integrations/dsh/')) return 'dsh'
@@ -206,7 +210,7 @@ export function checkSourceImportPolicy(files) {
       if (
         semanticLayers.has(layer) &&
         isBareExternalSpecifier(specifier) &&
-        !allowedSemanticExternalDependencies.has(specifier)
+        !allowedSemanticExternalDependenciesByLayer.get(layer)?.has(specifier)
       ) {
         violations.push({ file, specifier, rule: 'semantic-external-dependency' })
         continue

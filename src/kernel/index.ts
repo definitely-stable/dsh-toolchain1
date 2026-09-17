@@ -486,9 +486,12 @@ export async function verifyPluginResponse(
   kernel: VerificationApplicationKernel,
   request: PluginVerifyRequest,
   requestId: string,
+  signal?: AbortSignal,
 ): Promise<PluginVerifyResponse> {
   try {
-    const outcome = await kernel.verifyPlugin(request)
+    const outcome = signal === undefined
+      ? await kernel.verifyPlugin(request)
+      : await kernel.verifyPlugin(request, signal)
     const response: PluginVerifySuccessResponse = {
       protocolVersion: TOOLCHAIN_PROTOCOL_VERSION,
       requestId,
@@ -721,12 +724,17 @@ export function createApplicationKernel(options: ApplicationKernelOptions): Veri
         ...(request.visibilityAssertions === undefined
           ? {}
           : { visibilityAssertions: request.visibilityAssertions }),
+        ...(request.behaviorAssertions === undefined
+          ? {}
+          : { behaviorAssertions: request.behaviorAssertions }),
       }, signal)
-      const { snapshot: finalSnapshot } = await resolveTarget(request.target)
+      const { snapshot: finalSnapshot, index: finalIndex } = await buildContractIndex(request.target)
       const data = reducePluginVerification({
         artifactFingerprint: artifact.fingerprint,
         initialTargetFingerprint: snapshot.fingerprint,
         finalTargetFingerprint: finalSnapshot.fingerprint,
+        initialContractIndexFingerprint: index.fingerprint,
+        finalContractIndexFingerprint: finalIndex.fingerprint,
         ...(snapshot.profileLifecycle === undefined
           ? {}
           : { initialLifecycleFingerprint: snapshot.profileLifecycle.fingerprint }),

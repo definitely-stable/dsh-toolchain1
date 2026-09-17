@@ -27,6 +27,11 @@ const examples = [
     url: new URL('spec/examples/v1/target-failed.json', root),
     envelopeRef: '#/$defs/targetResolveResponse',
   },
+  {
+    url: new URL('spec/examples/v1/plugin-check-version-mismatch.json', root),
+    envelopeRef: '#/$defs/pluginCheckResponse',
+    dataRef: '#/$defs/pluginCheckResult',
+  },
 ]
 
 const schema = JSON.parse(await readFile(schemaUrl, 'utf8'))

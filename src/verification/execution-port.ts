@@ -31,6 +31,9 @@ export function createPackedPluginVerificationExecutionPort(
         ...(input.visibilityAssertions === undefined
           ? {}
           : { visibilityAssertions: input.visibilityAssertions }),
+        ...(input.behaviorAssertions === undefined
+          ? {}
+          : { behaviorAssertions: input.behaviorAssertions }),
       }, signal)
 
       return Object.freeze({

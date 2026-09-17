@@ -1,6 +1,7 @@
 import type { AcquiredPluginSubject } from './plugin.js'
 import type {
   Diagnostic,
+  PluginBehaviorAssertion,
   PluginCheckResult,
   PluginVisibilityAssertion,
   TargetSnapshot,
@@ -52,6 +53,7 @@ export interface PluginVerificationExecutionInput {
   readonly target: TargetSnapshot
   readonly executionPolicy: 'safe'
   readonly visibilityAssertions?: readonly PluginVisibilityAssertion[]
+  readonly behaviorAssertions?: readonly PluginBehaviorAssertion[]
 }
 
 export interface PluginVerificationExecutionPort {
@@ -118,6 +120,8 @@ export interface PluginVerificationReductionInput {
   readonly artifactFingerprint: string
   readonly initialTargetFingerprint: string
   readonly finalTargetFingerprint: string
+  readonly initialContractIndexFingerprint: string
+  readonly finalContractIndexFingerprint: string
   readonly initialLifecycleFingerprint?: string
   readonly finalLifecycleFingerprint?: string
   readonly staticResult: PluginCheckResult
@@ -177,12 +181,15 @@ function staticChecks(
       : { id: 'manifest', status: 'skipped', reason: 'static-manifest-unproven' })
 
   const hasMissingRequirement = result.requirements.some(requirement => requirement.status === 'missing')
+  const hasVersionMismatch = result.requirements.some(requirement => requirement.status === 'version-mismatch')
   const hasUnprovenRequirement = result.requirements.some(requirement => requirement.status === 'unproven')
   checks = replaceCheck(checks, hasMissingRequirement
     ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-missing' }
-    : hasUnprovenRequirement
-      ? { id: 'dependency', status: 'skipped', reason: 'static-host-requirement-unproven' }
-      : { id: 'dependency', status: 'passed' })
+    : hasVersionMismatch
+      ? { id: 'dependency', status: 'failed', reason: 'static-host-requirement-version-mismatch' }
+      : hasUnprovenRequirement
+        ? { id: 'dependency', status: 'skipped', reason: 'static-host-requirement-unproven' }
+        : { id: 'dependency', status: 'passed' })
 
   checks = replaceCheck(checks, result.verdict === 'incompatible'
     ? { id: 'contract', status: 'failed', reason: 'static-incompatible' }
@@ -247,7 +254,28 @@ function visibilityFailed(checks: readonly VerificationCheck[]): boolean {
 
 function visibilityIncomplete(checks: readonly VerificationCheck[]): boolean {
   const visibility = visibilityCheck(checks)
-  return visibility.status === 'skipped' && visibility.reason !== 'no-visibility-assertions'
+  return visibility.status === 'skipped' && visibility.reason === 'visibility-assertions-not-executed'
+}
+
+function behaviorCheck(checks: readonly VerificationCheck[]): VerificationCheck {
+  const behavior = checks.find(check => check.id === 'behavior')
+  if (behavior === undefined) {
+    return Object.freeze({
+      id: 'behavior',
+      status: 'skipped',
+      reason: 'worker-check-missing',
+    })
+  }
+  return behavior
+}
+
+function behaviorFailed(checks: readonly VerificationCheck[]): boolean {
+  return behaviorCheck(checks).status === 'failed'
+}
+
+function behaviorIncomplete(checks: readonly VerificationCheck[]): boolean {
+  const behavior = behaviorCheck(checks)
+  return behavior.status === 'skipped' && behavior.reason === 'behavior-assertions-not-executed'
 }
 
 export function reducePluginVerification(
@@ -308,6 +336,17 @@ export function reducePluginVerification(
     ))
   }
 
+  const contractIndexStale = !targetStale
+    && !lifecycleStale
+    && input.finalContractIndexFingerprint !== input.initialContractIndexFingerprint
+  if (contractIndexStale) {
+    reducerDiagnostics.push(diagnostic(
+      'VERIFY_CONTRACT_INDEX_STALE',
+      'error',
+      'The target-bound Contract Index changed after verification execution and the result cannot be claimed for the current contract-evidence epoch.',
+    ))
+  }
+
   const staticUnproven = input.staticResult.verdict === 'unproven'
     || input.staticResult.subjectCompleteness === 'partial'
     || input.staticResult.requirements.some(requirement => requirement.status === 'unproven')
@@ -328,9 +367,18 @@ export function reducePluginVerification(
     ))
   }
 
+  const behaviorUnproven = behaviorIncomplete(checks)
+  if (behaviorUnproven) {
+    reducerDiagnostics.push(diagnostic(
+      'VERIFY_BEHAVIOR_UNPROVEN',
+      'warning',
+      'A requested Agent Tool behavior assertion was not executed to a proven pass or fail outcome.',
+    ))
+  }
+
   const status: VerificationReport['status'] = input.execution.terminal === 'cancelled'
     ? 'cancelled'
-    : targetStale || lifecycleStale
+    : targetStale || lifecycleStale || contractIndexStale
       ? 'stale'
       : artifactIdentityMismatch
         || workerTargetMismatch
@@ -339,11 +387,13 @@ export function reducePluginVerification(
         || input.staticResult.verdict === 'incompatible'
         || requiredCheckFailed(checks)
         || visibilityFailed(checks)
+        || behaviorFailed(checks)
         ? 'failed'
         : input.execution.cleanup !== 'succeeded'
           || staticUnproven
           || requiredCheckIncomplete(checks)
           || visibilityUnproven
+          || behaviorUnproven
           ? 'partial'
           : 'verified'
 
@@ -351,6 +401,7 @@ export function reducePluginVerification(
     status,
     artifactFingerprint: input.artifactFingerprint,
     targetFingerprint: input.initialTargetFingerprint,
+    contractIndexFingerprint: input.initialContractIndexFingerprint,
     ...(input.initialLifecycleFingerprint === undefined
       ? {}
       : { lifecycleFingerprint: input.initialLifecycleFingerprint }),

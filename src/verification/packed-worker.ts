@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import type {
   Diagnostic,
+  PluginBehaviorAssertion,
   PluginVisibilityAssertion,
   TargetSnapshot,
   VerificationReport,
@@ -48,6 +49,7 @@ const OUTPUT_LIMIT_BYTES = 128 * 1024
 const INSTALL_TIMEOUT_MS = 300_000
 const COMPOSE_TIMEOUT_MS = 120_000
 const BOOT_TIMEOUT_MS = 120_000
+const ENTRYPOINT_DIAGNOSTIC_LIMIT = 240
 const WORKER_FAILURE_STAGES = Object.freeze([
   'package',
   'install',
@@ -66,6 +68,7 @@ export interface PackedPluginVerificationInput {
   readonly target: TargetSnapshot
   readonly executionPolicy: 'safe'
   readonly visibilityAssertions?: readonly PluginVisibilityAssertion[]
+  readonly behaviorAssertions?: readonly PluginBehaviorAssertion[]
 }
 
 export interface PackedPluginVerificationExecution {
@@ -136,6 +139,12 @@ async function defaultCleanupTemporaryRoot(root: string): Promise<void> {
 
 function artifactDiagnostic(error: VerificationArtifactError): Diagnostic {
   return verificationDiagnostic(error.code, error.message)
+}
+
+function boundedDiagnosticText(value: string): string {
+  const normalized = value.replace(/[\r\n\t]/gu, ' ')
+  if (normalized.length <= ENTRYPOINT_DIAGNOSTIC_LIMIT) return normalized
+  return `${normalized.slice(0, ENTRYPOINT_DIAGNOSTIC_LIMIT - 1)}…`
 }
 
 function stageFailureReason(diagnostic: Diagnostic): string {
@@ -295,9 +304,19 @@ export async function runPackedPluginVerification(
 
       const entrypoint = inspectPackedArtifactRuntimeEntrypoint(artifact.bytes)
       if (entrypoint.status === 'missing') {
+        const displayEntrypoint = boundedDiagnosticText(entrypoint.entrypoint.slice('package/'.length))
         const diagnostic = verificationDiagnostic(
           'VERIFY_PACKAGE_ENTRYPOINT_MISSING',
-          `Packed verification artifact declares runtime entrypoint ${entrypoint.entrypoint.slice('package/'.length)} but does not contain that file.`,
+          `Packed verification artifact declares runtime entrypoint ${displayEntrypoint} but does not contain that file.`,
+        )
+        diagnostics.push(diagnostic)
+        checks = failStage(checks, 'package', diagnostic)
+        terminal = 'failed'
+        stopped = true
+      } else if (entrypoint.status === 'failed') {
+        const diagnostic = verificationDiagnostic(
+          'VERIFY_PACKAGE_INSPECTION_FAILED',
+          'Packed verification artifact could not be inspected safely for runtime package integrity.',
         )
         diagnostics.push(diagnostic)
         checks = failStage(checks, 'package', diagnostic)
@@ -327,7 +346,7 @@ export async function runPackedPluginVerification(
       const installDsh = await runRequiredProcess(
         processRunner,
         processRequest(
-          ['add', '--save-exact', '--ignore-scripts', `@deepseek-ai/dsh@${input.target.dsh.version}`],
+          ['add', '--save-exact', '--ignore-scripts', `--fetch-timeout=${INSTALL_TIMEOUT_MS}`, `@deepseek-ai/dsh@${input.target.dsh.version}`],
           runnerDir,
           env,
           INSTALL_TIMEOUT_MS,
@@ -394,6 +413,7 @@ export async function runPackedPluginVerification(
           root,
           input.target.profile.name,
           input.visibilityAssertions ?? [],
+          input.behaviorAssertions ?? [],
         )
       } catch {
         const diagnostic = verificationDiagnostic(
@@ -503,6 +523,32 @@ export async function runPackedPluginVerification(
           checks = failStage(checks, 'visibility', diagnostic)
         } else {
           checks = skipVerificationStage(checks, 'visibility', 'visibility-assertions-not-executed')
+        }
+      }
+
+      if ((input.behaviorAssertions?.length ?? 0) > 0) {
+        const visibilityRequested = (input.visibilityAssertions?.length ?? 0) > 0
+        const visibilityCheck = checks.find(check => check.id === 'visibility')
+        if (visibilityRequested && visibilityCheck?.status !== 'passed') {
+          if (visibilityCheck?.status !== 'failed') {
+            checks = skipVerificationStage(checks, 'behavior', 'behavior-assertions-not-executed')
+          }
+        } else {
+          const behavior = bootProbe.behavior
+          const passed = behavior !== undefined && hasExactMarker(bootOutcome.stdout, behavior.passedMarker)
+          const failed = behavior !== undefined && hasExactMarker(bootOutcome.stdout, behavior.failedMarker)
+          if (passed && !failed) {
+            checks = passVerificationStage(checks, 'behavior')
+          } else if (failed && !passed) {
+            const diagnostic = verificationDiagnostic(
+              'VERIFY_BEHAVIOR_FAILED',
+              'Requested Agent Tool behavior did not match its expected structured result.',
+            )
+            diagnostics.push(diagnostic)
+            checks = failStage(checks, 'behavior', diagnostic)
+          } else {
+            checks = skipVerificationStage(checks, 'behavior', 'behavior-assertions-not-executed')
+          }
         }
       }
       terminal = 'completed'
