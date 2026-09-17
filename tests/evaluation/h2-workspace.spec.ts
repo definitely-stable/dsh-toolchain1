@@ -90,6 +90,21 @@ describe('H2 observation layout', () => {
     await rm(runRoot, { recursive: true, force: true })
     await expect(assertObservationRunRemoved({ artifactRoot: root, runId: 'run-3' })).resolves.toBe(true)
   })
+
+  it('refuses to adopt a run directory that something else created without ownership', async () => {
+    // A probe that creates an owned tree below a plain parent leaves that parent
+    // behind, and the observation that follows must not adopt — or delete — a
+    // directory this benchmark did not create. That is how the first dispatched
+    // dry run failed, after the ownership guard correctly declined to remove it.
+    const root = artifactRoot('unowned-run-root')
+    const runRoot = observationRunRoot({ artifactRoot: root, runId: 'run-unowned' })
+    await mkdir(runRoot, { recursive: true })
+    const layout = observationLayout({ artifactRoot: root, runId: 'run-unowned', taskId: 'h2-x-07', arm: 'B' })
+
+    expect(() => prepareObservationDir({ artifactRoot: root, runId: 'run-unowned', layout }))
+      .toThrow(/unowned directory/)
+    expect(existsSync(runRoot)).toBe(true)
+  })
 })
 
 describe('H2 workspace materialization', () => {
