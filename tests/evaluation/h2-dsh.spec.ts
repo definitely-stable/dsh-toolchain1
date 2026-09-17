@@ -115,10 +115,14 @@ describe('H2 ACP control plane', () => {
     const agent = createFakeAgent()
     const client = createAcpControlPlane({ transport: agent.transport })
     await client.initialize()
-    const session = await client.newSession({ cwd: 'C:/artifacts/h2/run/task/B/workspace' })
+    // The workspace must be absolute on the platform that runs the benchmark:
+    // scoring runs on a Linux runner, where a Windows-style path is not absolute
+    // and the control plane correctly refuses it.
+    const workspace = process.platform === 'win32' ? 'C:/artifacts/h2/run/task/B/workspace' : '/artifacts/h2/run/task/B/workspace'
+    const session = await client.newSession({ cwd: workspace })
     expect(session.sessionId).toBe('session-1')
     expect(agent.sent.find((frame: any) => frame.method === 'session/new').params).toEqual({
-      cwd: 'C:/artifacts/h2/run/task/B/workspace',
+      cwd: workspace,
       mcpServers: [],
     })
     await client.setConfigOption({ sessionId: session.sessionId, configId: 'model', value: 'deepseek-flash' })

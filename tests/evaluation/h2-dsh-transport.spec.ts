@@ -71,10 +71,15 @@ describe('H2 ACP process transport', () => {
     })
     // Node resolves the launcher to a `.cmd` shim on Windows and refuses to
     // spawn a batch file without a shell; the arguments must then be quoted by
-    // hand, because `shell: true` concatenates them without escaping.
+    // hand, because `shell: true` concatenates them without escaping. On a
+    // platform without shims the same arguments are passed through verbatim,
+    // which is what the Linux scoring runner sees.
+    const expectedArgs = process.platform === 'win32'
+      ? ['--dir', '"C:\\Program Files\\dsh"', 'dsh', '--profile', 'acp']
+      : ['--dir', 'C:\\Program Files\\dsh', 'dsh', '--profile', 'acp']
     expect(captured?.command).toBe('pnpm')
     expect(captured?.options.shell).toBe(process.platform === 'win32')
-    expect(captured?.args).toEqual(['--dir', '"C:\\Program Files\\dsh"', 'dsh', '--profile', 'acp'])
+    expect(captured?.args).toEqual(expectedArgs)
     expect(typeof transport.send).toBe('function')
   })
 
