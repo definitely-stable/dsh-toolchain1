@@ -707,10 +707,16 @@ async function commandDryRun(args) {
   // Empirical half of the causal boundary, before any model token is spent:
   // both arms are composed for real and their `--dump-config` trees must differ
   // by exactly the Toolchain row.
+  //
+  // The probe's tree lives under the check area, not under the run directory: an
+  // owned tree created below a plain parent would leave that parent behind
+  // without an ownership marker, and the observation that follows refuses to
+  // adopt an unowned run directory — which is exactly how the first dispatched
+  // dry run failed, after the guard correctly declined to delete it.
   const compositionParity = runCompositionParityProbe({
     runtime: runtime(),
     workspaceRoot: ARTIFACT_ROOT,
-    baseDir: join(ARTIFACT_ROOT, runId, 'composition-parity'),
+    baseDir: join(ARTIFACT_ROOT, 'checks', `composition-parity-${shortSha(candidatePack.sha256)}`),
     runId,
     profile: H2_ACP_PROFILE,
     toolchainTarball: candidatePack.path,
