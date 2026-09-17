@@ -152,6 +152,7 @@ jobs:
           retention-days: 1
           path: |
             .artifacts/h2/**/technical-dry-run.json
+            .artifacts/h2/**/technical-dry-run-diagnostic.json
             .artifacts/h2/scoring-*/ledger.json
             .artifacts/h2/scoring-*/deletion-journal.json
             .artifacts/h2/scoring-*/report.json
