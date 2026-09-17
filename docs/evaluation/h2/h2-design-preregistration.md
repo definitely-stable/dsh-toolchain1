@@ -759,7 +759,8 @@ credential document.
 remaining defect a virtual machine instead of user state, and because the repository already has
 this machinery: H1 and the staged evaluation run paid model work there, with the private dataset
 delivered as a secret and verified against a public commitment. The corpus is stored as
-`secrets.H2_DATASET_GZIP_BASE64` (11 736 base64 bytes) and materialized into a random `mkdtemp`
+`secrets.H2_DATASET_GZIP_BASE64` (13 231 bytes of `tar.gz`, 17 644 bytes base64, against the 48 576-byte
+secret limit) and materialized into a random `mkdtemp`
 directory under the runner temp root; `~/.dsh` and the operator's home are not part of the run at
 all. `h2:preflight` proves the guard is active — it must refuse the operator's real DSH home and temp
 directory — and writes the protection report the paid commands re-check.
