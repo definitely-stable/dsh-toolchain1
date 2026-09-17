@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates } from './eval/lib/disposable-environment.mjs'
+
 export const DSH_SMOKE_VERSION = '0.1.1-rc.2'
 export const DSH_BOOT_PROBE_PROFILE = 'toolchain-smoke'
 export const DSH_LIVE_BOOT_PROBE_PROFILE = 'web'
@@ -584,15 +586,12 @@ export async function smokeDshPackage(tarballPath, options = {}) {
   const profiles = options.profiles ?? DSH_SMOKE_PROFILES
   const root = await mkdtemp(join(tmpdir(), 'dsh-toolchain-smoke-'))
   const runner = join(root, 'runner')
-  const home = join(root, 'dsh-home')
+  const coordinates = ensureDisposableCoordinates(createDisposableCoordinates({ root }))
+  const home = coordinates.dshHome
   const dshPackageRoot = join(runner, 'node_modules', '@deepseek-ai', 'dsh')
-  const env = {
-    ...process.env,
-    CI: 'true',
-    COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
-    DSH_HOME: home,
-    DSH_TOOLCHAIN_SMOKE_DSH_ROOT: dshPackageRoot,
-  }
+  // The smoke installs and boots DSH, so it runs with disposable home, temp, and
+  // package-manager coordinates instead of the caller's.
+  const env = buildDisposableEnvironment({ coordinates, extra: { DSH_TOOLCHAIN_SMOKE_DSH_ROOT: dshPackageRoot } })
 
   try {
     await mkdir(runner, { recursive: true })

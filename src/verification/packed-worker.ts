@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 
 import type {
@@ -133,8 +133,33 @@ async function defaultTemporaryRoot(): Promise<string> {
   return mkdtemp(path.join(tmpdir(), 'dsh-toolchain-verify-'))
 }
 
-async function defaultCleanupTemporaryRoot(root: string): Promise<void> {
-  await rm(root, { recursive: true, force: true })
+/**
+ * Deletes the worker's disposable root, and only that.
+ *
+ * The worker is the one place Toolchain removes a directory tree, so the target
+ * is checked before it is touched: a verification run must never be able to
+ * delete user state, a configured home, or a whole temp directory because a
+ * coordinate was wrong. The root must be strictly inside the OS temp directory
+ * and must not be that directory, the user home, or a configured DSH home. A
+ * refusal is loud; the run then reports a failed cleanup instead of destroying
+ * something it does not own.
+ *
+ * This is configuration and lifecycle safety, not a malicious-code sandbox.
+ */
+export async function defaultCleanupTemporaryRoot(root: string): Promise<void> {
+  const resolved = path.resolve(root)
+  const tempRoot = path.resolve(tmpdir())
+  const forbidden = [tempRoot, path.resolve(homedir()), path.resolve(process.env.DSH_HOME ?? path.join(homedir(), '.dsh'))]
+  for (const protectedRoot of forbidden) {
+    if (resolved === protectedRoot) {
+      throw new Error(`refusing to delete ${resolved}: it is a protected root, not a disposable verification directory`)
+    }
+  }
+  const relative = path.relative(tempRoot, resolved)
+  if (relative.length === 0 || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`refusing to delete ${resolved}: a disposable verification root must live inside ${tempRoot}`)
+  }
+  await rm(resolved, { recursive: true, force: true })
 }
 
 function artifactDiagnostic(error: VerificationArtifactError): Diagnostic {

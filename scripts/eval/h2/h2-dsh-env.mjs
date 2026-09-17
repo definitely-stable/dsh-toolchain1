@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { buildDisposableEnvironment, createDisposableCoordinates, ensureDisposableCoordinates, ephemeralBootArgs } from '../lib/disposable-environment.mjs'
+import { createOwnedTree, removeOwnedTree } from '../lib/owned-tree.mjs'
 import { assertDumpParity, bootArgs, dumpConfigArgs, extractCompositionFacts, pluginAddArgs } from './h2-composition.mjs'
 import { H2_POLICY } from './h2-config.mjs'
 import { routePatchEntries, sessionAffinityValue } from './h2-route.mjs'
@@ -96,20 +98,16 @@ export function createDshRuntime({ mode = 'checkout', dshRoot, train = null, tim
 
   /**
    * @param {string[]} args
-   * @param {{env?: Record<string, string|undefined>, cwd?: string, timeout?: number, allowFailure?: boolean}} [options]
+   * @param {{env: Record<string, string|undefined>, cwd?: string, timeout?: number, allowFailure?: boolean}} options
    */
-  function run(args, { env, cwd, timeout = timeoutMs, allowFailure = false } = {}) {
-    // H2's own configuration is stripped from every DSH subprocess for the same
-    // reason the agent does not inherit it: the controller's variables describe
-    // where the private corpus lives.
-    const inherited = {}
-    for (const [key, value] of Object.entries(process.env)) {
-      if (key.startsWith('H2_')) continue
-      inherited[key] = value
-    }
+  function run(args, { env, cwd, timeout = timeoutMs, allowFailure = false } = /** @type {any} */ ({})) {
+    // The child environment is passed in whole: it is built from the disposable
+    // coordinates, so nothing of the operator's environment is inherited here.
+    // That is what keeps a DSH subprocess from ever naming the real home.
+    if (env === undefined || env === null) throw new Error('a DSH subprocess requires an explicit disposable environment')
     const result = spawnImpl(command, [...prefix, ...args], {
       cwd,
-      env: { ...inherited, ...env },
+      env,
       encoding: 'utf8',
       timeout,
       windowsHide: true,
@@ -250,34 +248,39 @@ export function apply(ctx) {
  * the constants both arms are built from, so without this a no-op `plugin add`
  * for Arm C would leave the benchmark comparing B with B and every gate green.
  *
- * @param {{runtime: any, baseDir: string, profile: string, toolchainTarball: string,
- *   env?: Record<string, string | undefined>}} input
+ * The probe's own tree is owned like every other benchmark tree: its removal
+ * goes through the handle this function created, never through a recomputed
+ * path.
+ *
+ * @param {{runtime: any, workspaceRoot: string, baseDir: string, runId: string, profile: string,
+ *   toolchainTarball: string, env?: Record<string, string | undefined>}} input
  */
-export function runCompositionParityProbe({ runtime, baseDir, profile, toolchainTarball, env = {} }) {
+export function runCompositionParityProbe({ runtime, workspaceRoot, baseDir, runId, profile, toolchainTarball, env = {} }) {
   const cwd = runtime.dshRoot ?? process.cwd()
+  const probe = createOwnedTree({ workspaceRoot, dir: baseDir, kind: 'composition-parity', runId, reset: true })
   // Each arm home carries the same observation profile patch the real
   // observation homes carry, so the parity dump describes the composition that
   // actually runs rather than a profile nobody boots.
-  const armHome = arm => {
-    const home = join(baseDir, arm)
+  const armCoordinates = arm => {
+    const coordinates = ensureDisposableCoordinates(createDisposableCoordinates({ root: join(probe.root, arm) }))
     writeObservationProfilePatch({
-      homeDir: home,
+      homeDir: coordinates.dshHome,
       profile,
       entries: [
-        telemetryOverlayEntry({ homeDir: home }),
+        telemetryOverlayEntry({ homeDir: coordinates.dshHome }),
         ...routePatchEntries({ model: H2_POLICY.model, sessionAffinity: sessionAffinityValue({ runId: 'composition-parity', taskId: 'dump', arm }) }),
       ],
     })
-    return home
+    return coordinates
   }
-  const dumpB = dumpComposition({ runtime, homeDir: armHome('arm-b'), cwd, profile, dirs: [], env })
-  const dumpC = dumpComposition({ runtime, homeDir: armHome('arm-c'), cwd, profile, dirs: [toolchainTarball], env })
+  const dumpB = dumpComposition({ runtime, coordinates: armCoordinates('arm-b'), cwd, profile, dirs: [], env })
+  const dumpC = dumpComposition({ runtime, coordinates: armCoordinates('arm-c'), cwd, profile, dirs: [toolchainTarball], env })
   const { addedRows } = assertDumpParity({ dumpB, dumpC })
   const factsB = extractCompositionFacts(dumpB)
   const factsC = extractCompositionFacts(dumpC)
   // The homes are heavy and their content is already reduced to the summary
   // above; a failure leaves them in place so the mismatch can be inspected.
-  rmSync(baseDir, { recursive: true, force: true })
+  removeOwnedTree({ handle: probe })
   return Object.freeze({
     verified: true,
     profile,
@@ -288,13 +291,13 @@ export function runCompositionParityProbe({ runtime, baseDir, profile, toolchain
 }
 
 /**
- * Installs local plugin directories into a fresh profile of one DSH home.
+ * Installs local plugin directories into a fresh profile of one disposable home.
  *
- * @param {{runtime: any, homeDir: string, cwd: string, profile: string,
+ * @param {{runtime: any, coordinates: any, cwd: string, profile: string,
  *   dirs: readonly string[], env?: Record<string, string | undefined>}} input
  */
-export function installPluginDirs({ runtime, homeDir, cwd, profile, dirs, env = {} }) {
-  const childEnv = { ...env, DSH_HOME: homeDir, CI: 'true', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' }
+export function installPluginDirs({ runtime, coordinates, cwd, profile, dirs, env = {} }) {
+  const childEnv = buildDisposableEnvironment({ coordinates, extra: env })
   for (const dir of dirs) {
     runtime.run(pluginAddArgs({ profile, tarball: dir }), { env: childEnv, cwd, timeout: 300_000 })
   }
@@ -307,9 +310,11 @@ export function installPluginDirs({ runtime, homeDir, cwd, profile, dirs, env = 
  * resolve its imports from the benchmark checkout instead of the target
  * composition, which would make grading depend on the wrong module graph.
  */
-export function packWorkspaceDir({ workspaceDir, outFile, spawnImpl = spawnSync }) {
+export function packWorkspaceDir({ workspaceDir, outFile, env, spawnImpl = spawnSync }) {
+  if (env === undefined || env === null) throw new Error('packing a subject requires an explicit disposable environment')
   const result = spawnImpl('pnpm', ['pack', '--out', outFile], {
     cwd: workspaceDir,
+    env,
     encoding: 'utf8',
     shell: process.platform === 'win32',
     windowsHide: true,
@@ -325,14 +330,14 @@ export function packWorkspaceDir({ workspaceDir, outFile, spawnImpl = spawnSync 
 /**
  * Boot-free composition check: install the subject and dump the composed tree.
  *
- * @param {{runtime: any, homeDir: string, cwd: string, profile: string,
+ * @param {{runtime: any, coordinates: any, cwd: string, profile: string,
  *   dirs: readonly string[], env?: Record<string, string | undefined>}} input
  * @returns {string}
  */
-export function dumpComposition({ runtime, homeDir, cwd, profile, dirs, env = {} }) {
-  installPluginDirs({ runtime, homeDir, cwd, profile, dirs, env })
+export function dumpComposition({ runtime, coordinates, cwd, profile, dirs, env = {} }) {
+  installPluginDirs({ runtime, coordinates, cwd, profile, dirs, env })
   const { stdout } = runtime.run(dumpConfigArgs({ profile }), {
-    env: { ...env, DSH_HOME: homeDir, CI: 'true', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' },
+    env: buildDisposableEnvironment({ coordinates, extra: env }),
     cwd,
     timeout: 120_000,
   })
@@ -344,23 +349,21 @@ export function dumpComposition({ runtime, homeDir, cwd, profile, dirs, env = {}
  * exact marker before the process exits 0. Used for runtime assertions such
  * as "this service is mounted" / "this tool is visible to an Agent".
  *
- * @param {{runtime: any, homeDir: string, cwd: string, profile: string, probeDir: string,
+ * @param {{runtime: any, coordinates: any, cwd: string, profile: string, probeDir: string,
  *   services?: readonly string[], tools?: readonly string[], env?: Record<string, string | undefined>,
  *   timeout?: number}} input
  */
-export function runBootProbe({ runtime, homeDir, cwd, profile, probeDir, services = [], tools = [], env = {}, timeout = 180_000 }) {
-  // The Web profile owns a launcher app; it must boot without opening a
-  // browser or racing for a fixed port during a headless probe.
-  const appArgs = profile === H2_GRADER_RUNTIME_PROFILE ? ['--no-open', '--port', '0'] : []
+export function runBootProbe({ runtime, coordinates, cwd, profile, probeDir, services = [], tools = [], env = {}, timeout = 180_000 }) {
+  const appArgs = ephemeralBootArgs(profile)
   const { status, stdout, stderr } = runtime.run(bootArgs({ profile, appArgs }), {
-    env: {
-      ...env,
-      DSH_HOME: homeDir,
-      CI: 'true',
-      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
-      H2_PROBE_SERVICES: services.join(','),
-      H2_PROBE_TOOLS: tools.join(','),
-    },
+    env: buildDisposableEnvironment({
+      coordinates,
+      extra: {
+        ...env,
+        H2_PROBE_SERVICES: services.join(','),
+        H2_PROBE_TOOLS: tools.join(','),
+      },
+    }),
     cwd,
     timeout,
     allowFailure: true,
@@ -396,12 +399,21 @@ export function runBootProbe({ runtime, homeDir, cwd, profile, probeDir, service
  * Real DSH-backed grader IO. Passed to `runGrader` so compose/runtime checks
  * execute against a disposable real DSH composition with no model calls.
  *
- * @param {{runtime: any, layout: any, environment?: Record<string, string|undefined>, workdir?: string,
+ * Each attempt gets its own disposable coordinates under the observation's
+ * scratch area, so the oracle's own DSH processes are isolated exactly like the
+ * agent under test: their home, temp, and package-manager caches are inside the
+ * observation and nowhere else.
+ *
+ * @param {{runtime: any, layout: any, coordinates: any, environment?: Record<string, string|undefined>, workdir?: string,
  *   attempts?: number, packImpl?: typeof packWorkspaceDir}} input
  */
-export function createDshGraderIo({ runtime, layout, environment = {}, workdir, attempts = 2, packImpl = packWorkspaceDir }) {
+export function createDshGraderIo({ runtime, layout, coordinates, environment = {}, workdir, attempts = 2, packImpl = packWorkspaceDir }) {
+  if (coordinates === undefined || coordinates === null) throw new Error('grader IO requires the observation disposable coordinates')
   const cwd = workdir ?? runtime.dshRoot ?? process.cwd()
   const childEnv = { ...environment }
+  const gradeCoordinates = (label, key, attempt) => ensureDisposableCoordinates(
+    createDisposableCoordinates({ root: join(layout.scratchDir, `${label}-${key}-${attempt}`) }),
+  )
   /**
    * A disposable home is disposable only once. Installing a second subject into
    * a home that already holds one leaves the first install in place: the
@@ -418,7 +430,7 @@ export function createDshGraderIo({ runtime, layout, environment = {}, workdir, 
     const cached = subjectTarballs.get(key)
     if (cached !== undefined) return { key, tarball: cached }
     const tarball = join(layout.scratchDir, `graded-subject-${key}.tgz`)
-    packImpl({ workspaceDir, outFile: tarball })
+    packImpl({ workspaceDir, outFile: tarball, env: buildDisposableEnvironment({ coordinates }) })
     subjectTarballs.set(key, tarball)
     return { key, tarball }
   }
@@ -446,7 +458,7 @@ export function createDshGraderIo({ runtime, layout, environment = {}, workdir, 
         const { key, tarball } = await subjectFor(workspaceDir)
         const dump = dumpComposition({
           runtime,
-          homeDir: join(layout.scratchDir, `compose-home-${key}-${attempt}`),
+          coordinates: gradeCoordinates('compose-home', key, attempt),
           cwd,
           profile: H2_GRADER_COMPOSE_PROFILE,
           dirs: [tarball],
@@ -470,10 +482,10 @@ export function createDshGraderIo({ runtime, layout, environment = {}, workdir, 
       return stabilize('runtime', async attempt => {
         const { key, tarball } = await subjectFor(workspaceDir)
         const probeDir = writeProbePackage(join(layout.scratchDir, `grader-probe-${key}-${attempt}`))
-        const homeDir = join(layout.scratchDir, `runtime-home-${key}-${attempt}`)
+        const runtimeCoordinates = gradeCoordinates('runtime-home', key, attempt)
         installPluginDirs({
           runtime,
-          homeDir,
+          coordinates: runtimeCoordinates,
           cwd,
           profile: H2_GRADER_RUNTIME_PROFILE,
           dirs: [tarball, probeDir],
@@ -481,7 +493,7 @@ export function createDshGraderIo({ runtime, layout, environment = {}, workdir, 
         })
         return runBootProbe({
           runtime,
-          homeDir,
+          coordinates: runtimeCoordinates,
           cwd,
           profile: H2_GRADER_RUNTIME_PROFILE,
           probeDir,
@@ -499,11 +511,14 @@ export function createDshGraderIo({ runtime, layout, environment = {}, workdir, 
  * runtime version through the handle, so it is the only target fact that
  * requires a live DSH.
  *
- * @param {{runtime: any, profile: string, dshTrain: string, dshRootVersion?: string | null,
- *   env?: Record<string, string | undefined>}} input
+ * The version call is still a DSH process, so it needs a disposable environment
+ * like every other one; the caller supplies coordinates for it.
+ *
+ * @param {{runtime: any, profile: string, dshTrain: string, coordinates: any, dshRootVersion?: string | null}} input
  */
-export function describeTargetFacts({ runtime, profile, dshTrain, dshRootVersion, env = {} }) {
-  const runtimeVersion = runtime.version(env)
+export function describeTargetFacts({ runtime, profile, dshTrain, coordinates, dshRootVersion }) {
+  if (coordinates === undefined || coordinates === null) throw new Error('target facts require disposable coordinates for the version probe')
+  const runtimeVersion = runtime.version(buildDisposableEnvironment({ coordinates }))
   return Object.freeze({
     dshTrain,
     dshRootVersion: dshRootVersion ?? null,

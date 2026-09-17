@@ -169,12 +169,74 @@ export function checkCiStoragePolicy(source) {
   return violations
 }
 
+/** Paths an H2 scoring artifact must never carry, whatever its retention is. */
+const H2_FORBIDDEN_ARTIFACT_PATHS = [
+  'node_modules',
+  'dsh-home',
+  'pnpm-store',
+  'dsh-toolchain-candidate.tgz',
+]
+
+/**
+ * The H2 scoring workflow is the one paid lane, so it is the one that can turn a
+ * misconfiguration into model spend. Its policy is therefore separate from the
+ * deterministic CI lane: manual dispatch only, from `main` only, bounded, and
+ * with transient sanitized evidence only.
+ */
+export function checkH2ScoringWorkflow(source) {
+  const violations = []
+
+  if (!/^\s{2}workflow_dispatch:/m.test(source)) {
+    violations.push({ rule: 'h2-manual-dispatch', message: 'H2 scoring must be dispatched manually' })
+  }
+  for (const trigger of ['push:', 'pull_request:', 'schedule:', 'workflow_run:']) {
+    if (new RegExp(`^\\s{2}${trigger}`, 'm').test(source)) {
+      violations.push({ rule: 'h2-trigger', message: `H2 scoring must not run on ${trigger.replace(':', '')}` })
+    }
+  }
+  if (!/refs\/heads\/main/.test(source)) {
+    violations.push({ rule: 'h2-main-only', message: 'H2 scoring must refuse refs other than refs/heads/main' })
+  }
+  if (!/^\s{2}contents:\s*read\s*$/m.test(source)) {
+    violations.push({ rule: 'h2-permissions', message: 'H2 scoring must declare permissions: contents: read' })
+  }
+  const timeout = /timeout-minutes:\s*(\d+)/.exec(source)
+  if (timeout === null) {
+    violations.push({ rule: 'h2-timeout', message: 'H2 scoring must bound the job with timeout-minutes' })
+  } else if (Number(timeout[1]) > 350) {
+    violations.push({ rule: 'h2-timeout', message: `H2 scoring timeout ${timeout[1]} minutes exceeds the 350-minute ceiling` })
+  }
+  if (!/--confirm-scoring/.test(source)) {
+    violations.push({ rule: 'h2-confirm-scoring', message: 'H2 scoring must pass --confirm-scoring to authorize the paid run' })
+  }
+
+  for (const block of collectActionBlocks(source, 'actions/upload-artifact')) {
+    if (!hasLine(block, /^\s+retention-days:\s*1\s*$/)) {
+      violations.push({ rule: 'h2-artifact-retention', message: `H2 upload-artifact at line ${block.line} must use retention-days: 1` })
+    }
+    for (const forbiddenPath of H2_FORBIDDEN_ARTIFACT_PATHS) {
+      if (block.text.includes(forbiddenPath)) {
+        violations.push({ rule: 'h2-artifact-content', message: `H2 upload-artifact at line ${block.line} must not persist ${forbiddenPath}` })
+      }
+    }
+  }
+  for (const block of collectActionBlocks(source, 'actions/cache')) {
+    violations.push({ rule: 'h2-direct-cache', message: `actions/cache at line ${block.line} is forbidden in the H2 scoring lane` })
+  }
+
+  return violations
+}
+
 async function main() {
   const workflow = await readFile(path.join(root, '.github', 'workflows', 'ci.yml'), 'utf8')
-  const violations = checkCiStoragePolicy(workflow)
+  const violations = checkCiStoragePolicy(workflow).map(violation => ({ ...violation, file: 'ci.yml' }))
+
+  const scoring = await readFile(path.join(root, '.github', 'workflows', 'h2-scoring.yml'), 'utf8')
+  violations.push(...checkH2ScoringWorkflow(scoring).map(violation => ({ ...violation, file: 'h2-scoring.yml' })))
+
   if (violations.length === 0) return
 
-  for (const violation of violations) console.error(`${violation.rule}: ${violation.message}`)
+  for (const violation of violations) console.error(`${violation.file}: ${violation.rule}: ${violation.message}`)
   process.exitCode = 1
 }
 

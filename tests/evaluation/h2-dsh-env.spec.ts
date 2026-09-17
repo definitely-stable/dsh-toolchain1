@@ -18,12 +18,18 @@ import {
   writeProbePackage,
 } from '../../scripts/eval/h2/h2-dsh-env.mjs'
 import { findSessionLog } from '../../scripts/eval/h2/h2-runner.mjs'
+import { createDisposableCoordinates, ensureDisposableCoordinates } from '../../scripts/eval/lib/disposable-environment.mjs'
 
 const roots: string[] = []
 function tempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'h2-dsh-env-'))
   roots.push(dir)
   return dir
+}
+
+/** Disposable coordinates for a fake observation root. */
+function fakeCoordinates(root = tempDir()) {
+  return ensureDisposableCoordinates(createDisposableCoordinates({ root }))
 }
 
 afterEach(() => {
@@ -46,7 +52,7 @@ describe('H2 DSH runtime handle', () => {
   it('drives the harness checkout exactly like the product launcher', () => {
     const { spawn, calls } = fakeSpawn([{ stdout: '0.1.5-rc.2\n' }])
     const runtime = createDshRuntime({ mode: 'checkout', dshRoot: 'C:/harness', spawnImpl: spawn })
-    expect(runtime.version({})).toBe('0.1.5-rc.2')
+    expect(runtime.version({ PATH: 'C:/tools' })).toBe('0.1.5-rc.2')
     expect(calls[0]!.command).toBe('pnpm')
     expect(calls[0]!.args).toEqual(['--dir', 'C:/harness', 'dsh', '--version'])
   })
@@ -54,7 +60,7 @@ describe('H2 DSH runtime handle', () => {
   it('supports the disposable installed-runner mode used by published trains', () => {
     const { spawn, calls } = fakeSpawn([{ stdout: '0.1.5-rc.2\n' }])
     const runtime = createDshRuntime({ mode: 'package', spawnImpl: spawn })
-    runtime.version({})
+    runtime.version({ PATH: 'C:/tools' })
     expect(calls[0]!.args).toEqual(['exec', 'dsh', '--version'])
   })
 
@@ -66,23 +72,25 @@ describe('H2 DSH runtime handle', () => {
   it('installs plugin directories into the disposable profile and dumps the composition', () => {
     const { spawn, calls } = fakeSpawn([{ stdout: '' }, { stdout: '- id: subject\n  name: subject\n' }])
     const runtime = createDshRuntime({ mode: 'checkout', dshRoot: 'C:/harness', spawnImpl: spawn })
+    const coordinates = fakeCoordinates()
     const dump = dumpComposition({
       runtime,
-      homeDir: 'C:/obs/dsh-home',
+      coordinates,
       cwd: 'C:/harness',
       profile: 'h2-grader',
       dirs: ['C:/obs/workspace'],
     })
     expect(dump).toContain('- id: subject')
     expect(calls[0]!.args).toEqual(['--dir', 'C:/harness', 'dsh', 'plugin', '--profile', 'h2-grader', 'add', '--ignore-scripts', 'C:/obs/workspace'])
-    expect(calls[0]!.env.DSH_HOME).toBe('C:/obs/dsh-home')
+    expect(calls[0]!.env.DSH_HOME).toBe(coordinates.dshHome)
+    expect(calls[0]!.env.HOME).toBe(coordinates.userHome)
     expect(calls[1]!.args).toEqual(['--dir', 'C:/harness', 'dsh', '--profile', 'h2-grader', '--dump-config'])
   })
 
   it('fails loudly when a plugin install or composition dump fails', () => {
     const failing = fakeSpawn([{ status: 1, stderr: 'install exploded' }])
     const runtime = createDshRuntime({ mode: 'checkout', dshRoot: 'C:/harness', spawnImpl: failing.spawn })
-    expect(() => installPluginDirs({ runtime, homeDir: 'h', cwd: 'c', profile: 'p', dirs: ['d'] }))
+    expect(() => installPluginDirs({ runtime, coordinates: fakeCoordinates(), cwd: 'c', profile: 'p', dirs: ['d'] }))
       .toThrow(/install exploded/)
   })
 })
@@ -107,7 +115,7 @@ describe('H2 grader boot probe', () => {
     const runtime = createDshRuntime({ mode: 'checkout', dshRoot: 'C:/harness', spawnImpl: spawn })
     const result = runBootProbe({
       runtime,
-      homeDir: 'C:/obs/dsh-home',
+      coordinates: fakeCoordinates(),
       cwd: 'C:/harness',
       profile: 'web',
       probeDir: 'C:/obs/probe',
@@ -127,7 +135,7 @@ describe('H2 grader boot probe', () => {
     const missing = fakeSpawn([{ stdout: partial }])
     const missingResult = runBootProbe({
       runtime: createDshRuntime({ mode: 'checkout', dshRoot: 'C:/h', spawnImpl: missing.spawn }),
-      homeDir: 'h', cwd: 'c', profile: 'web', probeDir: 'p', services: ['fixtureService'], tools: [],
+      coordinates: fakeCoordinates(), cwd: 'c', profile: 'web', probeDir: 'p', services: ['fixtureService'], tools: [],
     })
     expect(missingResult.ok).toBe(false)
     expect(missingResult.detail).toContain('missing services=[fixtureService]')
@@ -135,7 +143,7 @@ describe('H2 grader boot probe', () => {
     const silent = fakeSpawn([{ stdout: 'nothing here', stderr: 'boom' }])
     const silentResult = runBootProbe({
       runtime: createDshRuntime({ mode: 'checkout', dshRoot: 'C:/h', spawnImpl: silent.spawn }),
-      homeDir: 'h', cwd: 'c', profile: 'web', probeDir: 'p',
+      coordinates: fakeCoordinates(), cwd: 'c', profile: 'web', probeDir: 'p',
     })
     expect(silentResult.ok).toBe(false)
     expect(silentResult.detail).toContain('no marker')
@@ -143,7 +151,7 @@ describe('H2 grader boot probe', () => {
     const badExit = fakeSpawn([{ status: 1, stdout: `${H2_GRADER_PROBE_MARKER}{"services":{},"tools":{}}\n` }])
     const badExitResult = runBootProbe({
       runtime: createDshRuntime({ mode: 'checkout', dshRoot: 'C:/h', spawnImpl: badExit.spawn }),
-      homeDir: 'h', cwd: 'c', profile: 'web', probeDir: 'p',
+      coordinates: fakeCoordinates(), cwd: 'c', profile: 'web', probeDir: 'p',
     })
     expect(badExitResult.ok).toBe(false)
   })
@@ -163,7 +171,13 @@ describe('H2 target identity', () => {
   it('describes the frozen target through the runtime version probe', () => {
     const { spawn } = fakeSpawn([{ stdout: '0.1.5-rc.2\n' }])
     const runtime = createDshRuntime({ mode: 'checkout', dshRoot: 'C:/harness', spawnImpl: spawn })
-    const facts = describeTargetFacts({ runtime, profile: 'acp', dshTrain: '@deepseek-ai/dsh@0.1.5-rc.2', dshRootVersion: '0.1.5-rc.2' })
+    const facts = describeTargetFacts({
+      runtime,
+      profile: 'acp',
+      dshTrain: '@deepseek-ai/dsh@0.1.5-rc.2',
+      dshRootVersion: '0.1.5-rc.2',
+      coordinates: fakeCoordinates(),
+    })
     expect(facts.runtimeVersion).toBe('0.1.5-rc.2')
     expect(facts.targetFingerprint).toMatch(/^[0-9a-f]{64}$/)
   })
@@ -255,6 +269,7 @@ describe('H2 grader subject isolation', () => {
     const io = createDshGraderIo({
       runtime: createDshRuntime({ mode: 'checkout', dshRoot: 'C:/harness', spawnImpl: spawn }),
       layout: { scratchDir: tempDir() },
+      coordinates: fakeCoordinates(),
       environment: {},
       packImpl: ({ workspaceDir, outFile }: { workspaceDir: string; outFile: string }) => {
         packs.push({ workspaceDir, outFile })

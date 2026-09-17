@@ -3,8 +3,9 @@
 Status:
 
 ```text
-H2 HARNESS READY FOR THE TWO TECHNICAL DRY RUNS
-H2 SCORING BLOCKED: OBSERVATION ISOLATION NOT YET SOUND (see section 10)
+H2 HARNESS READY: observation isolation hardened, deletions ownership-guarded (see sections 10 and 21)
+H2 BUDGET AMENDED BEFORE SCORING: 24 completions / 600 s (section 11)
+H2 EXECUTION VENUE: manual GitHub Actions dispatch on main, package-mode published target (section 21)
 H2 OUTCOME NOT YET AVAILABLE
 ```
 
@@ -139,9 +140,11 @@ collapses to 0 vs 0 → `INCONCLUSIVE` **by construction**, after 36 paid observ
 
 Raising the limit is a resource-policy amendment with a real cost implication (a limit of 24 is
 roughly 1.5× the measured natural length and about 4× the token spend of the frozen 6), so it is an
-operator decision, not a harness detail: **the limit and its approved range must be re-derived and
-the preregistration re-frozen before `h2:run` spends anything.** The wall-clock bound of 180 s needs
-no change — the unbounded run used 107 s and both dry-run arms used under 45 s.
+operator decision, not a harness detail. **That decision was taken before any scoring outcome
+existed**: the amended values (24 completions, 600 s) are frozen in section 11, the preregistration
+receipt records them through its policy hash, and `h2:run` refuses to spend against a receipt whose
+policy hash does not match. No further change to these limits is authorised after a scoring outcome
+exists.
 
 Both receipts are permanently:
 
@@ -526,15 +529,18 @@ pnpm h2:validate --public-only   # 0 tokens, corpus-free (used by CI)
 pnpm h2:corpus-build        # authoring: build the private corpus manifest (0 tokens)
 pnpm h2:commitment          # authoring: publish the public commitment record (0 tokens)
 pnpm h2:author-check        # 0 tokens: initial FAIL / reference PASS for every task
+pnpm h2:preflight           # 0 tokens: corpus commitment, credential, deletion-guard self-test
 pnpm h2:freeze              # 0 tokens: immutable preregistration receipt
 pnpm h2:dry-run             # exactly 2 non-scoring technical observations
 pnpm h2:run                 # exactly 36 scoring observations (requires --confirm-scoring)
-pnpm h2:finalize            # 0 tokens: statistics and product report
+pnpm h2:finalize            # 0 tokens: statistics and product report (--out publishes it)
 ```
 
 `h2:run` refuses to start without a valid frozen preregistration receipt, a passing technical
-dry-run receipt for the same candidate/dataset/target, and an exact candidate match — and it stops
-immediately on infrastructure failure or model identity drift.
+dry-run receipt for the same candidate/dataset/target, a passing preflight report for the same
+dataset commitment and venue, and an exact candidate match — and it stops immediately on
+infrastructure failure or model identity drift. `--run-budget-minutes` bounds how long a single
+scoring job keeps scheduling observations; the job ceiling that owns the runner is 350 minutes.
 
 ## 17. Candidate freeze
 
@@ -553,8 +559,13 @@ result is liked or disliked.
 
 GitHub CI performs **deterministic validation only**: unit tests, corpus-commitment validation,
 schedule immutability, B/C parity, resource policy, statistics, grader mechanics, receipt
-sanitization, and package/build/lint/typecheck. There is no cron for H2 and no DeepSeek API call on
-push or pull request. Scoring runs only manually, locally, on the operator's machine.
+sanitization, and package/build/lint/typecheck. There is no cron for H2 and no model call on a push
+or a pull request.
+
+Paid scoring runs in **one manually dispatched workflow** (`.github/workflows/h2-scoring.yml`), from
+`main` only, bounded by a 350-minute job ceiling and an internal scheduling deadline. Section 21
+records why the venue moved there and what that changes. A unit test asserts that this workflow is
+the only lane in the repository that can reach `h2:run` or `h2:dry-run`.
 
 ## 19. Implementation map
 
@@ -703,3 +714,75 @@ same sense the corpus is. Only the SHA-256 commitment under `docs/evaluation/h2/
 receipts stay published, and neither carries hidden content. The dry run was re-run after the
 harness settled, as required — its receipt is bound to the candidate commit, so a harness change
 invalidates it by construction.
+
+## 21. Pre-scoring amendment (2026-09-17): execution venue and deletion safety
+
+No H2 provider outcome exists, so nothing below changes an experimental result. This amendment was
+forced by an operational incident and is recorded with the same discipline as section 4.1.
+
+**The incident.** The 16 September dry run was driven by an agent session on the operator's machine,
+and afterwards the operator's `~/.dsh` tree was gone: profiles, sessions, and plugin state had to be
+rebuilt. Forensics could neither prove nor exclude a code path (the agent transcript lived inside
+the deleted tree). What the audit did establish is the class of defect that makes such a loss
+possible, and it was real:
+
+- the observation path deleted directories computed from paths, and one primitive
+  (`runCompositionParityProbe`) removed a caller-supplied directory with no containment or ownership
+  check at all;
+- only `DSH_HOME` was redirected. Every spawned process — the agent, the graders, the launcher,
+  pnpm — inherited the operator's `HOME`, `USERPROFILE`, `TEMP`, and package-manager caches, so a
+  bug or a destructive command anywhere in that tree had real user state in reach.
+
+**Deletion is now ownership, not arithmetic** (`scripts/eval/lib/owned-tree.mjs`):
+
+- a tree is deletable only if this benchmark created it and wrote an ownership marker inside it;
+- removal requires that marker, a matching in-process token, an unchanged real path, strict
+  containment in the declared workspace root, and a target that neither is nor contains a protected
+  root;
+- `~/.dsh`, the DSH home, the temp directory, and the package-manager coordinates are protected
+  subtrees: nothing inside them is ever deleted, whatever the configured workspace root is;
+- child deletions are expressed relative to an owned tree, so an absolute path cannot become a
+  deletion target by accident;
+- an unowned directory is never deleted, not even to clean up a previous crash: it is a loud operator
+  error instead;
+- every removal is recorded in the run's deletion journal.
+
+**Every spawned process gets a disposable environment** (`scripts/eval/lib/disposable-environment.mjs`):
+home, user profile, temp, `DSH_HOME`, and the pnpm/npm/corepack caches all live inside the
+observation, and the child environment is built from an allowlist instead of inheriting the caller's.
+This mirrors the product's own verification worker. The frozen route's credential is the one
+exception, and it is explicitly forwarded as route configuration because a runner has no operator
+credential document.
+
+**The venue moved off the operator's machine.** Paid H2 execution now runs in GitHub Actions
+(`.github/workflows/h2-scoring.yml`), because an ephemeral runner makes the blast radius of any
+remaining defect a virtual machine instead of user state, and because the repository already has
+this machinery: H1 and the staged evaluation run paid model work there, with the private dataset
+delivered as a secret and verified against a public commitment. The corpus is stored as
+`secrets.H2_DATASET_GZIP_BASE64` (11 736 base64 bytes) and materialized into a random `mkdtemp`
+directory under the runner temp root; `~/.dsh` and the operator's home are not part of the run at
+all. `h2:preflight` proves the guard is active — it must refuse the operator's real DSH home and temp
+directory — and writes the protection report the paid commands re-check.
+
+Consequences recorded rather than hidden:
+
+1. **Target acquisition is package mode.** A runner has no harness checkout, so the frozen target is
+   the *published* `@deepseek-ai/dsh@0.1.5-rc.2` installed into a runner directory; the mode is part
+   of the receipt, and section 7's fingerprint is therefore re-derived by the freeze that runs inside
+   the scoring job. The train is unchanged; the acquisition path is not.
+2. **Corpus reach is re-derived for a single volume.** Section 10's "outside every ancestor of the
+   checkout" is unsatisfiable on a Linux runner, so the CI venue requires a random `mkdtemp`
+   directory under the runner temp root instead, never names it in the agent's environment, and
+   deletes it when the job ends.
+3. **Admission evidence is published.** A runner has no `.artifacts` tree, so the authoring
+   machine's admission artifact is committed as `docs/evaluation/h2/h2-author-check-v1.json`
+   (schema, dataset commitment, per-task ids and verdicts; no prompts, solutions, or grader bodies).
+4. **A scoring job is atomic.** Deferred retention keeps nothing durable before a terminal state, so
+   validate → preflight → freeze → dry run → scoring → finalize run in one job, bounded by
+   `--run-budget-minutes` inside the 350-minute ceiling. A run that dies before its terminal state
+   retains nothing and must be dispatched again; a stopped run is recorded as `STOPPED_INVALID` and
+   is never quietly continued.
+5. **A harness-only fix after a stopped run** re-seals the preregistration and starts a fresh full
+   run; the interrupted run's observations are retained as non-confirmatory evidence. A *product*
+   fix remains a new experiment version under section 17.
+

@@ -1,8 +1,10 @@
-import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { buildDisposableEnvironment } from '../lib/disposable-environment.mjs'
+import { createDeletionJournal, removeOwnedTree } from '../lib/owned-tree.mjs'
 import { H2_POLICY } from './h2-config.mjs'
 import { assertBcParity, buildArmComposition, pluginAddArgs } from './h2-composition.mjs'
 import {
@@ -22,7 +24,7 @@ import {
   parseSessionLog,
 } from './h2-telemetry.mjs'
 import { routePatchEntries, seedRouteCredentials, sessionAffinityValue } from './h2-route.mjs'
-import { applyCleanupPolicy, assertObservationRunRemoved, directoryDigestFrom, materializeWorkspace, observationLayout, observationRunRoot, prepareObservationDir } from './h2-workspace.mjs'
+import { applyCleanupPolicy, assertObservationRunRemoved, directoryDigestFrom, materializeWorkspace, observationLayout, prepareObservationDir } from './h2-workspace.mjs'
 
 export const H2_ACP_PROFILE = 'acp'
 
@@ -94,27 +96,6 @@ function delay(ms) {
 }
 
 /**
- * The environment the agent under test runs in: the operator environment minus
- * every `H2_*` variable.
- *
- * H2 owns that namespace, and the agent must not inherit it: `H2_DATASET_DIR`
- * alone would hand the agent the absolute path of the private corpus, and the
- * harness variables it genuinely needs are set explicitly by the caller. The
- * rule is a prefix rule rather than a list, so a new H2_ variable cannot leak
- * by being forgotten here.
- *
- * @param {{base?: Record<string, string | undefined>, overrides?: Record<string, string | undefined>}} [input]
- */
-export function buildAgentEnvironment({ base = process.env, overrides = {} } = {}) {
-  const env = {}
-  for (const [key, value] of Object.entries(base)) {
-    if (key.startsWith('H2_')) continue
-    env[key] = value
-  }
-  return { ...env, ...overrides }
-}
-
-/**
  * Bounds the ACP prompt await by the frozen wall clock. `session/cancel` is a
  * request, not a kill, so a stuck agent would otherwise run past the limit
  * indefinitely; once the limit is reached the session is cancelled, the agent
@@ -151,7 +132,20 @@ export async function runObservation({
 }) {
   if (retention !== 'live' && retention !== 'deferred') throw new Error(`unknown H2 retention policy: ${retention}`)
   const layout = observationLayout({ artifactRoot, runId, taskId: task.taskId, arm })
-  await prepareObservationDir(layout)
+  const { run, observation, coordinates } = prepareObservationDir({ artifactRoot, runId, layout })
+  const journal = createDeletionJournal({ runId })
+  // Everything a spawned process can name is built from the disposable
+  // coordinates: home, temp, DSH home, and the package-manager caches all live
+  // inside the observation, so a bug in a child process cannot reach real user
+  // state the way the 16 September incident did.
+  const disposableExtra = { DSH_PERMISSION_MODE: 'workspace-write', ...environment }
+  // The frozen route's credential is route configuration rather than inherited
+  // state: a CI runner has no operator credential document, so the one reference
+  // the frozen policy names is forwarded explicitly and nothing else is. The
+  // controller never reads, parses, or logs the value.
+  const credentialRef = H2_POLICY.model.credentialRef
+  const credentialValue = process.env[credentialRef]
+  if (typeof credentialValue === 'string' && credentialValue.length > 0) disposableExtra[credentialRef] = credentialValue
   const composition = buildArmComposition({ arm, toolchainTarball })
   // The environment every observation runs in is written before the profile's
   // first boot: the telemetry plane must be readable before anything is spent
@@ -188,15 +182,16 @@ export async function runObservation({
 
   try {
     digestBefore = await materializeWorkspace({
+      owned: observation,
+      targetRelativePath: 'workspace',
       sourceDir: task.workspaceDir,
-      targetDir: layout.workspaceDir,
       expectedSha256: task.contentHashes.workspaceSha256,
     })
 
     if (composition.pluginInstalls.length > 0) {
       for (const install of composition.pluginInstalls) {
         runtime.run(pluginAddArgs({ profile: composition.profile, tarball: install.tarball }), {
-          env: { ...environment, DSH_HOME: layout.dshHome, CI: 'true', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' },
+          env: buildDisposableEnvironment({ coordinates }),
           cwd: runtime.dshRoot ?? process.cwd(),
           timeout: 300_000,
         })
@@ -210,17 +205,9 @@ export async function runObservation({
       // The file policy is pinned instead of inherited: the agent must never be
       // able to write outside its own observation workspace, and an operator
       // shell that exports a wider mode must not silently widen the benchmark.
-      // Both arms get exactly this environment, with H2's own configuration
-      // stripped so the agent cannot read the private corpus path out of it.
-      env: buildAgentEnvironment({
-        overrides: {
-          ...environment,
-          DSH_HOME: layout.dshHome,
-          DSH_PERMISSION_MODE: 'workspace-write',
-          CI: 'true',
-          COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
-        },
-      }),
+      // Both arms get exactly this environment, and nothing outside the
+      // disposable coordinates is inherited at all.
+      env: buildDisposableEnvironment({ coordinates, extra: disposableExtra }),
     })
     const control = createAcpControlPlane({ transport })
     acp = control
@@ -348,7 +335,7 @@ export async function runObservation({
       grader = /** @type {any} */ (await runGrader({
         workspaceDir: layout.workspaceDir,
         grader: graderModule.grader,
-        io: graderIoFactory({ runtime, layout, environment }),
+        io: graderIoFactory({ runtime, layout, coordinates, environment }),
       }))
     } catch (error) {
       grader = { status: 'not-run', checks: [{ name: 'grader', status: 'fail', detail: String(error?.message ?? error).slice(0, 400) }] }
@@ -397,18 +384,21 @@ export async function runObservation({
   // run directory goes, not just this observation's subtree, because even empty
   // task/arm directories disclose which cells have already run; the caller
   // flushes the retained evidence only when the run reaches a terminal state.
+  // The deletion goes through the run's ownership handle: the path is never
+  // recomputed, and the guard refuses any target that is not the tree this run
+  // created.
   if (retention === 'deferred') {
-    await rm(observationRunRoot({ artifactRoot, runId }), { recursive: true, force: true })
+    removeOwnedTree({ handle: run, journal })
     await assertObservationRunRemoved({ artifactRoot, runId })
   } else {
     await writeFile(join(layout.receiptsDir, 'observation.json'), `${JSON.stringify({
       ...receipt,
       ...(infrastructureError === null ? {} : { infrastructureFailure: 'INFRASTRUCTURE_FAILURE' }),
     }, null, 2)}\n`, 'utf8')
-    await applyCleanupPolicy(layout, 'scratch')
+    await applyCleanupPolicy({ owned: observation, mode: 'scratch' })
   }
 
-  return Object.freeze({ receipt, layout, infrastructureError })
+  return Object.freeze({ receipt, layout, infrastructureError, journal: journal.entries() })
 }
 
 /**

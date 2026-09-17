@@ -9,13 +9,16 @@
  * dry-run receipt.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, readdir, rm } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
+import { createDisposableCoordinates, buildDisposableEnvironment, ensureDisposableCoordinates } from '../lib/disposable-environment.mjs'
+import { assertDeletableTarget, createOwnedTree, removeOwnedTree, resolveProtectedRoots } from '../lib/owned-tree.mjs'
 import { H2_POLICY, H2_STRATA, assertH2PolicyIntegrity } from './h2-config.mjs'
 import { assertCommitmentRecord, buildCommitmentRecord } from './h2-commitment.mjs'
 import { H2_ACP_PROFILE, assertBcParity, buildArmComposition } from './h2-composition.mjs'
@@ -41,12 +44,29 @@ const DOCS_DIR = join(REPO_ROOT, 'docs', 'evaluation', 'h2')
 const ARTIFACT_ROOT = join(REPO_ROOT, '.artifacts', 'h2')
 const COMMITMENT_FILE = join(DOCS_DIR, 'h2-commitment-v1.json')
 const AUTHOR_CHECK_SCHEMA = 'dsh-toolchain-h2-author-check-v1'
-const AUTHOR_CHECK_FILE = join(ARTIFACT_ROOT, 'author-check.json')
+/**
+ * Admission evidence is produced once, on the authoring machine, and published so
+ * a scoring job can verify it without re-admitting the private corpus: a GitHub
+ * runner has no `.artifacts` tree from the operator.
+ */
+const AUTHOR_CHECK_FILE = process.env.H2_AUTHOR_CHECK_FILE ?? join(ARTIFACT_ROOT, 'author-check.json')
 const PREREGISTRATION_FILE = join(DOCS_DIR, 'h2-preregistration-receipt-v1.json')
 const CALIBRATION_DIR = join(DOCS_DIR, 'calibration')
 const DEFAULT_DATASET_DIR = process.env.H2_DATASET_DIR ?? join(REPO_ROOT, '.artifacts', 'h2-dataset-v1')
 const DEFAULT_DSH_ROOT = process.env.H2_DSH_ROOT ?? 'C:\\Reposit\\deepseek-harness\\deepseek-harness'
 const DEFAULT_DSH_TRAIN = process.env.H2_DSH_TRAIN ?? '@deepseek-ai/dsh@0.1.5-rc.2'
+/**
+ * How the frozen target is acquired. The operator machine runs the local
+ * checkout it develops against; a GitHub runner has no such checkout, so it
+ * installs the published train of the same version into a runner directory and
+ * drives that. The mode is part of the preregistration receipt, so a receipt
+ * sealed in one mode can never be silently reused in the other.
+ */
+const DSH_MODE = process.env.H2_DSH_MODE ?? 'checkout'
+/** Where the benchmark is running: `local` (operator machine) or `ci` (runner). */
+const H2_VENUE = process.env.H2_VENUE ?? 'local'
+/** Scratch root a CI job materializes the private corpus into. */
+const H2_CI_TEMP_ROOT = process.env.H2_CI_TEMP_ROOT ?? tmpdir()
 /**
  * Committed evaluation surfaces that must stay disjoint from the hidden corpus,
  * so no hidden task can be recycled from disclosed material and no public
@@ -65,7 +85,29 @@ export const H2_DISCLOSED_ROOTS = Object.freeze([
 const DISCLOSED_ROOTS = H2_DISCLOSED_ROOTS
 
 function runtime() {
+  if (DSH_MODE === 'package') {
+    return createDshRuntime({ mode: 'package', dshRoot: DEFAULT_DSH_ROOT, train: DEFAULT_DSH_TRAIN })
+  }
   return createDshRuntime({ mode: 'checkout', dshRoot: DEFAULT_DSH_ROOT, train: DEFAULT_DSH_TRAIN })
+}
+
+/**
+ * Runs one DSH probe (a version resolve) under coordinates that are owned and
+ * disposable, so even a command that only reports a version never inherits the
+ * operator's home, temp directory, or package-manager state.
+ */
+function withCheckCoordinates(run) {
+  const handle = createOwnedTree({
+    workspaceRoot: ARTIFACT_ROOT,
+    dir: join(ARTIFACT_ROOT, 'checks', `check-${randomUUID().slice(0, 12)}`),
+    kind: 'check',
+    runId: 'checks',
+  })
+  try {
+    return run(ensureDisposableCoordinates(createDisposableCoordinates({ root: handle.root })))
+  } finally {
+    removeOwnedTree({ handle })
+  }
 }
 
 /**
@@ -75,27 +117,48 @@ function runtime() {
  * trains silently, and no artifact written afterwards could reveal it.
  */
 function liveTarget() {
-  return describeTargetFacts({
+  return withCheckCoordinates(coordinates => describeTargetFacts({
     runtime: runtime(),
     profile: H2_ACP_PROFILE,
     dshTrain: DEFAULT_DSH_TRAIN,
     dshRootVersion: dshRootVersion(),
-    env: {},
-  })
+    coordinates,
+  }))
 }
 
 /**
  * The private corpus must not live where the agent under test can name it. DSH
  * confines writes, not reads, and the hidden task id is part of the agent's own
  * working path, so a corpus inside the observation checkout lets an agent read
- * the reference solution for its own task. Scored observations therefore fail
- * closed unless the corpus root is outside the checkout, outside every ancestor
- * of it, and outside the operator's home and the temp directory — and unless no
- * in-repo copy of the corpus is left behind to defeat the guard.
+ * the reference solution for its own task.
+ *
+ * The rule differs by venue, and the difference is explicit rather than a
+ * relaxation. On the operator machine the corpus must be outside the checkout,
+ * outside every ancestor of it, and outside the home and temp directories. A
+ * GitHub runner has a single volume, so "outside every ancestor" is impossible
+ * there; the CI rule therefore requires the corpus to come from a random
+ * `mkdtemp` directory under the runner temp root, which is unguessable, is never
+ * named in the agent's environment, and is removed when the run ends.
  */
 function assertCorpusOutsideAgentReach({ datasetDir }) {
   const corpus = resolve(datasetDir)
   const repoRoot = resolve(REPO_ROOT)
+  if (H2_VENUE === 'ci') {
+    if (corpus === repoRoot || corpus.startsWith(`${repoRoot}${sep}`)) {
+      throw new Error(`H2 refuses to spend scoring observations while the private corpus is inside the checkout (${corpus}).`)
+    }
+    const tempRoot = resolve(H2_CI_TEMP_ROOT)
+    if (corpus !== tempRoot && !corpus.startsWith(`${tempRoot}${sep}`)) {
+      throw new Error(`H2 CI runs require the private corpus under the runner temp root (${tempRoot}), got ${corpus}.`)
+    }
+    if (!/[-_][A-Za-z0-9]{6,}$/.test(corpus)) {
+      throw new Error(
+        `H2 CI runs require the private corpus in a random mkdtemp directory, got ${corpus}. `
+        + 'A predictable corpus path is a path the agent under test can guess.',
+      )
+    }
+    return assertNoInRepoCorpus({ corpus })
+  }
   const forbidden = [repoRoot, ...ancestorsOf(repoRoot), homedir(), tmpdir()]
   for (const root of forbidden) {
     const resolved = resolve(root)
@@ -107,6 +170,11 @@ function assertCorpusOutsideAgentReach({ datasetDir }) {
       )
     }
   }
+  return assertNoInRepoCorpus({ corpus })
+}
+
+/** No in-repo copy of the corpus may exist, in either venue. */
+function assertNoInRepoCorpus({ corpus }) {
   const inRepoCopy = join(ARTIFACT_ROOT, '..', 'h2-dataset-v1', 'manifest.json')
   if (existsSync(inRepoCopy)) {
     throw new Error(
@@ -321,9 +389,10 @@ function assertDatasetAdmission({ datasetSha256, taskIds }) {
 
 function environmentChecks() {
   const checks = {}
+  checks.dshMode = DSH_MODE
   checks.dshRoot = existsSync(DEFAULT_DSH_ROOT) ? 'ok' : `missing: ${DEFAULT_DSH_ROOT}`
   if (checks.dshRoot !== 'ok') throw new Error(`H2 DSH runtime not found: ${DEFAULT_DSH_ROOT} (set H2_DSH_ROOT)`)
-  const version = runtime().version({})
+  const version = withCheckCoordinates(coordinates => runtime().version(buildCheckEnvironment(coordinates)))
   checks.dshVersion = version
   const expectedVersion = DEFAULT_DSH_TRAIN.split('@').pop()
   if (version !== expectedVersion) {
@@ -345,6 +414,11 @@ function environmentChecks() {
   }
   checks.node = process.version
   return checks
+}
+
+/** The disposable environment a version or target probe runs in. */
+function buildCheckEnvironment(coordinates) {
+  return buildDisposableEnvironment({ coordinates })
 }
 
 async function packCandidate() {
@@ -423,13 +497,13 @@ async function commandFreeze(args) {
   const environment = environmentChecks()
   const candidatePack = await packCandidate()
   const gitCommitSha = gitHead()
-  const target = describeTargetFacts({
+  const target = withCheckCoordinates(coordinates => describeTargetFacts({
     runtime: runtime(),
     profile: 'acp',
     dshTrain: DEFAULT_DSH_TRAIN,
     dshRootVersion: dshRootVersion(),
-    env: {},
-  })
+    coordinates,
+  }))
   const receipt = buildPreregistrationReceipt({
     candidate: {
       gitCommitSha,
@@ -489,6 +563,114 @@ function requirePreregistration() {
   return receipt
 }
 
+/**
+ * Proves that the deletion guard is the one that would actually run, using the
+ * operator's real protected paths as negative cases. A guard that has been
+ * weakened, bypassed, or replaced cannot report this result, because the checks
+ * below call the same functions a deletion calls.
+ */
+function guardSelfTest() {
+  const negative = []
+  const probeTargets = [
+    ['operator-dsh-home', resolve(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'profiles', 'web')],
+    ['temp-directory', resolve(tmpdir(), 'h2-guard-probe', 'nested')],
+  ]
+  for (const [label, target] of probeTargets) {
+    let refused = false
+    try {
+      assertDeletableTarget({ target, workspaceRoot: ARTIFACT_ROOT })
+    } catch {
+      refused = true
+    }
+    negative.push({ label, target, refused })
+    if (!refused) throw new Error(`H2 deletion guard did not refuse the protected path ${target}; refusing to spend a run`)
+  }
+  const handle = createOwnedTree({
+    workspaceRoot: ARTIFACT_ROOT,
+    dir: join(ARTIFACT_ROOT, 'preflight', `guard-${randomUUID().slice(0, 12)}`),
+    kind: 'guard-probe',
+    runId: 'preflight',
+  })
+  writeFileSync(join(handle.root, 'probe.txt'), 'guard probe\n', 'utf8')
+  removeOwnedTree({ handle })
+  if (existsSync(handle.root)) throw new Error('H2 deletion guard did not remove its own probe tree')
+  return Object.freeze({
+    probeRoot: handle.root,
+    createAndRemove: 'ok',
+    refusedProtectedPaths: negative,
+    protectedRoots: resolveProtectedRoots().length,
+  })
+}
+
+const PREFLIGHT_FILE = join(ARTIFACT_ROOT, 'preflight', 'protection-report.json')
+const PREFLIGHT_SCHEMA = 'dsh-toolchain-h2-protection-report-v1'
+
+function requirePreflight({ datasetSha256 }) {
+  if (!existsSync(PREFLIGHT_FILE)) {
+    throw new Error(`H2 requires a passing preflight before spending: missing ${PREFLIGHT_FILE}. Run: pnpm h2:preflight`)
+  }
+  const report = readJsonFile(PREFLIGHT_FILE)
+  if (report.schema !== PREFLIGHT_SCHEMA) throw new Error('H2 preflight report schema mismatch')
+  if (report.dataset?.datasetSha256 !== datasetSha256) {
+    throw new Error('H2 preflight report was produced for a different dataset commitment; re-run pnpm h2:preflight')
+  }
+  if (report.venue !== H2_VENUE || report.dshMode !== DSH_MODE) {
+    throw new Error(`H2 preflight report is for venue ${String(report.venue)}/${String(report.dshMode)}, not ${H2_VENUE}/${DSH_MODE}`)
+  }
+  if (report.credentialResolvable !== true) throw new Error('H2 preflight report did not resolve the frozen route credential')
+  if (report.guard?.createAndRemove !== 'ok') throw new Error('H2 preflight report does not attest the deletion guard')
+  return report
+}
+
+/**
+ * Zero-token readiness gate: the frozen policy and commitment, the corpus
+ * materialized against that commitment, admission for every committed task, the
+ * disposable-environment exercise, and the deletion guard's own self-test. The
+ * report is what the paid commands re-check, so a weakened guard or a stale
+ * corpus cannot reach a scoring observation.
+ */
+async function commandPreflight(args) {
+  const datasetDir = assertCorpusOutsideAgentReach({ datasetDir: args.values.dataset ?? DEFAULT_DATASET_DIR })
+  const { record } = assertPublicValidation()
+  const corpus = await assertCorpusMatchesRecord({ record, datasetDir })
+  const admission = assertDatasetAdmission({ datasetSha256: corpus.dataset.sha256, taskIds: corpus.tasks.map(task => task.taskId) })
+  const environment = environmentChecks()
+  const guard = guardSelfTest()
+  const credentials = credentialSources()
+  const report = {
+    schema: PREFLIGHT_SCHEMA,
+    generatedAt: new Date().toISOString(),
+    venue: H2_VENUE,
+    dshMode: DSH_MODE,
+    dshRoot: DEFAULT_DSH_ROOT,
+    dshTrain: DEFAULT_DSH_TRAIN,
+    node: process.version,
+    dataset: { dir: datasetDir, tasks: corpus.tasks.length, datasetSha256: corpus.dataset.sha256 },
+    admission: { generatedAt: admission.generatedAt, stability: admission.stability, taskCount: admission.checkedTaskIds.length },
+    environment,
+    credentialResolvable: credentials.resolvable,
+    guard,
+  }
+  await mkdir(resolve(PREFLIGHT_FILE, '..'), { recursive: true })
+  await writeJson(PREFLIGHT_FILE, report)
+  process.stdout.write(`${JSON.stringify({
+    command: 'h2:preflight',
+    report: PREFLIGHT_FILE,
+    venue: report.venue,
+    dshMode: report.dshMode,
+    datasetSha256: report.dataset.datasetSha256,
+    guard: report.guard.refusedProtectedPaths,
+    credentialResolvable: report.credentialResolvable,
+  }, null, 2)}\n`)
+  if (!credentials.resolvable) {
+    throw new Error(
+      `H2 cannot resolve the frozen route credential ${credentials.ref} from the environment or the operator credential document; `
+      + 'the paid run would fail at its first model call.',
+    )
+  }
+  return report
+}
+
 async function commandDryRun(args) {
   const preregistration = requirePreregistration()
   const candidatePack = await packCandidate()
@@ -511,6 +693,7 @@ async function commandDryRun(args) {
   }
   assertRunCompositionParity({ toolchainTarball: candidatePack.path })
   const runId = `technical-dry-run-${shortSha(candidatePack.sha256)}`
+  requirePreflight({ datasetSha256: preregistration.dataset.commitmentSha256 })
   const receiptPath = join(ARTIFACT_ROOT, runId, 'technical-dry-run.json')
   if (existsSync(receiptPath) && args.values['confirm-technical-rerun'] !== true) {
     throw new Error(`a technical dry-run receipt already exists at ${receiptPath}; pass --confirm-technical-rerun to spend again deliberately`)
@@ -520,7 +703,9 @@ async function commandDryRun(args) {
   // by exactly the Toolchain row.
   const compositionParity = runCompositionParityProbe({
     runtime: runtime(),
+    workspaceRoot: ARTIFACT_ROOT,
     baseDir: join(ARTIFACT_ROOT, runId, 'composition-parity'),
+    runId,
     profile: H2_ACP_PROFILE,
     toolchainTarball: candidatePack.path,
   })
@@ -606,6 +791,7 @@ async function commandRun(args) {
     expected: { datasetSha256: record.datasetSha256, gitCommitSha, targetFingerprint: target.targetFingerprint },
   })
   assertRunCompositionParity({ toolchainTarball: candidatePack.path })
+  requirePreflight({ datasetSha256: record.datasetSha256 })
 
   // A fresh run id per invocation: a deterministic id let a re-run overwrite
   // the receipts of an aborted run while the previous ledger was still on disk,
@@ -616,9 +802,27 @@ async function commandRun(args) {
   const byId = new Map(corpus.tasks.map(task => [task.taskId, task]))
   const ledger = { runId, startedAt: new Date().toISOString(), entries: [], stopped: false, stopReason: null }
   const retained = []
+  const deletions = []
+  /**
+   * The job that owns this run has a hard ceiling, and deferred retention keeps
+   * nothing durable before a terminal state, so the run stops scheduling new
+   * observations before the ceiling instead of being killed by it. The stop is a
+   * recorded `STOPPED_INVALID` terminal, never a silent truncation.
+   */
+  const runBudgetMs = args.values['run-budget-minutes'] === undefined
+    ? 270 * 60_000
+    : Number(args.values['run-budget-minutes']) * 60_000
+  if (!Number.isSafeInteger(runBudgetMs) || runBudgetMs <= 0) throw new Error('--run-budget-minutes must be a positive integer')
+  const runDeadline = Date.now() + runBudgetMs
   for (const entry of schedule.entries) {
+    if (Date.now() >= runDeadline) {
+      ledger.stopped = true
+      ledger.stopReason = 'RUN_BUDGET_EXHAUSTED'
+      process.stdout.write(`H2 scoring stopped before observation ${entry.ordinal}/${schedule.entries.length}: run budget of ${runBudgetMs / 60_000} minutes is spent\n`)
+      break
+    }
     const task = byId.get(entry.taskId)
-    const { receipt } = await runObservation({
+    const { receipt, journal } = await runObservation({
       arm: entry.arm,
       task,
       runtime: runtime(),
@@ -627,6 +831,7 @@ async function commandRun(args) {
       artifactRoot: ARTIFACT_ROOT,
       retention: 'deferred',
     })
+    for (const record of journal ?? []) deletions.push(record)
     retained.push({ taskId: entry.taskId, arm: entry.arm, receipt })
     ledger.entries.push({
       ordinal: entry.ordinal,
@@ -654,6 +859,9 @@ async function commandRun(args) {
   // The run has reached a terminal state, so the retained evidence may now
   // become durable.
   await flushRunEvidence({ runDir, ledger, observations: retained })
+  // The deletion journal is part of the run's evidence: it records every tree the
+  // benchmark removed, so an operator can read after the fact what a run touched.
+  await writeJson(join(runDir, 'deletion-journal.json'), { schema: 'dsh-toolchain-h2-deletion-journal-v1', runId, entries: deletions })
   const report = buildH2Report({ runId, receipts: retained.map(observation => observation.receipt), generatedAt: new Date().toISOString() })
   await writeJson(join(runDir, 'report.json'), report)
   process.stdout.write(`${JSON.stringify({
@@ -688,6 +896,18 @@ async function commandFinalize(args) {
   }
   const report = buildH2Report({ runId: ledger.runId, receipts: receiptFiles, generatedAt: new Date().toISOString() })
   await writeJson(join(runDir, 'report.json'), report)
+  // Publishing is a generator-owned step: `--out` writes the same report to the
+  // committed location instead of a human copying it, so the published artifact
+  // and the run artifact cannot drift apart. A report that never reached a
+  // terminal measurement is refused rather than published.
+  if (args.values.out !== undefined) {
+    if (report.status !== 'COMPLETE') {
+      throw new Error(`refusing to publish a non-terminal H2 report (status ${String(report.status)}); the run did not resolve every observation`)
+    }
+    const out = resolve(args.values.out)
+    await mkdir(resolve(out, '..'), { recursive: true })
+    await writeJson(out, report)
+  }
   process.stdout.write(`${JSON.stringify({
     command: 'h2:finalize',
     runId: ledger.runId,
@@ -695,6 +915,7 @@ async function commandFinalize(args) {
     measurement: report.measurement,
     decision: report.decision,
     primary: report.primary,
+    published: args.values.out ?? null,
   }, null, 2)}\n`)
   return report
 }
@@ -715,15 +936,26 @@ async function commandAuthorCheck(args) {
     const observed = []
     let initialDigest = null
     for (let round = 1; round <= stability; round += 1) {
-      const layout = observationLayout({ artifactRoot: ARTIFACT_ROOT, runId: `author-check-r${round}`, taskId: task.taskId, arm: 'B' })
-      await prepareObservationDir(layout)
-      initialDigest = await materializeWorkspace({ sourceDir: task.workspaceDir, targetDir: layout.workspaceDir, expectedSha256: task.contentHashes.workspaceSha256 })
-      const io = createDshGraderIo({ runtime: dshRuntime, layout, environment: {} })
+      const runId = `author-check-r${round}`
+      const layout = observationLayout({ artifactRoot: ARTIFACT_ROOT, runId, taskId: task.taskId, arm: 'B' })
+      const { observation, run, coordinates } = prepareObservationDir({ artifactRoot: ARTIFACT_ROOT, runId, layout })
+      initialDigest = await materializeWorkspace({
+        owned: observation,
+        targetRelativePath: 'workspace',
+        sourceDir: task.workspaceDir,
+        expectedSha256: task.contentHashes.workspaceSha256,
+      })
+      const io = createDshGraderIo({ runtime: dshRuntime, layout, coordinates })
       const initial = await runGrader({ workspaceDir: layout.workspaceDir, grader: graderModule.grader, io })
-      await materializeWorkspace({ sourceDir: task.referenceFixDir, targetDir: layout.workspaceDir, expectedSha256: task.contentHashes.referenceFixSha256 })
+      await materializeWorkspace({
+        owned: observation,
+        targetRelativePath: 'workspace',
+        sourceDir: task.referenceFixDir,
+        expectedSha256: task.contentHashes.referenceFixSha256,
+      })
       const reference = await runGrader({ workspaceDir: layout.workspaceDir, grader: graderModule.grader, io })
       observed.push({ initial: initial.status, reference: reference.status })
-      await rm(layout.root, { recursive: true, force: true })
+      removeOwnedTree({ handle: run })
     }
     const stable = observed.every(round => round.initial === observed[0].initial && round.reference === observed[0].reference)
     const admissible = stable && observed[0].initial === 'fail' && observed[0].reference === 'pass'
@@ -777,6 +1009,7 @@ async function main() {
       'public-only': { type: 'boolean' },
       'confirm-scoring': { type: 'boolean' },
       'confirm-technical-rerun': { type: 'boolean' },
+      'run-budget-minutes': { type: 'string' },
       force: { type: 'boolean' },
     },
     allowPositionals: false,
@@ -785,13 +1018,14 @@ async function main() {
     case 'validate': return commandValidate(args)
     case 'corpus-build': return commandCorpusBuild(args)
     case 'commitment': return commandCommitment(args)
+    case 'preflight': return commandPreflight(args)
     case 'freeze': return commandFreeze(args)
     case 'dry-run': return commandDryRun(args)
     case 'run': return commandRun(args)
     case 'finalize': return commandFinalize(args)
     case 'author-check': return commandAuthorCheck(args)
     default:
-      process.stderr.write(`usage: node scripts/eval/h2/h2-cli.mjs <validate|corpus-build|commitment|freeze|dry-run|run|finalize|author-check> [flags]\n`)
+      process.stderr.write(`usage: node scripts/eval/h2/h2-cli.mjs <validate|corpus-build|commitment|preflight|freeze|dry-run|run|finalize|author-check> [flags]\n`)
       process.exitCode = 2
       return undefined
   }

@@ -1,15 +1,23 @@
-import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { cp, readdir, stat } from 'node:fs/promises'
+import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, relative, resolve, sep } from 'node:path'
 
+import { createDisposableCoordinates, ensureDisposableCoordinates } from '../lib/disposable-environment.mjs'
+import { OWNED_TREE_MARKER, createOwnedTree, removeOwnedChild, removeOwnedTree, resetOwnedChild } from '../lib/owned-tree.mjs'
 import { directoryDigest } from './h2-util.mjs'
 
 export const H2_ARTIFACT_ROOT = '.artifacts/h2'
 
+/** Children that survive the scratch cleanup because a receipt is evidence. */
+const RETAINED_CHILDREN = Object.freeze(['receipts'])
+
 /**
  * Per-observation layout. Every observation gets a completely fresh
- * environment: its own DSH home, workspace, scratch area, and receipts.
+ * environment: its own DSH home, user home, temp directory, workspace, scratch
+ * area, and receipts. All of them are disposable coordinates, so a spawned
+ * process can reach neither the operator's home, their temp directory, nor
+ * their package-manager state.
  *
  * @typedef {object} H2ObservationLayout
  * @property {string} root
@@ -58,7 +66,8 @@ export function assertArtifactRootInsideRepo({ artifactRoot, repoRoot }) {
 
 /**
  * Refuses any observation DSH home that could alias real user state. H2 must
- * never read or mutate the operator's `~/.dsh`.
+ * never read or mutate the operator's `~/.dsh`. The deletion guard refuses the
+ * same roots; this check keeps the reason visible where the home is chosen.
  *
  * @param {string} dshHome
  * @param {{forbiddenHomes?: string[], artifactRoot?: string}} [options]
@@ -81,33 +90,45 @@ export function assertIsolatedDshHome(dshHome, { forbiddenHomes = [], artifactRo
   return resolved
 }
 
-/** Creates (or resets) the observation directory tree. */
-export async function prepareObservationDir(layout) {
-  await rm(layout.root, { recursive: true, force: true })
+/**
+ * Creates (or resets) one observation and returns the handles that own it.
+ *
+ * Ownership is the whole point: the run directory and the observation directory
+ * are registered with the deletion guard, and every later removal goes through
+ * those handles instead of re-computing a path. A deterministic name that
+ * already exists is reset only when it carries the benchmark's own marker, so a
+ * leftover directory this benchmark did not create is never deleted.
+ *
+ * @param {{artifactRoot: string, runId: string, layout: H2ObservationLayout}} input
+ */
+export function prepareObservationDir({ artifactRoot, runId, layout }) {
+  const runRoot = observationRunRoot({ artifactRoot, runId })
+  const run = createOwnedTree({ workspaceRoot: resolve(artifactRoot), dir: runRoot, kind: 'run', runId, reset: true })
+  const observation = createOwnedTree({ workspaceRoot: runRoot, dir: layout.root, kind: 'observation', runId, reset: true })
   for (const dir of [layout.dshHome, layout.workspaceDir, layout.scratchDir, layout.receiptsDir]) {
-    await mkdir(dir, { recursive: true })
+    mkdirSync(dir, { recursive: true })
   }
-  assertIsolatedDshHome(layout.dshHome, { artifactRoot: resolve(layout.root, '..', '..', '..') })
-  return layout
+  assertIsolatedDshHome(layout.dshHome, { artifactRoot: runRoot })
+  const coordinates = ensureDisposableCoordinates(createDisposableCoordinates({ root: layout.root }))
+  return Object.freeze({ layout, run, observation, coordinates })
 }
 
 /**
- * Copies one hidden initial workspace into the observation and proves the
- * copy matches the committed corpus digest before any model token is spent.
- * A mismatch is a fail-closed dataset/workspace integrity failure.
+ * Copies one hidden initial workspace (or its reference fix) into an owned child
+ * of an observation and proves the copy matches the committed corpus digest
+ * before any model token is spent. A mismatch is a fail-closed dataset/workspace
+ * integrity failure.
  *
- * `expectedSha256` is optional so callers without a commitment to hand (the
- * authoring tools) can materialize a workspace for inspection.
+ * The target is a *relative* child of the owned observation, so no absolute path
+ * is ever handed to a deletion.
  *
- * @param {{sourceDir: string, targetDir: string, expectedSha256?: string | null}} input
+ * @param {{owned: any, targetRelativePath: string, sourceDir: string, expectedSha256?: string | null}} input
  */
-export async function materializeWorkspace({ sourceDir, targetDir, expectedSha256 }) {
+export async function materializeWorkspace({ owned, targetRelativePath, sourceDir, expectedSha256 }) {
   const source = resolve(sourceDir)
-  const target = resolve(targetDir)
   const info = await stat(source)
   if (!info.isDirectory()) throw new Error(`H2 initial workspace is not a directory: ${source}`)
-  await rm(target, { recursive: true, force: true })
-  await mkdir(target, { recursive: true })
+  const target = resetOwnedChild({ handle: owned, relativePath: targetRelativePath })
   await cp(source, target, { recursive: true, errorOnExist: false })
   const digest = await directoryDigest(target)
   if (expectedSha256 !== undefined && digest !== expectedSha256) {
@@ -116,29 +137,29 @@ export async function materializeWorkspace({ sourceDir, targetDir, expectedSha25
   return digest
 }
 
-/** Removes an observation directory (cleanup is attempted on every path). */
-export async function cleanupObservation(layout) {
-  await rm(layout.root, { recursive: true, force: true })
+/** Removes only the disposable parts of an observation, keeping its receipts. */
+export async function cleanupObservationScratch({ owned }) {
+  for (const name of await readdir(owned.root)) {
+    if (RETAINED_CHILDREN.includes(name) || name === OWNED_TREE_MARKER) continue
+    removeOwnedChild({ handle: owned, relativePath: name })
+  }
+  return true
 }
 
-/**
- * Removes only the heavy, disposable parts of an observation (the DSH home
- * with its profile package graph and the scratch area) while retaining the
- * workspace and receipts for auditability.
- */
-export async function cleanupObservationScratch(layout) {
-  await rm(layout.dshHome, { recursive: true, force: true })
-  await rm(layout.scratchDir, { recursive: true, force: true })
+/** Removes an owned observation tree entirely. */
+export function cleanupObservation({ owned }) {
+  removeOwnedTree({ handle: owned })
+  return true
 }
 
-/** Applies the frozen cleanup policy: `scratch` (default), `full`, or `none`. */
-export async function applyCleanupPolicy(layout, mode = 'scratch') {
+/** Applies the cleanup policy: `scratch` (default), `full`, or `none`. */
+export async function applyCleanupPolicy({ owned, mode = 'scratch' }) {
   if (mode === 'full') {
-    await cleanupObservation(layout)
+    cleanupObservation({ owned })
     return mode
   }
   if (mode === 'scratch') {
-    await cleanupObservationScratch(layout)
+    await cleanupObservationScratch({ owned })
     return mode
   }
   if (mode === 'none') return mode
@@ -148,15 +169,15 @@ export async function applyCleanupPolicy(layout, mode = 'scratch') {
 /**
  * Proves that nothing of a run's observations is left on disk.
  *
- * Deferred retention rests on the absence of reachable bytes, not on a
- * boundary: the target train fences writes but not reads, so a workspace that
- * outlives its observation — and it contains a working solution to the very
- * task — or a receipt that outlives it (outcome label, schedule position) is
- * readable by the next agent under test and would couple the paired arms the
- * McNemar test consumes. Empty run directories are removed too, because their
- * task/arm names still disclose which observations have already run. The
- * deletion is verified rather than assumed, and a surviving tree stops the run
- * instead of quietly poisoning it.
+ * Retained evidence rests on the absence of reachable bytes, not on a boundary:
+ * the target train fences writes but not reads, so a workspace that outlives its
+ * observation — and it contains a working solution to the very task — or a
+ * receipt that outlives it (outcome label, schedule position) is readable by the
+ * next agent under test and would couple the paired arms the McNemar test
+ * consumes. Empty run directories are removed too, because their task/arm names
+ * still disclose which observations have already run. The deletion is verified
+ * rather than assumed, and a surviving tree stops the run instead of quietly
+ * poisoning it.
  *
  * @param {{artifactRoot?: string, runId: string}} input
  */
@@ -177,8 +198,8 @@ export async function directoryDigestFrom(dir) {
 }
 
 /** Relative, POSIX-style path of an observation file (for receipts). */
-export function relativeObservationPath(layout, absolute) {
-  return relative(layout.root, absolute).split(sep).join('/')
+export function relativeObservationPath({ owned, absolute }) {
+  return relative(owned.root, absolute).split(sep).join('/')
 }
 
 /** Reads a directory listing sorted deterministically (test/introspection helper). */

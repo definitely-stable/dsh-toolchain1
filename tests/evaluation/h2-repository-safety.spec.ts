@@ -52,14 +52,36 @@ describe('H2 repository safety', () => {
     }
   })
 
-  it('never schedules paid H2 work in CI', async () => {
+  it('runs paid H2 work only from the manual scoring workflow', async () => {
     const { readdir } = await import('node:fs/promises')
     const workflows = await readdir(resolve('.github/workflows'))
+    const paid: string[] = []
     for (const name of workflows) {
       const text = await readFile(join('.github/workflows', name), 'utf8')
-      expect(text).not.toMatch(/h2:run|h2:dry-run|h2-cli\.mjs (run|dry-run)/)
+      if (/h2:run|h2:dry-run|h2-cli\.mjs (run|dry-run)/.test(text)) paid.push(name)
     }
+    // Exactly one lane may spend model budget, and it is dispatched by hand.
+    expect(paid).toEqual(['h2-scoring.yml'])
+
+    const scoring = await readFile(join('.github/workflows', 'h2-scoring.yml'), 'utf8')
+    expect(scoring).toMatch(/^\s{2}workflow_dispatch:/m)
+    expect(scoring).not.toMatch(/^\s{2}(push|pull_request|schedule):/m)
+    expect(scoring).toContain('refs/heads/main')
+    expect(scoring).toContain('secrets.H2_DATASET_GZIP_BASE64')
+    expect(scoring).toContain('--confirm-scoring')
+
     const ci = await readFile(join('.github/workflows', 'ci.yml'), 'utf8')
     expect(ci).toContain('h2-cli.mjs validate --public-only')
+  })
+
+  it('publishes the admission evidence a scoring job needs, without hidden content', async () => {
+    const admissionPath = join(H2_DOCS, 'h2-author-check-v1.json')
+    expect(existsSync(admissionPath)).toBe(true)
+    const admission = JSON.parse(await readFile(admissionPath, 'utf8'))
+    expect(admission.schema).toBe('dsh-toolchain-h2-author-check-v1')
+    expect(admission.allAdmissible).toBe(true)
+    expect(admission.coversCorpus).toBe(true)
+    expect(admission.checkedTaskIds).toHaveLength(H2_POLICY.taskCount)
+    expect(JSON.stringify(admission)).not.toMatch(/mustContain|expectRows|export const grader|reference-fix/)
   })
 })
