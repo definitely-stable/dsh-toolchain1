@@ -10,7 +10,9 @@ import { H2_POLICY } from './h2-config.mjs'
  * A fresh observation home starts from the shipped `acp` profile, which
  * registers exactly one provider route (`deepseek-official`) and reads no
  * credential at all. The frozen route therefore has to be written into the
- * home's own profile patch layer, and the home has to be given credential
+ * home's own profile patch layer — together with the frozen model's catalog
+ * entry, which the published target does not ship (see
+ * {@link FROZEN_MODEL_CATALOG_ENTRY}) — and the home has to be given credential
  * material, or the agent under test cannot make a single model call. Both are
  * environment, never arm manipulation: the same entries and the same
  * credential material go into both arms, so the C-minus-B difference stays
@@ -32,6 +34,66 @@ export const H2_DEFAULT_MODEL_ROW_ID = 'agent-default-model'
 export const H2_CREDENTIALS_FILENAME = '.credentials.yaml'
 
 /**
+ * The frozen model, declared because the target's installed catalog does not
+ * ship it.
+ *
+ * The route is materialized by the adapter's *installed* pi-ai catalog, and the
+ * frozen target resolves `@earendil-works/pi-ai` to `0.85.1` — the only and the
+ * latest release — whose `opencode-go` provider knows `deepseek-v4-flash`,
+ * `-vision-exp` and `-pro` and has no `deepseek-v4.1-flash` entry. The model
+ * reached this repository through the harness checkout's pnpm patch of that
+ * same catalog, which a runner does not apply, so the target could never
+ * advertise the frozen pair and the controller refused to pin it. See
+ * `docs/evaluation/h2/h2-design-preregistration.md` section 22.
+ *
+ * The adapter exists for this case: a profile may declare `models` itself. The
+ * values below are that patch's entry verbatim rather than chosen — a `compat`
+ * set that differs from the one the operator's own harness sends would measure
+ * a different request than the frozen route describes.
+ */
+const FROZEN_MODEL_CATALOG_ENTRY = Object.freeze({
+  name: 'DeepSeek V4.1 Flash',
+  api: 'openai-completions',
+  baseURL: 'https://opencode.ai/zen/go/v1',
+  input: Object.freeze(['text', 'image']),
+  contextWindow: 1_000_000,
+  maxTokens: 384_000,
+  // The canonical `thinkingLevelMap` offers three levels; `off` is absent
+  // there, so it is not offered here either (only `off` may declare no wire
+  // value, and declaring it would offer a level the model does not have).
+  reasoningEfforts: Object.freeze({ low: 'low', high: 'high', max: 'max' }),
+  compat: Object.freeze({
+    supportsStore: false,
+    supportsDeveloperRole: false,
+    maxTokensField: 'max_tokens',
+    requiresReasoningContentOnAssistantMessages: true,
+    thinkingFormat: 'deepseek',
+  }),
+})
+
+/**
+ * The frozen route's model entry, in the adapter's configured-catalog shape.
+ *
+ * `models` replaces the route's catalog wholesale, so this entry is the whole
+ * selectable catalog of the benchmark's route: the frozen model, declared with
+ * its own facts. That is deliberate — the run must not be able to reach a model
+ * the frozen identity does not name, whatever the installed catalog ships.
+ */
+function frozenModelEntry() {
+  const { model: modelId } = H2_POLICY.model
+  const { compat, contextWindow, maxTokens, input, name, reasoningEfforts } = FROZEN_MODEL_CATALOG_ENTRY
+  return {
+    id: modelId,
+    name,
+    contextWindow,
+    maxTokens,
+    input: [...input],
+    reasoningEfforts: { ...reasoningEfforts },
+    compat: { ...compat },
+  }
+}
+
+/**
  * Opaque, per-observation value for the relay's session-affinity header. It
  * only has to be stable within one conversation and distinct between
  * observations; run id, task id, and arm already identify the observation
@@ -50,8 +112,9 @@ export function sessionAffinityValue({ runId, taskId, arm }) {
 
 /**
  * Profile-patch entries pinning the frozen route: one row configuring the
- * provider profile (credential reference plus the relay's routing header) and
- * one row pinning provider, model, and reasoning effort as the profile default.
+ * provider profile (credential reference, the relay's routing header, and the
+ * frozen model's own catalog entry) and one row pinning provider, model, and
+ * reasoning effort as the profile default.
  *
  * @param {{model?: {provider: string, model: string, reasoningEffort: string,
  *   credentialRef: string, sessionAffinityHeader: string}, sessionAffinity: string}} input
@@ -68,7 +131,10 @@ export function routePatchEntries({ model = H2_POLICY.model, sessionAffinity }) 
         providers: {
           [provider]: {
             apiKeyEnv: credentialRef,
+            api: FROZEN_MODEL_CATALOG_ENTRY.api,
+            baseURL: FROZEN_MODEL_CATALOG_ENTRY.baseURL,
             headers: { [sessionAffinityHeader]: sessionAffinity },
+            models: [frozenModelEntry()],
           },
         },
       },

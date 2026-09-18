@@ -33,7 +33,26 @@ describe('H2 route patch', () => {
         providers: {
           [H2_POLICY.model.provider]: {
             apiKeyEnv: H2_POLICY.model.credentialRef,
+            api: 'openai-completions',
+            baseURL: 'https://opencode.ai/zen/go/v1',
             headers: { [H2_POLICY.model.sessionAffinityHeader]: 'B-run-1-task-1' },
+            models: [
+              {
+                id: H2_POLICY.model.model,
+                name: 'DeepSeek V4.1 Flash',
+                contextWindow: 1_000_000,
+                maxTokens: 384_000,
+                input: ['text', 'image'],
+                reasoningEfforts: { low: 'low', high: 'high', max: 'max' },
+                compat: {
+                  supportsStore: false,
+                  supportsDeveloperRole: false,
+                  maxTokensField: 'max_tokens',
+                  requiresReasoningContentOnAssistantMessages: true,
+                  thinkingFormat: 'deepseek',
+                },
+              },
+            ],
           },
         },
       },
@@ -46,6 +65,24 @@ describe('H2 route patch', () => {
         reasoningEffort: H2_POLICY.model.reasoningEffort,
       },
     })
+  })
+
+  it('carries the frozen model as the route\'s only catalog entry', () => {
+    // The published target's pi-ai catalog does not ship `deepseek-v4.1-flash`,
+    // so the route declares its own `models` list. A model missing there is a
+    // model the target cannot advertise, and the controller refuses to pin an
+    // unadvertised option — which is how the paid dry run died with a frozen
+    // pair the target does not offer. It also has to stay the *only* entry:
+    // nothing may reach a model the frozen identity does not name.
+    const entries = routePatchEntries({ sessionAffinity: 'B-run-1-task-1' })
+    const provider = entries[0]?.config?.providers?.[H2_POLICY.model.provider]
+    const models = provider?.models ?? []
+    expect(models).toHaveLength(1)
+    expect(models[0]?.id).toBe(H2_POLICY.model.model)
+    // Only `off` may declare no wire value, and the model's own level map has
+    // no `off`; a level offered without a wire spelling would fail resolution.
+    expect(Object.keys(models[0]?.reasoningEfforts ?? {})).not.toContain('off')
+    expect(models[0]?.reasoningEfforts?.[H2_POLICY.model.reasoningEffort]).toBe(H2_POLICY.model.reasoningEffort)
   })
 
   it('refuses a route patch without a per-observation affinity value', () => {
