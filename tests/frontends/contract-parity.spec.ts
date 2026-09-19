@@ -23,6 +23,21 @@ import type {
   ContractSearchRequest,
   ContractSearchResponse,
 } from '../../src/protocol/index.js'
+import { stubTargetBinding } from '../support/tool-target-binding.js'
+
+/**
+ * The native Agent surface takes one flat optional `profile` instead of the canonical nested
+ * `target` (ADR-0011). Projecting a canonical request onto that shape keeps every parity assertion
+ * comparing one semantic request across CLI, native DSH and MCP.
+ */
+function nativeDshArgs(request: unknown): unknown {
+  if (request === null || typeof request !== 'object' || Array.isArray(request)) return request
+  const { target, ...rest } = request as Record<string, unknown>
+  const profile = target !== null && typeof target === 'object' && !Array.isArray(target)
+    ? (target as Record<string, unknown>).profile
+    : undefined
+  return profile === undefined ? rest : { ...rest, profile }
+}
 
 function targetFacts(): AcquiredTargetFacts {
   return {
@@ -158,10 +173,11 @@ async function expectSearchRejected(
 
   const dshTool = createContractSearchToolDefinition(
     candidate => searchContractsResponse(appKernel, candidate, 'invalid-dsh-search'),
+    stubTargetBinding(),
   )
   const mcpTool = createContractSearchMcpTool(appKernel, () => 'invalid-mcp-search')
 
-  await expect(Promise.resolve().then(() => dshTool.execute(rawRequest)))
+  await expect(Promise.resolve().then(() => dshTool.execute(nativeDshArgs(rawRequest))))
     .rejects.toThrow(/invalid contract\.search arguments/i)
   await expect(Promise.resolve().then(() => mcpTool.callback(rawRequest as ContractSearchRequest)))
     .rejects.toThrow(/invalid contract\.search arguments/i)
@@ -188,10 +204,11 @@ async function expectInspectRejected(
 
   const dshTool = createContractInspectToolDefinition(
     candidate => inspectContractResponse(appKernel, candidate, 'invalid-dsh-inspect'),
+    stubTargetBinding(),
   )
   const mcpTool = createContractInspectMcpTool(appKernel, () => 'invalid-mcp-inspect')
 
-  await expect(Promise.resolve().then(() => dshTool.execute(rawRequest)))
+  await expect(Promise.resolve().then(() => dshTool.execute(nativeDshArgs(rawRequest))))
     .rejects.toThrow(/invalid contract\.inspect arguments/i)
   await expect(Promise.resolve().then(() => mcpTool.callback(rawRequest as ContractInspectRequest)))
     .rejects.toThrow(/invalid contract\.inspect arguments/i)
@@ -209,12 +226,13 @@ describe('Contract Intelligence frontend semantic parity', () => {
     const reference = await searchContractsResponse(appKernel, request, 'reference-search')
     const dshTool = createContractSearchToolDefinition(
       candidate => searchContractsResponse(appKernel, candidate, 'dsh-search'),
+      stubTargetBinding(),
     )
     const mcpTool = createContractSearchMcpTool(appKernel, () => 'mcp-search')
 
     const results = await Promise.all([
       searchThroughCli(request, appKernel),
-      dshTool.execute(request) as Promise<ContractSearchResponse>,
+      dshTool.execute(nativeDshArgs(request)) as Promise<ContractSearchResponse>,
       mcpTool.callback(request).then(result => result.structuredContent),
     ])
 
@@ -231,12 +249,13 @@ describe('Contract Intelligence frontend semantic parity', () => {
     const reference = await inspectContractResponse(appKernel, request, 'reference-inspect')
     const dshTool = createContractInspectToolDefinition(
       candidate => inspectContractResponse(appKernel, candidate, 'dsh-inspect'),
+      stubTargetBinding(),
     )
     const mcpTool = createContractInspectMcpTool(appKernel, () => 'mcp-inspect')
 
     const results = await Promise.all([
       inspectThroughCli(request, appKernel),
-      dshTool.execute(request) as Promise<ContractInspectResponse>,
+      dshTool.execute(nativeDshArgs(request)) as Promise<ContractInspectResponse>,
       mcpTool.callback(request).then(result => result.structuredContent),
     ])
 

@@ -18,7 +18,7 @@ for await (const line of input) {
       id: 'search-1',
       name: 'toolchain_contract_search',
       input: {
-        target: { profile: 'web' },
+        profile: 'web',
         query: 'ToolRuntimeScheduler',
         limit: 5,
       },
@@ -45,7 +45,7 @@ for await (const line of input) {
       id: 'inspect-1',
       name: 'toolchain_contract_inspect',
       input: {
-        target: { profile: 'web' },
+        profile: 'web',
         contractIndexFingerprint,
         contractId: 'package:@deepseek-ai/dsh-tools',
       },

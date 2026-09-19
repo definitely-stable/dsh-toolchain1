@@ -1,0 +1,63 @@
+{
+  "schema": "dsh-toolchain-advertised-surface-v1",
+  "identity": "dsh-toolchain-post-h2-implicit-target-binding-v1",
+  "generatedAt": "deterministic",
+  "tools": [
+    {
+      "name": "toolchain_target_resolve",
+      "modelVisibleBytes": 450,
+      "parameterSchemaBytes": 259
+    },
+    {
+      "name": "toolchain_contract_search",
+      "modelVisibleBytes": 799,
+      "parameterSchemaBytes": 534
+    },
+    {
+      "name": "toolchain_contract_inspect",
+      "modelVisibleBytes": 829,
+      "parameterSchemaBytes": 584
+    },
+    {
+      "name": "toolchain_plugin_check",
+      "modelVisibleBytes": 692,
+      "parameterSchemaBytes": 475
+    },
+    {
+      "name": "toolchain_plugin_verify",
+      "modelVisibleBytes": 1549,
+      "parameterSchemaBytes": 1130
+    },
+    {
+      "name": "toolchain_plugin_verify_start",
+      "modelVisibleBytes": 1423,
+      "parameterSchemaBytes": 1130
+    },
+    {
+      "name": "toolchain_operation_get",
+      "modelVisibleBytes": 261,
+      "parameterSchemaBytes": 148
+    },
+    {
+      "name": "toolchain_operation_cancel",
+      "modelVisibleBytes": 303,
+      "parameterSchemaBytes": 148
+    }
+  ],
+  "advertisedTools": [
+    "toolchain_target_resolve",
+    "toolchain_contract_search",
+    "toolchain_contract_inspect",
+    "toolchain_plugin_check",
+    "toolchain_plugin_verify"
+  ],
+  "withheldTools": [
+    "toolchain_plugin_verify_start",
+    "toolchain_operation_get",
+    "toolchain_operation_cancel"
+  ],
+  "advertisedModelVisibleBytes": 4319,
+  "withheldModelVisibleBytes": 1987,
+  "baselineAdvertisedModelVisibleBytes": 5900,
+  "advertisedSavedBytes": 1581
+}

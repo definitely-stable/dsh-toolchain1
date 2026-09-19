@@ -75,7 +75,7 @@ toolchain_target_resolve
 
 The tool is lifecycle-owned by the Host `tools` capability, validates raw arguments before Service invocation, and returns the canonical Protocol `TargetResolveResponse`. Toolchain deliberately does not bundle a second runtime copy of `@deepseek-ai/dsh-tools`; the running DSH Host owns that identity-sensitive runtime.
 
-Target resolution itself keeps `profile` explicit; Toolchain does not infer the requested inspection target from process state. M2.2 separately uses launcher/profile/runtime facts only as a fail-closed eligibility guard before joining current-Host live evidence to that explicitly requested target.
+Target resolution keeps `profile` explicit for the Service, CLI and MCP: a canonical request always names its target, and Toolchain never infers a requested inspection target from process state. The native Agent surface additionally accepts an omitted profile and binds the exact target this Host is running in, proven per call against the immutable epoch captured when Toolchain mounted and failing closed when that epoch cannot be proven or has moved (ADR-0011). M2.2 separately uses launcher/profile/runtime facts only as a fail-closed eligibility guard before joining current-Host live evidence to that explicitly requested target.
 
 ### MCP
 

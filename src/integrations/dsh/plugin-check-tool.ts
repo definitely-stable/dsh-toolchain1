@@ -5,9 +5,11 @@ import {
   type PluginCheckResponse,
 } from '../../protocol/index.js'
 import {
-  TARGET_RESOLVE_PARAMETER_SCHEMA,
+  bindTargetArguments,
+  TARGET_PROFILE_PARAMETER_SCHEMA,
   type DshToolDefinition,
 } from './target-tool.js'
+import type { DshAmbientTargetBindingPort } from './runtime-target-binding.js'
 
 export const PLUGIN_CHECK_TOOL_NAME = 'toolchain_plugin_check'
 
@@ -17,15 +19,16 @@ type PluginCheckResolver = (
 
 export function createPluginCheckToolDefinition(
   check: PluginCheckResolver,
+  binding: DshAmbientTargetBindingPort,
 ): DshToolDefinition {
   return {
     name: PLUGIN_CHECK_TOOL_NAME,
-    description: 'Run the static Exact Target Plugin Check against one installed DSH target without executing candidate code or mutating the target profile.',
+    description: 'Run the static Exact Target Plugin Check against one installed DSH target without executing candidate code or mutating the target profile; with no profile, the DSH target this Host is running in.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        target: TARGET_RESOLVE_PARAMETER_SCHEMA,
+        profile: TARGET_PROFILE_PARAMETER_SCHEMA,
         subject: {
           type: 'object',
           additionalProperties: false,
@@ -36,7 +39,7 @@ export function createPluginCheckToolDefinition(
           required: ['kind', 'path'],
         },
       },
-      required: ['target', 'subject'],
+      required: ['subject'],
     },
     output: {
       schema: {
@@ -50,8 +53,13 @@ export function createPluginCheckToolDefinition(
         }]
       },
     },
-    execute(args: unknown): Promise<PluginCheckResponse> {
-      return check(parsePluginCheckRequest(args))
+    async execute(args: unknown): Promise<PluginCheckResponse> {
+      const { target, rest } = await bindTargetArguments(
+        args,
+        binding,
+        'Invalid plugin.check arguments',
+      )
+      return check(parsePluginCheckRequest({ ...rest, target }))
     },
   }
 }

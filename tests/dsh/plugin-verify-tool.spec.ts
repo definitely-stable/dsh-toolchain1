@@ -5,6 +5,7 @@ import {
   PLUGIN_VERIFY_TOOL_NAME,
 } from '../../src/integrations/dsh/plugin-verify-tool.js'
 import type { PluginVerifyResponse } from '../../src/protocol/index.js'
+import { stubTargetBinding } from '../support/tool-target-binding.js'
 
 function response(): PluginVerifyResponse {
   const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
@@ -30,9 +31,9 @@ function response(): PluginVerifyResponse {
 describe('native DSH plugin verify tool', () => {
   it('uses the canonical parser and explicitly exposes isolated candidate execution', async () => {
     const resolve = vi.fn(async () => response())
-    const tool = createPluginVerifyToolDefinition(resolve)
-    const request = {
-      target: { profile: 'web' },
+    const tool = createPluginVerifyToolDefinition(resolve, stubTargetBinding())
+    const args = {
+      profile: 'web',
       subject: { kind: 'packed' as const, path: '/candidate/plugin.tgz' },
       executionPolicy: 'safe' as const,
       visibilityAssertions: [{ kind: 'host-service' as const, name: 'exampleService' }],
@@ -46,8 +47,9 @@ describe('native DSH plugin verify tool', () => {
     expect(tool.parameters).toMatchObject({
       type: 'object',
       additionalProperties: false,
-      required: ['target', 'subject', 'executionPolicy'],
+      required: ['subject', 'executionPolicy'],
       properties: {
+        profile: expect.objectContaining({ type: 'string' }),
         visibilityAssertions: {
           type: 'array',
           minItems: 1,
@@ -65,15 +67,20 @@ describe('native DSH plugin verify tool', () => {
       },
     })
 
-    await expect(tool.execute(request)).resolves.toEqual(response())
-    expect(resolve).toHaveBeenCalledWith(request)
+    await expect(tool.execute(args)).resolves.toEqual(response())
+    expect(resolve).toHaveBeenCalledWith({
+      target: { profile: 'web' },
+      subject: { kind: 'packed', path: '/candidate/plugin.tgz' },
+      executionPolicy: 'safe',
+      visibilityAssertions: [{ kind: 'host-service', name: 'exampleService' }],
+    })
   })
 
   it('passes Agent Tool assertions through the canonical parser unchanged', async () => {
     const resolve = vi.fn(async () => response())
-    const tool = createPluginVerifyToolDefinition(resolve)
-    const request = {
-      target: { profile: 'web' },
+    const tool = createPluginVerifyToolDefinition(resolve, stubTargetBinding())
+    const args = {
+      profile: 'web',
       subject: { kind: 'packed' as const, path: '/candidate/plugin.tgz' },
       executionPolicy: 'safe' as const,
       visibilityAssertions: [
@@ -82,19 +89,32 @@ describe('native DSH plugin verify tool', () => {
       ],
     }
 
-    await expect(tool.execute(request)).resolves.toEqual(response())
-    expect(resolve).toHaveBeenCalledWith(request)
+    await expect(tool.execute(args)).resolves.toEqual(response())
+    expect(resolve).toHaveBeenCalledWith({
+      target: { profile: 'web' },
+      subject: { kind: 'packed', path: '/candidate/plugin.tgz' },
+      executionPolicy: 'safe',
+      visibilityAssertions: [
+        { kind: 'host-service', name: 'shared-name' },
+        { kind: 'agent-tool', name: 'shared-name' },
+      ],
+    })
   })
 
   it.each([
-    { target: { profile: 'web' }, subject: { kind: 'directory', path: '/candidate' }, executionPolicy: 'safe' },
-    { target: { profile: 'web' }, subject: { kind: 'packed', path: '/candidate.tgz' }, executionPolicy: 'trusted' },
-    { target: { profile: 'web' }, subject: { kind: 'packed', path: '/candidate.tgz' }, executionPolicy: 'safe', extra: true },
-  ])('rejects unsupported request %# before invoking the resolver', value => {
+    { profile: 'web', subject: { kind: 'directory', path: '/candidate' }, executionPolicy: 'safe' },
+    { profile: 'web', subject: { kind: 'packed', path: '/candidate.tgz' }, executionPolicy: 'trusted' },
+    { profile: 'web', subject: { kind: 'packed', path: '/candidate.tgz' }, executionPolicy: 'safe', extra: true },
+    {
+      target: { profile: 'web' },
+      subject: { kind: 'packed', path: '/candidate.tgz' },
+      executionPolicy: 'safe',
+    },
+  ])('rejects unsupported request %# before invoking the resolver', async value => {
     const resolve = vi.fn(async () => response())
-    const tool = createPluginVerifyToolDefinition(resolve)
+    const tool = createPluginVerifyToolDefinition(resolve, stubTargetBinding())
 
-    expect(() => tool.execute(value)).toThrow(TypeError)
+    await expect(Promise.resolve().then(() => tool.execute(value))).rejects.toThrow(TypeError)
     expect(resolve).not.toHaveBeenCalled()
   })
 })

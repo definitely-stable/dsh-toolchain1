@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createContractInspectToolDefinition, createContractSearchToolDefinition } from '../../src/integrations/dsh/contract-tool.js'
+import { isDefaultAgentTool } from '../../src/integrations/dsh/agent-surface-policy.js'
 import {
   createOperationCancelToolDefinition,
   createOperationGetToolDefinition,
@@ -10,6 +11,7 @@ import {
 } from '../../src/integrations/dsh/operation-tool.js'
 import { createPluginCheckToolDefinition } from '../../src/integrations/dsh/plugin-check-tool.js'
 import { createPluginVerifyToolDefinition } from '../../src/integrations/dsh/plugin-verify-tool.js'
+import type { DshAmbientTargetBindingPort } from '../../src/integrations/dsh/runtime-target-binding.js'
 import { createTargetResolveToolDefinition } from '../../src/integrations/dsh/target-tool.js'
 import type { DshToolDefinition } from '../../src/integrations/dsh/target-tool.js'
 
@@ -48,13 +50,20 @@ export function repositoryRootFrom(specifier: string): string {
 /** The tool definitions the service registers, with inert resolvers: measurement never executes a tool. */
 export function nativeToolDefinitions(): readonly DshToolDefinition[] {
   const unreachable = (): never => { throw new Error('measurement must not execute a tool') }
+  // Measuring the advertised argument schema must not depend on a running Host target either, so the
+  // binding is inert for the same reason the resolvers are.
+  const binding: DshAmbientTargetBindingPort = Object.freeze({
+    async targetRequest(): Promise<never> {
+      return unreachable()
+    },
+  })
   return Object.freeze([
-    createTargetResolveToolDefinition(unreachable as never),
-    createContractSearchToolDefinition(unreachable as never),
-    createContractInspectToolDefinition(unreachable as never),
-    createPluginCheckToolDefinition(unreachable as never),
-    createPluginVerifyToolDefinition(unreachable as never),
-    createPluginVerifyStartToolDefinition(unreachable as never),
+    createTargetResolveToolDefinition(unreachable as never, binding),
+    createContractSearchToolDefinition(unreachable as never, binding),
+    createContractInspectToolDefinition(unreachable as never, binding),
+    createPluginCheckToolDefinition(unreachable as never, binding),
+    createPluginVerifyToolDefinition(unreachable as never, binding),
+    createPluginVerifyStartToolDefinition(unreachable as never, binding),
     createOperationGetToolDefinition(unreachable as never),
     createOperationCancelToolDefinition(unreachable as never),
   ])
@@ -135,5 +144,70 @@ export function measureModelSurface(generatedAt: string, repositoryRoot: string)
     tools: Object.freeze(tools),
     totalModelVisibleBytes: sum(item => item.modelVisibleBytes),
     totalRenderedExampleBytes: sum(item => item.renderedExampleBytes),
+  })
+}
+
+export const ADVERTISED_SURFACE_SCHEMA = 'dsh-toolchain-advertised-surface-v1' as const
+export const ADVERTISED_SURFACE_IDENTITY = 'dsh-toolchain-post-h2-implicit-target-binding-v1' as const
+
+export interface AdvertisedSurfaceToolMeasurement {
+  readonly name: string
+  readonly modelVisibleBytes: number
+  readonly parameterSchemaBytes: number
+}
+
+export interface AdvertisedSurfaceMeasurement {
+  readonly schema: typeof ADVERTISED_SURFACE_SCHEMA
+  readonly identity: typeof ADVERTISED_SURFACE_IDENTITY
+  readonly generatedAt: string
+  /** Every implemented tool, advertised or withheld, so withholding stays visible in the receipt. */
+  readonly tools: readonly AdvertisedSurfaceToolMeasurement[]
+  readonly advertisedTools: readonly string[]
+  readonly withheldTools: readonly string[]
+  readonly advertisedModelVisibleBytes: number
+  readonly withheldModelVisibleBytes: number
+  /** The advertised bytes recorded by the historical pre-change baseline receipt. */
+  readonly baselineAdvertisedModelVisibleBytes: number
+  readonly advertisedSavedBytes: number
+}
+
+export interface HistoricalSurfaceReceipt {
+  readonly tools: readonly { readonly name: string, readonly modelVisibleBytes: number }[]
+}
+
+/**
+ * Measure the advertised model-facing surface against the historical baseline receipt.
+ *
+ * The baseline receipt is never rewritten: it stays the pre-change snapshot the reduction is stated
+ * against, so a later surface change is compared with recorded bytes rather than argued about.
+ */
+export function measureAdvertisedSurface(
+  generatedAt: string,
+  repositoryRoot: string,
+  baseline: HistoricalSurfaceReceipt,
+): AdvertisedSurfaceMeasurement {
+  const measured = measureModelSurface(generatedAt, repositoryRoot)
+  const advertised = measured.tools.filter(tool => isDefaultAgentTool(tool.name))
+  const withheld = measured.tools.filter(tool => !isDefaultAgentTool(tool.name))
+  const baselineBytes = baseline.tools
+    .filter(tool => isDefaultAgentTool(tool.name))
+    .reduce((total, tool) => total + tool.modelVisibleBytes, 0)
+  const advertisedBytes = advertised.reduce((total, tool) => total + tool.modelVisibleBytes, 0)
+
+  return Object.freeze({
+    schema: ADVERTISED_SURFACE_SCHEMA,
+    identity: ADVERTISED_SURFACE_IDENTITY,
+    generatedAt,
+    tools: Object.freeze(measured.tools.map(tool => Object.freeze({
+      name: tool.name,
+      modelVisibleBytes: tool.modelVisibleBytes,
+      parameterSchemaBytes: tool.parameterSchemaBytes,
+    }))),
+    advertisedTools: Object.freeze(advertised.map(tool => tool.name)),
+    withheldTools: Object.freeze(withheld.map(tool => tool.name)),
+    advertisedModelVisibleBytes: advertisedBytes,
+    withheldModelVisibleBytes: withheld.reduce((total, tool) => total + tool.modelVisibleBytes, 0),
+    baselineAdvertisedModelVisibleBytes: baselineBytes,
+    advertisedSavedBytes: baselineBytes - advertisedBytes,
   })
 }

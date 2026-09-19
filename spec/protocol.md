@@ -59,6 +59,23 @@ A failed `TargetResolveResponse` has `status: "failed"`, MUST contain at least o
 
 New M1 snapshots use the `dsh-target-v2:<sha256>` namespace defined by ADR-0007. ADR-0007 supersedes the private pre-public `dsh-target-v1` projection from ADR-0006 because v1 did not cover every package/user-declared DSH composition patch input. Toolchain's own package/version/content is observer metadata/evidence and MUST NOT by itself change the target semantic fingerprint.
 
+### Runtime target binding
+
+The canonical request of every target-bound operation names its target explicitly: `target` is required and MUST be the closed `TargetResolveRequest`. A frontend that runs inside exactly one proven DSH target — the native DSH Agent surface of a Host mounted in a profile — MAY accept an omitted target and bind one implicitly on the caller's behalf, as defined by ADR-0011.
+
+An implicit binding MUST be derived from the immutable running-Host epoch captured when the frontend mounted, MUST be proven before the operation runs, and MUST NOT be a default value, a launch-profile guess, a mutable re-read of `~/.dsh`, or a fallback chosen because an explicit target failed. The request that reaches the application kernel MUST still be an explicit canonical target request, and the response MUST identify the exact `snapshotFingerprint` the operation was bound to.
+
+Several conditions MUST hold independently before a running target may be bound implicitly: the Host exposes an authoritative DSH home, the running profile is known from the official launcher invocation rather than inferred, the invocation carries no ordered `--patch` overlay (upstream publishes no boot-time overlay attestation to compare later), and one read-only resolution of that profile succeeded at mount.
+
+The binding is the pair `(dsh-target-v2 fingerprint, dsh-profile-lifecycle-v1 fingerprint?)`. On a lifecycle-aware target both axes MUST match the captured epoch; on a target without lifecycle metadata the second axis MUST be absent. An implicit binding is never refreshed from mutable state, and a call whose current resolution differs from the captured epoch MUST fail closed rather than re-bind the newer epoch. `patchReload` MUST NOT be used to weaken this rule.
+
+Failure to bind an omitted target is a request-formation failure at the frontend boundary rather than a Protocol application response, because no target-bound operation was formed. It MUST fail loudly with a stable machine-readable code, MUST NOT silently substitute another target, and SHOULD name the recovery of supplying an explicit target. The baseline codes are:
+
+- `TARGET_RUNTIME_BINDING_UNAVAILABLE` — no proven running target was captured;
+- `TARGET_RUNTIME_BINDING_CHANGED` — the captured running target no longer equals the current resolution.
+
+Machine-path and overlay acquisition hints (`dshHome`, `dshPackageRoot`, `patches`) MUST NOT become model-facing parameters of a frontend that binds implicitly. They remain available to operator-driven frontends such as the CLI, and to clients that supply a canonical request.
+
 ## Target snapshot
 
 A `TargetSnapshot` is an immutable normalized view of a DSH target.
@@ -327,6 +344,8 @@ The detailed Operation payload remains M4-owned and MUST be evolved from actual 
 ### DSH
 
 The DSH bundle MUST expose the same application semantics through a Cordis Toolchain Service. Native agent tools SHOULD remain a small progressive surface.
+
+The native Agent surface MAY omit `target` and expose one optional flat `profile` string instead, under the runtime target binding rules above: an omitted `profile` binds the running Host target implicitly and an explicit one resolves that profile inside the Host's own DSH home. The adapter MUST derive the canonical explicit target request and call the shared kernel use case with it; it MUST NOT acquire targets, evaluate compatibility or reduce verification status of its own. Acquisition hints MUST NOT be advertised to a model.
 
 The M1 CLI vertical slice proves `target.resolve`; immediate post-M1 frontend parity projects that same kernel call through the Toolchain Service/native DSH tool rather than reimplementing target acquisition in the adapter.
 

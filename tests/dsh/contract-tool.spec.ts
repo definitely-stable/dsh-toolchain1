@@ -13,6 +13,7 @@ import type {
   ContractInspectResponse,
   ContractSearchResponse,
 } from '../../src/protocol/index.js'
+import { stubTargetBinding } from '../support/tool-target-binding.js'
 
 const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
 
@@ -62,16 +63,17 @@ function inspectResponse(): ContractInspectResponse {
 
 describe('native DSH Contract Intelligence tools', () => {
   it('defines Protocol-shaped search/inspect parameters with shallow Protocol response output schemas', () => {
-    const search = createContractSearchToolDefinition(async () => searchResponse())
-    const inspect = createContractInspectToolDefinition(async () => inspectResponse())
+    const binding = stubTargetBinding()
+    const search = createContractSearchToolDefinition(async () => searchResponse(), binding)
+    const inspect = createContractInspectToolDefinition(async () => inspectResponse(), binding)
 
     expect(search.name).toBe(CONTRACT_SEARCH_TOOL_NAME)
     expect(search.parameters).toMatchObject({
       type: 'object',
       additionalProperties: false,
-      required: ['target', 'query'],
+      required: ['query'],
       properties: {
-        target: expect.objectContaining({ type: 'object', required: ['profile'] }),
+        profile: expect.objectContaining({ type: 'string' }),
         query: { type: 'string', minLength: 1 },
         kinds: expect.objectContaining({ type: 'array' }),
         limit: { type: 'integer', minimum: 1, maximum: 25 },
@@ -86,9 +88,9 @@ describe('native DSH Contract Intelligence tools', () => {
     expect(inspect.parameters).toMatchObject({
       type: 'object',
       additionalProperties: false,
-      required: ['target', 'contractIndexFingerprint', 'contractId'],
+      required: ['contractIndexFingerprint', 'contractId'],
       properties: {
-        target: expect.objectContaining({ type: 'object', required: ['profile'] }),
+        profile: expect.objectContaining({ type: 'string' }),
         contractIndexFingerprint: {
           type: 'string',
           pattern: '^dsh-contract-index-v1:[0-9a-f]{64}$',
@@ -105,17 +107,19 @@ describe('native DSH Contract Intelligence tools', () => {
   it('keeps canonical execution values and uses the non-regressing serializers for model text', async () => {
     const searchResolver = vi.fn(async () => searchResponse())
     const inspectResolver = vi.fn(async () => inspectResponse())
-    const search = createContractSearchToolDefinition(searchResolver)
-    const inspect = createContractInspectToolDefinition(inspectResolver)
+    const binding = stubTargetBinding()
+    const search = createContractSearchToolDefinition(searchResolver, binding)
+    const inspect = createContractInspectToolDefinition(inspectResolver, binding)
 
     const searchValue = await search.execute({
-      target: { profile: 'web', dshHome: '/tmp/dsh', patches: ['/tmp/a.yml'] },
+      profile: 'web',
       query: 'ToolDefinition',
       kinds: ['package', 'tool'],
       limit: 5,
     }) as ContractSearchResponse
+    // The Agent never names acquisition hints: the adapter forms the canonical target request.
     expect(searchResolver).toHaveBeenCalledWith({
-      target: { profile: 'web', dshHome: '/tmp/dsh', patches: ['/tmp/a.yml'] },
+      target: { profile: 'web' },
       query: 'ToolDefinition',
       kinds: ['package', 'tool'],
       limit: 5,
@@ -126,7 +130,7 @@ describe('native DSH Contract Intelligence tools', () => {
     expect(searchText).toBe(serializeContractSearchModelResponse(searchValue))
 
     const inspectValue = await inspect.execute({
-      target: { profile: 'web' },
+      profile: 'web',
       contractIndexFingerprint,
       contractId: 'package:@deepseek-ai/dsh-tools',
     }) as ContractInspectResponse
@@ -165,8 +169,8 @@ describe('native DSH Contract Intelligence tools', () => {
       inspectExecution = execution
       return inspectResponse()
     })
-    const search = createContractSearchToolDefinition(searchResolver)
-    const inspect = createContractInspectToolDefinition(inspectResolver)
+    const search = createContractSearchToolDefinition(searchResolver, stubTargetBinding())
+    const inspect = createContractInspectToolDefinition(inspectResolver, stubTargetBinding())
     const controller = new AbortController()
     const agent = Object.freeze({ id: 'agent-live-inspect' })
     const execution = Object.freeze({
@@ -176,7 +180,7 @@ describe('native DSH Contract Intelligence tools', () => {
     })
 
     const searchRequest = {
-      target: { profile: 'web' },
+      profile: 'web',
       query: 'ToolDefinition',
       kinds: ['package'] as const,
     }
@@ -186,7 +190,7 @@ describe('native DSH Contract Intelligence tools', () => {
     expect(searchExecution).not.toHaveProperty('internalCapability')
 
     const inspectRequest = {
-      target: { profile: 'web' },
+      profile: 'web',
       contractIndexFingerprint,
       contractId: 'package:@deepseek-ai/dsh-tools',
     }
@@ -199,17 +203,19 @@ describe('native DSH Contract Intelligence tools', () => {
   it.each([
     null,
     {},
-    { target: { profile: 'web' } },
-    { target: { profile: '..' }, query: 'tool' },
-    { target: { profile: 'web' }, query: '' },
-    { target: { profile: 'web' }, query: 'tool', kinds: ['unknown'] },
-    { target: { profile: 'web' }, query: 'tool', kinds: ['tool', 'tool'] },
-    { target: { profile: 'web' }, query: 'tool', limit: 0 },
-    { target: { profile: 'web' }, query: 'tool', limit: 26 },
-    { target: { profile: 'web' }, query: 'tool', unexpected: true },
+    { target: { profile: 'web' }, query: 'tool' },
+    { profile: 'web' },
+    { profile: '..', query: 'tool' },
+    { profile: 'web', query: '' },
+    { profile: 'web', query: 'tool', kinds: ['unknown'] },
+    { profile: 'web', query: 'tool', kinds: ['tool', 'tool'] },
+    { profile: 'web', query: 'tool', limit: 0 },
+    { profile: 'web', query: 'tool', limit: 26 },
+    { profile: 'web', query: 'tool', unexpected: true },
+    { profile: 'web', query: 'tool', dshHome: '/tmp/dsh' },
   ])('rejects malformed search arguments before delegation: %j', async (args) => {
     const resolver = vi.fn(async () => searchResponse())
-    const definition = createContractSearchToolDefinition(resolver)
+    const definition = createContractSearchToolDefinition(resolver, stubTargetBinding())
 
     await expect(Promise.resolve().then(() => definition.execute(args)))
       .rejects.toThrow(/invalid contract\.search arguments/i)
@@ -219,13 +225,14 @@ describe('native DSH Contract Intelligence tools', () => {
   it.each([
     null,
     {},
-    { target: { profile: 'web' }, contractIndexFingerprint, contractId: '' },
-    { target: { profile: 'web' }, contractIndexFingerprint: 'bad', contractId: 'package:x' },
-    { target: { profile: '..' }, contractIndexFingerprint, contractId: 'package:x' },
-    { target: { profile: 'web' }, contractIndexFingerprint, contractId: 'package:x', unexpected: true },
+    { target: { profile: 'web' }, contractIndexFingerprint, contractId: 'package:x' },
+    { profile: 'web', contractIndexFingerprint, contractId: '' },
+    { profile: 'web', contractIndexFingerprint: 'bad', contractId: 'package:x' },
+    { profile: '..', contractIndexFingerprint, contractId: 'package:x' },
+    { profile: 'web', contractIndexFingerprint, contractId: 'package:x', unexpected: true },
   ])('rejects malformed inspect arguments before delegation: %j', async (args) => {
     const resolver = vi.fn(async () => inspectResponse())
-    const definition = createContractInspectToolDefinition(resolver)
+    const definition = createContractInspectToolDefinition(resolver, stubTargetBinding())
 
     await expect(Promise.resolve().then(() => definition.execute(args)))
       .rejects.toThrow(/invalid contract\.inspect arguments/i)

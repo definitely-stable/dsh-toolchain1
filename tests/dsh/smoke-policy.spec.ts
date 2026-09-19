@@ -128,6 +128,10 @@ describe('DSH package smoke policy', () => {
     expect(smokeSource).toContain("evidenceIdsFromRefs(match.evidenceRefs, table, 'Contract Search match')")
     expect(smokeSource).toContain('renderedRoundTripsValue:')
     expect(smokeSource).toContain('renderedNonRegressing:')
+    // The real Host smoke exercises the implicit binding itself: no target argument and a receipt
+    // field proving which profile the binding resolved.
+    expect(smokeSource).toContain('boundProfile:')
+    expect(smokeSource).toContain('implicit native target binding')
     expect(smokeSource).toContain("'exec', 'dsh', '--profile', profile")
     expect(smokeSource).toContain('runBootProbe(runner, DSH_BOOT_PROBE_PROFILE, env, false)')
     expect(smokeSource).toContain('runBootProbe(runner, DSH_LIVE_BOOT_PROBE_PROFILE, env, true)')
@@ -162,6 +166,7 @@ describe('DSH package smoke policy', () => {
         isError: false,
         status: 'ok',
         snapshotFingerprint: fingerprint,
+        boundProfile: 'web',
         renderedMatchesValue: true,
       },
       offlineSearch: {
@@ -287,6 +292,7 @@ describe('DSH package smoke policy', () => {
         isError: false,
         status: 'ok',
         snapshotFingerprint: fingerprint,
+        boundProfile: 'toolchain-smoke',
         renderedMatchesValue: true,
       },
       offlineSearch: {

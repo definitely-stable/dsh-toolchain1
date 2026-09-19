@@ -1,12 +1,16 @@
+import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import ToolchainService from '../../src/integrations/dsh/index.js'
 import { DEFAULT_AGENT_TOOL_NAMES } from '../../src/integrations/dsh/agent-surface-policy.js'
 import { createTargetResolveToolDefinition } from '../../src/integrations/dsh/target-tool.js'
 import type { ContractSearchResponse } from '../../src/protocol/index.js'
+import { stubTargetBinding } from '../support/tool-target-binding.js'
 
 interface TestToolDefinition {
   readonly name: string
@@ -92,12 +96,51 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-const dshHome = fileURLToPath(new URL('../fixtures/targets/valid/dsh-home/', import.meta.url))
-const dshPackageRoot = fileURLToPath(new URL('../fixtures/targets/valid/dsh-package/', import.meta.url))
+const fixtureTargets = fileURLToPath(new URL('../fixtures/targets/valid/', import.meta.url))
+const fixtureDshPackage = fileURLToPath(new URL('../fixtures/targets/valid/dsh-package/', import.meta.url))
+
+const temporaryRoots: string[] = []
+
+afterEach(async () => {
+  await Promise.all(temporaryRoots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+})
+
+/**
+ * Materialize the install layout a real DSH home has and the shared fixture deliberately omits: the
+ * flat `$DSH_HOME/profiles/node_modules` fallback through which a Host resolves the DSH app and its
+ * in-box bundles. A Host binding names only profile and home, so this spec needs a realistic graph
+ * rather than one that resolves only with an explicit package root.
+ */
+async function materializeHostHome(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-toolchain-host-home-'))
+  temporaryRoots.push(root)
+  await cp(fixtureTargets, root, { recursive: true })
+
+  const fallback = join(root, 'dsh-home', 'profiles', 'node_modules', '@deepseek-ai')
+  await mkdir(join(fallback, 'dsh'), { recursive: true })
+  await cp(join(fixtureDshPackage, 'package.json'), join(fallback, 'dsh', 'package.json'))
+  for (const bundle of ['dsh-base', 'dsh-web-app']) {
+    await cp(
+      join(fixtureDshPackage, 'node_modules', '@deepseek-ai', bundle),
+      join(fallback, bundle),
+      { recursive: true },
+    )
+  }
+
+  return join(root, 'dsh-home')
+}
 
 describe('native DSH Toolchain tools', () => {
+  // The native surface resolves an explicit profile inside the Host's own DSH home, so the fixture
+  // installation has to be reachable through the same Host capability a real DSH Host exposes.
+  async function provideHostHome(ctx: Context): Promise<void> {
+    const home = await materializeHostHome()
+    ctx.provide('dshHomePath', () => home)
+  }
+
   it('appears only when the tools capability is mounted and follows its lifecycle', async () => {
     const ctx = new Context()
+    await provideHostHome(ctx)
     const toolchainFiber = await ctx.plugin(ToolchainService)
     expect(ctx.get('tools')).toBeUndefined()
     expect(ctx.toolchain.describe().product).toBe('dsh-toolchain')
@@ -112,6 +155,8 @@ describe('native DSH Toolchain tools', () => {
     expect([...tools.definitions.keys()]).toEqual([...DEFAULT_AGENT_TOOL_NAMES])
     expect(definition).toBeDefined()
     expect(definition?.description).toContain('exact installed DSH target')
+    // One optional flat profile, no nested target and no acquisition hints: omitting it binds the
+    // exact target this Host is running in (ADR-0011).
     expect(definition?.parameters).toEqual({
       type: 'object',
       additionalProperties: false,
@@ -120,25 +165,9 @@ describe('native DSH Toolchain tools', () => {
           type: 'string',
           minLength: 1,
           pattern: '^(?!\\.{1,2}$)(?!node_modules$)[^/\\\\]+$',
-          description: 'DSH profile name to resolve.',
-        },
-        dshHome: {
-          type: 'string',
-          minLength: 1,
-          description: 'Optional DSH home override for read-only acquisition.',
-        },
-        dshPackageRoot: {
-          type: 'string',
-          minLength: 1,
-          description: 'Optional installed @deepseek-ai/dsh package root.',
-        },
-        patches: {
-          type: 'array',
-          description: 'Ordered DSH --patch overlay paths.',
-          items: { type: 'string', minLength: 1 },
+          description: 'Optional DSH profile name. Omit to bind the exact DSH target this Host is running in.',
         },
       },
-      required: ['profile'],
     })
     expect(definition?.output.schema).toEqual({
       type: 'object',
@@ -154,28 +183,21 @@ describe('native DSH Toolchain tools', () => {
 
   it('delegates target success and expected failure to ctx.toolchain semantics', async () => {
     const ctx = new Context()
+    await provideHostHome(ctx)
     const toolchainFiber = await ctx.plugin(ToolchainService)
     const toolsFiber = await ctx.plugin(TestToolsService)
     const definition = ctx.tools.definitions.get('toolchain_target_resolve')
     expect(definition).toBeDefined()
     if (definition === undefined) throw new Error('target tool was not registered')
 
-    const success = await definition.execute({
-      profile: 'web',
-      dshHome,
-      dshPackageRoot,
-    })
+    const success = await definition.execute({ profile: 'web' })
     expect(success).toMatchObject({
       protocolVersion: '1',
       status: 'ok',
       snapshotFingerprint: expect.stringMatching(/^dsh-target-v2:[0-9a-f]{64}$/),
     })
 
-    const failure = await definition.execute({
-      profile: 'missing',
-      dshHome,
-      dshPackageRoot,
-    })
+    const failure = await definition.execute({ profile: 'missing' })
     expect(failure).toMatchObject({
       protocolVersion: '1',
       status: 'failed',
@@ -193,6 +215,7 @@ describe('native DSH Toolchain tools', () => {
 
   it('executes registered contract search then inspect through ctx.toolchain semantics', async () => {
     const ctx = new Context()
+    await provideHostHome(ctx)
     const toolchainFiber = await ctx.plugin(ToolchainService)
     const toolsFiber = await ctx.plugin(TestToolsService)
     const searchDefinition = ctx.tools.definitions.get('toolchain_contract_search')
@@ -202,7 +225,7 @@ describe('native DSH Toolchain tools', () => {
     }
 
     const search = await searchDefinition.execute({
-      target: { profile: 'web', dshHome, dshPackageRoot },
+      profile: 'web',
       query: 'a-user-plugin',
     }) as ContractSearchResponse
 
@@ -213,7 +236,7 @@ describe('native DSH Toolchain tools', () => {
     ]))
 
     const inspect = await inspectDefinition.execute({
-      target: { profile: 'web', dshHome, dshPackageRoot },
+      profile: 'web',
       contractIndexFingerprint: search.data.contractIndexFingerprint,
       contractId: 'package:a-user-plugin',
     })
@@ -233,19 +256,19 @@ describe('native DSH Toolchain tools', () => {
 
   it('falls back offline when an Agent and Inspect exist but the running DSH target is not proven', async () => {
     const ctx = new Context()
+    await provideHostHome(ctx)
     const inspectFiber = await ctx.plugin(TestCordisInspectService)
     const toolchainFiber = await ctx.plugin(ToolchainService)
     const toolsFiber = await ctx.plugin(TestToolsService)
     const searchDefinition = ctx.tools.definitions.get('toolchain_contract_search')
     if (searchDefinition === undefined) throw new Error('contract search tool was not registered')
 
-    const target = { profile: 'web', dshHome, dshPackageRoot }
     const controller = new AbortController()
     const agent = Object.freeze({ id: 'agent-unbound-runtime' })
     const execution = Object.freeze({ agent, signal: controller.signal })
 
     const search = await searchDefinition.execute({
-      target,
+      profile: 'web',
       query: 'liveAlpha',
       kinds: ['service'],
     }, execution) as ContractSearchResponse
@@ -260,9 +283,22 @@ describe('native DSH Toolchain tools', () => {
     await inspectFiber.dispose()
   })
 
+  it('binds the running Host target when the Agent omits a profile, and honours an explicit one', async () => {
+    const resolve = vi.fn(async () => ({ status: 'ok' }) as never)
+    const definition = createTargetResolveToolDefinition(resolve, stubTargetBinding('web'))
+
+    // An omitted profile is not an argument error: the binding decides which target the call is
+    // about, and it is the only place allowed to make that decision.
+    await expect(Promise.resolve().then(() => definition.execute({}))).resolves.toEqual({ status: 'ok' })
+    expect(resolve).toHaveBeenLastCalledWith({ profile: 'web' })
+
+    await expect(Promise.resolve().then(() => definition.execute({ profile: 'tui' })))
+      .resolves.toEqual({ status: 'ok' })
+    expect(resolve).toHaveBeenLastCalledWith({ profile: 'tui' })
+  })
+
   it.each([
     null,
-    {},
     { profile: '' },
     { profile: '..' },
     { profile: 'web', unexpected: true },
@@ -270,11 +306,12 @@ describe('native DSH Toolchain tools', () => {
     { profile: 'web', dshPackageRoot: '' },
     { profile: 'web', patches: 'overlay.yml' },
     { profile: 'web', patches: ['overlay.yml', ''] },
+    { target: { profile: 'web' } },
   ])('rejects malformed raw target arguments before invoking Toolchain Service: %j', async (args) => {
     const resolve = vi.fn(async () => {
       throw new Error('resolver must not run for invalid tool arguments')
     })
-    const definition = createTargetResolveToolDefinition(resolve)
+    const definition = createTargetResolveToolDefinition(resolve, stubTargetBinding())
 
     await expect(Promise.resolve().then(() => definition.execute(args)))
       .rejects.toThrow(/invalid target\.resolve arguments/i)

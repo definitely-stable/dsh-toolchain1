@@ -64,9 +64,12 @@ import { createPluginCheckToolDefinition } from './plugin-check-tool.js'
 import { createPluginVerifyToolDefinition } from './plugin-verify-tool.js'
 import {
   bindContractEnrichmentToRuntimeTarget,
+  createDshAmbientTargetBinding,
   createDshRuntimeTargetBinding,
-  parseRunningDshProfileInvocation,
+  provenRunningProfile,
+  type DshAmbientTargetBindingPort,
   type DshRuntimeTargetBindingPort,
+  type DshStartupTargetIdentity,
 } from './runtime-target-binding.js'
 import {
   createTargetResolveToolDefinition,
@@ -110,41 +113,40 @@ interface RunningTargetContextIdentity {
   readonly dshHome: string
 }
 
-interface StartupTargetBindingIdentity {
-  readonly targetFingerprint: string
-  readonly lifecycleFingerprint?: string
+/**
+ * The Host's own DSH home, when it exposes one. Only `dshHomePath` is needed to resolve an explicit
+ * profile inside that installation; the root base URL matters for proving that a resolved target is
+ * the *running* one, which is a separate question with a separate condition.
+ */
+function dshHomeFromContext(ctx: Context): string | undefined {
+  const dshHomePath = ctx.get('dshHomePath') as unknown
+  if (typeof dshHomePath !== 'function') return undefined
+
+  try {
+    const dshHome = (dshHomePath as () => unknown)()
+    return typeof dshHome === 'string' && dshHome.length !== 0 ? dshHome : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function runningTargetContextIdentity(ctx: Context): RunningTargetContextIdentity | undefined {
   const root = (ctx as unknown as { readonly root?: { readonly baseUrl?: unknown } }).root
   const baseUrl = root?.baseUrl
-  const dshHomePath = ctx.get('dshHomePath') as unknown
-  if (typeof baseUrl !== 'string' || typeof dshHomePath !== 'function') return undefined
-
-  let dshHome: unknown
-  try {
-    dshHome = (dshHomePath as () => unknown)()
-  } catch {
-    return undefined
-  }
-  return typeof dshHome === 'string' && dshHome.length !== 0
-    ? Object.freeze({ baseUrl, dshHome })
-    : undefined
+  const dshHome = dshHomeFromContext(ctx)
+  if (typeof baseUrl !== 'string' || dshHome === undefined) return undefined
+  return Object.freeze({ baseUrl, dshHome })
 }
 
 async function captureStartupTargetBindingIdentity(
-  ctx: Context,
+  identity: RunningTargetContextIdentity | undefined,
+  runningProfile: string | undefined,
   kernel: ReturnType<typeof createNodeKernel>,
-): Promise<StartupTargetBindingIdentity | undefined> {
-  const identity = runningTargetContextIdentity(ctx)
-  const launch = parseRunningDshProfileInvocation(process.argv)
-  if (identity === undefined || launch === undefined || launch.patches.length !== 0) return undefined
+): Promise<DshStartupTargetIdentity | undefined> {
+  if (identity === undefined || runningProfile === undefined) return undefined
 
   try {
-    const resolved = await kernel.resolveTarget({
-      profile: launch.profile,
-      dshHome: identity.dshHome,
-    })
+    const resolved = await kernel.resolveTarget({ profile: runningProfile, dshHome: identity.dshHome })
     return Object.freeze({
       targetFingerprint: resolved.snapshot.fingerprint,
       ...(resolved.snapshot.profileLifecycle === undefined
@@ -160,7 +162,7 @@ async function captureStartupTargetBindingIdentity(
 
 function runtimeTargetBindingFromContext(
   ctx: Context,
-  startupIdentity: Promise<StartupTargetBindingIdentity | undefined>,
+  startupIdentity: Promise<DshStartupTargetIdentity | undefined>,
 ): DshRuntimeTargetBindingPort | undefined {
   const identity = runningTargetContextIdentity(ctx)
   if (identity === undefined) return undefined
@@ -187,6 +189,7 @@ function registerNativeTools(
   ctx: Context,
   tools: DshToolRegistryPort,
   contracts: NativeContractResolvers,
+  binding: DshAmbientTargetBindingPort,
 ): () => void {
   const disposers: Array<() => void> = []
   // Every definition below is constructed, then filtered by the agent-surface policy.
@@ -195,17 +198,21 @@ function registerNativeTools(
   const definitions: readonly DshToolDefinition[] = [
     createTargetResolveToolDefinition(
       request => ctx.toolchain.resolveTarget(request),
+      binding,
     ),
-    createContractSearchToolDefinition(contracts.search),
-    createContractInspectToolDefinition(contracts.inspect),
+    createContractSearchToolDefinition(contracts.search, binding),
+    createContractInspectToolDefinition(contracts.inspect, binding),
     createPluginCheckToolDefinition(
       request => ctx.toolchain.checkPlugin(request),
+      binding,
     ),
     createPluginVerifyToolDefinition(
       request => ctx.toolchain.verifyPlugin(request),
+      binding,
     ),
     createPluginVerifyStartToolDefinition(
       request => ctx.toolchain.startPluginVerification(request),
+      binding,
     ),
     createOperationGetToolDefinition(
       request => ctx.toolchain.getOperation(request),
@@ -232,7 +239,7 @@ export class ToolchainService extends Service {
   private readonly digest: Sha256Port
   private readonly kernel: ReturnType<typeof createNodeKernel>
   private readonly operations: VerificationOperationManager
-  private readonly startupTargetIdentity: Promise<StartupTargetBindingIdentity | undefined>
+  private readonly startupTargetIdentity: Promise<DshStartupTargetIdentity | undefined>
 
   constructor(ctx: Context) {
     super(ctx, 'toolchain')
@@ -250,7 +257,26 @@ export class ToolchainService extends Service {
     ctx.effect(() => () => this.operations.close())
     // Capture composition and lifecycle from one immutable startup snapshot.
     // The baseline is never refreshed from mutable filesystem state later in this Host.
-    this.startupTargetIdentity = captureStartupTargetBindingIdentity(ctx, this.kernel)
+    const hostIdentity = runningTargetContextIdentity(ctx)
+    const runningProfile = provenRunningProfile(process.argv)
+    this.startupTargetIdentity = captureStartupTargetBindingIdentity(
+      hostIdentity,
+      runningProfile,
+      this.kernel,
+    )
+    // Agent Tools that omit a target are bound to that same immutable epoch rather than to a
+    // default profile or a fresh read of a profile the Host may no longer be running.
+    const dshHome = dshHomeFromContext(ctx)
+    const binding = createDshAmbientTargetBinding({
+      ...(dshHome === undefined ? {} : {
+        host: {
+          dshHome,
+          ...(runningProfile === undefined ? {} : { runningProfile }),
+        },
+      }),
+      startupIdentity: this.startupTargetIdentity,
+      resolveTarget: request => this.kernel.resolveTarget(request),
+    })
 
     ctx.inject(['tools'], (toolCtx) => registerNativeTools(
       toolCtx,
@@ -259,6 +285,7 @@ export class ToolchainService extends Service {
         search: (request, execution) => this.searchContractsNative(toolCtx, request, execution),
         inspect: (request, execution) => this.inspectContractNative(toolCtx, request, execution),
       },
+      binding,
     ))
   }
 
