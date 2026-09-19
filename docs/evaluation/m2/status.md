@@ -29,6 +29,7 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 | Product/measurement separation | **COMPLETE** | #183 separated measurement health, bounded product terminals and cost/trajectory evidence without production ranker changes. |
 | Contract Search / Inspect compactness baseline | **COMPLETE / MEASUREMENT-ONLY** | Provider-free exhaustive baseline: 36 Search cases, all 184 Inspect contracts and 30 actual Search→top-1 Inspect paths. Inspect, not Search, is the compactness hotspot. |
 | Contract Inspect lossless compaction | **COMPLETE / PROVIDER-FREE PRODUCT MEASUREMENT** | #186 / PR #187: 184/184 exact lossless parity; production serializer improves all 184 frozen Inspect responses, 0 ties/regressions; aggregate exact-byte reduction 33.7983%. |
+| Model-facing render compaction | **COMPLETE / PROVIDER-FREE PRODUCT MEASUREMENT** | One shared `strictly-smaller-utf8-v1` serializer for Search/Inspect/Plugin Check: 36/36 Search cases and 4/4 derived Plugin Check cases round-trip losslessly with 0 regressions; the five non-projected operations carry a measured, gated decline rule. |
 | Exact Target Plugin Check alpha | **COMPLETE** | Static/read-only exact-target plugin verdict path is merged. |
 | M4.1 isolated verification worker | **COMPLETE** | Exact packed-artifact execution uses a disposable DSH environment with bounded install/compose/boot evidence and cleanup. |
 | M4.2 public `plugin.verify` | **COMPLETE** | Kernel-owned verification reduction binds static evidence, exact artifact identity, isolated runtime evidence and final target freshness. |
@@ -48,6 +49,8 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 - compactness interpretation: [`contract-compactness-baseline-2026-09-05.md`](contract-compactness-baseline-2026-09-05.md)
 - Inspect compaction machine receipt: [`contract-inspect-compaction-v1.json`](contract-inspect-compaction-v1.json)
 - Inspect compaction interpretation: [`contract-inspect-compaction-2026-09-06.md`](contract-inspect-compaction-2026-09-06.md)
+- Model render compaction machine receipt: [`model-render-compaction-v1.json`](model-render-compaction-v1.json)
+- Model render compaction interpretation: [`model-render-compaction-2026-09-19.md`](model-render-compaction-2026-09-19.md)
 - H2 terminal outcome: [`h2-terminal-outcome-2026-09-18.md`](../h2/h2-terminal-outcome-2026-09-18.md)
 - H2 machine report: [`h2-report-v1.json`](../h2/h2-report-v1.json)
 
