@@ -108,10 +108,20 @@ function buildSecondary(byArm) {
     const rows = byArm[arm]
     const sum = selector => rows.reduce((total, receipt) => total + selector(receipt), 0)
     const mean = selector => (rows.length === 0 ? 0 : sum(selector) / rows.length)
+    const graderPasses = rows.filter(receipt => receipt.grader?.status === 'pass').length
     return Object.freeze({
       observations: rows.length,
       successes: rows.filter(receipt => receipt.success === true).length,
       budgetExhaustions: rows.filter(receipt => receipt.budgetExhausted === true).length,
+      // Independent-oracle and termination diagnostics. Product success requires a
+      // gradeable workspace, no budget exhaustion and a passing grader, so an arm can
+      // lose on resources while its workspaces are correct. Without these fields the
+      // published summary can only be read as "the arm wrote worse code", which is not
+      // what the run measured — see the H2 terminal outcome document.
+      graderPasses,
+      graderFailures: rows.length - graderPasses,
+      graderPassButBudgetExhausted: rows.filter(receipt => receipt.grader?.status === 'pass' && receipt.budgetExhausted === true).length,
+      terminalReasonCounts: countTerminalReasons(rows),
       observationsUsingToolchain: rows.filter(receipt => (receipt.tools?.toolchainToolCalls ?? 0) > 0).length,
       inputTokens: sum(receipt => receipt.usage.inputTokens),
       outputTokens: sum(receipt => receipt.usage.outputTokens),
@@ -132,6 +142,24 @@ function buildSecondary(byArm) {
     })
   }
   return Object.freeze({ B: summarize('B'), C: summarize('C'), cost: Object.freeze({ note: 'Tokens are provider-billed usage; no composite score is derived.' }) })
+}
+
+/**
+ * Terminal reasons are a closed set in practice but not in the type system, so the
+ * histogram is built from the observed values in a stable key order. That keeps the
+ * report byte-reproducible for the same receipts rather than dependent on their order.
+ */
+function countTerminalReasons(rows) {
+  /** @type {Record<string, number>} */
+  const counts = {}
+  for (const receipt of rows) {
+    const reason = String(receipt.terminalReason)
+    counts[reason] = (counts[reason] ?? 0) + 1
+  }
+  /** @type {Record<string, number>} */
+  const sorted = {}
+  for (const reason of Object.keys(counts).sort()) sorted[reason] = counts[reason]
+  return Object.freeze(sorted)
 }
 
 function aggregatePerTool(rows) {

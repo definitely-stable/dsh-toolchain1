@@ -82,11 +82,40 @@ describe('H2 preregistration receipt', () => {
 })
 
 describe('H2 technical dry-run receipt', () => {
-  const observations = [
-    { arm: 'B', scoring: false, status: 'ok', terminalReason: 'COMPLETED', wallTimeMs: 1000, identityDrift: false, telemetryResolved: true },
-    { arm: 'C', scoring: false, status: 'ok', terminalReason: 'COMPLETED', wallTimeMs: 2000, identityDrift: false, telemetryResolved: true },
+  /**
+   * The sealed technical-observation record. Declared explicitly because the gates
+   * under test re-derive `transportReady` and `resourceFit`, so a test must be able
+   * to build an observation whose flags deliberately disagree with its terminal state.
+   */
+  interface DryRunObservation {
+    arm: string
+    scoring: boolean
+    status: string
+    terminalReason: string
+    graderStatus: string
+    budgetExhausted: boolean
+    resourceFit: boolean
+    transportReady: boolean
+    wallTimeMs: number
+    identityDrift: boolean
+    telemetryResolved: boolean
+    providerCompletions: number
+  }
+  const observations: DryRunObservation[] = [
+    { arm: 'B', scoring: false, status: 'ok', terminalReason: 'COMPLETED', graderStatus: 'pass', budgetExhausted: false, resourceFit: true, transportReady: true, wallTimeMs: 1000, identityDrift: false, telemetryResolved: true, providerCompletions: 12 },
+    { arm: 'C', scoring: false, status: 'ok', terminalReason: 'COMPLETED', graderStatus: 'pass', budgetExhausted: false, resourceFit: true, transportReady: true, wallTimeMs: 2000, identityDrift: false, telemetryResolved: true, providerCompletions: 13 },
   ]
+  const armB = observations[0]!
+  const armC = observations[1]!
   const parity = { verified: true, profile: 'acp', armBRows: 40, armCRows: 41, addedRow: { id: 'dsh-toolchain', name: 'dsh-toolchain/dsh' } }
+  const build = (observationList: DryRunObservation[]) => buildDryRunReceipt({
+    commitmentSha256: hex(9),
+    candidate: { gitCommitSha: hex(1) },
+    target: { targetFingerprint: hex(3) },
+    compositionParity: parity,
+    observations: observationList,
+    generatedAt: 'x',
+  })
 
   it('seals exactly two non-scoring observations (one per arm)', () => {
     const receipt = buildDryRunReceipt({
@@ -108,31 +137,49 @@ describe('H2 technical dry-run receipt', () => {
   })
 
   it('rejects an incomplete or duplicated dry run', () => {
-    expect(() => buildDryRunReceipt({
-      commitmentSha256: hex(9), candidate: {}, target: {}, compositionParity: parity,
-      observations: [observations[0]], generatedAt: 'x',
-    })).toThrow(/exactly 2/)
-    expect(() => buildDryRunReceipt({
-      commitmentSha256: hex(9), candidate: {}, target: {}, compositionParity: parity,
-      observations: [observations[0], { ...observations[0], arm: 'B' }], generatedAt: 'x',
-    })).toThrow(/one Arm B and one Arm C/)
+    expect(() => build([armB])).toThrow(/exactly 2/)
+    expect(() => build([armB, { ...armB }])).toThrow(/one Arm B and one Arm C/)
   })
 
-  it('blocks a scoring run when the dry run did not pass or does not match', () => {
-    const failed = buildDryRunReceipt({
-      commitmentSha256: hex(9), candidate: { gitCommitSha: hex(1) }, target: { targetFingerprint: hex(3) },
-      compositionParity: parity,
-      observations: [observations[0], { ...observations[1], status: 'infrastructure-failure' }],
-      generatedAt: 'x',
-    })
-    expect(() => assertDryRunReceipt({ receipt: failed, expected: { datasetSha256: hex(9), gitCommitSha: hex(1), targetFingerprint: hex(3) } }))
-      .toThrow(/dry run did not pass/)
-    const ok = buildDryRunReceipt({
-      commitmentSha256: hex(9), candidate: { gitCommitSha: hex(1) }, target: { targetFingerprint: hex(3) },
-      compositionParity: parity, observations, generatedAt: 'x',
-    })
+  it('blocks a scoring run when the sealed receipt does not match the frozen inputs', () => {
+    const ok = build(observations)
     expect(() => assertDryRunReceipt({ receipt: ok, expected: { datasetSha256: hex(8), gitCommitSha: hex(1), targetFingerprint: hex(3) } }))
       .toThrow(/commitment mismatch/)
+    expect(() => assertDryRunReceipt({ receipt: ok, expected: { datasetSha256: hex(9), gitCommitSha: hex(2), targetFingerprint: hex(3) } }))
+      .toThrow(/candidate mismatch/)
+    expect(() => assertDryRunReceipt({ receipt: ok, expected: { datasetSha256: hex(9), gitCommitSha: hex(1), targetFingerprint: hex(4) } }))
+      .toThrow(/target mismatch/)
+  })
+
+  it('refuses to authorize scoring when the budget guard cut a trajectory short', () => {
+    // The canonical H2 dry run authorized scoring with Arm C in exactly this shape:
+    // a passing grader, but a trajectory stopped by the completion ceiling. The
+    // dominant loss mode of the run that followed was that same exhaustion, so the
+    // dry run must refuse this instead of recording it as `ok`.
+    const exhausted = { ...armC, status: 'failed', terminalReason: 'RESOURCE_EXHAUSTED', budgetExhausted: true, resourceFit: false, providerCompletions: 25 }
+    expect(() => build([armB, exhausted])).toThrow(/exhausted the frozen completion budget/)
+
+    // A mislabelled flag is refused too: the readiness fields are re-derived, so a
+    // caller cannot record exhaustion as resource-fit.
+    expect(() => build([armB, { ...exhausted, resourceFit: true }])).toThrow(/inconsistent resource-fitness flag/)
+    expect(() => assertDryRunReceipt({
+      receipt: build(observations),
+      expected: { datasetSha256: hex(9), gitCommitSha: hex(1), targetFingerprint: hex(3) },
+    })).not.toThrow()
+  })
+
+  it('refuses to authorize scoring when the independent grader failed', () => {
+    expect(() => build([armB, { ...armC, status: 'failed', graderStatus: 'fail', resourceFit: false }]))
+      .toThrow(/did not pass the independent grader/)
+  })
+
+  it('refuses to authorize scoring when no real trajectory completed', () => {
+    // Terminal states that never reached a gradeable workspace are transport
+    // failures, distinct from a budget that was too small.
+    expect(() => build([armB, { ...armC, status: 'failed', terminalReason: 'INFRASTRUCTURE_FAILURE', transportReady: false, resourceFit: false, graderStatus: 'fail' }]))
+      .toThrow(/did not complete a real trajectory/)
+    expect(() => build([armB, { ...armC, transportReady: false }]))
+      .toThrow(/inconsistent transport readiness flag/)
   })
 
   it('refuses to authorize scoring without an empirical arm-parity proof', () => {
@@ -157,22 +204,11 @@ describe('H2 technical dry-run receipt', () => {
   it('refuses to authorize scoring when the telemetry plane or model identity did not resolve', () => {
     // A harness that cannot read its own authoritative session log reports an
     // identity drift and zero completions; that must fail here, before scoring.
-    expect(() => buildDryRunReceipt({
-      commitmentSha256: hex(9), candidate: { gitCommitSha: hex(1) }, target: { targetFingerprint: hex(3) },
-      compositionParity: parity,
-      observations: [observations[0], { ...observations[1], identityDrift: true }], generatedAt: 'x',
-    })).toThrow(/stable model identity/)
-    expect(() => buildDryRunReceipt({
-      commitmentSha256: hex(9), candidate: { gitCommitSha: hex(1) }, target: { targetFingerprint: hex(3) },
-      compositionParity: parity,
-      observations: [observations[0], { ...observations[1], telemetryResolved: false }], generatedAt: 'x',
-    })).toThrow(/session log/)
+    expect(() => build([armB, { ...armC, identityDrift: true }])).toThrow(/stable model identity/)
+    expect(() => build([armB, { ...armC, telemetryResolved: false }])).toThrow(/session log/)
 
-    const sealed = buildDryRunReceipt({
-      commitmentSha256: hex(9), candidate: { gitCommitSha: hex(1) }, target: { targetFingerprint: hex(3) },
-      compositionParity: parity, observations, generatedAt: 'x',
-    })
     // The gates are re-checked when the receipt is consumed, not only when built.
+    const sealed = build(observations)
     const tampered = { ...sealed, compositionParity: { ...parity, verified: false } }
     delete (tampered as { receiptSha256?: string }).receiptSha256
     expect(() => assertDryRunReceipt({

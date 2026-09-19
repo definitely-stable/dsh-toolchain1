@@ -33,7 +33,7 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 | M4.1 isolated verification worker | **COMPLETE** | Exact packed-artifact execution uses a disposable DSH environment with bounded install/compose/boot evidence and cleanup. |
 | M4.2 public `plugin.verify` | **COMPLETE** | Kernel-owned verification reduction binds static evidence, exact artifact identity, isolated runtime evidence and final target freshness. |
 | M4.3.1 Host Service visibility | **COMPLETE** | Requested Host Service assertions are proven from the live isolated Cordis context before a receipt may remain `verified`. |
-| H2 | **NOT READY** | Requires a fresh hidden dataset and independently specified end-to-end success endpoint before outcomes exist. |
+| H2 | **INCONCLUSIVE / NO_POSITIVE_DELTA / FROZEN** | Run `35302366966`: `36/36` observations, `18/18` resolved pairs, 0 infrastructure failures, 0 identity drift. B 9/18 vs C 2/18, `delta = −38.89 pp`, 7 B-only discordant pairs and 0 C-only. Preregistered one-sided rule therefore returns `INCONCLUSIVE`; 23/36 observations ended at the frozen 24-completion ceiling, so the budget calibration did not transfer from one task to the corpus. Canonical, never rerun. |
 
 ## Canonical receipts
 
@@ -48,6 +48,8 @@ Later upstream DSH trains are a separate compatibility track. They must not retr
 - compactness interpretation: [`contract-compactness-baseline-2026-09-05.md`](contract-compactness-baseline-2026-09-05.md)
 - Inspect compaction machine receipt: [`contract-inspect-compaction-v1.json`](contract-inspect-compaction-v1.json)
 - Inspect compaction interpretation: [`contract-inspect-compaction-2026-09-06.md`](contract-inspect-compaction-2026-09-06.md)
+- H2 terminal outcome: [`h2-terminal-outcome-2026-09-18.md`](../h2/h2-terminal-outcome-2026-09-18.md)
+- H2 machine report: [`h2-report-v1.json`](../h2/h2-report-v1.json)
 
 Historical receipts are append-only. Later methodology must not rewrite their run ids, commits, artifacts, outcomes, or evidence classifications.
 
@@ -125,4 +127,20 @@ M4 isolated runtime verification is now implemented through M4.3.1: public `plug
 
 ## H2 boundary
 
-H2 remains a separate confirmatory experiment. Before any H2 provider outcome exists, freeze at minimum: product candidate, exact target, hidden dataset commitment, B/C capability boundary, model/provider/reasoning identity, independent primary and guardrail outcomes, repetition/retry/resource policy, and statistical decision rules.
+H2 was executed as a separate confirmatory experiment with all of it frozen before any provider
+outcome existed: product candidate, exact target, hidden dataset commitment, B/C capability boundary,
+model/provider/reasoning identity, independent primary and guardrail outcomes, repetition, retry and
+resource policy, and statistical decision rules.
+
+Its canonical result is `INCONCLUSIVE / NO_POSITIVE_DELTA` with measurement health fully green
+(`36/36` observations, `18/18` resolved pairs, zero infrastructure failures, zero identity drift).
+The observed direction is against Arm C (7 B-only discordant pairs, 0 C-only), and the preregistered
+one-sided rule does not establish a benefit; `INCONCLUSIVE` is the preregistered verdict for that,
+not a claim of equivalence and not evidence that the Toolchain is useless. 23 of 36 observations
+ended at the frozen completion ceiling, so an uncalibrated resource budget — anchored on a single
+task — is the dominant limit on what this run can say.
+
+H2 is now immutable historical evidence: it MUST NOT be rerun, extended, relabelled, or repurposed to
+test a different hypothesis, and its 18 tasks do not become development material. A future
+confirmatory question needs a new preregistration, fresh hidden evidence, and a budget calibrated
+across a corpus.

@@ -115,6 +115,15 @@ function assertCompositionParity({ compositionParity, policy }) {
  * drift: a harness that cannot read its own session log, or that silently
  * compares an arm with itself, must fail here rather than after the first
  * scoring observation.
+ *
+ * **A dry run must also be resource-fit.** It exists to prove that the frozen
+ * completion budget is usable on real observations, so an observation the budget
+ * guard cut short is disqualifying even though it resolved, and even though its
+ * grader passed. Treating `RESOURCE_EXHAUSTED` as `ok` is what let a calibration
+ * observation that had already spent its budget authorize the canonical H2 run,
+ * whose dominant failure mode then turned out to be exactly that exhaustion.
+ * Transport readiness and resource fitness are checked separately so a failure
+ * names which one broke.
  */
 export function buildDryRunReceipt({ commitmentSha256, candidate, target, compositionParity, observations, generatedAt }) {
   if (!Array.isArray(observations) || observations.length !== H2_POLICY.technicalObservations) {
@@ -129,6 +138,25 @@ export function buildDryRunReceipt({ commitmentSha256, candidate, target, compos
     // be checked, so reporting it as drift would misdiagnose the harness.
     if (observation.telemetryResolved !== true) throw new Error('H2 dry-run observation did not resolve the authoritative session log')
     if (observation.identityDrift !== false) throw new Error('H2 dry-run observation did not record a stable model identity')
+    // The readiness flags are part of the sealed record, so they are re-derived here
+    // rather than trusted: a mismatch means the caller's classification is wrong.
+    const transportReady = observation.terminalReason === 'COMPLETED' || observation.terminalReason === 'RESOURCE_EXHAUSTED'
+    const resourceFit = observation.graderStatus === 'pass' && observation.budgetExhausted === false
+    if (observation.transportReady !== transportReady) {
+      throw new Error(`H2 dry-run Arm ${observation.arm} recorded an inconsistent transport readiness flag for ${observation.terminalReason}`)
+    }
+    if (observation.resourceFit !== resourceFit) {
+      throw new Error(`H2 dry-run Arm ${observation.arm} recorded an inconsistent resource-fitness flag`)
+    }
+    if (!transportReady) {
+      throw new Error(`H2 dry-run Arm ${observation.arm} did not complete a real trajectory (${observation.terminalReason})`)
+    }
+    if (observation.graderStatus !== 'pass') {
+      throw new Error(`H2 dry-run Arm ${observation.arm} did not pass the independent grader (${String(observation.graderStatus)})`)
+    }
+    if (observation.budgetExhausted !== false) {
+      throw new Error(`H2 dry-run Arm ${observation.arm} exhausted the frozen completion budget, so the resource policy is not fit for the corpus`)
+    }
   }
   assertCompositionParity({ compositionParity, policy: H2_POLICY })
   const envelope = {
@@ -158,6 +186,10 @@ export function assertDryRunReceipt({ receipt, expected }) {
   for (const observation of receipt.observations) {
     if (observation.telemetryResolved !== true) throw new Error(`H2 dry-run receipt Arm ${observation.arm} did not resolve the authoritative session log`)
     if (observation.identityDrift !== false) throw new Error(`H2 dry-run receipt Arm ${observation.arm} did not record a stable model identity`)
+    // Re-checked on consumption as well: the receipt is what authorizes spending the
+    // 36 scoring observations, so an unfit resource policy must not pass silently.
+    if (observation.graderStatus !== 'pass') throw new Error(`H2 dry-run receipt Arm ${observation.arm} did not pass the independent grader`)
+    if (observation.budgetExhausted !== false) throw new Error(`H2 dry-run receipt Arm ${observation.arm} exhausted the frozen completion budget`)
   }
   const failed = receipt.observations.filter(observation => observation.status !== 'ok')
   if (failed.length > 0) throw new Error(`H2 dry run did not pass: ${failed.map(observation => `${observation.arm}:${observation.terminalReason}`).join(', ')}`)

@@ -136,7 +136,8 @@ Post-H1 rules:
 - the disclosed H1 corpus is `DEVELOPMENT_ONLY` and MUST NOT become an unseen H2 holdout;
 - R1 is regression evidence only and MUST NOT be used to select v3 ranking constants;
 - Contract Search v2 is the merged production baseline; v3 uses a separately frozen R2 development corpus before any new ranking change;
-- future H2 requires a healthy structured measurement path, a frozen product candidate, a fresh hidden task set and prospective stopping/analysis rules.
+- H2 has now been executed as the confirmatory product benchmark on fresh hidden evidence: it is `INCONCLUSIVE / NO_POSITIVE_DELTA`, its result is frozen, and its 18 tasks MUST NOT be rerun, extended, relabelled, or reused as development material ([terminal outcome](evaluation/h2/h2-terminal-outcome-2026-09-18.md));
+- future confirmatory work needs a new preregistration, a fresh hidden task set, and a resource budget calibrated across a corpus rather than from a single task.
 
 Current M2/post-H1 exit state:
 - [x] M2.1 and M2.2 are merged and their exact artifact/native boundaries remain green;
@@ -148,7 +149,7 @@ Current M2/post-H1 exit state:
 - [x] the full 864-entry H1 schedule executed;
 - [x] terminal H1 result is frozen as `INCONCLUSIVE` with unresolved-measurement evidence retained;
 - [ ] parent #28 remains open because H1 did not establish the preregistered PASS claim;
-- [ ] a future confirmatory H2, if justified, is a new experiment with fresh hidden evidence and healthy transport, not an H1 rerun.
+- [x] the confirmatory H2 executed on fresh hidden evidence with every measurement gate green (`36/36` observations, `18/18` pairs, zero infrastructure failures, zero identity drift) and is frozen as `INCONCLUSIVE / NO_POSITIVE_DELTA`; its budget calibration did not transfer from one task to an 18-task corpus, so 23/36 observations ended at the frozen completion ceiling.
 
 ### Contract Search v3 — deterministic post-H1 retrieval development
 

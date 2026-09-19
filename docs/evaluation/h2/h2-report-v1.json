@@ -1,0 +1,262 @@
+{
+  "schema": "dsh-toolchain-h2-report-v1",
+  "runId": "scoring-1158c0602ec3-e64cd8a5-mu6e2b2c",
+  "generatedAt": "2026-09-18T04:13:44.406Z",
+  "policy": {
+    "taskCount": 18,
+    "scoringObservations": 36,
+    "model": {
+      "provider": "opencode-go",
+      "model": "deepseek-v4.1-flash",
+      "modelDisplayName": "DeepSeek V4.1 Flash",
+      "reasoningEffort": "high",
+      "credentialRef": "OPENCODE_GO_API_KEY",
+      "sessionAffinityHeader": "x-opencode-session"
+    },
+    "resource": {
+      "attemptsPerObservation": 1,
+      "qualityRetries": 0,
+      "infrastructureRetries": 0,
+      "providerCompletionsLimit": 24,
+      "wallTimeLimitMs": 600000
+    },
+    "statistics": {
+      "test": "exact-paired-mcnemar-one-sided",
+      "alpha": 0.05,
+      "minimumDiscordantWins": 2,
+      "minimumDelta": 0.1111111111111111
+    }
+  },
+  "status": "INCONCLUSIVE",
+  "outcomeReason": "NO_POSITIVE_DELTA",
+  "measurement": {
+    "expectedObservations": 36,
+    "executedObservations": 36,
+    "pairedTasks": 18,
+    "allResolved": true,
+    "infrastructureFailures": 0,
+    "modelIdentityDrift": 0,
+    "stoppedEarly": false
+  },
+  "decision": {
+    "outcome": "INCONCLUSIVE",
+    "reason": "NO_POSITIVE_DELTA",
+    "contingency": {
+      "bothSuccess": 2,
+      "bOnly": 7,
+      "cOnly": 0,
+      "bothFail": 9,
+      "totalPairs": 18
+    },
+    "delta": -0.3888888888888889
+  },
+  "primary": {
+    "bSuccess": 9,
+    "cSuccess": 2,
+    "bSuccessRate": 0.5,
+    "cSuccessRate": 0.1111111111111111,
+    "delta": -0.3888888888888889,
+    "test": "exact-paired-mcnemar-one-sided",
+    "alpha": 0.05,
+    "mcid": 0.1111111111111111
+  },
+  "secondary": {
+    "B": {
+      "observations": 18,
+      "successes": 9,
+      "budgetExhaustions": 9,
+      "graderPasses": 12,
+      "graderFailures": 6,
+      "graderPassButBudgetExhausted": 3,
+      "terminalReasonCounts": {
+        "COMPLETED": 9,
+        "RESOURCE_EXHAUSTED": 9
+      },
+      "observationsUsingToolchain": 0,
+      "inputTokens": 743717,
+      "outputTokens": 147581,
+      "totalTokens": 11430946,
+      "cachedInputTokens": 10539648,
+      "providerCompletions": 340,
+      "wallTimeMs": 1257144,
+      "agentSteps": 340,
+      "totalToolCalls": 547,
+      "ordinaryToolCalls": 547,
+      "toolchainToolCalls": 0,
+      "meanInputTokens": 41317.61111111111,
+      "meanOutputTokens": 8198.944444444445,
+      "meanTotalTokens": 635052.5555555555,
+      "meanWallTimeMs": 69841.33333333333,
+      "meanTotalToolCalls": 30.38888888888889,
+      "perTool": {
+        "bash": 317,
+        "edit": 15,
+        "glob": 9,
+        "grep": 18,
+        "read": 187,
+        "write": 1
+      }
+    },
+    "C": {
+      "observations": 18,
+      "successes": 2,
+      "budgetExhaustions": 14,
+      "graderPasses": 13,
+      "graderFailures": 5,
+      "graderPassButBudgetExhausted": 11,
+      "terminalReasonCounts": {
+        "COMPLETED": 4,
+        "RESOURCE_EXHAUSTED": 14
+      },
+      "observationsUsingToolchain": 11,
+      "inputTokens": 983560,
+      "outputTokens": 170319,
+      "totalTokens": 15456599,
+      "cachedInputTokens": 14302720,
+      "providerCompletions": 418,
+      "wallTimeMs": 1690663,
+      "agentSteps": 418,
+      "totalToolCalls": 680,
+      "ordinaryToolCalls": 645,
+      "toolchainToolCalls": 35,
+      "meanInputTokens": 54642.22222222222,
+      "meanOutputTokens": 9462.166666666666,
+      "meanTotalTokens": 858699.9444444445,
+      "meanWallTimeMs": 93925.72222222222,
+      "meanTotalToolCalls": 37.77777777777778,
+      "perTool": {
+        "bash": 394,
+        "edit": 18,
+        "glob": 8,
+        "grep": 28,
+        "read": 192,
+        "toolchain_contract_search": 9,
+        "toolchain_plugin_check": 8,
+        "toolchain_plugin_verify": 6,
+        "toolchain_target_resolve": 12,
+        "write": 5
+      }
+    },
+    "cost": {
+      "note": "Tokens are provider-billed usage; no composite score is derived."
+    }
+  },
+  "pairTable": [
+    {
+      "taskId": "h2-agent-tool-01",
+      "resolved": true,
+      "bSuccess": true,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-agent-tool-02",
+      "resolved": true,
+      "bSuccess": true,
+      "cSuccess": true
+    },
+    {
+      "taskId": "h2-agent-tool-03",
+      "resolved": true,
+      "bSuccess": true,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-compatibility-debug-01",
+      "resolved": true,
+      "bSuccess": false,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-compatibility-debug-02",
+      "resolved": true,
+      "bSuccess": true,
+      "cSuccess": true
+    },
+    {
+      "taskId": "h2-compatibility-debug-03",
+      "resolved": true,
+      "bSuccess": true,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-cordis-service-01",
+      "resolved": true,
+      "bSuccess": false,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-cordis-service-02",
+      "resolved": true,
+      "bSuccess": false,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-cordis-service-03",
+      "resolved": true,
+      "bSuccess": true,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-exact-target-api-01",
+      "resolved": true,
+      "bSuccess": false,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-exact-target-api-02",
+      "resolved": true,
+      "bSuccess": false,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-exact-target-api-03",
+      "resolved": true,
+      "bSuccess": false,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-plugin-composition-01",
+      "resolved": true,
+      "bSuccess": false,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-plugin-composition-02",
+      "resolved": true,
+      "bSuccess": true,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-plugin-composition-03",
+      "resolved": true,
+      "bSuccess": false,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-runtime-verification-01",
+      "resolved": true,
+      "bSuccess": true,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-runtime-verification-02",
+      "resolved": true,
+      "bSuccess": true,
+      "cSuccess": false
+    },
+    {
+      "taskId": "h2-runtime-verification-03",
+      "resolved": true,
+      "bSuccess": false,
+      "cSuccess": false
+    }
+  ],
+  "strata": [
+    "exact-target-api",
+    "cordis-service",
+    "agent-tool",
+    "plugin-composition",
+    "compatibility-debug",
+    "runtime-verification"
+  ]
+}
