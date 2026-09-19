@@ -1,3 +1,4 @@
+import { serializePluginCheckModelResponse } from '../../model/plugin-check-compact.js'
 import {
   parsePluginCheckRequest,
   type PluginCheckRequest,
@@ -43,7 +44,10 @@ export function createPluginCheckToolDefinition(
         description: 'Protocol v1 PluginCheckResponse.',
       },
       render(_args: unknown, value: unknown) {
-        return [{ type: 'text' as const, text: JSON.stringify(value) }]
+        return [{
+          type: 'text' as const,
+          text: serializePluginCheckModelResponse(value as PluginCheckResponse),
+        }]
       },
     },
     execute(args: unknown): Promise<PluginCheckResponse> {

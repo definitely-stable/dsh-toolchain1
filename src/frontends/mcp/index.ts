@@ -26,6 +26,8 @@ import {
   type VerificationOperationManager,
 } from '../../kernel/operation.js'
 import { serializeContractInspectModelResponse } from '../../model/contract-inspect-compact.js'
+import { serializeContractSearchModelResponse } from '../../model/contract-search-compact.js'
+import { serializePluginCheckModelResponse } from '../../model/plugin-check-compact.js'
 import {
   parseContractInspectRequest,
   parseContractSearchRequest,
@@ -275,9 +277,17 @@ export function createContractSearchMcpTool(
       outputSchema,
       annotations: readOnlyIdempotent,
     },
-    callback: async (request) => structuredResult(
-      await searchContractsResponse(kernel, parseContractSearchRequest(request), requestId()),
-    ),
+    callback: async (request) => {
+      const response = await searchContractsResponse(
+        kernel,
+        parseContractSearchRequest(request),
+        requestId(),
+      )
+      return structuredSerializedResult(
+        response,
+        serializeContractSearchModelResponse(response),
+      )
+    },
   }
 }
 
@@ -333,9 +343,17 @@ export function createPluginCheckMcpTool(
       outputSchema,
       annotations: readOnlyIdempotent,
     },
-    callback: async (request) => structuredResult(
-      await checkPluginResponse(kernel, parsePluginCheckRequest(request), requestId()),
-    ),
+    callback: async (request) => {
+      const response = await checkPluginResponse(
+        kernel,
+        parsePluginCheckRequest(request),
+        requestId(),
+      )
+      return structuredSerializedResult(
+        response,
+        serializePluginCheckModelResponse(response),
+      )
+    },
   }
 }
 

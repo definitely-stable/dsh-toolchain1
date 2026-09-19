@@ -1,4 +1,5 @@
 import { serializeContractInspectModelResponse } from '../../model/contract-inspect-compact.js'
+import { serializeContractSearchModelResponse } from '../../model/contract-search-compact.js'
 import {
   CONTRACT_KINDS,
   parseContractInspectRequest,
@@ -49,23 +50,18 @@ function executionContext(execution: unknown): DshContractToolExecutionContext |
   })
 }
 
-function output(description: string): DshToolDefinition['output'] {
+/**
+ * Model-facing render seam. Contract results go through the shared non-regressing serializer, so
+ * a tool can never hand the model a larger payload than canonical Protocol v1 JSON.
+ */
+function modelOutput(
+  description: string,
+  serialize: (value: unknown) => string,
+): DshToolDefinition['output'] {
   return {
     schema: { type: 'object', description },
     render(_args: unknown, value: unknown) {
-      return [{ type: 'text', text: JSON.stringify(value) }]
-    },
-  }
-}
-
-function inspectOutput(): DshToolDefinition['output'] {
-  return {
-    schema: { type: 'object', description: 'Protocol v1 ContractInspectResponse.' },
-    render(_args: unknown, value: unknown) {
-      return [{
-        type: 'text',
-        text: serializeContractInspectModelResponse(value as ContractInspectResponse),
-      }]
+      return [{ type: 'text', text: serialize(value) }]
     },
   }
 }
@@ -91,7 +87,10 @@ export function createContractSearchToolDefinition(
       },
       required: ['target', 'query'],
     },
-    output: output('Protocol v1 ContractSearchResponse.'),
+    output: modelOutput(
+      'Protocol v1 ContractSearchResponse.',
+      value => serializeContractSearchModelResponse(value as ContractSearchResponse),
+    ),
     execute(args: unknown, execution?: unknown): Promise<ContractSearchResponse> {
       const request = parseContractSearchRequest(args)
       const current = executionContext(execution)
@@ -123,7 +122,10 @@ export function createContractInspectToolDefinition(
       },
       required: ['target', 'contractIndexFingerprint', 'contractId'],
     },
-    output: inspectOutput(),
+    output: modelOutput(
+      'Protocol v1 ContractInspectResponse.',
+      value => serializeContractInspectModelResponse(value as ContractInspectResponse),
+    ),
     execute(args: unknown, execution?: unknown): Promise<ContractInspectResponse> {
       const request = parseContractInspectRequest(args)
       const current = executionContext(execution)

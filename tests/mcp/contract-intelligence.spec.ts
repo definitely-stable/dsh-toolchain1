@@ -11,8 +11,9 @@ import {
 } from '../../src/kernel/index.js'
 import type { AcquiredContractFacts } from '../../src/model/contract.js'
 import { serializeContractInspectModelResponse } from '../../src/model/contract-inspect-compact.js'
+import { serializeContractSearchModelResponse } from '../../src/model/contract-search-compact.js'
 import type { AcquiredTargetFacts } from '../../src/model/target.js'
-import type { ContractInspectResponse } from '../../src/protocol/index.js'
+import type { ContractInspectResponse, ContractSearchResponse } from '../../src/protocol/index.js'
 
 const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
 const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
@@ -34,7 +35,16 @@ function mockKernel(): ApplicationKernel {
           score: 200,
           evidenceIds: ['manifest:tools'],
         }],
-        evidence: [],
+        // A successful canonical response must carry the evidence subset its matches reference;
+        // the model-facing projection treats a dangling reference as malformed rather than
+        // rendering a provenance graph that looks complete.
+        evidence: [{
+          id: 'manifest:tools',
+          kind: 'manifest' as const,
+          strength: 'authoritative' as const,
+          source: '@deepseek-ai/dsh-tools/package.json',
+          contentHash: '3'.repeat(64),
+        }],
       },
     })),
     inspectContract: vi.fn(async () => ({
@@ -158,6 +168,7 @@ describe('Contract Intelligence MCP projection', () => {
     const result = await tool.callback(request)
 
     expect(kernel.searchContracts).toHaveBeenCalledWith(request)
+    // structuredContent stays the canonical Protocol v1 value for machine consumers.
     expect(result.structuredContent).toMatchObject({
       protocolVersion: '1',
       requestId: 'mcp-search',
@@ -165,8 +176,14 @@ describe('Contract Intelligence MCP projection', () => {
       status: 'ok',
       data: { contractIndexFingerprint },
     })
-    expect(JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : 'null'))
-      .toEqual(result.structuredContent)
+    const renderedText = result.content[0]?.type === 'text' ? result.content[0].text : ''
+    expect(renderedText).toBe(serializeContractSearchModelResponse(
+      result.structuredContent as ContractSearchResponse,
+    ))
+    expect(JSON.parse(renderedText)).toMatchObject({
+      representation: 'dsh-contract-search-compact-v1',
+      requestId: 'mcp-search',
+    })
   })
 
   it('keeps canonical structuredContent while using the non-regressing Inspect serializer for text', async () => {

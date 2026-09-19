@@ -8,6 +8,7 @@ import {
   type DshContractToolExecutionContext,
 } from '../../src/integrations/dsh/contract-tool.js'
 import { serializeContractInspectModelResponse } from '../../src/model/contract-inspect-compact.js'
+import { serializeContractSearchModelResponse } from '../../src/model/contract-search-compact.js'
 import type {
   ContractInspectResponse,
   ContractSearchResponse,
@@ -101,7 +102,7 @@ describe('native DSH Contract Intelligence tools', () => {
     })
   })
 
-  it('keeps canonical execution values and uses the non-regressing Inspect serializer for model text', async () => {
+  it('keeps canonical execution values and uses the non-regressing serializers for model text', async () => {
     const searchResolver = vi.fn(async () => searchResponse())
     const inspectResolver = vi.fn(async () => inspectResponse())
     const search = createContractSearchToolDefinition(searchResolver)
@@ -112,14 +113,17 @@ describe('native DSH Contract Intelligence tools', () => {
       query: 'ToolDefinition',
       kinds: ['package', 'tool'],
       limit: 5,
-    })
+    }) as ContractSearchResponse
     expect(searchResolver).toHaveBeenCalledWith({
       target: { profile: 'web', dshHome: '/tmp/dsh', patches: ['/tmp/a.yml'] },
       query: 'ToolDefinition',
       kinds: ['package', 'tool'],
       limit: 5,
     })
-    expect(JSON.parse(search.output.render({}, searchValue)[0]?.text ?? 'null')).toEqual(searchValue)
+    // The execution value stays canonical Protocol v1; only the model-facing text is projected.
+    expect(searchValue).toEqual(searchResponse())
+    const searchText = search.output.render({}, searchValue)[0]?.text ?? ''
+    expect(searchText).toBe(serializeContractSearchModelResponse(searchValue))
 
     const inspectValue = await inspect.execute({
       target: { profile: 'web' },

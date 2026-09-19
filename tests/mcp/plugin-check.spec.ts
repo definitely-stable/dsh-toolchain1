@@ -5,6 +5,8 @@ import {
   createPluginCheckMcpTool,
 } from '../../src/frontends/mcp/index.js'
 import type { ApplicationKernel } from '../../src/kernel/index.js'
+import { serializePluginCheckModelResponse } from '../../src/model/plugin-check-compact.js'
+import type { PluginCheckResponse } from '../../src/protocol/index.js'
 
 const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
 const contractIndexFingerprint = `dsh-contract-index-v1:${'b'.repeat(64)}`
@@ -63,6 +65,7 @@ describe('plugin.check MCP projection', () => {
 
     expect(app.checkPlugin).toHaveBeenCalledWith(request)
     expect(result).not.toHaveProperty('isError', true)
+    // structuredContent stays the canonical Protocol v1 value, including its diagnostics.
     expect(result.structuredContent).toMatchObject({
       protocolVersion: '1',
       requestId: 'plugin-mcp',
@@ -75,5 +78,11 @@ describe('plugin.check MCP projection', () => {
       },
       diagnostics: [{ code: 'PLUGIN_BUNDLE_PATCH_MISSING', domain: 'plugin' }],
     })
+    const renderedText = result.content[0]?.type === 'text' ? result.content[0].text : ''
+    expect(renderedText).toBe(serializePluginCheckModelResponse(
+      result.structuredContent as PluginCheckResponse,
+    ))
+    expect(new TextEncoder().encode(renderedText).byteLength)
+      .toBeLessThanOrEqual(new TextEncoder().encode(JSON.stringify(result.structuredContent)).byteLength)
   })
 })

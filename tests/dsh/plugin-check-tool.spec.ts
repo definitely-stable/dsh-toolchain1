@@ -4,6 +4,7 @@ import {
   createPluginCheckToolDefinition,
   PLUGIN_CHECK_TOOL_NAME,
 } from '../../src/integrations/dsh/plugin-check-tool.js'
+import { serializePluginCheckModelResponse } from '../../src/model/plugin-check-compact.js'
 import type { PluginCheckResponse } from '../../src/protocol/index.js'
 
 function response(): PluginCheckResponse {
@@ -59,5 +60,19 @@ describe('native DSH plugin check tool', () => {
       executeCandidate: true,
     })).toThrow(TypeError)
     expect(resolve).not.toHaveBeenCalled()
+  })
+
+  it('renders model text through the non-regressing serializer while execution stays canonical', async () => {
+    const tool = createPluginCheckToolDefinition(async () => response())
+    const value = await tool.execute({
+      target: { profile: 'web' },
+      subject: { kind: 'directory', path: '/candidate' },
+    })
+    const rendered = tool.output.render({}, value)[0]?.text ?? ''
+
+    expect(value).toEqual(response())
+    expect(rendered).toBe(serializePluginCheckModelResponse(value as PluginCheckResponse))
+    expect(new TextEncoder().encode(rendered).byteLength)
+      .toBeLessThanOrEqual(new TextEncoder().encode(JSON.stringify(value)).byteLength)
   })
 })
