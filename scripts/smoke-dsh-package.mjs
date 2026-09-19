@@ -368,10 +368,13 @@ export function apply(rootCtx) {
       const contractSearchVisible = schemas.some(schema => schema.name === 'toolchain_contract_search')
       const contractInspectVisible = schemas.some(schema => schema.name === 'toolchain_contract_inspect')
 
+      // ADR-0011: the native Agent surface binds the running Host target implicitly. No profile and
+      // no acquisition hint is passed here, so this proves the Host resolves its own mount-time
+      // epoch, and the assertions below require it to equal the Service's explicit target.
       const nativeResult = await ctx.tools.execute({
         callId: 'dsh-toolchain-smoke-native',
         name: 'toolchain_target_resolve',
-        arguments: request,
+        arguments: {},
         agent,
         signal: new AbortController().signal,
       })
@@ -390,7 +393,7 @@ export function apply(rootCtx) {
       const contractSearchResult = await ctx.tools.execute({
         callId: 'dsh-toolchain-smoke-contract-search',
         name: 'toolchain_contract_search',
-        arguments: searchRequest,
+        arguments: { query: 'toolchain_target_resolve', kinds: ['tool'], limit: 5 },
         agent,
         signal: new AbortController().signal,
       })
@@ -409,7 +412,6 @@ export function apply(rootCtx) {
             callId: 'dsh-toolchain-smoke-contract-inspect',
             name: 'toolchain_contract_inspect',
             arguments: {
-              target: request,
               contractIndexFingerprint,
               contractId: 'tool:host:toolchain_target_resolve',
             },
@@ -439,6 +441,9 @@ export function apply(rootCtx) {
           isError: nativeResult.isError,
           status: nativeResult.isError ? undefined : nativeResult.value?.status,
           snapshotFingerprint: nativeResult.isError ? undefined : nativeResult.value?.snapshotFingerprint,
+          boundProfile: nativeResult.isError
+            ? undefined
+            : nativeResult.value?.data?.snapshot?.profile?.name,
           renderedMatchesValue: renderedMatchesValue(nativeResult),
         },
         offlineSearch: {
@@ -533,6 +538,11 @@ export function assertBootProbeOutput(output, options = {}) {
   }
   if (receipt.nativeTool.snapshotFingerprint !== receipt.service.snapshotFingerprint) {
     throw new Error('DSH smoke: Service and native target tool resolved different target fingerprints')
+  }
+  if (receipt.nativeTool.boundProfile !== profile) {
+    throw new Error(
+      `DSH smoke: implicit native target binding did not bind the running profile ${JSON.stringify(receipt?.nativeTool)}`,
+    )
   }
 
   if (

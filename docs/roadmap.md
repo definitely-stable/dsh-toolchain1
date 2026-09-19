@@ -181,6 +181,7 @@ Required before model-facing integration is treated as mature:
 - [x] published reports expose independent-grader correctness separately from resource completion;
 - [x] the default native coding-agent Toolchain surface is materially smaller than the eight-tool baseline (five tools; **28.2%** of model-visible capability bytes withheld) with the full operation lifecycle still available to CLI/MCP/Web/service consumers;
 - [x] common model-facing Toolchain results have bounded compact projections that are never larger than canonical JSON and never lose decision-relevant evidence: Search, Inspect and Plugin Check share one `strictly-smaller-utf8-v1` serializer (`36/36` Search and `4/4` derived Plugin Check round-trips, `184/184` frozen Inspect contracts, zero byte regressions), and the five operations without a repeated evidence graph carry a measured, gated decline rule;
+- [x] the native Agent surface no longer republishes the canonical target request: one optional flat `profile` binds the exact target this Host is running in, proven against the immutable mount-time epoch and failing closed with `TARGET_RUNTIME_BINDING_UNAVAILABLE` / `TARGET_RUNTIME_BINDING_CHANGED` rather than guessing (ADR-0011), which takes the advertised bytes from `5,900` to `4,319` (`−1,581`) with every advertised definition strictly smaller;
 - [ ] the canonical install flow has an explicit, tested Agent-Skill story, or a deterministic documented second step;
 - [ ] a disclosed repeated public ablation shows the resource impact of the full versus the lean surface, with non-inferior grader performance and no weakened exact-target/stale/verification invariant.
 
@@ -194,6 +195,11 @@ The post-change exact-byte result is `docs/evaluation/m2/model-render-compaction
 `tests/evaluation/m2-model-render-compaction.spec.ts` over the frozen R1 query corpus and the frozen
 `rc2-web-v1` Contract Index. Both receipts are provider-free: they record UTF-8 bytes and duplication,
 never tokens, cost or model quality.
+
+The advertised-surface result of the implicit target binding is
+`docs/evaluation/m2/agent-surface-implicit-target-v1.json`, produced by
+`tests/evaluation/m2-implicit-target-surface.spec.ts` from the same measurement harness and compared
+against the historical baseline receipt above. It is provider-free in the same sense: bytes only.
 
 ### Contract Search v3 — deterministic post-H1 retrieval development
 

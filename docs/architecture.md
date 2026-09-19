@@ -80,6 +80,13 @@ A `TargetSnapshot` is the unit of reproducibility. Search, inspection, static pl
 
 Strong runtime claims bind both axes when lifecycle metadata is present. If the target-v2 or lifecycle epoch changes before a verification result is committed, the operation MUST report `stale` rather than silently claiming the new epoch was verified. Older DSH trains that predate the lifecycle contract legitimately remain target-v2-only and MUST NOT be backfilled.
 
+The canonical request of every target-bound operation still names its target explicitly. A Host-scoped
+frontend may additionally bind the running target implicitly when its caller omits one: the native DSH
+Agent surface advertises one optional flat `profile` and derives the canonical request from the
+immutable mount-time epoch (ADR-0011). The binding is proven per call against that epoch, acquisition
+hints never become model-facing parameters, and a target that cannot be proven or that has drifted
+fails closed instead of being silently re-bound.
+
 ### Evidence, not undocumented confidence
 
 Important facts retain provenance. Evidence records distinguish, at minimum:

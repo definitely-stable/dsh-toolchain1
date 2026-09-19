@@ -8,14 +8,21 @@ import {
 } from '../../src/integrations/dsh/contract-tool.js'
 import { M2_RETRIEVAL_TARGET } from './m2-retrieval-index.js'
 import { createFrozenToolchainBroker } from './m2-agent-tool-broker.js'
+import { stubTargetBinding } from '../support/tool-target-binding.js'
 
 const TOOLS_CONTRACT = 'package:@deepseek-ai/dsh-tools'
 
 describe('M2.3 production-faithful Toolchain broker', () => {
   it('exposes exactly the production model-facing search and inspect definitions', async () => {
     const broker = await createFrozenToolchainBroker('a'.repeat(64))
-    const expectedSearch = createContractSearchToolDefinition(async () => { throw new Error('not executed') })
-    const expectedInspect = createContractInspectToolDefinition(async () => { throw new Error('not executed') })
+    const expectedSearch = createContractSearchToolDefinition(
+      async () => { throw new Error('not executed') },
+      stubTargetBinding(),
+    )
+    const expectedInspect = createContractInspectToolDefinition(
+      async () => { throw new Error('not executed') },
+      stubTargetBinding(),
+    )
 
     expect(broker.searchTool.name).toBe(CONTRACT_SEARCH_TOOL_NAME)
     expect(broker.searchTool.description).toBe(expectedSearch.description)
@@ -29,7 +36,7 @@ describe('M2.3 production-faithful Toolchain broker', () => {
     const broker = await createFrozenToolchainBroker('b'.repeat(64))
 
     const search = await broker.searchTool.execute({
-      target: { profile: 'web' },
+      profile: 'web',
       query: 'ToolRuntimeScheduler',
       limit: 5,
     }) as {
@@ -44,7 +51,7 @@ describe('M2.3 production-faithful Toolchain broker', () => {
     expect(search.data?.matches.map(match => match.id)).toContain(TOOLS_CONTRACT)
 
     const inspect = await broker.inspectTool.execute({
-      target: { profile: 'web' },
+      profile: 'web',
       contractIndexFingerprint: search.data!.contractIndexFingerprint,
       contractId: TOOLS_CONTRACT,
     }) as {
@@ -64,7 +71,7 @@ describe('M2.3 production-faithful Toolchain broker', () => {
     const broker = await createFrozenToolchainBroker(control)
 
     await broker.searchTool.execute({
-      target: { profile: 'web' },
+      profile: 'web',
       query: 'ToolRuntimeScheduler',
       limit: 5,
     })

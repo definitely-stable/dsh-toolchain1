@@ -7,7 +7,15 @@ import {
   createContractInspectToolDefinition,
   createContractSearchToolDefinition,
 } from '../../src/integrations/dsh/contract-tool.js'
+import {
+  DshTargetBindingError,
+  type DshAmbientTargetBindingPort,
+} from '../../src/integrations/dsh/runtime-target-binding.js'
 import type { DshToolDefinition } from '../../src/integrations/dsh/target-tool.js'
+import {
+  parseContractInspectRequest,
+  parseContractSearchRequest,
+} from '../../src/protocol/index.js'
 import { canonicalizeEvaluationJson } from './m2-agent-eval-integrity.js'
 import {
   createInlineContentRef,
@@ -21,6 +29,48 @@ export interface FrozenToolchainBroker {
   readonly searchTool: DshToolDefinition
   readonly inspectTool: DshToolDefinition
   traceReceipt(): Promise<TraceReceipt>
+}
+
+/** The profile every frozen evaluation call names explicitly: the harness has no running Host. */
+export const FROZEN_EVALUATION_TARGET_PROFILE = 'web'
+
+/**
+ * The frozen evaluation harness runs the production definitions without a DSH Host, so there is no
+ * running target to bind implicitly: every evaluation call names its profile explicitly (ADR-0011).
+ */
+const FROZEN_EVALUATION_TARGET_BINDING: DshAmbientTargetBindingPort = Object.freeze({
+  async targetRequest(profile?: string) {
+    if (profile === undefined) {
+      throw new DshTargetBindingError(
+        'TARGET_RUNTIME_BINDING_UNAVAILABLE',
+        'The frozen evaluation broker has no running DSH Host target. Pass an explicit profile.',
+      )
+    }
+    return Object.freeze({ profile })
+  },
+})
+
+/**
+ * Validate one model-facing tool call the way the native surface does: a flat optional `profile`
+ * plus the operation's own parameters.
+ *
+ * The evaluation runtime classifies a rejected call as model input rather than infrastructure
+ * failure, so it needs the model-facing rule; validating the canonical request shape here would
+ * reject every legitimate call once the surface stopped republishing the canonical target.
+ */
+export function validateModelFacingToolCall(operation: 'search' | 'inspect', input: unknown): void {
+  const message = operation === 'search'
+    ? 'Invalid contract.search arguments'
+    : 'Invalid contract.inspect arguments'
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) throw new TypeError(message)
+
+  const { profile, target, ...rest } = input as Record<string, unknown>
+  if (target !== undefined) throw new TypeError(message)
+  if (profile !== undefined && typeof profile !== 'string') throw new TypeError(message)
+
+  const canonical = { ...rest, target: { profile: profile ?? FROZEN_EVALUATION_TARGET_PROFILE } }
+  if (operation === 'search') parseContractSearchRequest(canonical)
+  else parseContractInspectRequest(canonical)
 }
 
 function recordIdentity(value: unknown): {
@@ -66,12 +116,12 @@ export async function createFrozenToolchainBroker(
     harness.kernel,
     request,
     requestId('search'),
-  ))
+  ), FROZEN_EVALUATION_TARGET_BINDING)
   const productionInspect = createContractInspectToolDefinition(request => inspectContractResponse(
     harness.kernel,
     request,
     requestId('inspect'),
-  ))
+  ), FROZEN_EVALUATION_TARGET_BINDING)
 
   function tracedTool(definition: DshToolDefinition): DshToolDefinition {
     return {

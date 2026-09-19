@@ -1,6 +1,5 @@
 import {
   parseOperationRequest,
-  parsePluginVerifyRequest,
   type OperationCancelResponse,
   type OperationGetResponse,
   type OperationRequest,
@@ -9,7 +8,9 @@ import {
 } from '../../protocol/index.js'
 import {
   PLUGIN_VERIFY_PARAMETER_SCHEMA,
+  bindPluginVerifyRequest,
 } from './plugin-verify-tool.js'
+import type { DshAmbientTargetBindingPort } from './runtime-target-binding.js'
 import type { DshToolDefinition } from './target-tool.js'
 
 export const PLUGIN_VERIFY_START_TOOL_NAME = 'toolchain_plugin_verify_start'
@@ -51,14 +52,15 @@ function protocolOutput(description: string): DshToolDefinition['output'] {
 
 export function createPluginVerifyStartToolDefinition(
   start: PluginVerifyStartResolver,
+  binding: DshAmbientTargetBindingPort,
 ): DshToolDefinition {
   return {
     name: PLUGIN_VERIFY_START_TOOL_NAME,
-    description: 'Start one packed-plugin verification operation owned by this persistent DSH Host. Returns an operation snapshot for later status lookup or cancellation; synchronous toolchain_plugin_verify remains available.',
+    description: 'Start one packed-plugin verification operation owned by this persistent DSH Host; with no profile, the DSH target this Host is running in. Returns an operation snapshot for later status lookup or cancellation; synchronous toolchain_plugin_verify remains available.',
     parameters: PLUGIN_VERIFY_PARAMETER_SCHEMA,
     output: protocolOutput('Protocol v1 PluginVerifyStartResponse.'),
-    execute(args: unknown): Promise<PluginVerifyStartResponse> {
-      return start(parsePluginVerifyRequest(args))
+    async execute(args: unknown): Promise<PluginVerifyStartResponse> {
+      return start(await bindPluginVerifyRequest(args, binding))
     },
   }
 }

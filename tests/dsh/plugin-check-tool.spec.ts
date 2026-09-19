@@ -6,6 +6,7 @@ import {
 } from '../../src/integrations/dsh/plugin-check-tool.js'
 import { serializePluginCheckModelResponse } from '../../src/model/plugin-check-compact.js'
 import type { PluginCheckResponse } from '../../src/protocol/index.js'
+import { stubTargetBinding } from '../support/tool-target-binding.js'
 
 function response(): PluginCheckResponse {
   return {
@@ -30,9 +31,9 @@ function response(): PluginCheckResponse {
 describe('native DSH plugin check tool', () => {
   it('uses the canonical request parser and exposes one static read-only check operation', async () => {
     const resolve = vi.fn(async () => response())
-    const tool = createPluginCheckToolDefinition(resolve)
-    const request = {
-      target: { profile: 'web' },
+    const tool = createPluginCheckToolDefinition(resolve, stubTargetBinding())
+    const args = {
+      profile: 'web',
       subject: { kind: 'directory' as const, path: '/candidate' },
     }
 
@@ -43,29 +44,38 @@ describe('native DSH plugin check tool', () => {
     expect(tool.parameters).toMatchObject({
       type: 'object',
       additionalProperties: false,
-      required: ['target', 'subject'],
+      required: ['subject'],
     })
 
-    await expect(tool.execute(request)).resolves.toEqual(response())
-    expect(resolve).toHaveBeenCalledWith(request)
-  })
-
-  it('rejects unknown request keys before invoking the service resolver', () => {
-    const resolve = vi.fn(async () => response())
-    const tool = createPluginCheckToolDefinition(resolve)
-
-    expect(() => tool.execute({
+    await expect(tool.execute(args)).resolves.toEqual(response())
+    expect(resolve).toHaveBeenCalledWith({
       target: { profile: 'web' },
       subject: { kind: 'directory', path: '/candidate' },
+    })
+  })
+
+  it('rejects unknown request keys before invoking the service resolver', async () => {
+    const resolve = vi.fn(async () => response())
+    const tool = createPluginCheckToolDefinition(resolve, stubTargetBinding())
+
+    await expect(Promise.resolve().then(() => tool.execute({
+      profile: 'web',
+      subject: { kind: 'directory', path: '/candidate' },
       executeCandidate: true,
-    })).toThrow(TypeError)
+    }))).rejects.toThrow(TypeError)
+    // The nested canonical target is no longer a model-facing key: accepting it would let a model
+    // bypass the runtime binding decision with its own acquisition hints.
+    await expect(Promise.resolve().then(() => tool.execute({
+      target: { profile: 'web' },
+      subject: { kind: 'directory', path: '/candidate' },
+    }))).rejects.toThrow(TypeError)
     expect(resolve).not.toHaveBeenCalled()
   })
 
   it('renders model text through the non-regressing serializer while execution stays canonical', async () => {
-    const tool = createPluginCheckToolDefinition(async () => response())
+    const tool = createPluginCheckToolDefinition(async () => response(), stubTargetBinding())
     const value = await tool.execute({
-      target: { profile: 'web' },
+      profile: 'web',
       subject: { kind: 'directory', path: '/candidate' },
     })
     const rendered = tool.output.render({}, value)[0]?.text ?? ''

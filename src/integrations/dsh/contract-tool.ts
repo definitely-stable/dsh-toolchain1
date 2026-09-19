@@ -10,9 +10,11 @@ import {
   type ContractSearchResponse,
 } from '../../protocol/index.js'
 import {
-  TARGET_RESOLVE_PARAMETER_SCHEMA,
+  TARGET_PROFILE_PARAMETER_SCHEMA,
+  bindTargetArguments,
   type DshToolDefinition,
 } from './target-tool.js'
+import type { DshAmbientTargetBindingPort } from './runtime-target-binding.js'
 
 export const CONTRACT_SEARCH_TOOL_NAME = 'toolchain_contract_search'
 export const CONTRACT_INSPECT_TOOL_NAME = 'toolchain_contract_inspect'
@@ -68,15 +70,16 @@ function modelOutput(
 
 export function createContractSearchToolDefinition(
   search: ContractSearchResolver,
+  binding: DshAmbientTargetBindingPort,
 ): DshToolDefinition {
   return {
     name: CONTRACT_SEARCH_TOOL_NAME,
-    description: 'Search deterministic evidence-backed contracts for one exact installed DSH target. Use data.matches[].id with contract.inspect; evidenceIds and data.evidence[].id are provenance only.',
+    description: 'Search deterministic evidence-backed contracts for one exact installed DSH target; with no profile, the DSH target this Host is running in. Use data.matches[].id with contract.inspect; evidenceIds and data.evidence[].id are provenance only.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        target: TARGET_RESOLVE_PARAMETER_SCHEMA,
+        profile: TARGET_PROFILE_PARAMETER_SCHEMA,
         query: { type: 'string', minLength: 1, pattern: '\\S' },
         kinds: {
           type: 'array',
@@ -85,14 +88,19 @@ export function createContractSearchToolDefinition(
         },
         limit: { type: 'integer', minimum: 1, maximum: 25 },
       },
-      required: ['target', 'query'],
+      required: ['query'],
     },
     output: modelOutput(
       'Protocol v1 ContractSearchResponse.',
       value => serializeContractSearchModelResponse(value as ContractSearchResponse),
     ),
-    execute(args: unknown, execution?: unknown): Promise<ContractSearchResponse> {
-      const request = parseContractSearchRequest(args)
+    async execute(args: unknown, execution?: unknown): Promise<ContractSearchResponse> {
+      const { target, rest } = await bindTargetArguments(
+        args,
+        binding,
+        'Invalid contract.search arguments',
+      )
+      const request = parseContractSearchRequest({ ...rest, target })
       const current = executionContext(execution)
       return current === undefined ? search(request) : search(request, current)
     },
@@ -101,15 +109,16 @@ export function createContractSearchToolDefinition(
 
 export function createContractInspectToolDefinition(
   inspect: ContractInspectResolver,
+  binding: DshAmbientTargetBindingPort,
 ): DshToolDefinition {
   return {
     name: CONTRACT_INSPECT_TOOL_NAME,
-    description: 'Inspect one evidence-backed contract against an exact contract-index fingerprint. contractId must come from contract.search data.matches[].id, not an evidence id.',
+    description: 'Inspect one evidence-backed contract against an exact contract-index fingerprint; with no profile, the DSH target this Host is running in. contractId must come from contract.search data.matches[].id, not an evidence id.',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        target: TARGET_RESOLVE_PARAMETER_SCHEMA,
+        profile: TARGET_PROFILE_PARAMETER_SCHEMA,
         contractIndexFingerprint: {
           type: 'string',
           pattern: '^dsh-contract-index-v1:[0-9a-f]{64}$',
@@ -120,14 +129,19 @@ export function createContractInspectToolDefinition(
           description: 'Contract identifier from contract.search data.matches[].id. Do not pass matches[].evidenceIds or data.evidence[].id.',
         },
       },
-      required: ['target', 'contractIndexFingerprint', 'contractId'],
+      required: ['contractIndexFingerprint', 'contractId'],
     },
     output: modelOutput(
       'Protocol v1 ContractInspectResponse.',
       value => serializeContractInspectModelResponse(value as ContractInspectResponse),
     ),
-    execute(args: unknown, execution?: unknown): Promise<ContractInspectResponse> {
-      const request = parseContractInspectRequest(args)
+    async execute(args: unknown, execution?: unknown): Promise<ContractInspectResponse> {
+      const { target, rest } = await bindTargetArguments(
+        args,
+        binding,
+        'Invalid contract.inspect arguments',
+      )
+      const request = parseContractInspectRequest({ ...rest, target })
       const current = executionContext(execution)
       return current === undefined ? inspect(request) : inspect(request, current)
     },

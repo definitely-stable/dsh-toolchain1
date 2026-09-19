@@ -76,7 +76,7 @@ for await (const line of input) {
         id: toolCallId,
         name: 'toolchain_contract_search',
         input: {
-          target: { profile: 'web' },
+          profile: 'web',
           query: taskId === 'p0-08' ? 'ToolAutopilot' : taskId === 'p0-07' ? 'patchReload' : claim.split(' symbol=')[1].split(' ')[0],
           limit: 5,
         },

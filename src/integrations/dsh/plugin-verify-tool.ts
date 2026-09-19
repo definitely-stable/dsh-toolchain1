@@ -4,9 +4,11 @@ import {
   type PluginVerifyResponse,
 } from '../../protocol/index.js'
 import {
-  TARGET_RESOLVE_PARAMETER_SCHEMA,
+  TARGET_PROFILE_PARAMETER_SCHEMA,
+  bindTargetArguments,
   type DshToolDefinition,
 } from './target-tool.js'
+import type { DshAmbientTargetBindingPort } from './runtime-target-binding.js'
 
 export const PLUGIN_VERIFY_TOOL_NAME = 'toolchain_plugin_verify'
 
@@ -14,7 +16,7 @@ export const PLUGIN_VERIFY_PARAMETER_SCHEMA: Record<string, unknown> = Object.fr
   type: 'object',
   additionalProperties: false,
   properties: {
-    target: TARGET_RESOLVE_PARAMETER_SCHEMA,
+    profile: TARGET_PROFILE_PARAMETER_SCHEMA,
     subject: {
       type: 'object',
       additionalProperties: false,
@@ -56,8 +58,24 @@ export const PLUGIN_VERIFY_PARAMETER_SCHEMA: Record<string, unknown> = Object.fr
       },
     },
   },
-  required: ['target', 'subject', 'executionPolicy'],
+  required: ['subject', 'executionPolicy'],
 })
+
+/**
+ * Shared by synchronous `plugin.verify` and the asynchronous `plugin.verify.start` tool, so both
+ * surfaces bind their target through exactly one rule.
+ */
+export async function bindPluginVerifyRequest(
+  args: unknown,
+  binding: DshAmbientTargetBindingPort,
+): Promise<PluginVerifyRequest> {
+  const { target, rest } = await bindTargetArguments(
+    args,
+    binding,
+    'Invalid plugin.verify arguments',
+  )
+  return parsePluginVerifyRequest({ ...rest, target })
+}
 
 type PluginVerifyResolver = (
   request: PluginVerifyRequest,
@@ -65,10 +83,11 @@ type PluginVerifyResolver = (
 
 export function createPluginVerifyToolDefinition(
   verify: PluginVerifyResolver,
+  binding: DshAmbientTargetBindingPort,
 ): DshToolDefinition {
   return {
     name: PLUGIN_VERIFY_TOOL_NAME,
-    description: 'Verify one packed plugin against an exact installed DSH target. This executes candidate code in an isolated temporary DSH environment under the safe policy and can prove explicitly requested Host Service visibility, Agent Tool callable-schema visibility, or exact Agent Tool structured behavior results without mutating the active profile.',
+    description: 'Verify one packed plugin against an exact installed DSH target; with no profile, the DSH target this Host is running in. This executes candidate code in an isolated temporary DSH environment under the safe policy and can prove explicitly requested Host Service visibility, Agent Tool callable-schema visibility, or exact Agent Tool structured behavior results without mutating the active profile.',
     parameters: PLUGIN_VERIFY_PARAMETER_SCHEMA,
     output: {
       schema: {
@@ -79,8 +98,8 @@ export function createPluginVerifyToolDefinition(
         return [{ type: 'text' as const, text: JSON.stringify(value) }]
       },
     },
-    execute(args: unknown): Promise<PluginVerifyResponse> {
-      return verify(parsePluginVerifyRequest(args))
+    async execute(args: unknown): Promise<PluginVerifyResponse> {
+      return verify(await bindPluginVerifyRequest(args, binding))
     },
   }
 }

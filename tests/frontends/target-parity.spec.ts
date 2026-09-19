@@ -14,6 +14,16 @@ import type {
   TargetResolveRequest,
   TargetResolveResponse,
 } from '../../src/protocol/index.js'
+import { stubTargetBinding } from '../support/tool-target-binding.js'
+
+/**
+ * The native Agent surface takes one flat optional `profile` instead of the canonical nested
+ * `target` (ADR-0011). CLI and MCP keep the canonical request; only the native projection is
+ * narrowed, and this helper performs that projection for the parity assertions.
+ */
+function nativeDshArgs(request: TargetResolveRequest): unknown {
+  return { profile: request.profile }
+}
 
 function acquiredFacts(): AcquiredTargetFacts {
   return {
@@ -79,8 +89,10 @@ async function throughDshTool(
 ): Promise<TargetResolveResponse> {
   const definition = createTargetResolveToolDefinition(
     candidate => resolveTargetResponse(kernel, candidate, 'dsh-request'),
+    stubTargetBinding(),
   )
-  return await definition.execute(request) as TargetResolveResponse
+  // The native surface names one flat profile; the adapter forms the canonical target request.
+  return await definition.execute(nativeDshArgs(request)) as TargetResolveResponse
 }
 
 async function throughMcp(

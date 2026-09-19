@@ -3,11 +3,147 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { AcquiredContractFacts, ContractEnrichmentPort } from '../../model/contract.js'
-import type { Evidence, TargetSnapshot } from '../../protocol/index.js'
+import type {
+  Evidence,
+  TargetResolveRequest,
+  TargetResolveResult,
+  TargetSnapshot,
+} from '../../protocol/index.js'
 
 /** Exact running-target predicate required before Host Inspect evidence may join one resolved snapshot. */
 export interface DshRuntimeTargetBindingPort {
   matches(snapshot: TargetSnapshot): Promise<boolean>
+}
+
+/**
+ * Immutable running-Host target epoch captured once when Toolchain mounts in a DSH Host.
+ * The pair is the identity an implicit Agent Tool target binding is proven against.
+ */
+export interface DshStartupTargetIdentity {
+  readonly targetFingerprint: string
+  readonly lifecycleFingerprint?: string
+}
+
+/**
+ * Why an omitted Agent Tool target could not be bound. Both codes are machine-readable contracts and
+ * share one recovery: name a profile explicitly.
+ */
+export type DshTargetBindingErrorCode =
+  | 'TARGET_RUNTIME_BINDING_UNAVAILABLE'
+  | 'TARGET_RUNTIME_BINDING_CHANGED'
+
+export class DshTargetBindingError extends Error {
+  readonly code: DshTargetBindingErrorCode
+
+  constructor(code: DshTargetBindingErrorCode, message: string, options?: ErrorOptions) {
+    super(message, options)
+    this.name = 'DshTargetBindingError'
+    this.code = code
+  }
+}
+
+export interface DshAmbientTargetBindingPort {
+  /**
+   * Canonical target request for an explicit profile, or for the running Host target when the profile
+   * is omitted. Rejects with `DshTargetBindingError` rather than guessing when the running target
+   * cannot be proven, so a caller never silently operates on a target it did not ask for.
+   */
+  targetRequest(profile?: string): Promise<TargetResolveRequest>
+}
+
+export interface DshAmbientTargetBindingOptions {
+  /**
+   * Authoritative Host identity. Absent when the Host exposes no DSH home capability: an implicit
+   * binding is then unprovable, while an explicit profile remains the caller's canonical request.
+   */
+  readonly host?: {
+    readonly dshHome: string
+    readonly runningProfile?: string
+  }
+  /** Immutable mount-time epoch; a rejected promise counts as an unproven binding. */
+  readonly startupIdentity: Promise<DshStartupTargetIdentity | undefined>
+  /** Read-only exact target acquisition through the shared kernel use case. */
+  readonly resolveTarget: (request: TargetResolveRequest) => Promise<TargetResolveResult>
+}
+
+const EXPLICIT_PROFILE_RECOVERY = 'Pass an explicit profile to target a specific installation.'
+
+function bindingUnavailable(message: string, options?: ErrorOptions): DshTargetBindingError {
+  return new DshTargetBindingError(
+    'TARGET_RUNTIME_BINDING_UNAVAILABLE',
+    `${message} ${EXPLICIT_PROFILE_RECOVERY}`,
+    options,
+  )
+}
+
+/**
+ * Bind Agent Tool calls that omit a target to the exact DSH target this Host is running in.
+ *
+ * The binding is the mount-time epoch and never a fresh read of mutable state. A profile that
+ * changed after Toolchain mounted has an epoch this Host never observed, and answering from it would
+ * mix epochs, so the call fails closed instead. `patchReload` deliberately does not relax that rule:
+ * under `startup` the running tree is the mount-time composition, and under `live` the drifted files
+ * are simply not the ones Toolchain proved at mount.
+ */
+export function createDshAmbientTargetBinding(
+  options: DshAmbientTargetBindingOptions,
+): DshAmbientTargetBindingPort {
+  return Object.freeze({
+    async targetRequest(profile?: string): Promise<TargetResolveRequest> {
+      const host = options.host
+
+      // An explicit profile stays inside the Host's own home when there is one: acquisition hints
+      // are operator concerns, and a model-supplied path would let a call escape the installation
+      // it runs in. Without a Host home the canonical request is exactly the caller's profile.
+      if (profile !== undefined) {
+        return Object.freeze(host === undefined ? { profile } : { profile, dshHome: host.dshHome })
+      }
+      if (host === undefined) {
+        throw bindingUnavailable('This DSH Host does not expose an authoritative DSH home.')
+      }
+
+      const runningProfile = host.runningProfile
+      if (runningProfile === undefined) {
+        throw bindingUnavailable('This DSH Host was not started through a profile invocation Toolchain can prove.')
+      }
+
+      let identity: DshStartupTargetIdentity | undefined
+      try {
+        identity = await options.startupIdentity
+      } catch (error) {
+        throw bindingUnavailable('The startup target of this DSH Host could not be established.', { cause: error })
+      }
+      if (identity === undefined) {
+        throw bindingUnavailable('The startup target of this DSH Host could not be established.')
+      }
+
+      const request = Object.freeze({ profile: runningProfile, dshHome: host.dshHome })
+      let resolved: TargetResolveResult
+      try {
+        resolved = await options.resolveTarget(request)
+      } catch (error) {
+        throw bindingUnavailable('The running target of this DSH Host could not be resolved read-only.', {
+          cause: error,
+        })
+      }
+
+      const snapshot = resolved.snapshot
+      // A lifecycle-aware mount epoch must match on both axes; a mount epoch without lifecycle
+      // metadata must match a snapshot that also has none.
+      if (
+        snapshot.fingerprint !== identity.targetFingerprint
+        || snapshot.profileLifecycle?.fingerprint !== identity.lifecycleFingerprint
+      ) {
+        throw new DshTargetBindingError(
+          'TARGET_RUNTIME_BINDING_CHANGED',
+          `The running DSH target changed since Toolchain mounted: ${
+            identity.targetFingerprint
+          } is no longer current. ${EXPLICIT_PROFILE_RECOVERY}`,
+        )
+      }
+      return request
+    },
+  })
 }
 
 export interface DshRuntimeTargetBindingOptions {
@@ -121,6 +257,19 @@ export function parseRunningDshProfileInvocation(
 
   if (profile === undefined || profile === '') return undefined
   return Object.freeze({ profile, patches: Object.freeze(patches) })
+}
+
+/**
+ * The running profile Toolchain can prove, or undefined when the invocation does not establish one.
+ * Ordered `--patch` overlays disqualify a target: upstream publishes no boot-time overlay
+ * attestation, so a later resolution could not be compared against what actually booted.
+ */
+export function provenRunningProfile(
+  argv: readonly string[],
+  cwd: string = process.cwd(),
+): string | undefined {
+  const launch = parseRunningDshProfileInvocation(argv, cwd)
+  return launch === undefined || launch.patches.length !== 0 ? undefined : launch.profile
 }
 
 async function canonicalPath(value: string): Promise<string | undefined> {

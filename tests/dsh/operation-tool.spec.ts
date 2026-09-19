@@ -14,6 +14,7 @@ import type {
   OperationGetResponse,
   PluginVerifyStartResponse,
 } from '../../src/protocol/index.js'
+import { stubTargetBinding } from '../support/tool-target-binding.js'
 
 function queuedStartResponse(): PluginVerifyStartResponse {
   return {
@@ -69,7 +70,14 @@ function cancelResponse(): OperationCancelResponse {
   }
 }
 
-const verifyRequest = {
+const verifyArgs = {
+  profile: 'web',
+  subject: { kind: 'packed' as const, path: '/candidate/plugin.tgz' },
+  executionPolicy: 'safe' as const,
+  visibilityAssertions: [{ kind: 'agent-tool' as const, name: 'exampleTool' }],
+}
+
+const canonicalVerifyRequest = {
   target: { profile: 'web' },
   subject: { kind: 'packed' as const, path: '/candidate/plugin.tgz' },
   executionPolicy: 'safe' as const,
@@ -82,18 +90,19 @@ describe('native DSH verification operation tools', () => {
     const direct = vi.fn(async () => {
       throw new Error('not called')
     })
-    const startTool = createPluginVerifyStartToolDefinition(start)
-    const directTool = createPluginVerifyToolDefinition(direct)
+    const startTool = createPluginVerifyStartToolDefinition(start, stubTargetBinding())
+    const directTool = createPluginVerifyToolDefinition(direct, stubTargetBinding())
 
     expect(startTool.name).toBe(PLUGIN_VERIFY_START_TOOL_NAME)
     expect(startTool.name).toBe('toolchain_plugin_verify_start')
     expect(startTool.parameters).toEqual(directTool.parameters)
     expect(startTool.description).toContain('operation')
 
-    await expect(startTool.execute(verifyRequest)).resolves.toEqual(queuedStartResponse())
-    expect(start).toHaveBeenCalledWith(verifyRequest)
+    await expect(startTool.execute(verifyArgs)).resolves.toEqual(queuedStartResponse())
+    expect(start).toHaveBeenCalledWith(canonicalVerifyRequest)
 
-    expect(() => startTool.execute({ ...verifyRequest, executionPolicy: 'trusted' })).toThrow(TypeError)
+    await expect(Promise.resolve().then(() => startTool.execute({ ...verifyArgs, executionPolicy: 'trusted' })))
+      .rejects.toThrow(TypeError)
     expect(start).toHaveBeenCalledTimes(1)
   })
 

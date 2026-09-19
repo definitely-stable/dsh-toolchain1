@@ -1,11 +1,10 @@
 import { createNodeSha256Port } from '../../src/acquisition/node-sha256.js'
-import { parseContractInspectRequest, parseContractSearchRequest } from '../../src/protocol/index.js'
 import { canonicalizeEvaluationJson } from './m2-agent-eval-integrity.js'
 import { createInlineContentRef, createTraceReceipt, type RunnerToolTraceEntry, type TraceReceipt } from './m2-agent-execution-evidence.js'
 import { createOrdinaryReadToolDefinition, createOrdinarySearchToolDefinition } from './m2-agent-ordinary-tools.js'
 import type { OrdinaryWorkspace } from './m2-agent-ordinary-workspace.js'
 import type { ProcessToolCallRequest } from './m2-agent-process-executor.js'
-import { createFrozenToolchainBroker } from './m2-agent-tool-broker.js'
+import { createFrozenToolchainBroker, validateModelFacingToolCall } from './m2-agent-tool-broker.js'
 
 export interface FrozenP0ToolRuntime {
   dispatchToolCall(request: ProcessToolCallRequest): Promise<unknown>
@@ -85,13 +84,13 @@ export async function createFrozenP0ToolRuntime(runControlSha256: string, worksp
     [toolchain.searchTool.name, {
       family: 'toolchain',
       name: toolchain.searchTool.name,
-      validateModelInput: input => { parseContractSearchRequest(input) },
+      validateModelInput: input => { validateModelFacingToolCall('search', input) },
       execute: input => toolchain.searchTool.execute(input),
     }],
     [toolchain.inspectTool.name, {
       family: 'toolchain',
       name: toolchain.inspectTool.name,
-      validateModelInput: input => { parseContractInspectRequest(input) },
+      validateModelInput: input => { validateModelFacingToolCall('inspect', input) },
       execute: input => toolchain.inspectTool.execute(input),
     }],
   ])
