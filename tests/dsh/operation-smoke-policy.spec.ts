@@ -9,14 +9,29 @@ const smokeSource = await readFile(
 )
 
 describe('real DSH verification operation smoke policy', () => {
-  it('requires one persistent Host start/get lifecycle through native tools', () => {
+  it('proves the persistent Host start/get lifecycle through the application service', () => {
     expect(typeof smokeModule.assertVerificationOperationReceipt).toBe('function')
-    expect(smokeSource).toContain("name: 'toolchain_plugin_verify_start'")
-    expect(smokeSource).toContain("name: 'toolchain_operation_get'")
-    expect(smokeSource).toContain("schema.name === 'toolchain_operation_cancel'")
+    // The lifecycle is exercised through `ctx.toolchain` rather than through the native
+    // Agent Tools, because those three operations are withheld from the default agent
+    // surface. The service methods are the same ones the tools wrapped, so the capability
+    // is still proven end to end in a real packed Host.
+    expect(smokeSource).toContain('ctx.toolchain.startPluginVerification')
+    expect(smokeSource).toContain('ctx.toolchain.getOperation')
     expect(smokeSource).toContain('DSH_TOOLCHAIN_SMOKE_CANDIDATE')
     expect(smokeSource).toContain("subject: { kind: 'packed', path: candidatePath }")
     expect(smokeSource).toContain("operation.state === 'queued' || operation.state === 'running'")
+  })
+
+  it('pins the advertised catalog to the lean agent surface', () => {
+    // A regression that re-advertises the operation lifecycle, or drops a default tool,
+    // must fail the packed-composition smoke rather than silently costing model context.
+    expect(smokeSource).toContain('ctx.tools.schemas(agent)')
+    expect(smokeSource).toContain('advertisedCatalogMatches')
+    expect(smokeSource).toContain("'toolchain_plugin_verify'")
+    expect(smokeSource).toContain("'toolchain_target_resolve'")
+    expect(smokeSource).not.toContain("name: 'toolchain_plugin_verify_start'")
+    expect(smokeSource).not.toContain("name: 'toolchain_operation_get'")
+    expect(smokeSource).not.toContain("name: 'toolchain_operation_cancel'")
   })
 
   it('pins active-profile immutability to the operation interval inside the already-running Host', () => {
@@ -35,6 +50,14 @@ describe('real DSH verification operation smoke policy', () => {
     const targetFingerprint = `dsh-target-v2:${'a'.repeat(64)}`
     const artifactFingerprint = `dsh-plugin-artifact-v1:${'b'.repeat(64)}`
     const receipt = {
+      advertisedCatalog: [
+        'toolchain_contract_inspect',
+        'toolchain_contract_search',
+        'toolchain_plugin_check',
+        'toolchain_plugin_verify',
+        'toolchain_target_resolve',
+      ],
+      advertisedCatalogMatches: true,
       startVisible: true,
       getVisible: true,
       cancelVisible: true,

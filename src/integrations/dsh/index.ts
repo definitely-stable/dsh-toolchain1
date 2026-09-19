@@ -45,6 +45,7 @@ import type {
   TargetResolveResponse,
 } from '../../protocol/index.js'
 import { createPackedPluginVerificationExecutionPort } from '../../verification/execution-port.js'
+import { isDefaultAgentTool } from './agent-surface-policy.js'
 import {
   createContractInspectToolDefinition,
   createContractSearchToolDefinition,
@@ -69,6 +70,7 @@ import {
 } from './runtime-target-binding.js'
 import {
   createTargetResolveToolDefinition,
+  type DshToolDefinition,
   type DshToolRegistryPort,
 } from './target-tool.js'
 
@@ -187,27 +189,36 @@ function registerNativeTools(
   contracts: NativeContractResolvers,
 ): () => void {
   const disposers: Array<() => void> = []
-  try {
-    disposers.push(tools.register(createTargetResolveToolDefinition(
+  // Every definition below is constructed, then filtered by the agent-surface policy.
+  // Filtering after construction rather than skipping construction keeps the omitted
+  // operations alive as real, tested definitions that other frontends can register.
+  const definitions: readonly DshToolDefinition[] = [
+    createTargetResolveToolDefinition(
       request => ctx.toolchain.resolveTarget(request),
-    )))
-    disposers.push(tools.register(createContractSearchToolDefinition(contracts.search)))
-    disposers.push(tools.register(createContractInspectToolDefinition(contracts.inspect)))
-    disposers.push(tools.register(createPluginCheckToolDefinition(
+    ),
+    createContractSearchToolDefinition(contracts.search),
+    createContractInspectToolDefinition(contracts.inspect),
+    createPluginCheckToolDefinition(
       request => ctx.toolchain.checkPlugin(request),
-    )))
-    disposers.push(tools.register(createPluginVerifyToolDefinition(
+    ),
+    createPluginVerifyToolDefinition(
       request => ctx.toolchain.verifyPlugin(request),
-    )))
-    disposers.push(tools.register(createPluginVerifyStartToolDefinition(
+    ),
+    createPluginVerifyStartToolDefinition(
       request => ctx.toolchain.startPluginVerification(request),
-    )))
-    disposers.push(tools.register(createOperationGetToolDefinition(
+    ),
+    createOperationGetToolDefinition(
       request => ctx.toolchain.getOperation(request),
-    )))
-    disposers.push(tools.register(createOperationCancelToolDefinition(
+    ),
+    createOperationCancelToolDefinition(
       request => ctx.toolchain.cancelOperation(request),
-    )))
+    ),
+  ]
+  try {
+    for (const definition of definitions) {
+      if (!isDefaultAgentTool(definition.name)) continue
+      disposers.push(tools.register(definition))
+    }
   } catch (error) {
     for (const dispose of disposers.toReversed()) dispose()
     throw error

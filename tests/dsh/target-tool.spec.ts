@@ -4,6 +4,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 
 import ToolchainService from '../../src/integrations/dsh/index.js'
+import { DEFAULT_AGENT_TOOL_NAMES } from '../../src/integrations/dsh/agent-surface-policy.js'
 import { createTargetResolveToolDefinition } from '../../src/integrations/dsh/target-tool.js'
 import type { ContractSearchResponse } from '../../src/protocol/index.js'
 
@@ -105,16 +106,10 @@ describe('native DSH Toolchain tools', () => {
     const tools = ctx.tools
     const definition = tools.definitions.get('toolchain_target_resolve')
 
-    expect([...tools.definitions.keys()]).toEqual([
-      'toolchain_target_resolve',
-      'toolchain_contract_search',
-      'toolchain_contract_inspect',
-      'toolchain_plugin_check',
-      'toolchain_plugin_verify',
-      'toolchain_plugin_verify_start',
-      'toolchain_operation_get',
-      'toolchain_operation_cancel',
-    ])
+    // The advertised catalog is the agent-surface policy, in policy order. Asserting
+    // against the policy rather than a literal list keeps this test honest when the
+    // surface deliberately changes.
+    expect([...tools.definitions.keys()]).toEqual([...DEFAULT_AGENT_TOOL_NAMES])
     expect(definition).toBeDefined()
     expect(definition?.description).toContain('exact installed DSH target')
     expect(definition?.parameters).toEqual({

@@ -1,0 +1,97 @@
+{
+  "schema": "dsh-toolchain-model-surface-baseline-v1",
+  "identity": "dsh-toolchain-post-h2-agent-surface-v1",
+  "generatedAt": "2026-09-19T00:00:00.000Z",
+  "tools": [
+    {
+      "name": "toolchain_target_resolve",
+      "descriptionBytes": 101,
+      "parameterSchemaBytes": 570,
+      "modelVisibleBytes": 695,
+      "outputSchemaBytes": 68,
+      "totalDefinitionBytes": 763,
+      "renderedExampleBytes": 1209,
+      "renderedStatus": "ok",
+      "renderedCompact": false
+    },
+    {
+      "name": "toolchain_contract_search",
+      "descriptionBytes": 183,
+      "parameterSchemaBytes": 925,
+      "modelVisibleBytes": 1133,
+      "outputSchemaBytes": 69,
+      "totalDefinitionBytes": 1202,
+      "renderedExampleBytes": 1116,
+      "renderedStatus": "ok",
+      "renderedCompact": false
+    },
+    {
+      "name": "toolchain_contract_inspect",
+      "descriptionBytes": 162,
+      "parameterSchemaBytes": 975,
+      "modelVisibleBytes": 1163,
+      "outputSchemaBytes": 70,
+      "totalDefinitionBytes": 1233,
+      "renderedExampleBytes": 1270,
+      "renderedStatus": "ok",
+      "renderedCompact": true
+    },
+    {
+      "name": "toolchain_plugin_check",
+      "descriptionBytes": 138,
+      "parameterSchemaBytes": 866,
+      "modelVisibleBytes": 1026,
+      "outputSchemaBytes": 66,
+      "totalDefinitionBytes": 1092,
+      "renderedExampleBytes": 850,
+      "renderedStatus": "ok",
+      "renderedCompact": false
+    },
+    {
+      "name": "toolchain_plugin_verify",
+      "descriptionBytes": 339,
+      "parameterSchemaBytes": 1521,
+      "modelVisibleBytes": 1883,
+      "outputSchemaBytes": 67,
+      "totalDefinitionBytes": 1950,
+      "renderedExampleBytes": 624,
+      "renderedStatus": "ok",
+      "renderedCompact": false
+    },
+    {
+      "name": "toolchain_plugin_verify_start",
+      "descriptionBytes": 207,
+      "parameterSchemaBytes": 1521,
+      "modelVisibleBytes": 1757,
+      "outputSchemaBytes": 72,
+      "totalDefinitionBytes": 1829,
+      "renderedExampleBytes": 214,
+      "renderedStatus": "ok",
+      "renderedCompact": false
+    },
+    {
+      "name": "toolchain_operation_get",
+      "descriptionBytes": 90,
+      "parameterSchemaBytes": 148,
+      "modelVisibleBytes": 261,
+      "outputSchemaBytes": 67,
+      "totalDefinitionBytes": 328,
+      "renderedExampleBytes": 1320,
+      "renderedStatus": "ok",
+      "renderedCompact": false
+    },
+    {
+      "name": "toolchain_operation_cancel",
+      "descriptionBytes": 129,
+      "parameterSchemaBytes": 148,
+      "modelVisibleBytes": 303,
+      "outputSchemaBytes": 70,
+      "totalDefinitionBytes": 373,
+      "renderedExampleBytes": 214,
+      "renderedStatus": "ok",
+      "renderedCompact": false
+    }
+  ],
+  "totalModelVisibleBytes": 8221,
+  "totalRenderedExampleBytes": 6817
+}
