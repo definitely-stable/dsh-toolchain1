@@ -213,7 +213,11 @@ function assertFrozenIdentity(): void {
   }
 }
 
-function corpusFingerprint(): string {
+/**
+ * Fingerprint of the frozen R1 query corpus. Exported so a later measurement can bind the exact
+ * query population it measured instead of naming that population in prose.
+ */
+export function compactnessCorpusFingerprint(): string {
   const digest = createHash('sha256').update(stableJsonV1(M2_RETRIEVAL_R1), 'utf8').digest('hex')
   return `${CORPUS_FINGERPRINT_PREFIX}${digest}`
 }
@@ -484,7 +488,7 @@ async function buildUncached(): Promise<CompactnessBaselineV1> {
       targetFingerprint: M2_RETRIEVAL_TARGET.targetFingerprint,
       contractIndexFingerprint: M2_RETRIEVAL_TARGET.contractIndexFingerprint,
       rankerVersion: CONTRACT_SEARCH_RANKER_VERSION,
-      corpusFingerprint: corpusFingerprint(),
+      corpusFingerprint: compactnessCorpusFingerprint(),
       metricVersion: COMPACTNESS_METRIC_VERSION,
       lexicalNormalizerVersion: LEXICAL_NORMALIZER_VERSION,
       lexicalShingleSize: LEXICAL_SHINGLE_SIZE,

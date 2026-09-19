@@ -1,0 +1,186 @@
+{
+  "schema": "dsh-model-render-compaction-measurement-v1",
+  "identity": {
+    "fixtureVersion": "rc2-web-v1",
+    "targetFingerprint": "dsh-target-v2:42e2fb68eb872295076c826d207c06308ac0748d1153647dd620e1ece3126fbe",
+    "contractIndexFingerprint": "dsh-contract-index-v1:e4e873f597349309f365154a2f43b0a3556d0c77dc56c3ede3ed7ab03a5e82b2",
+    "searchCorpusFingerprint": "dsh-contract-compactness-r1-v1:9e738791960745ccc6e08ecc4d87568ed9a4c4ed7bcc569e996b8720e5f2b58e",
+    "checkPopulation": "derived-from-frozen-contract-index-v1",
+    "serializerPolicy": "strictly-smaller-utf8-v1",
+    "metricVersion": "dsh-model-render-compaction-v1",
+    "projections": [
+      {
+        "tool": "toolchain_contract_inspect",
+        "representation": "dsh-contract-inspect-compact-v1"
+      },
+      {
+        "tool": "toolchain_contract_search",
+        "representation": "dsh-contract-search-compact-v1"
+      },
+      {
+        "tool": "toolchain_plugin_check",
+        "representation": "dsh-plugin-check-compact-v1"
+      }
+    ]
+  },
+  "search": {
+    "population": "contract.search",
+    "cases": 36,
+    "improved": 30,
+    "unchanged": 6,
+    "regressed": 0,
+    "totalCanonicalBytes": 48474,
+    "totalModelBytes": 44612,
+    "totalSavedBytes": 3862,
+    "aggregateSavingRate": 0.079672,
+    "canonicalBytes": {
+      "count": 36,
+      "min": 360,
+      "p50": 1258,
+      "p90": 2587,
+      "p95": 3080,
+      "max": 3241
+    },
+    "modelBytes": {
+      "count": 36,
+      "min": 360,
+      "p50": 1171,
+      "p90": 2289,
+      "p95": 2725,
+      "max": 2841
+    },
+    "savedBytes": {
+      "count": 36,
+      "min": 0,
+      "p50": 87,
+      "p90": 298,
+      "p95": 355,
+      "max": 400
+    },
+    "savingRate": {
+      "count": 36,
+      "min": 0,
+      "p50": 0.069157,
+      "p90": 0.115191,
+      "p95": 0.116828,
+      "max": 0.123419
+    },
+    "worstCases": {
+      "largestCanonical": {
+        "caseId": "natural-session-search-text",
+        "bytes": 3241
+      },
+      "largestModel": {
+        "caseId": "natural-session-search-text",
+        "bytes": 2841
+      },
+      "largestSaving": {
+        "caseId": "natural-session-search-text",
+        "bytes": 400
+      }
+    }
+  },
+  "pluginCheck": {
+    "population": "plugin.check",
+    "cases": 4,
+    "improved": 3,
+    "unchanged": 1,
+    "regressed": 0,
+    "totalCanonicalBytes": 25070,
+    "totalModelBytes": 22199,
+    "totalSavedBytes": 2871,
+    "aggregateSavingRate": 0.114519,
+    "canonicalBytes": {
+      "count": 4,
+      "min": 827,
+      "p50": 5217,
+      "p90": 10033,
+      "p95": 10033,
+      "max": 10033
+    },
+    "modelBytes": {
+      "count": 4,
+      "min": 827,
+      "p50": 4635,
+      "p90": 8897,
+      "p95": 8897,
+      "max": 8897
+    },
+    "savedBytes": {
+      "count": 4,
+      "min": 0,
+      "p50": 582,
+      "p90": 1153,
+      "p95": 1153,
+      "max": 1153
+    },
+    "savingRate": {
+      "count": 4,
+      "min": 0,
+      "p50": 0.111558,
+      "p90": 0.128211,
+      "p95": 0.128211,
+      "max": 0.128211
+    },
+    "worstCases": {
+      "largestCanonical": {
+        "caseId": "mismatch-all-packages",
+        "bytes": 10033
+      },
+      "largestModel": {
+        "caseId": "mismatch-all-packages",
+        "bytes": 8897
+      },
+      "largestSaving": {
+        "caseId": "satisfied-all-packages",
+        "bytes": 1153
+      }
+    }
+  },
+  "decline": {
+    "deduplicationCeilingBytes": 256,
+    "envelopeCeilingBytes": 19,
+    "tools": [
+      {
+        "tool": "toolchain_operation_cancel",
+        "example": "plugin-verify-operation-running.json",
+        "representation": "dsh-operation-cancel-compact-v1",
+        "canonicalBytes": 214,
+        "repeatedStringBytes": 0,
+        "envelopeSavingBytes": 2
+      },
+      {
+        "tool": "toolchain_operation_get",
+        "example": "plugin-verify-operation-succeeded.json",
+        "representation": "dsh-operation-get-compact-v1",
+        "canonicalBytes": 1320,
+        "repeatedStringBytes": 185,
+        "envelopeSavingBytes": 5
+      },
+      {
+        "tool": "toolchain_plugin_verify",
+        "example": "verification-passed.json",
+        "representation": "dsh-plugin-verify-compact-v1",
+        "canonicalBytes": 624,
+        "repeatedStringBytes": 57,
+        "envelopeSavingBytes": 5
+      },
+      {
+        "tool": "toolchain_plugin_verify_start",
+        "example": "plugin-verify-operation-running.json",
+        "representation": "dsh-plugin-verify-start-compact-v1",
+        "canonicalBytes": 214,
+        "repeatedStringBytes": 0,
+        "envelopeSavingBytes": -1
+      },
+      {
+        "tool": "toolchain_target_resolve",
+        "example": "target-resolved.json",
+        "representation": "dsh-target-resolve-compact-v1",
+        "canonicalBytes": 1209,
+        "repeatedStringBytes": 104,
+        "envelopeSavingBytes": 4
+      }
+    ]
+  }
+}
