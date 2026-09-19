@@ -50,17 +50,17 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Checkout publication
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 
       - name: Install pnpm
-        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b
         with:
           install: false
 
       - name: Set up Node 24.19
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24.19.0
           cache: pnpm
@@ -87,7 +87,7 @@ jobs:
           echo "H1_BOUND_SOURCE_COMMIT=$H1_BOUND_SOURCE_COMMIT" >> "$GITHUB_ENV"
 
       - name: Checkout exact bound H1 source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           clean: true
@@ -97,7 +97,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Restore encrypted H1 run state
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ runner.temp }}/h1-run-store.enc
           key: m2-h1-dc12ccf9-${{ github.run_id }}
@@ -173,7 +173,7 @@ jobs:
 
       - name: Save encrypted H1 run state
         if: always()
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ runner.temp }}/h1-run-store.enc
           key: m2-h1-dc12ccf9-${{ github.run_id }}
