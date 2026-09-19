@@ -103,9 +103,13 @@ export async function createDefaultCases(profile) {
   const contractModuleUrl = new URL('../../lib/model/contract.js', import.meta.url).href
   const searchIndexModuleUrl = new URL('../../lib/model/contract-search-index.js', import.meta.url).href
   const compactModuleUrl = new URL('../../lib/model/contract-inspect-compact.js', import.meta.url).href
+  const searchCompactModuleUrl = new URL('../../lib/model/contract-search-compact.js', import.meta.url).href
+  const checkCompactModuleUrl = new URL('../../lib/model/plugin-check-compact.js', import.meta.url).href
   const contractModule = await import(contractModuleUrl)
   const searchIndexModule = await import(searchIndexModuleUrl)
   const compactModule = await import(compactModuleUrl)
+  const searchCompactModule = await import(searchCompactModuleUrl)
+  const checkCompactModule = await import(checkCompactModuleUrl)
   const index = createSyntheticContractIndex(profile.scale)
   const derived = searchIndexModule.createContractSearchIndex(index)
 
@@ -124,6 +128,68 @@ export async function createDefaultCases(profile) {
   const inspectIds = [0, 7, 31, 61, 97, 127, 151, 173]
     .map(value => `perf-contract-${Math.min(value, index.contracts.length - 1)}`)
   const controlPayload = 'dsh-perf-control:'.repeat(4096 * profile.scale)
+
+  /**
+   * Canonical Protocol v1 Search responses for the benchmark queries, carrying exactly the evidence
+   * their matches reference. The model-facing serializer must never receive a dangling evidence
+   * reference, so the workload has to assemble the same subset the application would.
+   */
+  const searchResponses = (queries, searchDerived) => queries.map((query, offset) => {
+    const selection = contractModule.searchContractIndex(index, query, undefined, 5, searchDerived)
+    const referenced = new Set(selection.matches.flatMap(match => match.evidenceIds))
+    return {
+      protocolVersion: '1',
+      requestId: `perf-search-serialize-${offset}`,
+      snapshotFingerprint: index.targetFingerprint,
+      status: 'ok',
+      data: {
+        contractIndexFingerprint: index.fingerprint,
+        matches: selection.matches,
+        evidence: index.evidence.filter(item => referenced.has(item.id)),
+      },
+      diagnostics: [],
+    }
+  })
+
+  const subjectEvidence = Object.freeze({
+    id: 'perf-subject-manifest',
+    kind: 'manifest',
+    strength: 'authoritative',
+    source: 'synthetic/perf/plugin/package.json',
+    contentHash: createHash('sha256').update('perf-subject-manifest', 'utf8').digest('hex'),
+  })
+
+  /** Canonical Plugin Check response whose requirement rows repeat the subject manifest evidence. */
+  const pluginCheckResponse = (offset) => {
+    const sampled = index.contracts.slice(offset, offset + 5)
+    const requirements = sampled.map(contract => ({
+      packageName: contract.name,
+      range: '1.0.0',
+      relationship: 'host-peer-required',
+      status: 'satisfied',
+      targetVersion: '1.0.0',
+      evidenceIds: [subjectEvidence.id, ...contract.evidenceIds],
+    }))
+    const referenced = new Set(requirements.flatMap(requirement => requirement.evidenceIds))
+    return {
+      protocolVersion: '1',
+      requestId: `perf-plugin-check-serialize-${offset}`,
+      snapshotFingerprint: index.targetFingerprint,
+      status: 'ok',
+      data: {
+        contractIndexFingerprint: index.fingerprint,
+        subjectFingerprint: `dsh-plugin-subject-v1:${'a'.repeat(64)}`,
+        subjectCompleteness: 'complete',
+        ruleset: 'plugin-static-alpha-v1',
+        scopeComplete: false,
+        verdict: 'compatible-in-scope',
+        requirements,
+        evidence: [subjectEvidence, ...index.evidence.filter(item => referenced.has(item.id))],
+        candidateCodeExecuted: false,
+      },
+      diagnostics: [],
+    }
+  }
 
   return Object.freeze([
     Object.freeze({
@@ -176,6 +242,20 @@ export async function createDefaultCases(profile) {
         const serialized = compactModule.serializeContractInspectModelResponse(response)
         return new TextEncoder().encode(serialized).byteLength
       }),
+    }),
+    Object.freeze({
+      name: 'contract-search-serialize',
+      run: async () => searchResponses(STRICT_SEARCH_QUERIES, derived).map(response =>
+        new TextEncoder()
+          .encode(searchCompactModule.serializeContractSearchModelResponse(response))
+          .byteLength),
+    }),
+    Object.freeze({
+      name: 'plugin-check-serialize',
+      run: async () => [0, 1, 2, 3].map(offset =>
+        new TextEncoder()
+          .encode(checkCompactModule.serializePluginCheckModelResponse(pluginCheckResponse(offset)))
+          .byteLength),
     }),
     Object.freeze({
       name: 'sha256-control',

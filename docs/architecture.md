@@ -102,6 +102,18 @@ The model-facing default is `search -> inspect`, not “send every DSH contract 
 
 The initial search implementation is deterministic and local (symbol/prefix/token/field search with a lexical ranker). Embeddings are not an M0/M1 dependency and are added only if evaluation shows material retrieval failure.
 
+### Model-facing render compaction
+
+Bounding the advertised catalog is only half of the model-facing cost; the other half is the size of a
+single result. Successful model-facing responses for `contract.search`, `contract.inspect` and
+`plugin.check` may therefore be rendered through one shared deterministic projection that interns
+canonical evidence records once and addresses them by deterministic local refs. The projection is a
+presentation choice, never a second contract: the canonical Protocol v1 value stays the source of
+truth, CLI and MCP `structuredContent` stay canonical, and the serializer emits a projection only when
+its exact UTF-8 payload is strictly smaller than canonical JSON. Operations whose responses carry no
+repeated evidence graph deliberately keep canonical text under a measured, gated decline rule rather
+than acquiring a representation identity that would not pay for itself.
+
 ## Containers and responsibilities
 
 ### Application Kernel

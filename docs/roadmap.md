@@ -180,14 +180,20 @@ Required before model-facing integration is treated as mature:
 - [x] a resource-exhausted technical dry run cannot authorize a scoring budget;
 - [x] published reports expose independent-grader correctness separately from resource completion;
 - [x] the default native coding-agent Toolchain surface is materially smaller than the eight-tool baseline (five tools; **28.2%** of model-visible capability bytes withheld) with the full operation lifecycle still available to CLI/MCP/Web/service consumers;
-- [ ] common model-facing Toolchain results have bounded compact projections that are never larger than canonical JSON and never lose decision-relevant evidence;
+- [x] common model-facing Toolchain results have bounded compact projections that are never larger than canonical JSON and never lose decision-relevant evidence: Search, Inspect and Plugin Check share one `strictly-smaller-utf8-v1` serializer (`36/36` Search and `4/4` derived Plugin Check round-trips, `184/184` frozen Inspect contracts, zero byte regressions), and the five operations without a repeated evidence graph carry a measured, gated decline rule;
 - [ ] the canonical install flow has an explicit, tested Agent-Skill story, or a deterministic documented second step;
 - [ ] a disclosed repeated public ablation shows the resource impact of the full versus the lean surface, with non-inferior grader performance and no weakened exact-target/stale/verification invariant.
 
 The measured baseline for this gate is `docs/evaluation/m2/agent-surface-baseline-v1.json`, produced
 deterministically with zero model tokens by `tests/evaluation/m2-model-surface-baseline.ts`. It records
 per-tool description, parameter-schema, model-visible and rendered-payload bytes for all eight
-operations, so a later change can be compared against it rather than argued about.
+operations, so a later change can be compared against it rather than argued about. It stays the
+historical pre-change snapshot.
+
+The post-change exact-byte result is `docs/evaluation/m2/model-render-compaction-v1.json`, produced by
+`tests/evaluation/m2-model-render-compaction.spec.ts` over the frozen R1 query corpus and the frozen
+`rc2-web-v1` Contract Index. Both receipts are provider-free: they record UTF-8 bytes and duplication,
+never tokens, cost or model quality.
 
 ### Contract Search v3 — deterministic post-H1 retrieval development
 

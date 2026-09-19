@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 
 import { createApplicationKernel, type ApplicationKernel } from '../../src/kernel/index.js'
 import type { AcquiredContractFacts } from '../../src/model/contract.js'
+import type { AcquiredPluginSubject } from '../../src/model/plugin.js'
 import type { AcquiredTargetFacts } from '../../src/model/target.js'
 
 const FIXTURE_DIRECTORY = new URL('./fixtures/m2/rc2-web-v1/', import.meta.url)
@@ -18,12 +19,21 @@ function clone<T>(value: T): T {
 export interface FrozenM2KernelHarness {
   readonly kernel: ApplicationKernel
   replaceEvidenceContentHash(evidenceId: string, contentHash: string): void
+  /**
+   * Install the subject the next `plugin.check` acquisition returns.
+   *
+   * The frozen fixture describes one exact DSH target and its Contract Index, not a plugin
+   * workspace, so a plugin.check population must supply its subject explicitly. Acquisition fails
+   * closed before a subject is installed rather than resolving a half-configured check.
+   */
+  setPluginSubject(subject: AcquiredPluginSubject): void
 }
 
 export async function createFrozenM2KernelHarness(): Promise<FrozenM2KernelHarness> {
   const frozenTargetFacts = await readFixture<AcquiredTargetFacts>('target-facts.json')
   const frozenContractFacts = await readFixture<AcquiredContractFacts>('contract-facts.json')
   let currentContractFacts = clone(frozenContractFacts)
+  let currentPluginSubject: AcquiredPluginSubject | undefined
 
   const kernel = createApplicationKernel({
     targetAcquisition: {
@@ -31,6 +41,14 @@ export async function createFrozenM2KernelHarness(): Promise<FrozenM2KernelHarne
     },
     contractAcquisition: {
       acquire: async () => clone(currentContractFacts),
+    },
+    pluginSubjectAcquisition: {
+      acquire: async () => {
+        if (currentPluginSubject === undefined) {
+          throw new Error('Frozen M2 kernel harness has no plugin subject installed')
+        }
+        return clone(currentPluginSubject)
+      },
     },
     digest: {
       sha256Utf8: async value => createHash('sha256').update(value, 'utf8').digest('hex'),
@@ -40,6 +58,9 @@ export async function createFrozenM2KernelHarness(): Promise<FrozenM2KernelHarne
 
   return Object.freeze({
     kernel,
+    setPluginSubject(subject: AcquiredPluginSubject): void {
+      currentPluginSubject = subject
+    },
     replaceEvidenceContentHash(evidenceId: string, contentHash: string): void {
       if (!/^[0-9a-f]{64}$/.test(contentHash)) {
         throw new Error(`Replacement evidence hash must be lowercase SHA-256: ${contentHash}`)

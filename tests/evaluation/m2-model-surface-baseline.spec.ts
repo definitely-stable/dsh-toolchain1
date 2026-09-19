@@ -58,6 +58,7 @@ describe('default model-facing Toolchain surface', () => {
       expect(tool.descriptionBytes).toBeGreaterThan(0)
       expect(tool.parameterSchemaBytes).toBeGreaterThan(0)
       expect(tool.renderedExampleBytes).toBeGreaterThan(0)
+      expect(tool.canonicalExampleBytes).toBeGreaterThan(0)
       // Model-visible bytes are the advertised cost; the output schema is never sent to
       // the model, so it must stay out of that figure.
       expect(tool.modelVisibleBytes).toBe(tool.descriptionBytes + tool.parameterSchemaBytes + tool.name.length)
@@ -79,13 +80,26 @@ describe('default model-facing Toolchain surface', () => {
     expect(definitions).toHaveLength(BASELINE_TOOL_NAMES.length)
   })
 
-  it('claims a compact projection only where one is measured to be smaller', () => {
-    // Contract Inspect is the only tool with a model-facing projection at baseline, and
-    // the flag is derived from bytes rather than identity, so a canonical renderer cannot
-    // silently claim to be compact.
+  it('projects only where the measured payload is strictly smaller, and never reformats otherwise', () => {
+    // The projected set is derived from bytes rather than from tool identity. Contract Search and
+    // Contract Inspect repeat canonical evidence ids across rows, so interning them pays for the
+    // representation identity. The canonical `plugin.check` example carries no evidence at all, so
+    // it legitimately stays canonical instead of acquiring a projection that would not be smaller.
     const measured = measureModelSurface('deterministic', REPOSITORY_ROOT)
     const compact = measured.tools.filter(tool => tool.renderedCompact).map(tool => tool.name)
-    expect(compact).toEqual(['toolchain_contract_inspect'])
+    expect(compact).toEqual(['toolchain_contract_search', 'toolchain_contract_inspect'])
+
+    for (const tool of measured.tools) {
+      if (tool.renderedCompact) {
+        expect(tool.renderedExampleBytes, `${tool.name} compact bytes`)
+          .toBeLessThan(tool.canonicalExampleBytes)
+        continue
+      }
+      // No projection means canonical Protocol v1 JSON byte for byte: a renderer may shorten a
+      // model-facing payload, but it may never reformat or pad one.
+      expect(tool.renderedExampleBytes, `${tool.name} canonical bytes`)
+        .toBe(tool.canonicalExampleBytes)
+    }
   })
 
   it('advertises materially less than the recorded baseline surface', async () => {
