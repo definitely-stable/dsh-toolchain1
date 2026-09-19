@@ -74,6 +74,8 @@ export interface ToolSurfaceMeasurement {
   /** Model-visible bytes plus the output schema, for callers that want the whole definition. */
   readonly totalDefinitionBytes: number
   readonly renderedExampleBytes: number
+  /** Exact UTF-8 bytes of canonical Protocol v1 JSON for the same example. */
+  readonly canonicalExampleBytes: number
   readonly renderedStatus: 'ok' | 'failed'
   readonly renderedCompact: boolean
 }
@@ -90,11 +92,12 @@ export interface ModelSurfaceBaseline {
 /**
  * Deterministic measurement of the default model-facing Toolchain surface.
  *
- * `renderedCompact` compares the renderer's exact output against canonical
- * `JSON.stringify` of the same response, because `contract.inspect` is the only tool
- * allowed to choose a smaller projection — and only when that projection is strictly
- * smaller. A tool that reports `renderedCompact: true` without being smaller would be a
- * regression, so the flag is derived from the bytes rather than from the tool identity.
+ * `renderedCompact` compares the renderer's exact output against canonical `JSON.stringify` of the
+ * same response, because a model-facing projection is allowed to shorten a payload and never to
+ * lengthen or reformat one. The flag is derived from bytes rather than from tool identity, so a
+ * canonical renderer cannot silently claim to be compact and a projected renderer cannot hide a
+ * regression. A tool whose canonical example carries no repeated evidence graph legitimately keeps
+ * the canonical bytes: the shared serializer emits a projection only when it is strictly smaller.
  */
 export function measureModelSurface(generatedAt: string, repositoryRoot: string): ModelSurfaceBaseline {
   const tools = nativeToolDefinitions().map(definition => {
@@ -116,6 +119,7 @@ export function measureModelSurface(generatedAt: string, repositoryRoot: string)
       outputSchemaBytes,
       totalDefinitionBytes: modelVisibleBytes + outputSchemaBytes,
       renderedExampleBytes: utf8Bytes(rendered),
+      canonicalExampleBytes: utf8Bytes(canonical),
       renderedStatus: (example as { status?: string }).status === 'ok' ? 'ok' : 'failed',
       renderedCompact: rendered !== canonical && utf8Bytes(rendered) < utf8Bytes(canonical),
     })
