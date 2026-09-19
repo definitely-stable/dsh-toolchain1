@@ -198,6 +198,7 @@ export async function createBootProbePackage(root, options = {}) {
 
   await writeFile(join(probe, 'probe.mjs'), `const RUNTIME_TOOL_CONTRACT_ID = ${JSON.stringify(RUNTIME_TOOL_CONTRACT_ID)}
 const COMPACT_INSPECT_REPRESENTATION = 'dsh-contract-inspect-compact-v1'
+const COMPACT_SEARCH_REPRESENTATION = 'dsh-contract-search-compact-v1'
 
 function renderedMatchesValue(result) {
   if (result?.isError) return false
@@ -227,6 +228,17 @@ function jsonEquivalent(left, right) {
   return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right))
 }
 
+function evidenceIdsFromRefs(refs, table, label) {
+  if (!Array.isArray(refs)) throw new Error('Compact ' + label + ' evidence refs must be an array')
+  return refs.map((ref) => {
+    const evidence = table[ref]
+    if (evidence === undefined || typeof evidence?.id !== 'string') {
+      throw new Error('Compact ' + label + ' evidence ref is not resolvable: ' + String(ref))
+    }
+    return evidence.id
+  })
+}
+
 function expandCompactInspect(rendered) {
   if (rendered?.representation !== COMPACT_INSPECT_REPRESENTATION) return rendered
 
@@ -237,14 +249,7 @@ function expandCompactInspect(rendered) {
   }
 
   function evidenceIds(refs) {
-    if (!Array.isArray(refs)) throw new Error('Compact Inspect evidence refs must be an array')
-    return refs.map((ref) => {
-      const evidence = table[ref]
-      if (evidence === undefined || typeof evidence?.id !== 'string') {
-        throw new Error('Compact Inspect evidence ref is not resolvable: ' + String(ref))
-      }
-      return evidence.id
-    })
+    return evidenceIdsFromRefs(refs, table, 'Inspect')
   }
 
   return {
@@ -274,7 +279,39 @@ function expandCompactInspect(rendered) {
   }
 }
 
-function inspectRenderEvidence(result) {
+function expandCompactSearch(rendered) {
+  if (rendered?.representation !== COMPACT_SEARCH_REPRESENTATION) return rendered
+
+  const table = rendered?.data?.evidenceByRef
+  const matches = rendered?.data?.matches
+  if (table === null || typeof table !== 'object' || !Array.isArray(matches)) {
+    throw new Error('Compact Contract Search representation is missing evidence table or matches')
+  }
+
+  return {
+    protocolVersion: '1',
+    requestId: rendered.requestId,
+    snapshotFingerprint: rendered.snapshotFingerprint,
+    status: 'ok',
+    data: {
+      contractIndexFingerprint: rendered.data.contractIndexFingerprint,
+      matches: matches.map(match => ({
+        id: match.id,
+        kind: match.kind,
+        name: match.name,
+        qualifiedName: match.qualifiedName,
+        availability: match.availability,
+        score: match.score,
+        ...(match.summary === undefined ? {} : { summary: match.summary }),
+        evidenceIds: evidenceIdsFromRefs(match.evidenceRefs, table, 'Contract Search match'),
+      })),
+      evidence: Object.values(table),
+    },
+    diagnostics: rendered.diagnostics ?? [],
+  }
+}
+
+function renderEvidence(result, expand, representation) {
   if (result?.isError) {
     return { roundTripsValue: false, nonRegressing: false, representation: null }
   }
@@ -284,18 +321,24 @@ function inspectRenderEvidence(result) {
   }
   try {
     const parsed = JSON.parse(rendered.text)
-    const expanded = expandCompactInspect(parsed)
+    const expanded = expand(parsed)
     const canonicalJson = JSON.stringify(result.value)
     return {
       roundTripsValue: jsonEquivalent(expanded, result.value),
       nonRegressing: utf8Bytes(rendered.text) <= utf8Bytes(canonicalJson),
-      representation: parsed?.representation === COMPACT_INSPECT_REPRESENTATION
-        ? COMPACT_INSPECT_REPRESENTATION
-        : 'protocol-v1',
+      representation: parsed?.representation === representation ? representation : 'protocol-v1',
     }
   } catch {
     return { roundTripsValue: false, nonRegressing: false, representation: null }
   }
+}
+
+function inspectRenderEvidence(result) {
+  return renderEvidence(result, expandCompactInspect, COMPACT_INSPECT_REPRESENTATION)
+}
+
+function searchRenderEvidence(result) {
+  return renderEvidence(result, expandCompactSearch, COMPACT_SEARCH_REPRESENTATION)
 }
 
 function hasRuntimeToolEvidence(response) {
@@ -377,6 +420,7 @@ export function apply(rootCtx) {
       const contractInspectRender = contractInspectResult === undefined
         ? null
         : inspectRenderEvidence(contractInspectResult)
+      const contractSearchRender = searchRenderEvidence(contractSearchResult)
 
       const receipt = {
         profile,
@@ -410,7 +454,9 @@ export function apply(rootCtx) {
           contractIndexFingerprint,
           foundRuntimeTool,
           runtimeEvidence: contractSearchResult.isError ? false : hasRuntimeToolEvidence(contractSearchResult.value),
-          renderedMatchesValue: renderedMatchesValue(contractSearchResult),
+          renderedRoundTripsValue: contractSearchRender?.roundTripsValue ?? false,
+          renderedNonRegressing: contractSearchRender?.nonRegressing ?? false,
+          renderedRepresentation: contractSearchRender?.representation ?? null,
         },
         contractInspect: contractInspectResult === undefined
           ? null
@@ -507,7 +553,10 @@ export function assertBootProbeOutput(output, options = {}) {
     || receipt.contractSearch.snapshotFingerprint !== receipt.service.snapshotFingerprint
     || typeof receipt.contractSearch.contractIndexFingerprint !== 'string'
     || !CONTRACT_INDEX_FINGERPRINT.test(receipt.contractSearch.contractIndexFingerprint)
-    || receipt.contractSearch.renderedMatchesValue !== true
+    || receipt.contractSearch.renderedRoundTripsValue !== true
+    || receipt.contractSearch.renderedNonRegressing !== true
+    || !['protocol-v1', 'dsh-contract-search-compact-v1']
+      .includes(receipt.contractSearch.renderedRepresentation)
   ) {
     throw new Error(`DSH smoke: native Contract search was not visible/executable ${JSON.stringify(receipt?.contractSearch)}`)
   }

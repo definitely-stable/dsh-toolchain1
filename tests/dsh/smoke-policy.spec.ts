@@ -123,6 +123,9 @@ describe('DSH package smoke policy', () => {
     expect(smokeSource).toContain("contractId: 'tool:host:toolchain_target_resolve'")
     expect(smokeSource).toContain("source === 'cordis-inspect:host/Tool/listTools'")
     expect(smokeSource).toContain("const COMPACT_INSPECT_REPRESENTATION = 'dsh-contract-inspect-compact-v1'")
+    expect(smokeSource).toContain("const COMPACT_SEARCH_REPRESENTATION = 'dsh-contract-search-compact-v1'")
+    expect(smokeSource).toContain('expandCompactSearch(')
+    expect(smokeSource).toContain("evidenceIdsFromRefs(match.evidenceRefs, table, 'Contract Search match')")
     expect(smokeSource).toContain('renderedRoundTripsValue:')
     expect(smokeSource).toContain('renderedNonRegressing:')
     expect(smokeSource).toContain("'exec', 'dsh', '--profile', profile")
@@ -130,7 +133,7 @@ describe('DSH package smoke policy', () => {
     expect(smokeSource).toContain('runBootProbe(runner, DSH_LIVE_BOOT_PROBE_PROFILE, env, true)')
   })
 
-  it('accepts only a live receipt proving Agent identity, runtime evidence, index drift, and lossless non-regressing inspect render', () => {
+  it('accepts only a live receipt proving Agent identity, runtime evidence, index drift, and lossless non-regressing contract renders', () => {
     const assertBootProbeOutput = smokeModule.assertBootProbeOutput as (
       output: string,
       options: { profile: string; expectLive: boolean },
@@ -174,7 +177,9 @@ describe('DSH package smoke policy', () => {
         contractIndexFingerprint: liveIndex,
         foundRuntimeTool: true,
         runtimeEvidence: true,
-        renderedMatchesValue: true,
+        renderedRoundTripsValue: true,
+        renderedNonRegressing: true,
+        renderedRepresentation: 'dsh-contract-search-compact-v1',
       },
       contractInspect: {
         visible: true,
@@ -209,6 +214,27 @@ describe('DSH package smoke policy', () => {
       })}\n`,
       { profile: 'web', expectLive: true },
     )).toThrow(/live Contract search/i)
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
+        ...receipt,
+        contractSearch: { ...receipt.contractSearch, renderedRoundTripsValue: false },
+      })}\n`,
+      { profile: 'web', expectLive: true },
+    )).toThrow(/Contract search/i)
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
+        ...receipt,
+        contractSearch: { ...receipt.contractSearch, renderedNonRegressing: false },
+      })}\n`,
+      { profile: 'web', expectLive: true },
+    )).toThrow(/Contract search/i)
+    expect(() => assertBootProbeOutput(
+      `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
+        ...receipt,
+        contractSearch: { ...receipt.contractSearch, renderedRepresentation: 'unknown-v2' },
+      })}\n`,
+      { profile: 'web', expectLive: true },
+    )).toThrow(/Contract search/i)
     expect(() => assertBootProbeOutput(
       `DSH_TOOLCHAIN_BOOT_PROBE ${JSON.stringify({
         ...receipt,
@@ -276,7 +302,11 @@ describe('DSH package smoke policy', () => {
         contractIndexFingerprint: offlineIndex,
         foundRuntimeTool: false,
         runtimeEvidence: false,
-        renderedMatchesValue: true,
+        // A response whose projection would not be strictly smaller legitimately stays canonical,
+        // so the offline path accepts `protocol-v1` text without weakening the round-trip proof.
+        renderedRoundTripsValue: true,
+        renderedNonRegressing: true,
+        renderedRepresentation: 'protocol-v1',
       },
       contractInspect: null,
     }
