@@ -6,6 +6,7 @@ Status:
 H2 HARNESS READY: observation isolation hardened, deletions ownership-guarded (see sections 10 and 21)
 H2 BUDGET AMENDED BEFORE SCORING: 24 completions / 600 s (section 11)
 H2 EXECUTION VENUE: manual GitHub Actions dispatch on main, package-mode published target (section 21)
+H2 ROUTE MATERIALIZED BY THE RUN: the frozen model is declared as route configuration (section 22)
 H2 OUTCOME NOT YET AVAILABLE
 ```
 
@@ -786,4 +787,77 @@ Consequences recorded rather than hidden:
 5. **A harness-only fix after a stopped run** re-seals the preregistration and starts a fresh full
    run; the interrupted run's observations are retained as non-confirmatory evidence. A *product*
    fix remains a new experiment version under section 17.
+
+## 22. Pre-scoring route correction (2026-09-17): the model ships with the run
+
+No H2 provider outcome exists, so nothing below changes an experimental result. The dry run stopped
+before a single provider completion, which is exactly the failure class section 4 gives the dry run
+the power to catch.
+
+**What happened.** Five dispatches reached the dry run and every one of them stopped with zero
+completions. The last two report the frozen policy's own identity as the obstruction:
+
+```text
+H2 dry run arm B: INFRASTRUCTURE_FAILURE ... completions 0, telemetry resolved,
+  observed {"request":[],"responseModels":[]},
+  infrastructure: the target does not offer the frozen model option
+  ["opencode-go","deepseek-v4.1-flash"]
+```
+
+**Root cause.** The route is materialized by the adapter's *installed* pi-ai catalog, and the frozen
+target resolves `@earendil-works/pi-ai` to `0.85.1` — the only and the latest version. That
+published catalog serves `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp` and `deepseek-v4-pro`
+through `opencode-go`, and contains no `deepseek-v4.1-flash` entry anywhere in the package. The
+model reached this repository's vocabulary through the *harness checkout on the operator's machine*,
+which patches that same catalog in (`patches/@earendil-works__pi-ai@0.85.1.patch`, "catalog
+catch-up"); a runner installs the published train and applies no such patch. The relay itself is not
+the constraint: `GET https://opencode.ai/zen/go/v1/models` served by the frozen route's own
+credential lists `deepseek-v4.1-flash`, and the route probe in section 4.1 already proved the
+endpoint, the header and the credential work. The pair was simply unadvertisable by the target, and
+section 6 requires the controller to refuse exactly that — so the failure was the gate working, not
+the model being absent.
+
+**The correction: the model's own catalog facts travel with the run.** The adapter exists for this
+case — a profile may declare `models` itself, and a model the installed catalog has never heard of
+is then fully described by configuration (`dsh-llm-pi-ai`'s own documented behavior). The H2 route
+patch, which already writes the route into each observation home through DSH's documented
+`profiles/<name>/cordis.patch.yml` seam (section 6.2), now declares the frozen model: its wire
+protocol and endpoint, its modalities, capacities, its offered reasoning levels, and the
+`compat` switches the operator's own harness sends (`supportsStore`, `supportsDeveloperRole`,
+`maxTokensField`, `requiresReasoningContentOnAssistantMessages`, `thinkingFormat: deepseek`) —
+copied from the patch's entry rather than chosen, because a different `compat` set would measure a
+different request than the frozen route describes.
+
+What this does **not** change, and why it is a harness correction rather than an amendment to the
+experiment:
+
+- the frozen model identity is untouched: `H2_POLICY.model` still names `opencode-go` /
+  `deepseek-v4.1-flash` at effort high, so the policy hash the preregistration receipt binds is
+  bit-identical and no re-freeze is semantically required;
+- the candidate and its packed artifact are untouched, and the published target train is neither
+  patched, rebuilt nor replaced — the run states a fact about the model it uses instead of
+  depending on which pi-ai release the target happens to resolve;
+- the declaration is identical in both arms, so the causal boundary stays exactly "Arm C = Arm B +
+  the Toolchain bundle" (section 2), and the composition-parity probe still describes the
+  composition that actually runs because the probe composes both arms with this same patch;
+- the declaration is the route's whole catalog, deliberately: nothing can reach a model the frozen
+  identity does not name, whatever the installed catalog ships.
+
+The one thing this deliberately does not do is quietly swap the model. Substituting the catalog's
+`deepseek-v4-flash` would have been a smaller diff and would have measured an older generation of
+the model, which is not what section 6 froze.
+
+**Recorded consequence.** The benchmark's request shape now has two authorities: pi-ai's published
+catalog for the route, and the frozen declaration for the model. They are consistent by
+construction today (the declared endpoint and protocol match the catalog's `opencode-go`), and a
+later catalog change would not silently move the measured model, because the declaration wins for
+the model it names. This is the same trade the venue already makes elsewhere: the corpus, the
+credential and the route are all configured by the run rather than inherited from whatever the
+runner happens to have.
+
+**Validation before spending.** The declaration was checked against the real schemas of the frozen
+train (`@deepseek-ai/dsh-llm-pi-ai@0.1.5-rc.2` accepts the profile and materializes the model with
+these facts; `@deepseek-ai/dsh-agent-default-model@0.1.5-rc.2` accepts the default-model row), and
+the dry run remains the gate that proves the target now advertises the pair — a dry run is
+non-scoring and spends no scoring observation.
 

@@ -103,6 +103,11 @@ ledger.
 - Never dispatch again hoping for a friendlier label. The canonical result is the first valid
   committed scoring run.
 
+A dry run that stops on `the target does not offer the frozen model option` is neither: the target
+cannot advertise a model its installed catalog does not ship, and the run now declares the frozen
+model itself (design section 22). That correction lives in the route patch and keeps the frozen
+identity and the policy hash unchanged, so the dispatch is repeated rather than re-frozen.
+
 ## 5. Never do this
 
 - Do not run `h2:run` or `h2:dry-run` on the operator's machine: the design's venue is the runner,
