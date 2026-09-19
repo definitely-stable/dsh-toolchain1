@@ -76,6 +76,20 @@ Then publish the result in one commit:
 A published report must never be edited by hand, and a non-terminal report cannot be published at
 all: `h2:finalize --out` refuses it.
 
+If the `h2:finalize --out` step itself failed after a successful scoring step — as it did on the
+canonical run, where the publication gate wrongly rejected an `INCONCLUSIVE` verdict — the recovery is
+to re-run the same generator over the retained run directory:
+
+```bash
+pnpm h2:finalize --run <runDir> --out docs/evaluation/h2/h2-report-v1.json
+```
+
+The generator recomputes from the same 36 receipts, and `--run <runDir>` rewrites that directory's
+`report.json` in place. A re-run stamps a fresh `generatedAt`, so it is **not** byte-identical to the
+bytes the failing job wrote; when the run's own artifact survived (it is inside the 1-day CI artifact),
+take `generatedAt` from that artifact and confirm the regenerated report matches it field by field, so
+the published file stays the run's own measurement rather than a later reconstruction of it.
+
 ## 4. When the run stops early
 
 `STOPPED_INVALID` is a result, not a failure to hide. It means an observation did not resolve —

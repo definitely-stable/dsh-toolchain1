@@ -737,15 +737,26 @@ async function commandDryRun(args) {
       retention: 'deferred',
     })
     retained.push({ taskId: taskForRun.taskId, arm, receipt })
+    // Transport readiness and resource fitness are recorded separately. A trajectory
+    // the completion ceiling cut short is a *valid product outcome* during scoring,
+    // which is why it still resolves there — but a dry run exists to prove the frozen
+    // resource policy is fit for the corpus, so exhaustion is a failure of the thing
+    // being calibrated. Collapsing both into one `ok` is what let a calibration
+    // observation that had already exhausted its budget authorize the canonical run.
+    const resourceFit = receipt.grader.status === 'pass' && receipt.budgetExhausted === false
+    const transportReady = receipt.terminalReason === 'COMPLETED' || receipt.terminalReason === 'RESOURCE_EXHAUSTED'
     observations.push({
       arm,
       scoring: false,
-      status: receipt.terminalReason === 'COMPLETED' || receipt.terminalReason === 'RESOURCE_EXHAUSTED' ? 'ok' : 'failed',
+      status: resourceFit && transportReady ? 'ok' : 'failed',
       terminalReason: receipt.terminalReason,
       wallTimeMs: receipt.timing.wallTimeMs,
       totalToolCalls: receipt.tools.totalToolCalls,
       toolchainToolCalls: receipt.tools.toolchainToolCalls,
       graderStatus: receipt.grader.status,
+      budgetExhausted: receipt.budgetExhausted,
+      resourceFit,
+      transportReady,
       model: receipt.identity.requestModel,
       identityDrift: receipt.identityDrift,
       // Carried explicitly rather than derived: a missing telemetry plane is an
@@ -938,6 +949,41 @@ async function commandRun(args) {
   return report
 }
 
+/**
+ * Refuses to publish a report that never reached the terminal measurement the
+ * design requires: every preregistered scoring observation executed, every task
+ * pair resolved, no infrastructure failure and no identity drift.
+ *
+ * The gate is the measurement, not the verdict. `INCONCLUSIVE` is a legitimate
+ * terminal outcome — the preregistered rule was evaluated and not met, and
+ * section 13 requires it to be reported rather than hidden — so publishing must
+ * not depend on which verdict came out. An earlier version of this gate
+ * compared the status against `'COMPLETE'`, a value `buildH2Report` never
+ * produces; it therefore refused every report, including a fully resolved one,
+ * and was invisible until the first real run tried to publish.
+ *
+ * @param {{status: string, measurement: {allResolved: boolean, expectedObservations: number, executedObservations: number, infrastructureFailures: number, modelIdentityDrift: number}}} report
+ */
+export function assertPublishableReport(report) {
+  const { status, measurement } = report
+  const abort = (reason) => {
+    throw new Error(`refusing to publish a non-terminal H2 report (status ${String(status)}): ${reason}`)
+  }
+  // The specific causes are reported before the aggregate verdict: an unresolved
+  // pair is the consequence of an infrastructure failure or an identity drift, and
+  // an operator needs the cause to know whether the run is salvageable.
+  if (measurement.infrastructureFailures !== 0) abort('an observation failed on infrastructure')
+  if (measurement.modelIdentityDrift !== 0) abort('the observation model identity drifted')
+  if (measurement.executedObservations !== measurement.expectedObservations) {
+    abort(`executed ${String(measurement.executedObservations)} of ${String(measurement.expectedObservations)} scoring observations`)
+  }
+  if (measurement.executedObservations !== H2_POLICY.scoringObservations) {
+    abort(`the run did not execute the preregistered ${String(H2_POLICY.scoringObservations)} scoring observations`)
+  }
+  if (measurement.allResolved !== true) abort('the run did not resolve every task pair')
+  if (status === 'STOPPED_INVALID') abort('the run stopped without a confirmatory estimate')
+}
+
 async function commandFinalize(args) {
   let runDir = args.values.run
   if (runDir === undefined) {
@@ -961,9 +1007,7 @@ async function commandFinalize(args) {
   // and the run artifact cannot drift apart. A report that never reached a
   // terminal measurement is refused rather than published.
   if (args.values.out !== undefined) {
-    if (report.status !== 'COMPLETE') {
-      throw new Error(`refusing to publish a non-terminal H2 report (status ${String(report.status)}); the run did not resolve every observation`)
-    }
+    assertPublishableReport(report)
     const out = resolve(args.values.out)
     await mkdir(resolve(out, '..'), { recursive: true })
     await writeJson(out, report)
