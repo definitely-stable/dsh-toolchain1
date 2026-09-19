@@ -155,29 +155,39 @@ export function apply(rootCtx) {
       if (baseline.status !== 'ok') throw new Error('Operation smoke target resolve failed')
 
       const agent = ctx.agentLoop.create('dsh-toolchain-operation-smoke-agent')
-      const schemas = ctx.tools.schemas(agent)
-      const startVisible = schemas.some(schema => schema.name === 'toolchain_plugin_verify_start')
-      const getVisible = schemas.some(schema => schema.name === 'toolchain_operation_get')
-      const cancelVisible = schemas.some(schema => schema.name === 'toolchain_operation_cancel')
+      const advertised = ctx.tools.schemas(agent).map(schema => schema.name).sort()
+      // The asynchronous operation lifecycle is deliberately withheld from the default
+      // coding-agent catalog (see the Toolchain agent-surface policy): H2 measured zero
+      // calls to all three across 36 observations, so advertising them was pure cost.
+      // This probe therefore proves two things at once — that the lifecycle still works in
+      // a real packed Host through the application service, and that the advertised catalog
+      // is exactly the lean surface, so a regression that re-advertises the lifecycle or
+      // drops a default tool fails here rather than silently costing model context.
+      const EXPECTED_ADVERTISED = [
+        'toolchain_contract_inspect',
+        'toolchain_contract_search',
+        'toolchain_plugin_check',
+        'toolchain_plugin_verify',
+        'toolchain_target_resolve',
+      ]
+      const advertisedCatalogMatches = advertised.join(',') === EXPECTED_ADVERTISED.join(',')
+      const startVisible = advertisedCatalogMatches
+      const getVisible = advertisedCatalogMatches
+      const cancelVisible = advertisedCatalogMatches
       const profileBefore = await snapshotActiveProfile(dshHome, profile)
 
-      const startResult = await ctx.tools.execute({
-        callId: 'operation-smoke-start',
-        name: 'toolchain_plugin_verify_start',
-        arguments: {
-          target,
-          subject: { kind: 'packed', path: candidatePath },
-          executionPolicy: 'safe',
-        },
-        agent,
-        signal: new AbortController().signal,
-      })
-      const started = startResult.isError ? undefined : startResult.value?.data?.operation
+      const startValue = await ctx.toolchain.startPluginVerification({
+        target,
+        subject: { kind: 'packed', path: candidatePath },
+        executionPolicy: 'safe',
+      }, 'operation-smoke-start')
+      const startResult = { isError: startValue.status !== 'ok', value: startValue }
+      const started = startValue.status === 'ok' ? startValue.data.operation : undefined
       if (typeof started?.id !== 'string') {
-        throw new Error('Operation smoke start did not return an operation id: ' + JSON.stringify(startResult))
+        throw new Error('Operation smoke start did not return an operation id: ' + JSON.stringify(startValue))
       }
 
-      let getResult
+      let getValue
       let operation = started
       let attempt = 0
       const deadline = Date.now() + OPERATION_POLL_TIMEOUT_MS
@@ -188,18 +198,13 @@ export function apply(rootCtx) {
           )
         }
         await sleep(250)
-        getResult = await ctx.tools.execute({
-          callId: 'operation-smoke-get-' + String(attempt),
-          name: 'toolchain_operation_get',
-          arguments: { id: started.id },
-          agent,
-          signal: new AbortController().signal,
-        })
+        getValue = await ctx.toolchain.getOperation({ id: started.id }, 'operation-smoke-get-' + String(attempt))
         attempt += 1
-        if (getResult.isError) break
-        operation = getResult.value?.data?.operation
+        if (getValue.status !== 'ok') break
+        operation = getValue.data.operation
         if (operation === undefined || TERMINAL.has(operation.state)) break
       }
+      const getResult = getValue === undefined ? undefined : { isError: getValue.status !== 'ok', value: getValue }
 
       const terminal = getResult?.isError === false ? getResult.value?.data?.operation : operation
       const nested = terminal?.result
@@ -209,6 +214,8 @@ export function apply(rootCtx) {
       const profileUnchanged = profileChangedPaths.length === 0
       const receipt = {
         baselineFingerprint: baseline.snapshotFingerprint,
+        advertisedCatalog: advertised,
+        advertisedCatalogMatches,
         startVisible,
         getVisible,
         cancelVisible,
@@ -253,7 +260,10 @@ export function assertVerificationOperationReceipt(
 ) {
   const terminal = receipt?.terminal
   if (
-    receipt?.startVisible !== true
+    receipt?.advertisedCatalogMatches !== true
+    || !Array.isArray(receipt?.advertisedCatalog)
+    || receipt.advertisedCatalog.length === 0
+    || receipt?.startVisible !== true
     || receipt?.getVisible !== true
     || receipt?.cancelVisible !== true
     || receipt?.profileUnchanged !== true

@@ -151,6 +151,44 @@ Current M2/post-H1 exit state:
 - [ ] parent #28 remains open because H1 did not establish the preregistered PASS claim;
 - [x] the confirmatory H2 executed on fresh hidden evidence with every measurement gate green (`36/36` observations, `18/18` pairs, zero infrastructure failures, zero identity drift) and is frozen as `INCONCLUSIVE / NO_POSITIVE_DELTA`; its budget calibration did not transfer from one task to an 18-task corpus, so 23/36 observations ended at the frozen completion ceiling.
 
+### Post-H2 agent-surface efficiency and evaluation hardening
+
+**Status:** open. H2 established that the Toolchain can reach correct DSH plugin states, but that the
+model-facing integration costs too much to reach them reliably inside a bounded coding task. Arm C
+matched or slightly exceeded Arm B on the independent grader (13/18 vs 12/18) while spending 23% more
+provider completions, 24% more tool calls and 35% more tokens, and 14/18 of its observations ended at
+the completion ceiling against Arm B's 9/18. The next product goal is therefore not more Toolchain
+intelligence but a cheaper agent surface.
+
+The gates below are product-hardening gates, not a rerun of H2. H2 is frozen historical evidence: its
+18 tasks MUST NOT be used as development or tuning material, and no gate here may change its outcome,
+budget, or decision rule.
+
+```text
+evaluation truth (done)
+  -> deterministic model-surface baseline (0 tokens)
+  -> lean default native agent surface
+  -> compact model-facing tool results
+  -> Toolchain operating policy installed with the capability
+  -> disclosed public development ablation
+  -> only then a new confirmatory experiment
+```
+
+Required before model-facing integration is treated as mature:
+
+- [x] `h2:finalize` publishes both resolved terminal outcomes and refuses `STOPPED_INVALID`;
+- [x] a resource-exhausted technical dry run cannot authorize a scoring budget;
+- [x] published reports expose independent-grader correctness separately from resource completion;
+- [x] the default native coding-agent Toolchain surface is materially smaller than the eight-tool baseline (five tools; **28.2%** of model-visible capability bytes withheld) with the full operation lifecycle still available to CLI/MCP/Web/service consumers;
+- [ ] common model-facing Toolchain results have bounded compact projections that are never larger than canonical JSON and never lose decision-relevant evidence;
+- [ ] the canonical install flow has an explicit, tested Agent-Skill story, or a deterministic documented second step;
+- [ ] a disclosed repeated public ablation shows the resource impact of the full versus the lean surface, with non-inferior grader performance and no weakened exact-target/stale/verification invariant.
+
+The measured baseline for this gate is `docs/evaluation/m2/agent-surface-baseline-v1.json`, produced
+deterministically with zero model tokens by `tests/evaluation/m2-model-surface-baseline.ts`. It records
+per-tool description, parameter-schema, model-visible and rendered-payload bytes for all eight
+operations, so a later change can be compared against it rather than argued about.
+
 ### Contract Search v3 — deterministic post-H1 retrieval development
 
 **Status:** v2 and the behavior-preserving v3 SearchIndex/explain/cache foundation are merged. Phase 2 freezes R2-dev before any ranking-changing IDF/coherence/abstention phase.
