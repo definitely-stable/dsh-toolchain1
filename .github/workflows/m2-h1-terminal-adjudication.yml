@@ -56,19 +56,19 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Checkout exact frozen terminal adjudication source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           clean: true
           ref: ${{ env.H1_TERMINAL_SOURCE_COMMIT }}
 
       - name: Install pnpm
-        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b
         with:
           install: false
 
       - name: Set up Node 24.19
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24.19.0
           cache: pnpm
@@ -79,7 +79,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Restore exact completed H1 run state
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ runner.temp }}/h1-run-store.enc
           key: m2-h1-dc12ccf9-${{ inputs.h1_execution_run_id }}
@@ -154,12 +154,12 @@ jobs:
           jq -e '.files | length == 4' h1-terminal-manifest-v1.json >/dev/null
 
       - name: Attest terminal H1 evidence provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-checksums: ${{ runner.temp }}/m2-h1-terminal/h1-terminal-sha256sums.txt
 
       - name: Upload terminal H1 evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: m2-h1-terminal-${{ inputs.h1_execution_run_id }}
           path: |
